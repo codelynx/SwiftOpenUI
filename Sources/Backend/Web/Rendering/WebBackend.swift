@@ -14,7 +14,7 @@ extension WindowGroup: WebWindowRenderable {
         document.title = .string(title)
 
         // Create app container
-        var container = document.createElement("div")
+        let container = document.createElement("div")
         container.id = "app"
         container.style = "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px;"
 

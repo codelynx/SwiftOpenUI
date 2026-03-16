@@ -57,7 +57,7 @@ public func webRenderAnyView(_ view: any View) -> JSValue {
 
 extension Text: WebRenderable {
     public func webCreateElement() -> JSValue {
-        var span = document.createElement("span")
+        let span = document.createElement("span")
         span.textContent = .string(content)
         return span
     }
@@ -71,7 +71,7 @@ extension EmptyView: WebRenderable {
 
 extension Spacer: WebRenderable {
     public func webCreateElement() -> JSValue {
-        var div = document.createElement("div")
+        let div = document.createElement("div")
         div.style = "flex: 1;"
         return div
     }
@@ -79,7 +79,7 @@ extension Spacer: WebRenderable {
 
 extension SwiftOpenUI.Divider: WebRenderable {
     public func webCreateElement() -> JSValue {
-        var hr = document.createElement("hr")
+        let hr = document.createElement("hr")
         hr.style = "border: none; border-top: 1px solid #ccc; margin: 4px 0; width: 100%;"
         return hr
     }
@@ -87,7 +87,7 @@ extension SwiftOpenUI.Divider: WebRenderable {
 
 extension SwiftOpenUI.Button: WebRenderable {
     public func webCreateElement() -> JSValue {
-        var button = document.createElement("button")
+        let button = document.createElement("button")
         button.style = "padding: 6px 12px; cursor: pointer;"
 
         // Render label content
@@ -107,7 +107,7 @@ extension SwiftOpenUI.Button: WebRenderable {
 
 extension SwiftOpenUI.Color: WebRenderable {
     public func webCreateElement() -> JSValue {
-        var div = document.createElement("div")
+        let div = document.createElement("div")
         div.style = .string("background-color: \(cssColor); width: 100%; height: 100%; min-height: 20px;")
         return div
     }
@@ -121,7 +121,7 @@ extension SwiftOpenUI.Color: WebRenderable {
 
 extension VStack: WebRenderable {
     public func webCreateElement() -> JSValue {
-        var div = document.createElement("div")
+        let div = document.createElement("div")
         div.style = .string("display: flex; flex-direction: column; gap: \(spacing)px; align-items: \(cssAlignment);")
 
         for child in webRenderChildren(content) {
@@ -141,7 +141,7 @@ extension VStack: WebRenderable {
 
 extension HStack: WebRenderable {
     public func webCreateElement() -> JSValue {
-        var div = document.createElement("div")
+        let div = document.createElement("div")
         div.style = .string("display: flex; flex-direction: row; gap: \(spacing)px; align-items: \(cssAlignment);")
 
         for child in webRenderChildren(content) {
@@ -161,7 +161,7 @@ extension HStack: WebRenderable {
 
 extension ZStack: WebRenderable {
     public func webCreateElement() -> JSValue {
-        var div = document.createElement("div")
+        let div = document.createElement("div")
         div.style = "display: grid; place-items: center;"
 
         for child in webRenderChildren(content) {
@@ -175,7 +175,7 @@ extension ZStack: WebRenderable {
 
 extension Group: WebRenderable, WebMultiChildRenderable {
     public func webCreateElement() -> JSValue {
-        var div = document.createElement("div")
+        let div = document.createElement("div")
         for child in webRenderChildren() {
             _ = div.appendChild(child)
         }
@@ -189,7 +189,7 @@ extension Group: WebRenderable, WebMultiChildRenderable {
 
 extension ForEach: WebRenderable, WebMultiChildRenderable {
     public func webCreateElement() -> JSValue {
-        var div = document.createElement("div")
+        let div = document.createElement("div")
         for child in webRenderChildren() {
             _ = div.appendChild(child)
         }
@@ -210,7 +210,7 @@ extension PaddedView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let padding = "padding: \(top)px \(trailing)px \(bottom)px \(leading)px;"
-        var wrapper = document.createElement("div")
+        let wrapper = document.createElement("div")
         wrapper.style = .string(padding)
         _ = wrapper.appendChild(child)
         return wrapper
@@ -228,7 +228,7 @@ extension FrameView: WebRenderable {
         if let minH = minHeight { styles.append("min-height: \(minH)px") }
         if let maxH = maxHeight { styles.append("max-height: \(maxH == .infinity ? 99999 : maxH)px") }
 
-        var wrapper = document.createElement("div")
+        let wrapper = document.createElement("div")
         wrapper.style = .string(styles.joined(separator: "; ") + ";")
         _ = wrapper.appendChild(child)
         return wrapper
@@ -239,7 +239,7 @@ extension ForegroundColorView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let css = "color: \(color.cssColor);"
-        var wrapper = document.createElement("div")
+        let wrapper = document.createElement("div")
         wrapper.style = .string(css)
         _ = wrapper.appendChild(child)
         return wrapper
@@ -250,7 +250,7 @@ extension BackgroundView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let css = "background-color: \(color.cssColor);"
-        var wrapper = document.createElement("div")
+        let wrapper = document.createElement("div")
         wrapper.style = .string(css)
         _ = wrapper.appendChild(child)
         return wrapper
@@ -288,7 +288,7 @@ extension FontModifiedView: WebRenderable {
             }
             css = "font-size: \(size)px; font-weight: \(w);"
         }
-        var wrapper = document.createElement("div")
+        let wrapper = document.createElement("div")
         wrapper.style = .string(css)
         _ = wrapper.appendChild(child)
         return wrapper
@@ -299,7 +299,7 @@ extension BorderView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let css = "border: \(width)px solid \(color.cssColor);"
-        var wrapper = document.createElement("div")
+        let wrapper = document.createElement("div")
         wrapper.style = .string(css)
         _ = wrapper.appendChild(child)
         return wrapper

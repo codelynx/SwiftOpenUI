@@ -58,7 +58,7 @@ public class WebViewHost: AnyViewHost {
 
 /// Render a stateful composite view wrapped in a WebViewHost.
 public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
-    var mutableView = view
+    let mutableView = view
     let host = WebViewHost {
         webRenderView(mutableView.body)
     }

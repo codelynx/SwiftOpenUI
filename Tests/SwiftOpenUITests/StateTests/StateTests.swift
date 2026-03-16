@@ -26,8 +26,7 @@ final class StateTests: XCTestCase {
 
     func testStateStorageSharedAcrossCopies() {
         let state = State<Int>(wrappedValue: 10)
-        var copy = state
-        _ = copy // silence warning
+        let copy = state
         state.wrappedValue = 20
         XCTAssertEqual(copy.wrappedValue, 20, "Copies should share storage")
     }
@@ -166,6 +165,6 @@ final class StateTests: XCTestCase {
     func testFocusStateOptionalDefault() {
         enum Field { case name, email }
         let focus = FocusState<Field?>()
-        XCTAssertNil(focus.storage.value)
+        XCTAssertNil(focus.storage.value as Any?)
     }
 }

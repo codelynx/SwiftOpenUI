@@ -14,7 +14,7 @@ final class ModifierTests: XCTestCase {
 
     func testViewModifierPreservesWrappedContent() {
         let text = Text("hello")
-        let modified = text.modifier(RedBackground())
+        _ = text.modifier(RedBackground())
         // ModifiedContent should pass AnyView(text) through to the modifier
         let modifierContent = RedBackground().body(
             content: _ViewModifierContent<RedBackground>(AnyView(text))
@@ -84,7 +84,7 @@ final class ModifierTests: XCTestCase {
 
     func testFontModifier() {
         let styled = Text("hello").font(.title)
-        XCTAssertTrue(styled is FontModifiedView<Text>)
+        XCTAssertNotNil(styled as FontModifiedView<Text>)
     }
 
     func testBorderModifier() {
@@ -102,12 +102,12 @@ final class ModifierTests: XCTestCase {
     func testEnvironmentObjectModifier() {
         let model = TestModel()
         let view = Text("hello").environmentObject(model)
-        XCTAssertTrue(view is EnvironmentObjectModifierView<Text, TestModel>)
+        XCTAssertNotNil(view as EnvironmentObjectModifierView<Text, TestModel>)
         XCTAssertTrue(view.object === model)
     }
 
     func testEnvironmentModifier() {
         let view = Text("hello").environment(\.colorScheme, .dark)
-        XCTAssertTrue(view is EnvironmentModifierView<Text, ColorScheme>)
+        XCTAssertNotNil(view as EnvironmentModifierView<Text, ColorScheme>)
     }
 }
