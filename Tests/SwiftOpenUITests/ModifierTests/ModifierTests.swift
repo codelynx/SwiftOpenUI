@@ -95,8 +95,8 @@ final class ModifierTests: XCTestCase {
 
     // MARK: - Environment modifiers
 
-    class TestModel: ObservableObject {
-        @Published var value = "test"
+    class TestModel: SwiftOpenUI.ObservableObject {
+        @SwiftOpenUI.Published var value = "test"
     }
 
     func testEnvironmentObjectModifier() {

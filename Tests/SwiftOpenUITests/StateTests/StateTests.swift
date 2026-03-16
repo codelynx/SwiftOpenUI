@@ -57,8 +57,8 @@ final class StateTests: XCTestCase {
 
     // MARK: - @Published / ObservableObject
 
-    class Counter: ObservableObject {
-        @Published var count = 0
+    class Counter: SwiftOpenUI.ObservableObject {
+        @SwiftOpenUI.Published var count = 0
     }
 
     func testPublishedInitialValue() {
@@ -104,12 +104,12 @@ final class StateTests: XCTestCase {
 
     // MARK: - Superclass @Published wiring
 
-    class BaseModel: ObservableObject {
-        @Published var baseProp = "base"
+    class BaseModel: SwiftOpenUI.ObservableObject {
+        @SwiftOpenUI.Published var baseProp = "base"
     }
 
     class DerivedModel: BaseModel {
-        @Published var derivedProp = "derived"
+        @SwiftOpenUI.Published var derivedProp = "derived"
     }
 
     func testWirePublishedWalksSuperclass() {

@@ -17,7 +17,11 @@ var targets: [Target] = [
     ),
 ]
 
+#if os(macOS)
+var exampleDeps: [Target.Dependency] = []
+#else
 var exampleDeps: [Target.Dependency] = ["SwiftOpenUI"]
+#endif
 
 // GTK4 backend (Linux)
 #if os(Linux)
@@ -68,6 +72,7 @@ targets += [
 
 let package = Package(
     name: "SwiftOpenUI",
+    platforms: [.macOS(.v12)],
     products: [
         .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
     ],
