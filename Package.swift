@@ -42,6 +42,38 @@ targets += [
 exampleDeps.append("BackendGTK4")
 #endif
 
+// Win32 backend (Windows)
+#if os(Windows)
+targets += [
+    .target(
+        name: "CWin32",
+        path: "Sources/Backend/Win32/CWin32",
+        publicHeadersPath: "include",
+        linkerSettings: [
+            .linkedLibrary("comctl32"),
+            .linkedLibrary("user32"),
+            .linkedLibrary("gdi32"),
+        ]
+    ),
+    .target(
+        name: "CWin32Bridge",
+        dependencies: ["CWin32"],
+        path: "Sources/Backend/Win32/CWin32Bridge"
+    ),
+    .target(
+        name: "BackendWin32",
+        dependencies: ["SwiftOpenUI", "CWin32", "CWin32Bridge"],
+        path: "Sources/Backend/Win32/Rendering"
+    ),
+    .testTarget(
+        name: "Win32RenderTests",
+        dependencies: ["SwiftOpenUI", "BackendWin32"],
+        path: "Tests/BackendTests/Win32Tests"
+    ),
+]
+exampleDeps.append("BackendWin32")
+#endif
+
 // Examples
 targets += [
     .executableTarget(

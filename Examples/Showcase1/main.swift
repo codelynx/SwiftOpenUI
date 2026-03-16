@@ -3,6 +3,9 @@ import SwiftOpenUI
 #if canImport(BackendGTK4)
 import BackendGTK4
 #endif
+#if canImport(BackendWin32)
+import BackendWin32
+#endif
 
 /// Showcase1: Basic views — Text, Button, Spacer, Divider, Color
 struct Showcase1View: View {
@@ -34,6 +37,8 @@ struct Showcase1App: App {
 
 #if canImport(BackendGTK4)
 GTK4Backend().run(Showcase1App.self)
+#elseif canImport(BackendWin32)
+Win32Backend().run(Showcase1App.self)
 #else
 print("Showcase1 app defined. No backend available on this platform.")
 #endif
