@@ -9,7 +9,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 - `Sources/Backend/Win32/` — Windows backend (Win32/Direct2D) — placeholder, not yet implemented
 - `Examples/` — Executable examples (`swift run HelloWorld`, `swift run Showcase1`, etc.)
 - `Tests/SwiftOpenUITests/` — Core tests (platform-independent, 60 tests)
-- `Tests/BackendTests/` — Platform-specific backend tests
+- `Tests/BackendTests/` — Platform-specific backend tests (placeholder, not yet wired into Package.swift)
 - `docs/` — Architecture, API reference, porting guides, mission
 
 ## Branches
