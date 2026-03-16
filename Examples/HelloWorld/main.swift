@@ -8,6 +8,9 @@ import BackendGTK4
 #if canImport(BackendWin32)
 import BackendWin32
 #endif
+#if canImport(BackendWeb)
+import BackendWeb
+#endif
 #endif
 
 struct HelloWorldApp: App {
@@ -25,6 +28,8 @@ HelloWorldApp.main()
 GTK4Backend().run(HelloWorldApp.self)
 #elseif canImport(BackendWin32)
 Win32Backend().run(HelloWorldApp.self)
+#elseif canImport(BackendWeb)
+WebBackend().run(HelloWorldApp.self)
 #else
 print("HelloWorld app defined. No backend available on this platform.")
 #endif

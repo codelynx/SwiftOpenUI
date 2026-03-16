@@ -8,6 +8,9 @@ import BackendGTK4
 #if canImport(BackendWin32)
 import BackendWin32
 #endif
+#if canImport(BackendWeb)
+import BackendWeb
+#endif
 #endif
 
 /// Showcase1: Basic views — Text, Button, Spacer, Divider, Color
@@ -44,6 +47,8 @@ Showcase1App.main()
 GTK4Backend().run(Showcase1App.self)
 #elseif canImport(BackendWin32)
 Win32Backend().run(Showcase1App.self)
+#elseif canImport(BackendWeb)
+WebBackend().run(Showcase1App.self)
 #else
 print("Showcase1 app defined. No backend available on this platform.")
 #endif

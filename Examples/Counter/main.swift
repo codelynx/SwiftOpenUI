@@ -8,6 +8,9 @@ import BackendGTK4
 #if canImport(BackendWin32)
 import BackendWin32
 #endif
+#if canImport(BackendWeb)
+import BackendWeb
+#endif
 #endif
 
 struct CounterView: View {
@@ -36,6 +39,8 @@ CounterApp.main()
 GTK4Backend().run(CounterApp.self)
 #elseif canImport(BackendWin32)
 Win32Backend().run(CounterApp.self)
+#elseif canImport(BackendWeb)
+WebBackend().run(CounterApp.self)
 #else
 print("Counter app defined. No backend available on this platform.")
 #endif

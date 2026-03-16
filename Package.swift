@@ -78,6 +78,21 @@ targets += [
 exampleDeps.append("BackendWin32")
 #endif
 
+// Web backend (WebAssembly)
+#if arch(wasm32)
+targets += [
+    .target(
+        name: "BackendWeb",
+        dependencies: [
+            "SwiftOpenUI",
+            .product(name: "JavaScriptKit", package: "JavaScriptKit"),
+        ],
+        path: "Sources/Backend/Web/Rendering"
+    ),
+]
+exampleDeps.append("BackendWeb")
+#endif
+
 // Examples
 targets += [
     .executableTarget(
@@ -102,11 +117,17 @@ targets += [
     ),
 ]
 
+var deps: [Package.Dependency] = []
+#if arch(wasm32)
+deps.append(.package(url: "https://github.com/aspect-build/JavaScriptKit.git", from: "0.20.0"))
+#endif
+
 let package = Package(
     name: "SwiftOpenUI",
     platforms: [.macOS(.v12)],
     products: [
         .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
     ],
+    dependencies: deps,
     targets: targets
 )
