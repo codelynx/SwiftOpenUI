@@ -1,12 +1,20 @@
 import SwiftOpenUI
 
+#if canImport(BackendGTK4)
+import BackendGTK4
+#endif
+
 struct HelloWorldApp: App {
     var body: some Scene {
         WindowGroup("Hello World") {
             Text("Hello, SwiftOpenUI!")
+                .padding()
         }
     }
 }
 
-// TODO: Backend launch — e.g., GTK4Backend().run(HelloWorldApp.self)
-print("HelloWorld app defined. Needs a backend to run.")
+#if canImport(BackendGTK4)
+GTK4Backend().run(HelloWorldApp.self)
+#else
+print("HelloWorld app defined. No backend available on this platform.")
+#endif

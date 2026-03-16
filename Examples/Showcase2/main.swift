@@ -1,9 +1,11 @@
 import SwiftOpenUI
 
+#if canImport(BackendGTK4)
+import BackendGTK4
+#endif
+
 /// Showcase2: Layout — VStack, HStack, ZStack, ForEach
 struct Showcase2View: View {
-    let items = ["Red", "Green", "Blue"]
-
     var body: some View {
         VStack(spacing: 8) {
             Text("Showcase 2: Layout")
@@ -34,4 +36,8 @@ struct Showcase2App: App {
     }
 }
 
-print("Showcase2 app defined. Needs a backend to run.")
+#if canImport(BackendGTK4)
+GTK4Backend().run(Showcase2App.self)
+#else
+print("Showcase2 app defined. No backend available on this platform.")
+#endif

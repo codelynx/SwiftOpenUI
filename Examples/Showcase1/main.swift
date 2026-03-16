@@ -1,5 +1,9 @@
 import SwiftOpenUI
 
+#if canImport(BackendGTK4)
+import BackendGTK4
+#endif
+
 /// Showcase1: Basic views — Text, Button, Spacer, Divider, Color
 struct Showcase1View: View {
     @State private var message = "Hello"
@@ -28,4 +32,8 @@ struct Showcase1App: App {
     }
 }
 
-print("Showcase1 app defined. Needs a backend to run.")
+#if canImport(BackendGTK4)
+GTK4Backend().run(Showcase1App.self)
+#else
+print("Showcase1 app defined. No backend available on this platform.")
+#endif

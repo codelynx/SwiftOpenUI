@@ -1,5 +1,9 @@
 import SwiftOpenUI
 
+#if canImport(BackendGTK4)
+import BackendGTK4
+#endif
+
 struct CounterView: View {
     @State private var count = 0
 
@@ -8,6 +12,7 @@ struct CounterView: View {
             Text("Count: \(count)")
             Button("Increment") { count += 1 }
         }
+        .padding()
     }
 }
 
@@ -19,5 +24,8 @@ struct CounterApp: App {
     }
 }
 
-// TODO: Backend launch
-print("Counter app defined. Needs a backend to run.")
+#if canImport(BackendGTK4)
+GTK4Backend().run(CounterApp.self)
+#else
+print("Counter app defined. No backend available on this platform.")
+#endif
