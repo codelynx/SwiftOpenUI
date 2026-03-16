@@ -1,0 +1,7 @@
+module CWin32 [system] {
+    header "shim.h"
+    link "comctl32"
+    link "user32"
+    link "gdi32"
+    export *
+}

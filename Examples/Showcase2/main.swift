@@ -5,6 +5,9 @@ import SwiftOpenUI
 #if canImport(BackendGTK4)
 import BackendGTK4
 #endif
+#if canImport(BackendWin32)
+import BackendWin32
+#endif
 #endif
 
 /// Showcase2: Layout — VStack, HStack, ZStack, ForEach
@@ -43,6 +46,8 @@ struct Showcase2App: App {
 Showcase2App.main()
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(Showcase2App.self)
+#elseif canImport(BackendWin32)
+Win32Backend().run(Showcase2App.self)
 #else
 print("Showcase2 app defined. No backend available on this platform.")
 #endif

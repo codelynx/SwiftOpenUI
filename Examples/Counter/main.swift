@@ -5,6 +5,9 @@ import SwiftOpenUI
 #if canImport(BackendGTK4)
 import BackendGTK4
 #endif
+#if canImport(BackendWin32)
+import BackendWin32
+#endif
 #endif
 
 struct CounterView: View {
@@ -31,6 +34,8 @@ struct CounterApp: App {
 CounterApp.main()
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(CounterApp.self)
+#elseif canImport(BackendWin32)
+Win32Backend().run(CounterApp.self)
 #else
 print("Counter app defined. No backend available on this platform.")
 #endif
