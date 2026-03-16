@@ -42,17 +42,17 @@ Swift maintains a retained render tree with stable node IDs. On state change, Sw
 ```
 enum RenderOp {
     // Tree structure
-    case create(nodeId: Int, type: NodeType, parentId: Int, index: Int)
-    case remove(nodeId: Int)
-    case move(nodeId: Int, newParentId: Int, newIndex: Int)
+    case create(nodeId: Int64, type: NodeType, parentId: Int64, index: Int)
+    case remove(nodeId: Int64)
+    case move(nodeId: Int64, newParentId: Int64, newIndex: Int)
 
     // Properties
-    case setText(nodeId: Int, text: String)
-    case setPadding(nodeId: Int, top: Int, bottom: Int, leading: Int, trailing: Int)
-    case setFrame(nodeId: Int, width: Double?, height: Double?)
-    case setColor(nodeId: Int, property: ColorProperty, r: Double, g: Double, b: Double, a: Double)
-    case setFont(nodeId: Int, size: Double, weight: Int)
-    case setEnabled(nodeId: Int, enabled: Bool)
+    case setText(nodeId: Int64, text: String)
+    case setPadding(nodeId: Int64, top: Int, bottom: Int, leading: Int, trailing: Int)
+    case setFrame(nodeId: Int64, width: Double?, height: Double?)
+    case setColor(nodeId: Int64, property: ColorProperty, r: Double, g: Double, b: Double, a: Double)
+    case setFont(nodeId: Int64, size: Double, weight: Int)
+    case setEnabled(nodeId: Int64, enabled: Bool)
 }
 
 enum NodeType {
@@ -85,8 +85,11 @@ The Kotlin host exposes a single entry point for applying a batch:
 // Swift app session. Kotlin's Application subclass owns this pointer.
 external fun nativeSessionCreate(): Long
 
-// Called on process exit. Tears down the Swift session.
-// NOT called on Activity destruction — only on true session end.
+// Best-effort teardown for explicit shutdown or testing.
+// NOT called on Activity destruction. NOT guaranteed by Android —
+// the system may kill the process without running any app code.
+// Do not rely on this for persistence or cleanup; design all state
+// to be recoverable without it.
 external fun nativeSessionDestroy(session: Long)
 
 // --- Activity lifecycle (Activity-scoped, may be destroyed/recreated) ---
@@ -97,8 +100,8 @@ external fun nativeActivityCreated(session: Long)
 external fun nativeActivityDestroyed(session: Long)
 
 // --- Events (Kotlin → Swift) ---
-external fun nativeOnButtonClick(session: Long, nodeId: Int)
-external fun nativeOnTextInput(session: Long, nodeId: Int, text: String)
+external fun nativeOnButtonClick(session: Long, nodeId: Long)
+external fun nativeOnTextInput(session: Long, nodeId: Long, text: String)
 
 // --- Render host (Swift → Kotlin) ---
 class RenderHost {
@@ -110,7 +113,7 @@ class RenderHost {
 }
 ```
 
-**Ownership rule:** The Swift session pointer is held by a Kotlin `Application` subclass (or a retained singleton), not by any individual Activity. Activities come and go; the session survives. `nativeSessionDestroy` is only called on true app shutdown — never on rotation or configuration change.
+**Ownership rule:** The Swift session pointer is held by a Kotlin `Application` subclass (or a retained singleton), not by any individual Activity. Activities come and go; the session survives. `nativeSessionDestroy` is best-effort only — Android may kill the process without calling it. All state must be designed to be recoverable without a clean shutdown callback.
 
 ### Serialization
 
@@ -170,13 +173,15 @@ Root → VStack[0] → HStack[2] → Text[0]  path: "V0.H2.T0"
 
 ```swift
 class RenderNode {
-    let nodeId: Int              // stable hash of structural path
+    let nodeId: Int64            // stable hash of structural path (Int64/Long on wire)
     let type: NodeType
     var properties: [String: Any]
     var children: [RenderNode]
     weak var parent: RenderNode?
 }
 ```
+
+**Wire type:** Node IDs are `Int64` (Swift) / `Long` (Kotlin) on the JNI boundary. Swift `Int` is 64-bit on ARM64 but Kotlin `Int` is 32-bit — using `Int64`/`Long` explicitly avoids width ambiguity. Structural path hashing uses a 64-bit hash (e.g. FNV-1a or SipHash); collision probability is negligible for realistic tree sizes but if a collision is detected during diff, the node is treated as remove + create (safe, not silent corruption).
 
 On rebuild:
 1. Swift walks the new view tree, producing a new `RenderNode` graph
@@ -187,7 +192,7 @@ On rebuild:
 6. **Missing nodeId** → `remove` op
 7. **Same nodeId, different parent/index** → `move` op
 
-The Kotlin host maintains a `Map<Int, View>` for O(1) lookup by nodeId.
+The Kotlin host maintains a `Map<Long, View>` for O(1) lookup by nodeId.
 
 ## Lifecycle
 
@@ -236,7 +241,9 @@ Option: declare `android:configChanges` in manifest to handle in-place (avoids r
 
 ### Process Death
 
-Swift state is lost. For persistence, future work: `@AppStorage` backed by SharedPreferences via JNI.
+Android may kill the process at any time without notification. `nativeSessionDestroy` is **not guaranteed** to run — `Application.onTerminate()` is never called on production devices, and `ProcessLifecycleOwner` never dispatches `ON_DESTROY`.
+
+Swift in-memory state is lost. All persistent state must be saved proactively (e.g. on Activity pause), not on teardown. Future work: `@AppStorage` backed by SharedPreferences via JNI, saved in `nativeActivityDestroyed` or `onPause`.
 
 ## Error Boundary
 
