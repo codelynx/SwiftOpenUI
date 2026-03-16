@@ -1,7 +1,10 @@
+#if os(macOS)
+import SwiftUI
+#else
 import SwiftOpenUI
-
 #if canImport(BackendGTK4)
 import BackendGTK4
+#endif
 #endif
 
 struct HelloWorldApp: App {
@@ -13,7 +16,9 @@ struct HelloWorldApp: App {
     }
 }
 
-#if canImport(BackendGTK4)
+#if os(macOS)
+HelloWorldApp.main()
+#elseif canImport(BackendGTK4)
 GTK4Backend().run(HelloWorldApp.self)
 #else
 print("HelloWorld app defined. No backend available on this platform.")
