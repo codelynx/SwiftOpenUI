@@ -1,0 +1,162 @@
+#!/bin/bash
+set -euo pipefail
+
+# SwiftOpenUI configure script
+# Sets up the open-source Swift toolchain and Wasm SDK for cross-platform builds.
+
+SWIFT_VERSION="6.2.4"
+WASM_SDK_URL="https://download.swift.org/swift-${SWIFT_VERSION}-release/wasm-sdk/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE_wasm.artifactbundle.tar.gz"
+WASM_SDK_CHECKSUM="32fdb8772d73bb174f77b5c59bc88a0d55003d75712832129394d3465158fb43"
+WASM_SDK_NAME="swift-${SWIFT_VERSION}-RELEASE_wasm"
+SWIFTLY_HOME="${SWIFTLY_HOME_DIR:-$HOME/.swiftly}"
+
+# Source swiftly env if available (ensures swiftly-managed swift is on PATH)
+if [ -f "$SWIFTLY_HOME/env.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$SWIFTLY_HOME/env.sh"
+fi
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+info()  { echo -e "${CYAN}[info]${NC} $1"; }
+ok()    { echo -e "${GREEN}[ok]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[warn]${NC} $1"; }
+fail()  { echo -e "${RED}[error]${NC} $1"; exit 1; }
+
+echo ""
+echo "SwiftOpenUI — configure"
+echo "======================="
+echo ""
+
+# --------------------------------------------------------------------------
+# 1. Check / install swiftly
+# --------------------------------------------------------------------------
+if command -v swiftly &>/dev/null; then
+    ok "swiftly found: $(swiftly --version 2>&1 | head -1)"
+else
+    info "swiftly not found. Installing..."
+    SWIFTLY_PKG=$(mktemp /tmp/swiftly.XXXXXX.pkg)
+    curl -fSL https://download.swift.org/swiftly/darwin/swiftly.pkg -o "$SWIFTLY_PKG"
+    installer -pkg "$SWIFTLY_PKG" -target CurrentUserHomeDirectory
+    rm -f "$SWIFTLY_PKG"
+
+    # Init swiftly (non-interactive)
+    "$SWIFTLY_HOME/bin/swiftly" init --quiet-shell-followup 2>/dev/null || true
+
+    # Source env for this session
+    if [ -f "$SWIFTLY_HOME/env.sh" ]; then
+        # shellcheck disable=SC1091
+        source "$SWIFTLY_HOME/env.sh"
+    fi
+    hash -r 2>/dev/null || true
+
+    if command -v swiftly &>/dev/null; then
+        ok "swiftly installed successfully"
+    else
+        warn "swiftly installed but not on PATH yet."
+        echo "    Run: source \"$SWIFTLY_HOME/env.sh\""
+        echo "    Then re-run ./configure"
+        exit 1
+    fi
+fi
+
+# --------------------------------------------------------------------------
+# 2. Check / install open-source Swift toolchain
+# --------------------------------------------------------------------------
+check_toolchain() {
+    local ver
+    ver=$(swift --version 2>&1 | head -1)
+    # Xcode's Swift: "Apple Swift version 6.2.4 (swiftlang-6.2.4.1.4 clang-...)"
+    # Open-source:   "Apple Swift version 6.2.4 (swift-6.2.4-RELEASE)"
+    if echo "$ver" | grep -q "swiftlang-"; then
+        return 1  # Xcode toolchain (no Wasm backend)
+    fi
+    return 0  # Open-source toolchain
+}
+
+if check_toolchain; then
+    ok "Open-source Swift toolchain active: $(swift --version 2>&1 | head -1)"
+else
+    warn "Xcode's Swift is active (lacks Wasm backend)."
+    info "Installing open-source Swift $SWIFT_VERSION via swiftly..."
+
+    if swiftly list 2>/dev/null | grep -q "$SWIFT_VERSION"; then
+        info "Swift $SWIFT_VERSION already installed, switching..."
+        swiftly use "$SWIFT_VERSION"
+    else
+        swiftly install --use "$SWIFT_VERSION"
+    fi
+
+    # Re-source env to pick up the new toolchain PATH
+    if [ -f "$SWIFTLY_HOME/env.sh" ]; then
+        source "$SWIFTLY_HOME/env.sh"
+    fi
+    hash -r 2>/dev/null || true
+
+    if check_toolchain; then
+        ok "Switched to open-source Swift: $(swift --version 2>&1 | head -1)"
+    else
+        fail "Failed to switch to open-source toolchain. Xcode's Swift is still active."
+    fi
+fi
+
+# --------------------------------------------------------------------------
+# 3. Check / install Wasm SDK
+# --------------------------------------------------------------------------
+if swift sdk list 2>/dev/null | grep -q "$WASM_SDK_NAME"; then
+    ok "Wasm SDK already installed: $WASM_SDK_NAME"
+else
+    info "Installing Wasm SDK ($WASM_SDK_NAME)..."
+    swift sdk install "$WASM_SDK_URL" --checksum "$WASM_SDK_CHECKSUM"
+    if swift sdk list 2>/dev/null | grep -q "$WASM_SDK_NAME"; then
+        ok "Wasm SDK installed: $WASM_SDK_NAME"
+    else
+        fail "Wasm SDK installation failed."
+    fi
+fi
+
+# --------------------------------------------------------------------------
+# 4. Verify builds
+# --------------------------------------------------------------------------
+echo ""
+info "Verifying macOS build..."
+if swift build 2>&1 | tail -1 | grep -q "Build complete"; then
+    ok "macOS build OK"
+else
+    warn "macOS build had issues (may be expected if not on macOS)"
+fi
+
+info "Verifying Wasm build..."
+WASM_OUTPUT=$(swift build --swift-sdk "$WASM_SDK_NAME" 2>&1)
+if echo "$WASM_OUTPUT" | grep -q "Build complete"; then
+    ok "Wasm build OK"
+else
+    warn "Wasm build failed:"
+    echo "$WASM_OUTPUT" | grep -E "error:" | head -5
+fi
+
+# --------------------------------------------------------------------------
+# Done
+# --------------------------------------------------------------------------
+echo ""
+echo "======================="
+echo "Configuration complete."
+echo ""
+echo "Build commands:"
+echo "  swift build                                  # macOS (native SwiftUI)"
+echo "  swift build --swift-sdk $WASM_SDK_NAME       # WebAssembly"
+echo "  swift test                                   # Run tests"
+echo ""
+echo "Run examples:"
+echo "  swift run HelloWorld"
+echo "  swift run Counter"
+echo "  swift run Showcase1"
+echo "  swift run Showcase2"
+echo ""
+echo "Note: To use the open-source toolchain in new shells, ensure"
+echo "swiftly's env is sourced: source \"$SWIFTLY_HOME/env.sh\""
+echo ""

@@ -166,7 +166,7 @@ extension ZStack: WebRenderable {
 
         for child in webRenderChildren(content) {
             // All children stack in the same grid cell
-            _ = JSObject.global.Object.assign!(child.style, JSObject.global.JSON.parse!("{ \"gridArea\": \"1 / 1\" }"))
+            child.style.object?.gridArea = "1 / 1"
             _ = div.appendChild(child)
         }
         return div
@@ -183,7 +183,7 @@ extension Group: WebRenderable, WebMultiChildRenderable {
     }
 
     public func webRenderChildren() -> [JSValue] {
-        SwiftOpenUI.webRenderChildren(content)
+        BackendWeb.webRenderChildren(content)
     }
 }
 
@@ -273,6 +273,20 @@ extension FontModifiedView: WebRenderable {
         case .footnote:   css = "font-size: 13px;"
         case .caption:    css = "font-size: 12px;"
         case .caption2:   css = "font-size: 11px;"
+        case .custom(let size, let weight, _):
+            let w: String
+            switch weight {
+            case .ultraLight: w = "100"
+            case .thin:       w = "200"
+            case .light:      w = "300"
+            case .regular:    w = "400"
+            case .medium:     w = "500"
+            case .semibold:   w = "600"
+            case .bold:       w = "700"
+            case .heavy:      w = "800"
+            case .black:      w = "900"
+            }
+            css = "font-size: \(size)px; font-weight: \(w);"
         }
         var wrapper = document.createElement("div")
         wrapper.style = .string(css)
@@ -303,8 +317,8 @@ extension AnyView: WebRenderable {
 extension _ConditionalView: WebRenderable {
     public func webCreateElement() -> JSValue {
         switch self {
-        case .first(let view): return webRenderView(view)
-        case .second(let view): return webRenderView(view)
+        case .trueContent(let view): return webRenderView(view)
+        case .falseContent(let view): return webRenderView(view)
         }
     }
 }

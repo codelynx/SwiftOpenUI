@@ -90,6 +90,17 @@ public func getCurrentEnvironment() -> EnvironmentValues {
     guard let ptr = TlsGetValue(_tlsIndex) else { return EnvironmentValues() }
     return Unmanaged<EnvironmentBox>.fromOpaque(ptr).takeUnretainedValue().values
 }
+#else
+// WASI / other platforms — single-threaded, use a simple global.
+private var _currentEnvironment: EnvironmentValues?
+
+public func setCurrentEnvironment(_ env: EnvironmentValues?) {
+    _currentEnvironment = env
+}
+
+public func getCurrentEnvironment() -> EnvironmentValues {
+    _currentEnvironment ?? EnvironmentValues()
+}
 #endif
 
 /// Box for storing EnvironmentValues in thread-local storage.

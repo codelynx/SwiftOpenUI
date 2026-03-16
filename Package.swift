@@ -17,11 +17,10 @@ var targets: [Target] = [
     ),
 ]
 
-#if os(macOS)
-var exampleDeps: [Target.Dependency] = []
-#else
+// Always include SwiftOpenUI — examples use #if os(macOS) in source
+// to select SwiftUI vs SwiftOpenUI. Manifest #if os() checks the HOST
+// platform, not the cross-compilation target, so we can't gate here.
 var exampleDeps: [Target.Dependency] = ["SwiftOpenUI"]
-#endif
 
 // GTK4 backend (Linux)
 #if os(Linux)
@@ -79,7 +78,8 @@ exampleDeps.append("BackendWin32")
 #endif
 
 // Web backend (WebAssembly)
-#if arch(wasm32)
+// Always declared — manifest #if arch() checks HOST, not cross-compile target.
+// JavaScriptKit is only resolved when building for wasm32.
 targets += [
     .target(
         name: "BackendWeb",
@@ -91,7 +91,6 @@ targets += [
     ),
 ]
 exampleDeps.append("BackendWeb")
-#endif
 
 // Examples
 targets += [
@@ -117,14 +116,13 @@ targets += [
     ),
 ]
 
-var deps: [Package.Dependency] = []
-#if arch(wasm32)
-deps.append(.package(url: "https://github.com/aspect-build/JavaScriptKit.git", from: "0.20.0"))
-#endif
+let deps: [Package.Dependency] = [
+    .package(url: "https://github.com/swiftwasm/JavaScriptKit.git", from: "0.20.0"),
+]
 
 let package = Package(
     name: "SwiftOpenUI",
-    platforms: [.macOS(.v12)],
+    platforms: [.macOS(.v13)],
     products: [
         .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
     ],
