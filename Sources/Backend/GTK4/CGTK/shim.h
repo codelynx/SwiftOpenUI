@@ -12,6 +12,20 @@ gtk_swift_add_css_provider_to_display(GdkDisplay *display,
         display, GTK_STYLE_PROVIDER(provider), priority);
 }
 
+static inline void
+gtk_swift_remove_css_provider_from_display(GdkDisplay *display,
+                                           GtkCssProvider *provider) {
+    gtk_style_context_remove_provider_for_display(
+        display, GTK_STYLE_PROVIDER(provider));
+}
+
+/// Remove a CSS provider using gpointer (Swift-friendly).
+static inline void
+gtk_swift_remove_css_provider_gp(gpointer display, gpointer provider) {
+    gtk_style_context_remove_provider_for_display(
+        GDK_DISPLAY(display), GTK_STYLE_PROVIDER(provider));
+}
+
 // --- Label shims ---
 
 static inline void

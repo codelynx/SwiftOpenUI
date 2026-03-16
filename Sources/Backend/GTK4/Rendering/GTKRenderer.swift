@@ -102,8 +102,19 @@ extension Color: GTKRenderable {
 
 extension Button: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let title = (label as? Text)?.content ?? ""
-        let button = gtk_button_new_with_label(title)!
+        let button: UnsafeMutablePointer<GtkWidget>
+
+        if let textLabel = label as? Text {
+            // Simple text label — use native label button
+            button = gtk_button_new_with_label(textLabel.content)!
+        } else {
+            // Custom label view — render it and set as button child
+            button = gtk_button_new()!
+            let childWidget = widgetFromOpaque(gtkRenderView(label))
+            let btnPtr = UnsafeMutableRawPointer(button).assumingMemoryBound(to: GtkButton.self)
+            gtk_button_set_child(btnPtr, childWidget)
+        }
+
         gtk_widget_set_hexpand(button, 0)
         gtk_widget_set_halign(button, GTK_ALIGN_START)
 

@@ -38,11 +38,7 @@ public struct GTK4Backend: RenderBackend {
 
         let factory: (OpaquePointer) -> Void = { appPtr in
             let instance = A()
-            let scene = instance.body
-
-            if let renderable = scene as? GTKWindowRenderable {
-                renderable.gtkRender(app: appPtr)
-            }
+            gtkRenderScene(instance.body, app: appPtr)
         }
 
         let box = Unmanaged.passRetained(AppActivateBox(factory)).toOpaque()
@@ -66,5 +62,18 @@ public struct GTK4Backend: RenderBackend {
         if status != 0 {
             print("GTK application exited with status \(status)")
         }
+    }
+}
+
+/// Recursively render a Scene. Terminal scenes (WindowGroup) render directly;
+/// composite scenes recurse through their body.
+private func gtkRenderScene<S: Scene>(_ scene: S, app: OpaquePointer) {
+    if let renderable = scene as? GTKWindowRenderable {
+        renderable.gtkRender(app: app)
+        return
+    }
+    // Composite scene — recurse through body
+    if S.Body.self != Never.self {
+        gtkRenderScene(scene.body, app: app)
     }
 }
