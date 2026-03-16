@@ -8,9 +8,18 @@ public protocol ViewModifier {
     typealias Content = _ViewModifierContent<Self>
 }
 
-/// Placeholder for the content being modified.
+/// Wraps the original view being modified, so custom modifiers can
+/// compose around it via `content` in their `body(content:)`.
 public struct _ViewModifierContent<Modifier: ViewModifier>: View {
     public typealias Body = Never
+
+    /// The wrapped original view, type-erased.
+    public let wrapped: AnyView
+
+    public init(_ wrapped: AnyView) {
+        self.wrapped = wrapped
+    }
+
     public var body: Never { fatalError("_ViewModifierContent is a primitive view") }
 }
 
@@ -25,7 +34,7 @@ public struct ModifiedContent<Content: View, Modifier: ViewModifier>: View {
     }
 
     public var body: some View {
-        modifier.body(content: _ViewModifierContent<Modifier>())
+        modifier.body(content: _ViewModifierContent<Modifier>(AnyView(content)))
     }
 }
 

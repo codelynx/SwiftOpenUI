@@ -195,16 +195,20 @@ public class EnvironmentObjectStorage<ObjectType: ObservableObject>: AnyStateSto
 // MARK: - Shared wiring helper
 
 /// Walk an ObservableObject's @Published properties via Mirror and wire
-/// observers to the host's scheduleRebuild.
+/// observers to the host's scheduleRebuild. Walks the full superclass
+/// chain so inherited @Published properties are also observed.
 private func wirePublished<T: ObservableObject>(
     object: T, token: ObjectIdentifier, host: AnyViewHost?
 ) {
-    let mirror = Mirror(reflecting: object)
-    for child in mirror.children {
-        if let provider = child.value as? AnyPublishedProvider {
-            provider.anyPublished.setObserver(token: token) { [weak host] in
-                host?.scheduleRebuild()
+    var mirror: Mirror? = Mirror(reflecting: object)
+    while let m = mirror {
+        for child in m.children {
+            if let provider = child.value as? AnyPublishedProvider {
+                provider.anyPublished.setObserver(token: token) { [weak host] in
+                    host?.scheduleRebuild()
+                }
             }
         }
+        mirror = m.superclassMirror
     }
 }
