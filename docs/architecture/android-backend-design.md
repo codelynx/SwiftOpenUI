@@ -80,24 +80,37 @@ enum ColorProperty {
 The Kotlin host exposes a single entry point for applying a batch:
 
 ```kotlin
-// Called from Swift via JNI
-external fun nativeInit(): Long          // returns opaque Swift app pointer
-external fun nativeOnCreate(ptr: Long)   // app created
-external fun nativeOnDestroy(ptr: Long)  // app destroyed
+// --- Session lifecycle (Application-scoped, survives Activity recreation) ---
+// Called once when the process starts. Returns an opaque pointer to the
+// Swift app session. Kotlin's Application subclass owns this pointer.
+external fun nativeSessionCreate(): Long
 
-// Called from Kotlin when events occur
-fun onButtonClick(nodeId: Int)           // forwards to Swift
-fun onTextInput(nodeId: Int, text: String)
+// Called on process exit. Tears down the Swift session.
+// NOT called on Activity destruction — only on true session end.
+external fun nativeSessionDestroy(session: Long)
 
-// The batch apply — called by Swift on state change
+// --- Activity lifecycle (Activity-scoped, may be destroyed/recreated) ---
+// Called from Activity.onCreate(). Swift re-sends full render tree.
+external fun nativeActivityCreated(session: Long)
+
+// Called from Activity.onDestroy(). Swift does NOT tear down state.
+external fun nativeActivityDestroyed(session: Long)
+
+// --- Events (Kotlin → Swift) ---
+external fun nativeOnButtonClick(session: Long, nodeId: Int)
+external fun nativeOnTextInput(session: Long, nodeId: Int, text: String)
+
+// --- Render host (Swift → Kotlin) ---
 class RenderHost {
-    // Swift calls this with a serialized batch
+    // Swift calls this with a serialized diff batch
     fun applyBatch(operations: ByteArray)
 
     // Kotlin-side: decodes and applies ops on UI thread
     private fun applyOnUiThread(ops: List<RenderOp>) { ... }
 }
 ```
+
+**Ownership rule:** The Swift session pointer is held by a Kotlin `Application` subclass (or a retained singleton), not by any individual Activity. Activities come and go; the session survives. `nativeSessionDestroy` is only called on true app shutdown — never on rotation or configuration change.
 
 ### Serialization
 
@@ -125,42 +138,96 @@ Operations are serialized to a `ByteArray` on the Swift side and deserialized on
 - All cross-boundary communication is via the JNI surface above
 - Batches are applied atomically on the UI thread
 
+### JVM Thread Attachment
+
+When Swift needs to call back into Kotlin (e.g. `applyBatch`), the calling thread must be attached to the JVM. Rules:
+
+1. **Kotlin → Swift → Kotlin callbacks** (e.g. button tap handler that triggers re-render): the thread is already JVM-attached (it came from Kotlin). Safe to call back immediately.
+2. **Swift-originated threads** (e.g. background work, timers): must call `JavaVM.AttachCurrentThread()` before any JNI call, and `DetachCurrentThread()` when done. The `CAndroidBridge` layer handles this.
+3. **Cached references**: `JavaVM*` is stored once at `JNI_OnLoad`. `JNIEnv*` is per-thread and must not be shared. The `RenderHost` jobject is stored as a JNI global reference (not local).
+4. **Phase 1 simplification**: all Swift work happens on the Kotlin callback thread (event → rebuild → applyBatch), avoiding the need for explicit attach/detach. Background threads are a Phase 2 concern.
+
 ## Identity Model
 
-Each view node gets a stable `Int` ID assigned by Swift:
+Swift maintains a **retained render node graph** that persists across rebuilds. Node identity is based on **structural position** in the view tree, not monotonically increasing counters.
 
-- IDs are monotonically increasing (simple counter)
-- Parent-child relationships are explicit in `create` operations
-- `ForEach` items get stable IDs derived from their data identity
-- On rebuild, Swift diffs old tree vs new tree by ID
-- Unchanged nodes → no ops emitted
-- Changed properties → `set*` ops
-- Added/removed nodes → `create`/`remove` ops
-- Moved nodes → `move` ops
+### How IDs Are Assigned
 
-The Kotlin host maintains a `Map<Int, View>` for O(1) lookup.
+Each node's identity is its **structural path** — the sequence of (view type, child index) pairs from root to that node. For example:
+
+```
+Root → VStack[0] → Text[0]         path: "V0.T0"   nodeId: stable hash
+Root → VStack[0] → Button[1]       path: "V0.B1"   nodeId: stable hash
+Root → VStack[0] → HStack[2]       path: "V0.H2"
+Root → VStack[0] → HStack[2] → Text[0]  path: "V0.H2.T0"
+```
+
+- The same structural position always produces the same ID across rebuilds
+- `ForEach` items use their data `Identifiable.id` as the child key instead of index, so reordering emits `move` ops (not remove/create churn)
+- Conditional views (`if/else`) use the branch tag as part of the path
+
+### Retained Node Graph
+
+```swift
+class RenderNode {
+    let nodeId: Int              // stable hash of structural path
+    let type: NodeType
+    var properties: [String: Any]
+    var children: [RenderNode]
+    weak var parent: RenderNode?
+}
+```
+
+On rebuild:
+1. Swift walks the new view tree, producing a new `RenderNode` graph
+2. Swift diffs old graph vs new graph by `nodeId` (structural path hash)
+3. **Same nodeId, same properties** → no ops emitted
+4. **Same nodeId, changed properties** → `set*` ops
+5. **New nodeId** → `create` op
+6. **Missing nodeId** → `remove` op
+7. **Same nodeId, different parent/index** → `move` op
+
+The Kotlin host maintains a `Map<Int, View>` for O(1) lookup by nodeId.
 
 ## Lifecycle
 
-### App Start
+### Session vs Activity
+
+Two distinct lifetimes:
+
+| Scope | Kotlin owner | Swift side | Survives rotation? |
+|-------|-------------|------------|-------------------|
+| **Session** | `Application` subclass | App instance, state, render tree | Yes |
+| **Activity** | `Activity` instance | Current render batch target | No |
+
+### Process Start
+
+```
+1. Kotlin Application.onCreate()
+2. System.loadLibrary("SwiftOpenUI")
+3. JNI: nativeSessionCreate() → Swift creates App instance, builds initial tree
+4. Session pointer stored in Application singleton
+```
+
+### Activity Start
 
 ```
 1. Kotlin Activity.onCreate()
-2. System.loadLibrary("SwiftOpenUI")
-3. JNI: nativeInit() → Swift creates App instance, builds initial tree
-4. Swift sends initial create batch → Kotlin builds View tree
+2. Activity retrieves session pointer from Application
+3. JNI: nativeActivityCreated(session) → Swift re-sends full tree as create batch
+4. Kotlin builds View tree from batch
 5. Activity.setContentView(rootView)
 ```
 
 ### Activity Recreation (rotation, theme change, etc.)
 
 ```
-1. Android destroys and recreates Activity
-2. Kotlin: save nodeId tree structure (lightweight)
-3. New Activity.onCreate()
-4. JNI: nativeOnCreate() → Swift re-sends full tree as create batch
-5. Kotlin rebuilds View tree from scratch
-6. State is preserved in Swift (lives in .so, survives Activity recreation)
+1. Android calls Activity.onDestroy()
+2. JNI: nativeActivityDestroyed(session) — Swift does NOT tear down state
+3. Android creates new Activity
+4. New Activity.onCreate() → nativeActivityCreated(session)
+5. Swift re-sends full render tree (state is intact in session)
+6. Kotlin rebuilds View tree from scratch
 ```
 
 ### Configuration Changes
