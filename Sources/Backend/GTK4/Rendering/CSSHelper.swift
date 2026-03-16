@@ -6,10 +6,13 @@ import Foundation
 private var cssClassCounter: Int = 0
 private let cssCounterLock = NSLock()
 
+/// Single fixed GObject data key for all CSS cleanup contexts on a widget.
+/// Using one key avoids leaking GLib quarks (which are interned forever).
+private let cssCleanupDataKey = "gtk-swift-css-cleanups"
+
 /// Apply inline CSS to a widget using a unique class name.
-/// The provider is attached to the widget via g_object_set_data_full so it is
-/// automatically removed from the display when the widget is destroyed,
-/// preventing unbounded provider accumulation on rebuilds.
+/// The provider is attached to the widget via a shared cleanup list so it is
+/// automatically removed from the display when the widget is destroyed.
 func applyCSSToWidget(_ widget: UnsafeMutablePointer<GtkWidget>, properties: String) {
     cssCounterLock.lock()
     cssClassCounter += 1
@@ -44,37 +47,42 @@ func applyCSSToWidget(_ widget: UnsafeMutablePointer<GtkWidget>, properties: Str
 
     gtk_widget_add_css_class(widget, className)
 
-    // Attach cleanup context to the widget. When the widget is destroyed,
-    // the destroy notify removes the provider from the display.
-    let dataKey = "gtk-swift-css-provider-\(className)"
-    let ctx = Unmanaged.passRetained(
-        CSSProviderCleanup(display: gpointer(display), provider: gpointer(provider))
-    ).toOpaque()
+    // Get or create the cleanup list for this widget (single fixed key).
     let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
-    g_object_set_data_full(gobject, dataKey, ctx) { userData in
-        let cleanup = Unmanaged<CSSProviderCleanup>.fromOpaque(userData!).takeRetainedValue()
-        cleanup.remove()
+    let list: CSSCleanupList
+    if let existing = g_object_get_data(gobject, cssCleanupDataKey) {
+        list = Unmanaged<CSSCleanupList>.fromOpaque(existing).takeUnretainedValue()
+    } else {
+        list = CSSCleanupList()
+        let retained = Unmanaged.passRetained(list).toOpaque()
+        g_object_set_data_full(gobject, cssCleanupDataKey, retained) { userData in
+            let l = Unmanaged<CSSCleanupList>.fromOpaque(userData!).takeRetainedValue()
+            l.removeAll()
+        }
     }
 
-    // Release our local ref — the display and the cleanup context each hold one
+    // Add this provider to the cleanup list (takes an extra ref)
+    list.add(display: gpointer(display), provider: gpointer(provider))
+
+    // Release our local ref — the display and the cleanup list each hold one
     g_object_unref(gpointer(provider))
 }
 
-/// Captures a display + provider pair so the provider can be removed
-/// from the display when the owning widget is destroyed.
-private class CSSProviderCleanup {
-    let displayPtr: gpointer
-    let providerPtr: gpointer
+/// Holds all CSS providers attached to a single widget, keyed under one
+/// fixed GObject data key to avoid leaking GLib quarks.
+private class CSSCleanupList {
+    private var entries: [(display: gpointer, provider: gpointer)] = []
 
-    init(display: gpointer, provider: gpointer) {
-        self.displayPtr = display
-        self.providerPtr = provider
-        // Take an extra ref so the provider stays alive until we remove it
+    func add(display: gpointer, provider: gpointer) {
         g_object_ref(provider)
+        entries.append((display: display, provider: provider))
     }
 
-    func remove() {
-        gtk_swift_remove_css_provider_gp(displayPtr, providerPtr)
-        g_object_unref(providerPtr)
+    func removeAll() {
+        for entry in entries {
+            gtk_swift_remove_css_provider_gp(entry.display, entry.provider)
+            g_object_unref(entry.provider)
+        }
+        entries.removeAll()
     }
 }
