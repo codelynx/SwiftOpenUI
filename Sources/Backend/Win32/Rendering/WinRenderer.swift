@@ -138,33 +138,151 @@ extension Spacer: WinRenderable {
 
 extension TextField: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Stub: render as a Win32 EDIT control
         let currentText = text.wrappedValue
         let measured = measureText(currentText.isEmpty ? title : currentText, hwnd: context.parent)
+
         let hwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_EDIT(),
                 wstr,
-                DWORD(WS_BORDER | ES_AUTOHSCROLL),
+                DWORD(ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP),
                 0, 0, max(measured.width + 16, 150), measured.height + 8,
                 context.parent,
                 nil,
                 context.hInstance
             )
         }
+
+        guard let hwnd = hwnd else { return nil }
+
+        // Set placeholder text (cue banner) shown when field is empty
+        if !title.isEmpty {
+            title.withCString(encodedAs: UTF16.self) { placeholderPtr in
+                _ = SendMessageW(hwnd, UINT(EM_SETCUEBANNER), 1,
+                                 LPARAM(Int(bitPattern: placeholderPtr)))
+            }
+        }
+
+        // Wire up @Binding: SubclassHandler routes EN_CHANGE → text.wrappedValue
+        let binding = text
+        let handler = SubclassHandler(hwnd: hwnd)
+        handler.onTextChanged = { newValue in
+            if newValue != binding.wrappedValue {
+                binding.wrappedValue = newValue
+            }
+        }
+
         return hwnd
     }
 }
 
 extension FocusedView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        winRenderView(content, in: context)
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        // Install focus tracking: WM_SETFOCUS/WM_KILLFOCUS update the @FocusState<Bool>
+        let storage = focusState.storage
+        let focusInfo = FocusTrackingInfo(
+            onGainFocus: { storage.setValue(true) },
+            onLoseFocus: { storage.setValue(false) },
+            setNativeFocus: { shouldFocus in
+                if shouldFocus {
+                    SetFocus(hwnd)
+                }
+                // false (clear focus) is handled by suppressNextFocusRestore
+            }
+        )
+        let infoPtr = Unmanaged.passRetained(focusInfo).toOpaque()
+        SetWindowSubclass(hwnd, focusTrackingProc, 40, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        // Override platformFocusChanged to drive native focus from @FocusState
+        storage.platformFocusChangedCallback = { [weak focusInfo] (newValue: Bool?) in
+            guard let fi = focusInfo else { return }
+            fi.setNativeFocus(newValue == true)
+        }
+
+        return hwnd
     }
 }
 
 extension FocusedEqualsView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        winRenderView(content, in: context)
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        // Install focus tracking: WM_SETFOCUS sets @FocusState to this value,
+        // WM_KILLFOCUS sets it to nil (unless another FocusedEqualsView takes over)
+        let storage = focusState.storage
+        let matchValue = value
+        let focusInfo = FocusTrackingInfo(
+            onGainFocus: { storage.setValue(matchValue) },
+            onLoseFocus: {
+                // Only clear if we're still the focused value
+                if storage.value == matchValue {
+                    storage.setValue(nil)
+                }
+            },
+            setNativeFocus: { shouldFocus in
+                if shouldFocus { SetFocus(hwnd) }
+            }
+        )
+        let infoPtr = Unmanaged.passRetained(focusInfo).toOpaque()
+        SetWindowSubclass(hwnd, focusTrackingProc, 40, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        // Override platformFocusChanged to drive native focus from @FocusState
+        storage.platformFocusChangedCallback = { (newValue: Value??) in
+            if let nv = newValue, nv == matchValue {
+                SetFocus(hwnd)
+            }
+        }
+
+        return hwnd
+    }
+}
+
+// MARK: - Focus tracking infrastructure
+
+/// Info for WM_SETFOCUS/WM_KILLFOCUS subclass that bridges Win32 focus events
+/// to @FocusState storage.
+private class FocusTrackingInfo {
+    let onGainFocus: () -> Void
+    let onLoseFocus: () -> Void
+    let setNativeFocus: (Bool) -> Void
+
+    init(onGainFocus: @escaping () -> Void,
+         onLoseFocus: @escaping () -> Void,
+         setNativeFocus: @escaping (Bool) -> Void) {
+        self.onGainFocus = onGainFocus
+        self.onLoseFocus = onLoseFocus
+        self.setNativeFocus = setNativeFocus
+    }
+}
+
+/// Subclass proc that bridges Win32 focus events to @FocusState.
+private let focusTrackingProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let info = Unmanaged<FocusTrackingInfo>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_SETFOCUS):
+        info.onGainFocus()
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_KILLFOCUS):
+        info.onLoseFocus()
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        Unmanaged<FocusTrackingInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, focusTrackingProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 

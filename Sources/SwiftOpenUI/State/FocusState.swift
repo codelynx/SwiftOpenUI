@@ -59,8 +59,15 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
         lock.unlock()
     }
 
+    /// Callback set by platform backends to handle native focus changes.
+    /// This is an alternative to subclassing — backends can set this closure
+    /// from their renderer when installing focus tracking on an HWND or widget.
+    public var platformFocusChangedCallback: ((Value?) -> Void)?
+
     /// Override in platform backends to handle native focus changes.
-    open func platformFocusChanged(_ newValue: Value?) {}
+    open func platformFocusChanged(_ newValue: Value?) {
+        platformFocusChangedCallback?(newValue)
+    }
 }
 
 /// A property wrapper that tracks keyboard focus state, matching SwiftUI's @FocusState.
@@ -69,7 +76,7 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
 /// Use with `.focused($isFocused)` for simple boolean focus tracking.
 @propertyWrapper
 public struct FocusState<Value: Hashable>: AnyStateStorageProvider {
-    let storage: FocusStateStorage<Value>
+    public let storage: FocusStateStorage<Value>
 
     public init() where Value == Bool {
         self.storage = FocusStateStorage(false, default: false)
