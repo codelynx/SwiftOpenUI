@@ -385,10 +385,10 @@ private func createNativeButton(title: String, action: @escaping () -> Void, con
 private func createCustomLabelButton<Label: View>(label: Label, action: @escaping () -> Void, context: RenderContext) -> HWND? {
     registerCustomButtonClassIfNeeded(hInstance: context.hInstance)
 
-    // Create a lightweight clickable container
+    // Create a clickable container with WS_TABSTOP for keyboard focus
     let container = CreateWindowExW(
         0, customButtonClassName, nil,
-        DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+        DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_TABSTOP),
         0, 0, 0, 0,
         context.parent, nil, context.hInstance, nil
     )
@@ -421,6 +421,13 @@ private func createCustomLabelButton<Label: View>(label: Label, action: @escapin
         SetWindowPos(child, nil, x, y, cw, ch, UINT(SWP_NOZORDER))
     }
 
+    // Make all descendant HWNDs mouse-transparent so clicks pass through to
+    // this container. Without this, Win32 hit-testing delivers mouse events
+    // to the deepest child HWND under the cursor, bypassing the container.
+    if let child = childHwnd {
+        makeMouseTransparent(child)
+    }
+
     // Install click handler
     let btnInfo = CustomButtonInfo(action: action, child: childHwnd)
     let infoPtr = Unmanaged.passRetained(btnInfo).toOpaque()
@@ -429,9 +436,23 @@ private func createCustomLabelButton<Label: View>(label: Label, action: @escapin
     return container
 }
 
+/// Recursively set WS_EX_TRANSPARENT on an HWND and all its descendants
+/// so mouse events pass through to the parent container.
+private func makeMouseTransparent(_ hwnd: HWND) {
+    let exStyle = win32_GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+    win32_SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exStyle | LONG_PTR(WS_EX_TRANSPARENT))
+
+    var child = GetWindow(hwnd, UINT(GW_CHILD))
+    while let c = child {
+        makeMouseTransparent(c)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+}
+
 private class CustomButtonInfo {
     let action: () -> Void
     let child: HWND?
+    var pressed: Bool = false
     init(action: @escaping () -> Void, child: HWND?) {
         self.action = action
         self.child = child
@@ -464,23 +485,104 @@ private func registerCustomButtonClassIfNeeded(hInstance: HINSTANCE) {
     RegisterClassExW(&wc)
 }
 
-/// Subclass proc for custom-label buttons: handles click + visual feedback.
+/// Subclass proc for custom-label buttons.
+/// Handles mouse clicks, keyboard activation (Space/Enter), focus cues,
+/// and tab navigation to match native BUTTON behavior.
 private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
     guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
 
+    let info = Unmanaged<CustomButtonInfo>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
     switch uMsg {
-    case UINT(WM_LBUTTONUP):
-        let info = Unmanaged<CustomButtonInfo>.fromOpaque(
-            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-        ).takeUnretainedValue()
-        info.action()
+    // --- Mouse activation ---
+    case UINT(WM_LBUTTONDOWN):
+        // Capture mouse and take focus so we get the matching LBUTTONUP
+        SetCapture(hwnd)
+        SetFocus(hwnd)
+        info.pressed = true
+        InvalidateRect(hwnd, nil, true)
         return 0
 
+    case UINT(WM_LBUTTONUP):
+        ReleaseCapture()
+        let wasPressed = info.pressed
+        info.pressed = false
+        InvalidateRect(hwnd, nil, true)
+        // Only fire if mouse is still inside the button
+        if wasPressed {
+            var rect = RECT()
+            GetClientRect(hwnd, &rect)
+            let x = Int32(win32_GET_X_LPARAM(lParam))
+            let y = Int32(win32_GET_Y_LPARAM(lParam))
+            if x >= 0 && x < rect.right && y >= 0 && y < rect.bottom {
+                info.action()
+            }
+        }
+        return 0
+
+    // --- Keyboard activation (Space / Enter) ---
+    case UINT(WM_KEYDOWN):
+        if wParam == WPARAM(VK_SPACE) || wParam == WPARAM(VK_RETURN) {
+            info.pressed = true
+            InvalidateRect(hwnd, nil, true)
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_KEYUP):
+        if wParam == WPARAM(VK_SPACE) || wParam == WPARAM(VK_RETURN) {
+            if info.pressed {
+                info.pressed = false
+                InvalidateRect(hwnd, nil, true)
+                info.action()
+            }
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    // --- Tab-stop and dialog code ---
+    case UINT(WM_GETDLGCODE):
+        // Tell the dialog manager we want Tab stops and arrow keys
+        return LRESULT(DLGC_BUTTON | DLGC_WANTALLKEYS)
+
+    // --- Focus cues ---
+    case UINT(WM_SETFOCUS), UINT(WM_KILLFOCUS):
+        InvalidateRect(hwnd, nil, true)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    // --- Paint: draw button frame + focus rectangle ---
+    case UINT(WM_PAINT):
+        var ps = PAINTSTRUCT()
+        let hdc = BeginPaint(hwnd, &ps)
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+
+        // Draw button face background
+        FillRect(hdc, &rect, GetSysColorBrush(info.pressed ? COLOR_BTNSHADOW : COLOR_BTNFACE))
+
+        // Draw 3D button edge (BF_RECT = BF_LEFT|BF_TOP|BF_RIGHT|BF_BOTTOM = 0xF)
+        DrawEdge(hdc, &rect, info.pressed ? UINT(BDR_SUNKEN) : UINT(BDR_RAISED), UINT(0x000F))
+
+        // Draw focus rectangle when focused
+        if GetFocus() == hwnd {
+            var focusRect = rect
+            focusRect.left += 3; focusRect.top += 3
+            focusRect.right -= 3; focusRect.bottom -= 3
+            DrawFocusRect(hdc, &focusRect)
+        }
+
+        EndPaint(hwnd, &ps)
+        // Don't return 0 — let children paint on top via WS_CLIPCHILDREN
+        return 0
+
+    case UINT(WM_ERASEBKGND):
+        return 1
+
+    // --- Layout ---
     case UINT(WM_SIZE):
-        // Re-center child label
-        let info = Unmanaged<CustomButtonInfo>.fromOpaque(
-            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-        ).takeUnretainedValue()
         if let child = info.child {
             var containerRect = RECT()
             GetClientRect(hwnd, &containerRect)
@@ -497,7 +599,6 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         return 0
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
-        // Forward to parent
         if let parent = GetParent(hwnd!) {
             return SendMessageW(parent, uMsg, wParam, lParam)
         }
