@@ -1140,7 +1140,6 @@ let paddingLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         // Forward to parent so BackgroundView ancestors can set their brush.
-        // If no ancestor handles it, DefWindowProc returns the default.
         if let parent = GetParent(hwnd!) {
             return SendMessageW(parent, uMsg, wParam, lParam)
         }
@@ -1400,8 +1399,6 @@ let foregroundColorProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcla
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         // Set the text color on the child control's HDC.
-        // WM_CTLCOLORSTATIC is sent by STATIC controls (Text labels).
-        // WM_CTLCOLORBTN is sent by BUTTON controls.
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetTextColor(hdc, info.colorRef)
         SetBkMode(hdc, TRANSPARENT)
@@ -1739,6 +1736,311 @@ private func extractTextFromView<V: View>(_ view: V) -> String? {
         return extractTextFromView(view.body)
     }
     return nil
+}
+
+// MARK: - Gesture Win32 extensions
+//
+// Gestures use recursive subclassing: the same subclass proc is installed on
+// the root HWND AND every descendant. This means clicks on any child (Button,
+// TextField, Text, etc.) fire the gesture without requiring WM_PARENTNOTIFY
+// forwarding in every container proc. Child controls remain interactive because
+// the gesture procs always call DefSubclassProc to pass messages through.
+//
+// The handler object is shared across all subclassed HWNDs. Each HWND holds
+// its own retain via Unmanaged.passRetained; WM_NCDESTROY releases it.
+
+/// Install a subclass proc recursively on an HWND and all its descendants.
+/// The handler is passRetained for each HWND, so WM_NCDESTROY must release.
+private func installGestureRecursively<T: AnyObject>(
+    on hwnd: HWND, handler: T, proc: SUBCLASSPROC, subclassID: UINT_PTR
+) {
+    let ptr = Unmanaged.passRetained(handler).toOpaque()
+    SetWindowSubclass(hwnd, proc, subclassID, DWORD_PTR(UInt(bitPattern: ptr)))
+
+    var child = GetWindow(hwnd, UINT(GW_CHILD))
+    while let c = child {
+        installGestureRecursively(on: c, handler: handler, proc: proc, subclassID: subclassID)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+}
+
+// --- Tap gesture ---
+
+private let tapGestureSubclassID: UINT_PTR = 60
+
+extension TapGestureView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        let handler = TapGestureHandler(requiredCount: count, action: action)
+        installGestureRecursively(on: hwnd, handler: handler,
+                                  proc: tapGestureProc, subclassID: tapGestureSubclassID)
+        return hwnd
+    }
+}
+
+private class TapGestureHandler {
+    let requiredCount: Int
+    let action: () -> Void
+    var clickCount: Int = 0
+    var lastClickTime: DWORD = 0
+    /// True after WM_LBUTTONDOWN on any subclassed HWND.
+    /// Prevents stray WM_LBUTTONUP from firing the action.
+    var armed: Bool = false
+
+    init(requiredCount: Int, action: @escaping () -> Void) {
+        self.requiredCount = requiredCount
+        self.action = action
+    }
+}
+
+private let tapGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let handler = Unmanaged<TapGestureHandler>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_LBUTTONDOWN):
+        handler.armed = true
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_LBUTTONUP):
+        guard handler.armed else {
+            return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+        }
+        handler.armed = false
+
+        let now = GetTickCount()
+        if handler.requiredCount <= 1 {
+            handler.action()
+        } else {
+            let doubleClickTime = GetDoubleClickTime()
+            if (now - handler.lastClickTime) <= doubleClickTime {
+                handler.clickCount += 1
+            } else {
+                handler.clickCount = 1
+            }
+            handler.lastClickTime = now
+            if handler.clickCount >= handler.requiredCount {
+                handler.action()
+                handler.clickCount = 0
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        Unmanaged<TapGestureHandler>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, tapGestureProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+// --- Long press gesture ---
+
+private let longPressSubclassID: UINT_PTR = 61
+private let longPressTimerID: UINT_PTR = 9001
+
+extension LongPressGestureView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        let durationMs = UInt32(minimumDuration * 1000)
+        let handler = LongPressGestureHandler(action: action, durationMs: durationMs, rootHwnd: hwnd)
+        installGestureRecursively(on: hwnd, handler: handler,
+                                  proc: longPressGestureProc, subclassID: longPressSubclassID)
+        return hwnd
+    }
+}
+
+private class LongPressGestureHandler {
+    let action: () -> Void
+    let durationMs: UInt32
+    let rootHwnd: HWND
+    var timerActive: Bool = false
+
+    init(action: @escaping () -> Void, durationMs: UInt32, rootHwnd: HWND) {
+        self.action = action
+        self.durationMs = durationMs
+        self.rootHwnd = rootHwnd
+    }
+
+    func startTimer() {
+        guard !timerActive else { return }
+        // Timer is always on the root HWND so WM_TIMER is delivered consistently
+        SetTimer(rootHwnd, longPressTimerID, durationMs, nil)
+        timerActive = true
+        SetCapture(rootHwnd)
+    }
+
+    func cancelTimer() {
+        guard timerActive else { return }
+        KillTimer(rootHwnd, longPressTimerID)
+        timerActive = false
+        if GetCapture() == rootHwnd { ReleaseCapture() }
+    }
+}
+
+private let longPressGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let handler = Unmanaged<LongPressGestureHandler>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_LBUTTONDOWN):
+        handler.startTimer()
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_MOUSEMOVE):
+        // Cancel if pointer moves outside the root view bounds
+        if handler.timerActive {
+            var rect = RECT()
+            GetClientRect(handler.rootHwnd, &rect)
+            // Convert mouse pos to root's client coords
+            var pt = POINT(x: LONG(win32_GET_X_LPARAM(lParam)), y: LONG(win32_GET_Y_LPARAM(lParam)))
+            if hwnd != handler.rootHwnd {
+                ClientToScreen(hwnd, &pt)
+                ScreenToClient(handler.rootHwnd, &pt)
+            }
+            if pt.x < 0 || pt.y < 0 || pt.x >= rect.right || pt.y >= rect.bottom {
+                handler.cancelTimer()
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_LBUTTONUP):
+        handler.cancelTimer()
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_CAPTURECHANGED):
+        handler.cancelTimer()
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_TIMER):
+        if UINT_PTR(wParam) == longPressTimerID && hwnd == handler.rootHwnd {
+            handler.cancelTimer()
+            handler.action()
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        if hwnd == handler.rootHwnd { handler.cancelTimer() }
+        Unmanaged<LongPressGestureHandler>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, longPressGestureProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+// --- Drag gesture ---
+
+private let dragGestureSubclassID: UINT_PTR = 62
+
+extension DragGestureView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        let handler = DragGestureHandler(onChanged: onChanged, onEnded: onEnded, rootHwnd: hwnd)
+        installGestureRecursively(on: hwnd, handler: handler,
+                                  proc: dragGestureProc, subclassID: dragGestureSubclassID)
+        return hwnd
+    }
+}
+
+private class DragGestureHandler {
+    let onChanged: ((DragGestureValue) -> Void)?
+    let onEnded: ((DragGestureValue) -> Void)?
+    let rootHwnd: HWND
+    var dragging: Bool = false
+    var startX: Double = 0
+    var startY: Double = 0
+
+    init(onChanged: ((DragGestureValue) -> Void)?, onEnded: ((DragGestureValue) -> Void)?,
+         rootHwnd: HWND) {
+        self.onChanged = onChanged
+        self.onEnded = onEnded
+        self.rootHwnd = rootHwnd
+    }
+}
+
+private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let handler = Unmanaged<DragGestureHandler>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_LBUTTONDOWN):
+        // Convert to root coords for consistent start position
+        var pt = POINT(x: LONG(win32_GET_X_LPARAM(lParam)), y: LONG(win32_GET_Y_LPARAM(lParam)))
+        if hwnd != handler.rootHwnd {
+            ClientToScreen(hwnd, &pt)
+            ScreenToClient(handler.rootHwnd, &pt)
+        }
+        handler.startX = Double(pt.x)
+        handler.startY = Double(pt.y)
+        handler.dragging = true
+        SetCapture(handler.rootHwnd)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_MOUSEMOVE):
+        if handler.dragging && hwnd == handler.rootHwnd {
+            let x = Double(win32_GET_X_LPARAM(lParam))
+            let y = Double(win32_GET_Y_LPARAM(lParam))
+            let value = DragGestureValue(
+                location: (x: x, y: y),
+                startLocation: (x: handler.startX, y: handler.startY)
+            )
+            handler.onChanged?(value)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_LBUTTONUP):
+        if handler.dragging {
+            handler.dragging = false
+            ReleaseCapture()
+            // Convert to root coords
+            var pt = POINT(x: LONG(win32_GET_X_LPARAM(lParam)), y: LONG(win32_GET_Y_LPARAM(lParam)))
+            if hwnd != handler.rootHwnd {
+                ClientToScreen(hwnd, &pt)
+                ScreenToClient(handler.rootHwnd, &pt)
+            }
+            let value = DragGestureValue(
+                location: (x: Double(pt.x), y: Double(pt.y)),
+                startLocation: (x: handler.startX, y: handler.startY)
+            )
+            handler.onEnded?(value)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_CAPTURECHANGED):
+        if handler.dragging { handler.dragging = false }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        Unmanaged<DragGestureHandler>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, dragGestureProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
 }
 
 // MARK: - TupleView Win32 extensions (needed when TupleViews appear at top level)

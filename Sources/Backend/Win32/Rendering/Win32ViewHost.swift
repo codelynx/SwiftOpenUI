@@ -121,8 +121,9 @@ public class Win32ViewHost: AnyViewHost {
         // Suppress painting during rebuild
         SendMessageW(container, UINT(WM_SETREDRAW), 0, 0)
 
-        // Save focus state (only if we're not suppressing)
-        let focusState = shouldSuppressFocus ? nil : saveFocusState(in: container)
+        // Always save Edit cursor/selection state for all Edit controls.
+        // Focus restoration is separate and can be suppressed by @FocusState.
+        let inputState = saveInputState(in: container)
 
         // Build the replacement subtree
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
@@ -144,9 +145,12 @@ public class Win32ViewHost: AnyViewHost {
             layoutChild()
         }
 
-        // Restore focus (unless suppressed by @FocusState clearing)
-        if let focusState = focusState {
-            restoreFocusState(focusState, in: container)
+        // Always restore Edit cursor/selection state
+        restoreEditStates(inputState.editStates, in: container)
+
+        // Restore focus (unless suppressed by @FocusState clearing to nil)
+        if !shouldSuppressFocus {
+            restoreFocus(inputState.focus, in: container)
         }
 
         // Re-enable painting
@@ -230,6 +234,10 @@ private let containerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         return 0
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        // Forward to parent so BackgroundView ancestors can set brush
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetBkMode(hdc, TRANSPARENT)
         return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
@@ -250,8 +258,9 @@ private let containerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
     }
 }
 
-// MARK: - Focus save/restore
+// MARK: - Input state save/restore across rebuilds
 
+/// Captured state of the focused control before a rebuild.
 struct FocusSnapshot {
     let className: String
     let classIndex: Int
@@ -260,30 +269,72 @@ struct FocusSnapshot {
     let hasFocus: Bool
 }
 
-func saveFocusState(in container: HWND) -> FocusSnapshot {
-    guard let focused = GetFocus() else {
-        return FocusSnapshot(className: "", classIndex: 0, selStart: 0, selEnd: 0, hasFocus: false)
-    }
-    guard IsChild(container, focused) else {
-        return FocusSnapshot(className: "", classIndex: 0, selStart: 0, selEnd: 0, hasFocus: false)
-    }
-
-    let className = getWindowClassName(focused)
-    let classIndex = findClassIndex(hwnd: focused, in: container, className: className)
-
-    var selStart: Int = 0
-    var selEnd: Int = 0
-    if className == "Edit" {
-        let sel = SendMessageW(focused, UINT(EM_GETSEL), 0, 0)
-        selStart = Int(win32_LOWORD(DWORD_PTR(sel)))
-        selEnd = Int(win32_HIWORD(DWORD_PTR(sel)))
-    }
-
-    return FocusSnapshot(className: className, classIndex: classIndex,
-                         selStart: selStart, selEnd: selEnd, hasFocus: true)
+/// Captured state of an Edit control (cursor position / selection range).
+/// Restored after rebuild so typing in TextFields doesn't lose cursor position.
+/// For single-line ES_AUTOHSCROLL edits, EM_SETSEL implicitly scrolls to the
+/// caret, so no separate scroll save/restore is needed.
+struct EditControlSnapshot {
+    let index: Int       // nth Edit control in DFS order
+    let selStart: Int    // cursor / selection start
+    let selEnd: Int      // cursor / selection end
 }
 
-func restoreFocusState(_ snapshot: FocusSnapshot, in parent: HWND) {
+struct InputStateSnapshot {
+    let focus: FocusSnapshot
+    let editStates: [EditControlSnapshot]
+}
+
+func saveInputState(in container: HWND) -> InputStateSnapshot {
+    // Save focus
+    let focus: FocusSnapshot
+    if let focused = GetFocus(), IsChild(container, focused) {
+        let className = getWindowClassName(focused)
+        let classIndex = findClassIndex(hwnd: focused, in: container, className: className)
+
+        var selStart: Int = 0
+        var selEnd: Int = 0
+        if className == "Edit" {
+            let sel = SendMessageW(focused, UINT(EM_GETSEL), 0, 0)
+            selStart = Int(win32_LOWORD(DWORD_PTR(sel)))
+            selEnd = Int(win32_HIWORD(DWORD_PTR(sel)))
+        }
+        focus = FocusSnapshot(className: className, classIndex: classIndex,
+                              selStart: selStart, selEnd: selEnd, hasFocus: true)
+    } else {
+        focus = FocusSnapshot(className: "", classIndex: 0, selStart: 0, selEnd: 0, hasFocus: false)
+    }
+
+    // Save all Edit controls' cursor/selection state
+    var editControls: [HWND] = []
+    collectControlsByClass(parent: container, className: "Edit", into: &editControls)
+
+    var editStates: [EditControlSnapshot] = []
+    for (i, edit) in editControls.enumerated() {
+        let sel = SendMessageW(edit, UINT(EM_GETSEL), 0, 0)
+        let selStart = Int(win32_LOWORD(DWORD_PTR(sel)))
+        let selEnd = Int(win32_HIWORD(DWORD_PTR(sel)))
+        editStates.append(EditControlSnapshot(index: i, selStart: selStart, selEnd: selEnd))
+    }
+
+    return InputStateSnapshot(focus: focus, editStates: editStates)
+}
+
+/// Restore all Edit controls' cursor/selection and scroll state.
+/// Called unconditionally — edit state should survive even when focus is suppressed.
+func restoreEditStates(_ editStates: [EditControlSnapshot], in parent: HWND) {
+    var editControls: [HWND] = []
+    collectControlsByClass(parent: parent, className: "Edit", into: &editControls)
+
+    for editState in editStates {
+        guard editState.index < editControls.count else { continue }
+        let edit = editControls[editState.index]
+        SendMessageW(edit, UINT(EM_SETSEL),
+                     WPARAM(editState.selStart), LPARAM(editState.selEnd))
+    }
+}
+
+/// Restore focus to the control that had it before rebuild.
+func restoreFocus(_ snapshot: FocusSnapshot, in parent: HWND) {
     guard snapshot.hasFocus else { return }
     if let target = findNthControlByClass(className: snapshot.className,
                                            index: snapshot.classIndex, in: parent) {

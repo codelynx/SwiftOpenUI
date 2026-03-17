@@ -580,4 +580,249 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(focus.storage.value, .b,
                        "Storage should be .b, not nil — B's gain should override A's clear")
     }
+
+    // MARK: - Input state preservation
+
+    func testSaveRestoreEditCursorPosition() {
+        let ctx = testContext()
+        let host = Win32ViewHost(context: ctx, buildBody: { ctx in
+            let binding = Binding<String>(get: { "Hello World" }, set: { _ in })
+            return winRenderView(TextField("", text: binding), in: ctx)
+        })
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+
+        // Find the Edit control and set cursor to position 5
+        var edits: [HWND] = []
+        collectEditControls(in: host.container, into: &edits)
+        guard let edit = edits.first else {
+            XCTFail("Should have an Edit control")
+            return
+        }
+        SendMessageW(edit, UINT(EM_SETSEL), 5, 5)
+
+        // Save state
+        let snapshot = saveInputState(in: host.container)
+        XCTAssertEqual(snapshot.editStates.count, 1)
+        XCTAssertEqual(snapshot.editStates[0].selStart, 5)
+        XCTAssertEqual(snapshot.editStates[0].selEnd, 5)
+    }
+
+    func testMultipleEditsCursorPreservation() {
+        let ctx = testContext()
+
+        // Create two TextFields in a VStack
+        let binding1 = Binding<String>(get: { "First" }, set: { _ in })
+        let binding2 = Binding<String>(get: { "Second" }, set: { _ in })
+        let hwnd = winRenderView(VStack {
+            TextField("A", text: binding1)
+            TextField("B", text: binding2)
+        }, in: ctx)!
+
+        // Find all Edit controls
+        var edits: [HWND] = []
+        collectEditControls(in: hwnd, into: &edits)
+        XCTAssertEqual(edits.count, 2, "Should have 2 Edit controls")
+
+        // Set different cursor positions
+        SendMessageW(edits[0], UINT(EM_SETSEL), 3, 3) // cursor at position 3
+        SendMessageW(edits[1], UINT(EM_SETSEL), 1, 4) // selection from 1 to 4
+
+        // Save state
+        let snapshot = saveInputState(in: hwnd)
+        XCTAssertEqual(snapshot.editStates.count, 2)
+        XCTAssertEqual(snapshot.editStates[0].selStart, 3)
+        XCTAssertEqual(snapshot.editStates[0].selEnd, 3)
+        XCTAssertEqual(snapshot.editStates[1].selStart, 1)
+        XCTAssertEqual(snapshot.editStates[1].selEnd, 4)
+    }
+
+    func testSuppressFocusDoesNotSuppressEditState() {
+        let ctx = testContext()
+        let host = Win32ViewHost(context: ctx, buildBody: { ctx in
+            let binding = Binding<String>(get: { "Test" }, set: { _ in })
+            return winRenderView(TextField("", text: binding), in: ctx)
+        })
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+
+        // Set cursor position
+        var edits: [HWND] = []
+        collectEditControls(in: host.container, into: &edits)
+        if let edit = edits.first {
+            SetFocus(edit)
+            SendMessageW(edit, UINT(EM_SETSEL), 2, 2)
+        }
+
+        // Suppress focus restore and rebuild
+        host.suppressNextFocusRestore()
+        host.rebuild()
+
+        // After rebuild, Edit cursor should still be restored even though focus was suppressed
+        var newEdits: [HWND] = []
+        collectEditControls(in: host.container, into: &newEdits)
+        if let edit = newEdits.first {
+            let sel = SendMessageW(edit, UINT(EM_GETSEL), 0, 0)
+            let selStart = Int(win32_LOWORD(DWORD_PTR(sel)))
+            XCTAssertEqual(selStart, 2,
+                "Edit cursor should be preserved even when focus restore is suppressed")
+        }
+    }
+    // MARK: - Gesture views
+
+    func testTapGestureViewCreatesHWND() {
+        let ctx = testContext()
+        let view = Text("Tap me").onTapGesture { }
+        XCTAssertTrue(view is WinRenderable)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testTapGestureFiresOnClick() {
+        let ctx = testContext()
+        var tapped = false
+        let hwnd = winRenderView(Text("Tap").onTapGesture { tapped = true }, in: ctx)!
+
+        // Simulate click: LBUTTONDOWN then LBUTTONUP
+        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, 0)
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertTrue(tapped, "Tap gesture should fire on mouse click")
+    }
+
+    func testLongPressGestureViewCreatesHWND() {
+        let ctx = testContext()
+        let view = Text("Hold me").onLongPressGesture { }
+        XCTAssertTrue(view is WinRenderable)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testDragGestureViewCreatesHWND() {
+        let ctx = testContext()
+        let view = Text("Drag me").onDrag(onChanged: { _ in }, onEnded: { _ in })
+        XCTAssertTrue(view is WinRenderable)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testDragGestureFiresOnChanged() {
+        let ctx = testContext()
+        var lastTranslation: (width: Double, height: Double)?
+        let hwnd = winRenderView(
+            Text("Drag").onDrag(
+                onChanged: { value in lastTranslation = value.translation },
+                onEnded: nil
+            ),
+            in: ctx
+        )!
+
+        // Simulate drag: LBUTTONDOWN at (10,10), MOUSEMOVE to (30,20)
+        let startLP = LPARAM(Int16(10)) | (LPARAM(Int16(10)) << 16)
+        let moveLP = LPARAM(Int16(30)) | (LPARAM(Int16(20)) << 16)
+        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, startLP)
+        SendMessageW(hwnd, UINT(WM_MOUSEMOVE), 0, moveLP)
+
+        XCTAssertNotNil(lastTranslation)
+        XCTAssertEqual(lastTranslation!.width, 20, accuracy: 0.1)
+        XCTAssertEqual(lastTranslation!.height, 10, accuracy: 0.1)
+
+        // Release
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, moveLP)
+    }
+
+    func testTapGestureRequiresDownThenUp() {
+        let ctx = testContext()
+        var tapped = false
+        let hwnd = winRenderView(
+            Text("Tap").onTapGesture { tapped = true },
+            in: ctx
+        )!
+
+        // Mouse-down alone should NOT fire
+        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, 0)
+        XCTAssertFalse(tapped, "Tap should not fire on mouse-down alone")
+
+        // Mouse-up after mouse-down fires the tap
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertTrue(tapped, "Tap should fire on mouse-up after mouse-down")
+    }
+
+    func testTapGestureIgnoresStrayMouseUp() {
+        let ctx = testContext()
+        var tapped = false
+        let hwnd = winRenderView(
+            Text("Tap").onTapGesture { tapped = true },
+            in: ctx
+        )!
+
+        // Stray mouse-up without preceding mouse-down should NOT fire
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertFalse(tapped, "Stray WM_LBUTTONUP without press should not fire tap")
+    }
+
+    func testDragGestureFiresOnEnded() {
+        let ctx = testContext()
+        var ended = false
+        let hwnd = winRenderView(
+            Text("Drag").onDrag(onChanged: nil, onEnded: { _ in ended = true }),
+            in: ctx
+        )!
+
+        let startLP = LPARAM(Int16(5)) | (LPARAM(Int16(5)) << 16)
+        let endLP = LPARAM(Int16(50)) | (LPARAM(Int16(50)) << 16)
+        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, startLP)
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, endLP)
+        XCTAssertTrue(ended, "Drag gesture should fire onEnded on mouse release")
+    }
+
+    func testTapGestureFiresThroughNestedContainers() {
+        let ctx = testContext()
+        var tapped = false
+        // Gesture on outer VStack, click target is Text inside padding inside frame
+        let view = VStack {
+            Text("Deep")
+                .padding(8)
+                .frame(width: 100, height: 50)
+        }.onTapGesture { tapped = true }
+
+        let hwnd = winRenderView(view, in: ctx)!
+
+        // Find the deepest STATIC (Text) control
+        func findDeepestStatic(_ parent: HWND) -> HWND? {
+            var child = GetWindow(parent, UINT(GW_CHILD))
+            while let c = child {
+                if let found = findDeepestStatic(c) { return found }
+                if className(of: c) == "Static" { return c }
+                child = GetWindow(c, UINT(GW_HWNDNEXT))
+            }
+            return nil
+        }
+
+        guard let staticHwnd = findDeepestStatic(hwnd) else {
+            XCTFail("Should find a STATIC control in the nested hierarchy")
+            return
+        }
+
+        // With recursive subclassing, the tap gesture proc is installed on every
+        // descendant HWND including this deeply nested STATIC. A full
+        // mouse-down + mouse-up sequence on it fires the shared handler.
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONDOWN), 0, 0)
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertTrue(tapped, "Tap gesture should fire on deeply nested descendant via recursive subclassing")
+    }
+}
+
+// MARK: - Test helpers
+
+private func collectEditControls(in parent: HWND, into result: inout [HWND]) {
+    var child = GetWindow(parent, UINT(GW_CHILD))
+    while let c = child {
+        if className(of: c) == "Edit" {
+            result.append(c)
+        }
+        collectEditControls(in: c, into: &result)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
 }
