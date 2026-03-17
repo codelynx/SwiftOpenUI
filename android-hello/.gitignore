@@ -1,0 +1,11 @@
+# Android Studio
+.gradle/
+.idea/
+local.properties
+*.iml
+
+# Built .so files (generated, not checked in)
+app/app/src/main/jniLibs/
+
+# Swift build
+swift-lib/.build/

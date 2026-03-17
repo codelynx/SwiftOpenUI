@@ -1,6 +1,6 @@
 # Android Build Setup
 
-This documents how to cross-compile SwiftOpenUI core for Android from macOS. This is an experimental capability — the Android backend does not exist yet. This setup only proves the core library compiles for the Android target.
+This documents how to cross-compile Swift for Android and run it on a device/emulator. Verified on macOS with ARM64 Android emulator (Pixel 8/9, API 36).
 
 ## Requirements
 
@@ -9,7 +9,8 @@ This documents how to cross-compile SwiftOpenUI core for Android from macOS. Thi
 | Swift toolchain | 6.3 dev snapshot | Stable 6.2.x does not ship an Android SDK. Opt-in — do not change `.swift-version`. |
 | Swift Android SDK | 6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a | Must match the toolchain version exactly. |
 | Android NDK | r27 or later (tested with r29) | Install via Android Studio SDK Manager → SDK Tools → NDK. |
-| Android Studio | Any recent version | For NDK installation and future Kotlin host development. |
+| Android Studio | Any recent version | For NDK, emulator, and Kotlin host app. |
+| JDK | 17+ | Android Studio bundles one, or install via Homebrew. |
 
 ## Step-by-Step Setup
 
@@ -40,7 +41,7 @@ swift sdk install https://download.swift.org/swift-6.3-branch/android-sdk/swift-
 
 ### 4. Link NDK sysroot into the Swift Android SDK
 
-This step is required — the SDK needs to find NDK headers and libraries:
+**This step is required** — without it, the SDK cannot find C headers (`semaphore.h`, etc.) and Foundation modules:
 
 ```bash
 ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/29.0.14206865 \
@@ -57,15 +58,98 @@ swift build --swift-sdk swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android --ta
 
 Expected output: `Build of target: 'SwiftOpenUI' complete!`
 
-## What This Builds
+## Running the Hello World POC on Android
 
-- **SwiftOpenUI core only** — the platform-independent library (Views, State, Layout, Modifiers, Environment)
-- **Not examples** — they depend on BackendWeb/JavaScriptKit which doesn't compile for Android
-- **Not a runnable Android app** — there is no Android backend yet, only the design doc at `docs/architecture/android-backend-design.md`
+The `android-hello/` directory contains a minimal proof-of-concept: Swift function called from Kotlin via JNI, displayed in a `TextView`.
 
-## Scope: What "Compiles for Android" Means
+### Build the Swift shared library
 
-The SwiftOpenUI core library has zero platform-specific imports in its source. It uses:
+```bash
+cd android-hello/swift-lib
+swiftly use 6.3-snapshot
+swift build --swift-sdk swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android \
+  --triple aarch64-unknown-linux-android28 -c release
+```
+
+Output: `android-hello/swift-lib/.build/aarch64-unknown-linux-android28/release/libSwiftHello.so` (22KB)
+
+### Copy .so files to the Android project
+
+The Swift `.so` needs the Swift runtime libraries and `libc++_shared.so` from the NDK:
+
+```bash
+SWIFT_LIBS=~/Library/org.swift.swiftpm/swift-sdks/swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android.artifactbundle/swift-android/swift-resources/usr/lib/swift-aarch64/android
+NDK_LIBS=~/Library/Android/sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android
+JNILIBS=android-hello/app/app/src/main/jniLibs/arm64-v8a
+
+# Swift library
+cp android-hello/swift-lib/.build/aarch64-unknown-linux-android28/release/libSwiftHello.so "$JNILIBS/"
+
+# Swift runtime (all .so files)
+cp "$SWIFT_LIBS"/*.so "$JNILIBS/"
+
+# NDK C++ runtime
+cp "$NDK_LIBS/libc++_shared.so" "$JNILIBS/"
+```
+
+### Run in Android Studio
+
+1. Open `android-hello/app/` in Android Studio
+2. Sync Gradle (should succeed with no errors)
+3. Device Manager → launch Pixel_8 or Pixel_9 emulator
+4. Wait for emulator to boot to home screen
+5. Click Run → the app displays "Hello from SwiftOpenUI on Android!"
+
+## Lessons Learned (Trial and Error)
+
+### NDK sysroot must be linked first
+
+Without running `setup-android-sdk.sh`, the SDK fails with `'semaphore.h' file not found` or `could not find module 'Foundation'`. The script creates symlinks from the SDK's `ndk-sysroot/` to the NDK's headers and libraries.
+
+### Do not use `--triple` flag with `--target`
+
+`swift build --swift-sdk ... --triple aarch64-unknown-linux-android28 --target SwiftOpenUI` causes module resolution errors — the compiler looks for aarch64 modules in the armv7 path. Omitting `--triple` works correctly; the SDK defaults to building all architectures and finds modules properly.
+
+For building a `.so` library (not the SwiftOpenUI core), `--triple` works fine:
+```bash
+swift build --swift-sdk ... --triple aarch64-unknown-linux-android28 -c release
+```
+
+### All Swift runtime .so files must be bundled
+
+The Swift `.so` depends on `libswiftCore.so`, which depends on `libc++_shared.so`, `libswift_Concurrency.so`, `libFoundation.so`, etc. Missing any one causes `dlopen failed: library "..." not found` at runtime.
+
+The safest approach: copy **all** `.so` files from the SDK's `swift-aarch64/android/` directory plus `libc++_shared.so` from the NDK. This adds ~77MB to the APK (debug). Release builds with stripping would be smaller.
+
+### Emulator must be authorized for ADB
+
+If `adb devices` shows `unauthorized`, the emulator hasn't accepted the debugging prompt. Fix: restart ADB server (`adb kill-server && adb start-server`) or cold-boot the emulator.
+
+### Gradle configuration
+
+- `dependencyResolutionManagement` (not `dependencyResolution`) in `settings.gradle.kts`
+- `android.useAndroidX=true` in `gradle.properties`
+- Remove the `foojay-resolver-convention` plugin if Android Studio auto-adds it (causes `--jvm-vendor` error)
+- `compileSdk` / `targetSdk` should match or exceed the emulator's API level
+
+### JNI function naming
+
+JNI functions must follow the naming convention `Java_<package>_<class>_<method>` with dots replaced by underscores. In Swift, use `@_cdecl` to export with the exact name:
+
+```swift
+@_cdecl("Java_com_example_swifthello_MainActivity_helloFromSwift")
+public func helloFromSwift(env: UnsafeMutableRawPointer?, thisObj: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer? {
+    // ...
+}
+```
+
+### JNI string creation is manual
+
+There's no Swift wrapper for JNI — you must navigate the JNI function table manually. `NewStringUTF` is at index 167 in the `JNINativeInterface` function table. The `swift-java` project aims to automate this but is pre-1.0.
+
+## What "Compiles for Android" Means
+
+The SwiftOpenUI core library has zero platform-specific imports. It uses:
 - `Foundation` (available on Android via the Swift Android SDK)
 - `pthread` for thread-local storage on Linux/Android (via `#if canImport(Glibc)`)
 
@@ -73,9 +157,9 @@ This is the same core that compiles for macOS, Linux, Windows, and WebAssembly.
 
 ## Known Issues
 
-- `--triple aarch64-unknown-linux-android28` flag causes module resolution errors (SPM bug with the SDK). Omit `--triple` and let the SDK select the default target.
 - Building the full package (not just `--target SwiftOpenUI`) fails because JavaScriptKit doesn't compile for Android. The Web backend needs to be made conditional before full-package Android builds work.
 - The "multiple Swift SDKs match" warning is harmless — the SDK bundles multiple arch variants.
+- Debug APK is large (~77MB) due to unstripped Swift runtime libraries.
 
 ## Switching Back to Stable
 
