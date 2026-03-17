@@ -85,6 +85,9 @@ extension SwiftOpenUI.Divider: WebRenderable {
     }
 }
 
+/// Flag to suppress input handler during programmatic value updates.
+private var _webSuppressInputHandler = false
+
 extension SwiftOpenUI.TextField: WebRenderable {
     public func webCreateElement() -> JSValue {
         let input = document.createElement("input")
@@ -92,6 +95,19 @@ extension SwiftOpenUI.TextField: WebRenderable {
         input.value = .string(text.wrappedValue)
         input.placeholder = .string(title)
         input.style = "padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box;"
+
+        // Wire text changes back through Binding<String>
+        let binding = text
+        let handler = JSClosure { _ in
+            guard !_webSuppressInputHandler else { return .undefined }
+            let newValue = input.value.string ?? ""
+            if newValue != binding.wrappedValue {
+                binding.wrappedValue = newValue
+            }
+            return .undefined
+        }
+        _ = input.addEventListener("input", handler)
+
         return input
     }
 }
