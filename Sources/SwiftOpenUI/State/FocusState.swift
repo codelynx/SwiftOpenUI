@@ -69,7 +69,7 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
 /// Use with `.focused($isFocused)` for simple boolean focus tracking.
 @propertyWrapper
 public struct FocusState<Value: Hashable>: AnyStateStorageProvider {
-    let storage: FocusStateStorage<Value>
+    public let storage: FocusStateStorage<Value>
 
     public init() where Value == Bool {
         self.storage = FocusStateStorage(false, default: false)
