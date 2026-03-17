@@ -32,8 +32,9 @@ Examples/
 ├── 08-Environment/         # @EnvironmentObject, .environment(), custom keys
 ├── 09-ObservableObject/    # @ObservedObject, @StateObject, @Published
 ├── 10-Composition/         # Custom views, ViewModifier, AnyView, conditionals
-├── 11-KitchenSink/         # Everything together — a mini real app
-└── 12-PlatformTest/        # Platform-specific stress tests
+├── 11-Calculator/          # Real app: layout grid, state, interaction
+├── 12-PaintSwift/          # Real app: drawing, gestures, color (aspirational)
+└── 13-PlatformTest/        # Platform-specific stress tests
 ```
 
 ## Example Details
@@ -135,16 +136,26 @@ Examples/
 - Optional view rendering
 - Composing small views into larger screens
 
-### 11-KitchenSink
-**Theme:** A mini real app using everything
+### 11-Calculator
+**Theme:** A real app — layout grid, state, interaction
 **Features:**
-- A to-do list or notes app
-- Uses @State, @ObservedObject, ForEach, VStack/HStack
-- Custom views, modifiers, environment
-- Add/remove items, toggle completion
-- Demonstrates a realistic usage pattern
+- Button grid (4x5) using nested HStack/VStack (or Grid when available)
+- @State for display value and accumulator
+- Button actions driving computation
+- .font(), .foregroundColor(), .background(), .frame() on every cell
+- Exercises layout precision across platforms
 
-### 12-PlatformTest
+### 12-PaintSwift
+**Theme:** A real app — drawing, gestures, color
+**Features:**
+- Canvas/drawing area (requires new Canvas view or Color fill area)
+- Gesture handling (drag to draw — requires onDrag/onTapGesture)
+- Color picker (grid of color swatches)
+- @State for stroke list, current color
+- Aspirational — drives development of gesture and canvas APIs
+- May require platform-specific rendering extensions
+
+### 13-PlatformTest
 **Theme:** Cross-platform rendering validation
 **Features:**
 - Color rendering (named colors, custom RGB, opacity)
@@ -191,8 +202,9 @@ Examples/
 
 ## Migration Strategy
 
-1. Keep `HelloWorld` and `Counter` as-is (01 and part of 04)
-2. Replace `Showcase1` and `Showcase2` with the new themed examples
+1. Keep `HelloWorld` as-is (01)
+2. Remove `Counter` (absorbed into 04-State)
+3. Replace `Showcase1` and `Showcase2` with the new themed examples
 3. Add new examples incrementally — don't need all 12 at once
 4. Update Package.swift executable targets as examples are added/removed
 5. Each example is self-contained: one `main.swift`, same boilerplate import/entry-point pattern
@@ -200,7 +212,7 @@ Examples/
 ## Priority Order
 
 1. **01-HelloWorld** — keep (done)
-2. **04-State** — expand Counter into full state demo
+2. **04-State** — counter + toggle + conditional (replaces Counter example)
 3. **05-Layout** — most visual, validates backends
 4. **07-Modifiers** — tests modifier stacking and rendering
 5. **02-TextStyles** — typography across platforms
@@ -209,5 +221,6 @@ Examples/
 8. **08-Environment** — currently untested in examples
 9. **09-ObservableObject** — currently untested in examples
 10. **10-Composition** — advanced patterns
-11. **11-KitchenSink** — integration test
-12. **12-PlatformTest** — backend validation
+11. **11-Calculator** — real app, exercises layout + state + interaction
+12. **12-PaintSwift** — aspirational, drives gesture/canvas API development
+13. **13-PlatformTest** — backend validation
