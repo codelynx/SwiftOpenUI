@@ -388,20 +388,14 @@ let stackLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, 
         }
         return 0
 
-    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN),
-         UINT(WM_PARENTNOTIFY):
-        // Forward to parent so ancestors can handle these:
-        // - BackgroundView handles WM_CTLCOLORSTATIC for brush propagation
-        // - Gesture views handle WM_PARENTNOTIFY for click detection on descendants
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        // Forward to parent so BackgroundView ancestors can set their brush.
         if let parent = GetParent(hwnd!) {
             return SendMessageW(parent, uMsg, wParam, lParam)
         }
-        if uMsg != UINT(WM_PARENTNOTIFY) {
-            let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
-            SetBkMode(hdc, TRANSPARENT)
-            return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
-        }
-        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        SetBkMode(hdc, TRANSPARENT)
+        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
 
     case UINT(WM_NCDESTROY):
         if dwRefData != 0 {
@@ -437,17 +431,14 @@ let zStackLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass,
         }
         return 0
 
-    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN),
-         UINT(WM_PARENTNOTIFY):
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        // Forward to parent so BackgroundView ancestors can set their brush.
         if let parent = GetParent(hwnd!) {
             return SendMessageW(parent, uMsg, wParam, lParam)
         }
-        if uMsg != UINT(WM_PARENTNOTIFY) {
-            let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
-            SetBkMode(hdc, TRANSPARENT)
-            return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
-        }
-        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        SetBkMode(hdc, TRANSPARENT)
+        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
 
     case UINT(WM_NCDESTROY):
         if dwRefData != 0 {

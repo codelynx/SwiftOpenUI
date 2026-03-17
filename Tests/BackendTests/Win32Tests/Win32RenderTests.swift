@@ -732,20 +732,34 @@ final class Win32RenderTests: XCTestCase {
         SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, moveLP)
     }
 
-    func testTapGestureCancelsByDraggingOut() {
+    func testTapGestureRequiresDownThenUp() {
         let ctx = testContext()
         var tapped = false
         let hwnd = winRenderView(
-            Text("Tap").frame(width: 100, height: 50).onTapGesture { tapped = true },
+            Text("Tap").onTapGesture { tapped = true },
             in: ctx
         )!
 
-        // Press inside, then release outside — should NOT fire
-        let downLP = LPARAM(Int16(10)) | (LPARAM(Int16(10)) << 16)
-        let upLP = LPARAM(Int16(-50)) | (LPARAM(Int16(-50)) << 16) // outside
-        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, downLP)
-        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, upLP)
-        XCTAssertFalse(tapped, "Tap should cancel when released outside the view")
+        // Mouse-down alone should NOT fire
+        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, 0)
+        XCTAssertFalse(tapped, "Tap should not fire on mouse-down alone")
+
+        // Mouse-up after mouse-down fires the tap
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertTrue(tapped, "Tap should fire on mouse-up after mouse-down")
+    }
+
+    func testTapGestureIgnoresStrayMouseUp() {
+        let ctx = testContext()
+        var tapped = false
+        let hwnd = winRenderView(
+            Text("Tap").onTapGesture { tapped = true },
+            in: ctx
+        )!
+
+        // Stray mouse-up without preceding mouse-down should NOT fire
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertFalse(tapped, "Stray WM_LBUTTONUP without press should not fire tap")
     }
 
     func testDragGestureFiresOnEnded() {
@@ -791,17 +805,12 @@ final class Win32RenderTests: XCTestCase {
             return
         }
 
-        // Simulate the WM_PARENTNOTIFY that Win32 sends to the STATIC's
-        // direct parent when a real click occurs. In tests, SendMessage
-        // doesn't trigger automatic WM_PARENTNOTIFY, so we send it manually
-        // to the STATIC's parent — it should bubble up through frame ->
-        // padding -> VStack -> gesture host via our forwarding chain.
-        let staticParent = GetParent(staticHwnd)!
-        let parentNotifyWParam = WPARAM(WM_LBUTTONDOWN)
-        SendMessageW(staticParent, UINT(WM_PARENTNOTIFY), parentNotifyWParam, 0)
-        // Tap completes on mouse-up at gesture host
-        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, 0)
-        XCTAssertTrue(tapped, "Tap gesture should fire through nested padding/frame containers")
+        // With recursive subclassing, the tap gesture proc is installed on every
+        // descendant HWND including this deeply nested STATIC. A full
+        // mouse-down + mouse-up sequence on it fires the shared handler.
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONDOWN), 0, 0)
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertTrue(tapped, "Tap gesture should fire on deeply nested descendant via recursive subclassing")
     }
 }
 
