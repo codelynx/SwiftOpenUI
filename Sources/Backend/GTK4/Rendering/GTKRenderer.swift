@@ -515,6 +515,292 @@ extension BorderView: GTKRenderable {
     }
 }
 
+// MARK: - Gesture GTK extensions
+
+/// Box for tap gesture that carries the required tap count.
+private class TapClosureBox {
+    let requiredCount: Int
+    let action: () -> Void
+    init(count: Int, action: @escaping () -> Void) {
+        self.requiredCount = count
+        self.action = action
+    }
+}
+
+extension TapGestureView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        let gesture = gtk_gesture_click_new()!
+
+        let box = Unmanaged.passRetained(TapClosureBox(count: count, action: action)).toOpaque()
+        g_signal_connect_data(
+            gpointer(gesture),
+            "pressed",
+            unsafeBitCast({ (_: gpointer?, nPress: gint, _: gdouble, _: gdouble, userData: gpointer?) in
+                let box = Unmanaged<TapClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                if Int(nPress) == box.requiredCount {
+                    box.action()
+                }
+            } as @convention(c) (gpointer?, gint, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<TapClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        gtk_swift_add_gesture(widget, gesture)
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension LongPressGestureView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        let gesture = gtk_gesture_long_press_new()!
+
+        // Set delay threshold
+        g_object_set_double(gpointer(gesture), "delay-factor", minimumDuration / 0.5)
+
+        let box = Unmanaged.passRetained(ClosureBox(action)).toOpaque()
+        g_signal_connect_data(
+            gpointer(gesture),
+            "pressed",
+            unsafeBitCast({ (_: gpointer?, _: gdouble, _: gdouble, userData: gpointer?) in
+                let box = Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                box.closure()
+            } as @convention(c) (gpointer?, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        gtk_swift_add_gesture(widget, gesture)
+        return opaqueFromWidget(widget)
+    }
+}
+
+/// Mutable state for tracking drag start location across GTK signal callbacks.
+private class GTKDragState {
+    var startX: Double = 0
+    var startY: Double = 0
+    var dragStarted = false
+}
+
+extension DragGestureView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        let gesture = gtk_gesture_drag_new()!
+
+        let dragState = GTKDragState()
+
+        if let onChanged = onChanged {
+            let state = dragState
+            let minimumDistance = self.minimumDistance
+            let box = Unmanaged.passRetained(DoubleDoubleClosureBox { offsetX, offsetY in
+                if !state.dragStarted {
+                    let distance = hypot(offsetX, offsetY)
+                    guard distance >= minimumDistance else { return }
+                    state.dragStarted = true
+                }
+                let value = DragGestureValue(
+                    startLocation: (x: state.startX, y: state.startY),
+                    location: (x: state.startX + offsetX, y: state.startY + offsetY),
+                    translation: (width: offsetX, height: offsetY)
+                )
+                onChanged(value)
+            }).toOpaque()
+
+            // drag-begin: record start position
+            let beginBox = Unmanaged.passRetained(DoubleDoubleClosureBox { x, y in
+                state.startX = x
+                state.startY = y
+                state.dragStarted = false
+            }).toOpaque()
+            g_signal_connect_data(
+                gpointer(gesture),
+                "drag-begin",
+                unsafeBitCast({ (_: gpointer?, x: gdouble, y: gdouble, userData: gpointer?) in
+                    Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure(x, y)
+                } as @convention(c) (gpointer?, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+                beginBox,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+
+            // drag-update: fire onChanged
+            g_signal_connect_data(
+                gpointer(gesture),
+                "drag-update",
+                unsafeBitCast({ (_: gpointer?, offsetX: gdouble, offsetY: gdouble, userData: gpointer?) in
+                    Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure(offsetX, offsetY)
+                } as @convention(c) (gpointer?, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+                box,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+        }
+
+        if let onEnded = onEnded {
+            let state = dragState
+            let minimumDistance = self.minimumDistance
+            // If no onChanged handler registered drag-begin, we need to capture start here too.
+            if self.onChanged == nil {
+                let beginBox = Unmanaged.passRetained(DoubleDoubleClosureBox { x, y in
+                    state.startX = x
+                    state.startY = y
+                    state.dragStarted = false
+                }).toOpaque()
+                g_signal_connect_data(
+                    gpointer(gesture),
+                    "drag-begin",
+                    unsafeBitCast({ (_: gpointer?, x: gdouble, y: gdouble, userData: gpointer?) in
+                        Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure(x, y)
+                    } as @convention(c) (gpointer?, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+                    beginBox,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+            }
+
+            let endBox = Unmanaged.passRetained(DoubleDoubleClosureBox { offsetX, offsetY in
+                if !state.dragStarted {
+                    let distance = hypot(offsetX, offsetY)
+                    guard distance >= minimumDistance else { return }
+                    state.dragStarted = true
+                }
+                let value = DragGestureValue(
+                    startLocation: (x: state.startX, y: state.startY),
+                    location: (x: state.startX + offsetX, y: state.startY + offsetY),
+                    translation: (width: offsetX, height: offsetY)
+                )
+                onEnded(value)
+            }).toOpaque()
+            g_signal_connect_data(
+                gpointer(gesture),
+                "drag-end",
+                unsafeBitCast({ (_: gpointer?, offsetX: gdouble, offsetY: gdouble, userData: gpointer?) in
+                    Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure(offsetX, offsetY)
+                } as @convention(c) (gpointer?, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+                endBox,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+        }
+
+        gtk_swift_add_gesture(widget, gesture)
+        return opaqueFromWidget(widget)
+    }
+}
+
+// MARK: - Animation & Transform GTK extensions
+
+/// GObject data keys for storing animatable state on widgets.
+private let gtkSwiftOffsetXKey = "gtk-swift-offset-x"
+private let gtkSwiftOffsetYKey = "gtk-swift-offset-y"
+private let gtkSwiftScaleXKey = "gtk-swift-scale-x"
+private let gtkSwiftScaleYKey = "gtk-swift-scale-y"
+
+/// Box for storing a Double in GObject data without losing 0.0 as nil.
+private final class WidgetDoubleBox {
+    let value: Double
+    init(_ value: Double) { self.value = value }
+}
+
+/// Store a Double value on a widget via GObject data (bit-pattern encoded).
+private func setWidgetDouble(_ widget: UnsafeMutablePointer<GtkWidget>, key: String, value: Double) {
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    let retained = Unmanaged.passRetained(WidgetDoubleBox(value)).toOpaque()
+    g_object_set_data_full(gobject, key, retained) { userData in
+        Unmanaged<WidgetDoubleBox>.fromOpaque(userData!).release()
+    }
+}
+
+/// Read a Double value from a widget via GObject data.
+func getWidgetDouble(_ widget: UnsafeMutablePointer<GtkWidget>, key: String) -> Double? {
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    guard let raw = g_object_get_data(gobject, key) else { return nil }
+    return Unmanaged<WidgetDoubleBox>.fromOpaque(raw).takeUnretainedValue().value
+}
+
+/// Build a combined CSS transform string from offset and scale values.
+func buildTransformCSS(offsetX: Double, offsetY: Double, scaleX: Double, scaleY: Double) -> String {
+    var parts: [String] = []
+    if offsetX != 0 || offsetY != 0 {
+        parts.append("translate(\(Int(offsetX))px, \(Int(offsetY))px)")
+    }
+    if scaleX != 1 || scaleY != 1 {
+        parts.append("scale(\(scaleX), \(scaleY))")
+    }
+    guard !parts.isEmpty else { return "" }
+    return "transform: \(parts.joined(separator: " "));"
+}
+
+extension OpacityView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_opacity(widget, opacity)
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension OffsetView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        setWidgetDouble(widget, key: gtkSwiftOffsetXKey, value: x)
+        setWidgetDouble(widget, key: gtkSwiftOffsetYKey, value: y)
+        if x != 0 || y != 0 {
+            let scaleX = getWidgetDouble(widget, key: gtkSwiftScaleXKey) ?? 1
+            let scaleY = getWidgetDouble(widget, key: gtkSwiftScaleYKey) ?? 1
+            applyCSSToWidget(widget, properties: buildTransformCSS(offsetX: x, offsetY: y, scaleX: scaleX, scaleY: scaleY))
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension ScaleEffectView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        setWidgetDouble(widget, key: gtkSwiftScaleXKey, value: scaleX)
+        setWidgetDouble(widget, key: gtkSwiftScaleYKey, value: scaleY)
+        if scaleX != 1 || scaleY != 1 {
+            let offsetX = getWidgetDouble(widget, key: gtkSwiftOffsetXKey) ?? 0
+            let offsetY = getWidgetDouble(widget, key: gtkSwiftOffsetYKey) ?? 0
+            applyCSSToWidget(widget, properties: buildTransformCSS(offsetX: offsetX, offsetY: offsetY, scaleX: scaleX, scaleY: scaleY))
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension AnimatedView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        if let animation = animation ?? getCurrentAnimation() {
+            let timing: String
+            switch animation.curve {
+            case .linear:    timing = "linear"
+            case .easeIn:    timing = "ease-in"
+            case .easeOut:   timing = "ease-out"
+            case .easeInOut: timing = "ease-in-out"
+            case .spring:    timing = "cubic-bezier(0.5, 1.8, 0.3, 0.8)"
+            }
+            let duration = String(format: "%.2f", animation.duration)
+            applyCSSToWidget(widget, properties: "transition: all \(duration)s \(timing);")
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
 extension EnvironmentObjectModifierView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         var env = getCurrentEnvironment()

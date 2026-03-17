@@ -2,6 +2,33 @@ import CGTK
 import CGTKBridge
 import SwiftOpenUI
 
+/// Recursively search a widget tree for a navigation-provided window titlebar.
+private func findTitlebar(in widget: UnsafeMutablePointer<GtkWidget>) -> UnsafeMutablePointer<GtkWidget>? {
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    if let data = g_object_get_data(gobject, "gtk-swift-window-titlebar") {
+        return UnsafeMutableRawPointer(data).assumingMemoryBound(to: GtkWidget.self)
+    }
+
+    // Search only the visible child of GtkStack to avoid stale titlebars.
+    let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
+    if typeName == "GtkStack" {
+        let stackOp = OpaquePointer(widget)
+        if let visibleChild = gtk_stack_get_visible_child(stackOp) {
+            return findTitlebar(in: visibleChild)
+        }
+        return nil
+    }
+
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        if let found = findTitlebar(in: c) {
+            return found
+        }
+        child = gtk_widget_get_next_sibling(c)
+    }
+    return nil
+}
+
 /// Box for passing an activate closure through C user_data.
 private class AppActivateBox {
     let activate: (OpaquePointer) -> Void
@@ -23,6 +50,9 @@ extension WindowGroup: GTKWindowRenderable {
         gtk_window_set_default_size(winPtr, 400, 300)
 
         let contentWidget = widgetFromOpaque(gtkRenderView(content))
+        if let titlebarWidget = findTitlebar(in: contentWidget) {
+            gtk_window_set_titlebar(winPtr, titlebarWidget)
+        }
         gtk_window_set_child(winPtr, contentWidget)
         gtk_window_present(winPtr)
     }

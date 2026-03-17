@@ -1,3 +1,28 @@
 # State
 
-<!-- @State, @Binding, @ObservedObject, @StateObject, @Environment, @EnvironmentObject, @FocusState -->
+All state property wrappers live in `Sources/SwiftOpenUI/State/`. Storage is thread-safe and platform-independent.
+
+## Property Wrappers
+
+| Wrapper | Description |
+|---------|-------------|
+| `@State` | Private value-type state owned by the view. Changes trigger a rebuild of the enclosing `ViewHost`. |
+| `@Binding` | Two-way reference to a `@State` value owned elsewhere. Created via `$property` projected value. |
+| `@ObservedObject` | Subscribes to an external `ObservableObject`. Rebuilds on any `@Published` change. |
+| `@StateObject` | Like `@ObservedObject`, but the view owns the object's lifetime (created once, survives rebuilds). |
+| `@EnvironmentObject` | Reads an `ObservableObject` injected via `.environmentObject()`. |
+| `@Published` | Publishes changes from an `ObservableObject` property. Triggers subscriber rebuilds. |
+| `@FocusState` | Tracks focus state for input views. |
+
+## Environment
+
+| Type | Description |
+|------|-------------|
+| `EnvironmentValues` | Key-value bag threaded through the view tree. |
+| `EnvironmentKey` protocol | Define custom keys with a `defaultValue`. |
+| `.environment(_:_:)` | Modifier to set a key's value for a subtree. |
+
+## Platform Notes
+
+- **Thread-local storage**: `pthread_key_t` on Linux/macOS, `TlsAlloc` on Windows, simple global on Wasm (single-threaded).
+- **Namespace conflict on macOS**: `ObservableObject` and `Published` clash with Combine. Tests qualify as `SwiftOpenUI.ObservableObject`. See `docs/issues/observable-namespace-conflict.md`.

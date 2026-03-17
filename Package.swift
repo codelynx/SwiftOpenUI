@@ -152,6 +152,16 @@ targets += [
         path: "Examples/04-State"
     ),
     .executableTarget(
+        name: "FocusTest",
+        dependencies: exampleDeps,
+        path: "Examples/FocusTest"
+    ),
+    .executableTarget(
+        name: "BasicInteractive",
+        dependencies: exampleDeps,
+        path: "Examples/BasicInteractive"
+    ),
+    .executableTarget(
         name: "Layout",
         dependencies: exampleDeps,
         path: "Examples/05-Layout"

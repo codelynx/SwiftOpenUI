@@ -46,6 +46,8 @@ swift run HelloWorld
 swift run Counter
 swift run Showcase1
 swift run Showcase2
+swift run BasicInteractive   # Navigation, gestures, animation
+swift run FocusTest           # TextField focus preservation
 ```
 
 ### Web (browser via Wasm)
