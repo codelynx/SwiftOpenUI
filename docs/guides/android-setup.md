@@ -157,7 +157,7 @@ This is the same core that compiles for macOS, Linux, Windows, and WebAssembly.
 
 ## Known Issues
 
-- ~~Building the full package fails because JavaScriptKit doesn't compile for Android.~~ **Fixed**: BackendWeb and JavaScriptKit are now gated to macOS host only in Package.swift.
+- Building the full package from macOS fails for Android because BackendWeb/JavaScriptKit are included on macOS hosts (manifest `#if os()` checks host, not target). Use `--target SwiftOpenUI` to build only the core. Full-package Android builds require further manifest work to exclude Web targets when cross-compiling.
 - The "multiple Swift SDKs match" warning is harmless — the SDK bundles multiple arch variants.
 - Debug APK is large (~77MB) due to unstripped Swift runtime libraries.
 
