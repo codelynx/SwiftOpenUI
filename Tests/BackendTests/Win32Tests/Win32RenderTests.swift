@@ -748,7 +748,7 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertFalse(tapped, "Tap should cancel when released outside the view")
     }
 
-    func testTapGestureFiresOnEnded() {
+    func testDragGestureFiresOnEnded() {
         let ctx = testContext()
         var ended = false
         let hwnd = winRenderView(
@@ -761,6 +761,47 @@ final class Win32RenderTests: XCTestCase {
         SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, startLP)
         SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, endLP)
         XCTAssertTrue(ended, "Drag gesture should fire onEnded on mouse release")
+    }
+
+    func testTapGestureFiresThroughNestedContainers() {
+        let ctx = testContext()
+        var tapped = false
+        // Gesture on outer VStack, click target is Text inside padding inside frame
+        let view = VStack {
+            Text("Deep")
+                .padding(8)
+                .frame(width: 100, height: 50)
+        }.onTapGesture { tapped = true }
+
+        let hwnd = winRenderView(view, in: ctx)!
+
+        // Find the deepest STATIC (Text) control
+        func findDeepestStatic(_ parent: HWND) -> HWND? {
+            var child = GetWindow(parent, UINT(GW_CHILD))
+            while let c = child {
+                if let found = findDeepestStatic(c) { return found }
+                if className(of: c) == "Static" { return c }
+                child = GetWindow(c, UINT(GW_HWNDNEXT))
+            }
+            return nil
+        }
+
+        guard let staticHwnd = findDeepestStatic(hwnd) else {
+            XCTFail("Should find a STATIC control in the nested hierarchy")
+            return
+        }
+
+        // Simulate the WM_PARENTNOTIFY that Win32 sends to the STATIC's
+        // direct parent when a real click occurs. In tests, SendMessage
+        // doesn't trigger automatic WM_PARENTNOTIFY, so we send it manually
+        // to the STATIC's parent — it should bubble up through frame ->
+        // padding -> VStack -> gesture host via our forwarding chain.
+        let staticParent = GetParent(staticHwnd)!
+        let parentNotifyWParam = WPARAM(WM_LBUTTONDOWN)
+        SendMessageW(staticParent, UINT(WM_PARENTNOTIFY), parentNotifyWParam, 0)
+        // Tap completes on mouse-up at gesture host
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertTrue(tapped, "Tap gesture should fire through nested padding/frame containers")
     }
 }
 

@@ -784,7 +784,8 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         }
         return 0
 
-    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN),
+         UINT(WM_PARENTNOTIFY):
         if let parent = GetParent(hwnd!) {
             return SendMessageW(parent, uMsg, wParam, lParam)
         }
@@ -1138,15 +1139,17 @@ let paddingLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass
         }
         return 0
 
-    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
-        // Forward to parent so BackgroundView ancestors can set their brush.
-        // If no ancestor handles it, DefWindowProc returns the default.
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN),
+         UINT(WM_PARENTNOTIFY):
         if let parent = GetParent(hwnd!) {
             return SendMessageW(parent, uMsg, wParam, lParam)
         }
-        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
-        SetBkMode(hdc, TRANSPARENT)
-        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+        if uMsg != UINT(WM_PARENTNOTIFY) {
+            let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+            SetBkMode(hdc, TRANSPARENT)
+            return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_COMMAND):
         if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
@@ -1230,14 +1233,17 @@ let frameLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, 
         }
         return 0
 
-    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
-        // Forward to parent so BackgroundView ancestors can set their brush.
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN),
+         UINT(WM_PARENTNOTIFY):
         if let parent = GetParent(hwnd!) {
             return SendMessageW(parent, uMsg, wParam, lParam)
         }
-        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
-        SetBkMode(hdc, TRANSPARENT)
-        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+        if uMsg != UINT(WM_PARENTNOTIFY) {
+            let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+            SetBkMode(hdc, TRANSPARENT)
+            return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_COMMAND):
         if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
@@ -1398,10 +1404,14 @@ let foregroundColorProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcla
                      rect.right - rect.left, rect.bottom - rect.top, UINT(SWP_NOZORDER))
         return 0
 
+    case UINT(WM_PARENTNOTIFY):
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         // Set the text color on the child control's HDC.
-        // WM_CTLCOLORSTATIC is sent by STATIC controls (Text labels).
-        // WM_CTLCOLORBTN is sent by BUTTON controls.
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetTextColor(hdc, info.colorRef)
         SetBkMode(hdc, TRANSPARENT)
@@ -1513,6 +1523,12 @@ let backgroundProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
             FillRect(hdc, &rect, brush)
         }
         return 1
+
+    case UINT(WM_PARENTNOTIFY):
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))

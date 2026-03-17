@@ -233,7 +233,18 @@ private let containerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         }
         return 0
 
+    case UINT(WM_PARENTNOTIFY):
+        // Forward to parent so gesture ancestors detect descendant clicks
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        // Forward to parent so BackgroundView ancestors can set brush
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetBkMode(hdc, TRANSPARENT)
         return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
