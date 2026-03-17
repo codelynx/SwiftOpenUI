@@ -63,9 +63,21 @@ public class Win32ViewHost: AnyViewHost {
     }
 
     /// Add the initial child HWND to the container.
+    /// Sizes the container to match the child's natural size (not the other way around).
+    /// This is critical: the container starts at 0x0, so layoutChild() would crush
+    /// the child to zero if we didn't size the container first.
     public func addChild(_ child: HWND) {
         currentChild = child
         SetParent(child, container)
+
+        // Propagate child's natural size up to the container
+        var childRect = RECT()
+        GetWindowRect(child, &childRect)
+        let w = childRect.right - childRect.left
+        let h = childRect.bottom - childRect.top
+        if w > 0 || h > 0 {
+            SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        }
         layoutChild()
     }
 

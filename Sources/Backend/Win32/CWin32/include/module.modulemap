@@ -3,5 +3,7 @@ module CWin32 [system] {
     link "comctl32"
     link "user32"
     link "gdi32"
+    link "d2d1"
+    link "dwrite"
     export *
 }

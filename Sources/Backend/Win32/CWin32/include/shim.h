@@ -1,5 +1,8 @@
 #pragma once
 
+// Include Direct2D shim
+#include "d2d1_shim.h"
+
 // Win32 shim layer for Swift.
 // Swift's C importer cannot handle Win32 macros. This header provides
 // inline C functions that expand those macros so Swift can call them.

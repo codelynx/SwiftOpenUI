@@ -26,7 +26,19 @@ screenshots/
 
 Requires `gnome-screenshot` and a running display server (X11 or Wayland).
 
-### macOS / Windows / Web
+### Windows
+
+```powershell
+# Capture all examples
+.\screenshots\capture-windows.ps1
+
+# Capture one example
+.\screenshots\capture-windows.ps1 HelloWorld
+```
+
+Uses Win32 `FindWindow` + GDI+ `CopyFromScreen` to capture by window title. Saves as PNG. No external tools needed.
+
+### macOS / Web
 
 Platform-specific capture scripts TBD. For now, capture manually and save to the appropriate directory.
 

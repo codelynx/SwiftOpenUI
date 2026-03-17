@@ -138,48 +138,40 @@ extension Spacer: WinRenderable {
 
 extension Divider: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Horizontal etched line — 2px tall, stretched by stack layout
-        win32_CreateChildWindow(
-            win32_WC_STATIC(), nil,
-            DWORD(SS_ETCHEDHORZ),
-            0, 0, 100, 2,
-            context.parent, nil, context.hInstance
-        )
-    }
-}
+        registerD2DViewClassIfNeeded(hInstance: context.hInstance)
 
-extension Color: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        registerColorViewClassIfNeeded(hInstance: context.hInstance)
-
-        let container = CreateWindowExW(
-            0,
-            colorViewClassName,
-            nil,
+        // 2px tall, stretched by stack layout
+        let hwnd = CreateWindowExW(
+            0, d2dViewClassName, nil,
             DWORD(WS_CHILD | WS_VISIBLE),
-            0, 0, 20, 20,
-            context.parent,
-            nil,
-            context.hInstance,
-            nil
+            0, 0, 100, 2,
+            context.parent, nil, context.hInstance, nil
         )
 
-        guard let container = container else { return nil }
+        guard let hwnd = hwnd else { return nil }
 
-        // Store the color as a COLORREF in GWLP_USERDATA for the paint proc
-        let r = UInt8(self.red * 255)
-        let g = UInt8(self.green * 255)
-        let b = UInt8(self.blue * 255)
-        let colorRef = win32_RGB(r, g, b)
-        win32_SetWindowLongPtrW(container, GWLP_USERDATA, LONG_PTR(Int(colorRef)))
+        let state = D2DViewState(hwnd: hwnd, r: 210.0/255, g: 210.0/255, b: 215.0/255)
+        state.drawCallback = { rt, brush, w, h in
+            // Draw a 1px gray line centered in the area
+            d2d1_SolidColorBrush_SetColor(brush, 210.0/255, 210.0/255, 215.0/255, 1)
+            if w >= h {
+                let lineY = h / 2
+                d2d1_RenderTarget_FillRectangle(rt, brush, 0, lineY, w, 1)
+            } else {
+                let lineX = w / 2
+                d2d1_RenderTarget_FillRectangle(rt, brush, lineX, 0, 1, h)
+            }
+        }
+        let ptr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(hwnd, d2dViewProc, 50, DWORD_PTR(UInt(bitPattern: ptr)))
 
-        return container
+        return hwnd
     }
 }
 
-// Color view window class — paints with solid color via GDI
-private let colorViewClassName: UnsafePointer<WCHAR> = {
-    "SwiftUIColorView".withCString(encodedAs: UTF16.self) { ptr in
+/// Property name used to mark an HWND as an expandable Color view.
+private let colorExpandPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIColorExpand".withCString(encodedAs: UTF16.self) { ptr in
         let len = wcslen(ptr) + 1
         let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
         buf.initialize(from: ptr, count: len)
@@ -187,77 +179,339 @@ private let colorViewClassName: UnsafePointer<WCHAR> = {
     }
 }()
 
-private var colorViewClassRegistered = false
+/// Check if an HWND is a Color view that should expand to fill its container.
+func isColorExpandHwnd(_ hwnd: HWND) -> Bool {
+    return GetPropW(hwnd, colorExpandPropName) != nil
+}
 
-private func registerColorViewClassIfNeeded(hInstance: HINSTANCE) {
-    guard !colorViewClassRegistered else { return }
-    colorViewClassRegistered = true
+extension Color: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerD2DViewClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, d2dViewClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE),
+            0, 0, 20, 20,
+            context.parent, nil, context.hInstance, nil
+        )
+
+        guard let container = container else { return nil }
+
+        // Mark as expandable so ZStack and other containers know to fill
+        SetPropW(container, colorExpandPropName, HANDLE(bitPattern: 1))
+
+        let cr = Float(self.red)
+        let cg = Float(self.green)
+        let cb = Float(self.blue)
+        let ca = Float(self.alpha)
+        let state = D2DViewState(hwnd: container, r: cr, g: cg, b: cb)
+        state.drawCallback = { rt, brush, w, h in
+            d2d1_SolidColorBrush_SetColor(brush, cr, cg, cb, ca)
+            d2d1_RenderTarget_FillRectangle(rt, brush, 0, 0, w, h)
+        }
+        let ptr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(container, d2dViewProc, 50, DWORD_PTR(UInt(bitPattern: ptr)))
+
+        return container
+    }
+}
+
+// MARK: - D2D view infrastructure
+
+/// Shared window class for D2D-rendered views (Color, Divider, etc.)
+private let d2dViewClassName: UnsafePointer<WCHAR> = {
+    "SwiftUID2DView".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+private var d2dViewClassRegistered = false
+
+private func registerD2DViewClassIfNeeded(hInstance: HINSTANCE) {
+    guard !d2dViewClassRegistered else { return }
+    d2dViewClassRegistered = true
 
     var wc = WNDCLASSEXW()
     wc.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
     wc.style = UINT(CS_HREDRAW | CS_VREDRAW)
-    wc.lpfnWndProc = colorViewWndProc
+    wc.lpfnWndProc = DefWindowProcW
     wc.hInstance = hInstance
     wc.hbrBackground = nil
-    wc.lpszClassName = colorViewClassName
+    wc.lpszClassName = d2dViewClassName
     RegisterClassExW(&wc)
 }
 
-private let colorViewWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
+/// Per-HWND D2D state for custom-rendered views.
+private class D2DViewState {
+    let hwnd: HWND
+    var renderTarget: D2DRenderTarget?
+    var brush: D2DBrush?
+    var drawCallback: ((D2DRenderTarget, D2DBrush, Float, Float) -> Void)?
+
+    init(hwnd: HWND, r: Float, g: Float, b: Float) {
+        self.hwnd = hwnd
+        // Defer render target creation until first WM_SIZE/WM_PAINT
+        // when the window has a non-zero size.
+    }
+
+    func ensureRenderTarget(width: UInt32, height: UInt32) {
+        if renderTarget == nil && width > 0 && height > 0 {
+            renderTarget = D2DRenderer.shared.createRenderTarget(for: hwnd, width: width, height: height)
+            if let rt = renderTarget {
+                brush = D2DRenderer.shared.createBrush(rt, r: 0, g: 0, b: 0)
+            }
+        }
+    }
+
+    func resize(width: UInt32, height: UInt32) {
+        if let rt = renderTarget, width > 0, height > 0 {
+            D2DRenderer.shared.resize(rt, width: width, height: height)
+        }
+    }
+
+    func paint() {
+        if renderTarget == nil {
+            var r = RECT()
+            GetClientRect(hwnd, &r)
+            ensureRenderTarget(width: UInt32(r.right), height: UInt32(r.bottom))
+        }
+        guard let rt = renderTarget, let brush = brush else { return }
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let w = Float(rect.right - rect.left)
+        let h = Float(rect.bottom - rect.top)
+        guard w > 0, h > 0 else { return }
+
+        d2d1_RenderTarget_BeginDraw(rt)
+        // Clear with window background color
+        let bgColor = GetSysColor(COLOR_WINDOW)
+        d2d1_RenderTarget_Clear(rt,
+            Float(win32_GetRValue(bgColor)) / 255.0,
+            Float(win32_GetGValue(bgColor)) / 255.0,
+            Float(win32_GetBValue(bgColor)) / 255.0, 1.0)
+
+        drawCallback?(rt, brush, w, h)
+
+        let hr = d2d1_RenderTarget_EndDraw(rt)
+        if hr < 0 { cleanup() }
+    }
+
+    func cleanup() {
+        if let b = brush { D2DRenderer.shared.releaseBrush(b); brush = nil }
+        if let rt = renderTarget { D2DRenderer.shared.releaseRenderTarget(rt); renderTarget = nil }
+    }
+
+    deinit { cleanup() }
+}
+
+/// Subclass proc for D2D-rendered views — handles WM_PAINT, WM_SIZE, WM_ERASEBKGND.
+private let d2dViewProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let state = Unmanaged<D2DViewState>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
     switch uMsg {
+    case UINT(WM_SIZE):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        state.ensureRenderTarget(width: UInt32(rect.right), height: UInt32(rect.bottom))
+        state.resize(width: UInt32(rect.right), height: UInt32(rect.bottom))
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     case UINT(WM_PAINT):
-        var ps = PAINTSTRUCT()
-        let hdc = BeginPaint(hwnd, &ps)
-        let colorRef = COLORREF(win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA))
-        let brush = CreateSolidBrush(colorRef)
-        FillRect(hdc, &ps.rcPaint, brush)
-        DeleteObject(brush)
-        EndPaint(hwnd, &ps)
+        state.paint()
+        _ = ValidateRect(hwnd, nil)
         return 0
     case UINT(WM_ERASEBKGND):
         return 1
+    case UINT(WM_NCDESTROY):
+        Unmanaged<D2DViewState>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, d2dViewProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     default:
-        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
 extension Button: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Extract the title from the label.
-        // Win32 BUTTON controls only support text, so for non-Text labels
-        // we render the label view to extract its text content.
-        let title: String
         if let textLabel = label as? Text {
-            title = textLabel.content
+            // Simple text label — use native Win32 BUTTON control
+            return createNativeButton(title: textLabel.content, action: action, context: context)
         } else {
-            // Walk the label view tree to find the first Text
-            title = extractTextFromView(label) ?? "Button"
+            // Custom label — render the label view inside a clickable container
+            return createCustomLabelButton(label: label, action: action, context: context)
         }
+    }
+}
 
-        let measured = measureText(title, hwnd: context.parent)
-        let buttonWidth = measured.width + 24
-        let buttonHeight = measured.height + 12
+/// Create a native Win32 BUTTON control with a text label.
+private func createNativeButton(title: String, action: @escaping () -> Void, context: RenderContext) -> HWND? {
+    let measured = measureText(title, hwnd: context.parent)
+    let buttonWidth = measured.width + 24
+    let buttonHeight = measured.height + 12
 
-        let controlID = nextControlID()
+    let controlID = nextControlID()
 
-        let hwnd = title.withCString(encodedAs: UTF16.self) { wstr in
-            win32_CreateChildWindow(
-                win32_WC_BUTTON(),
-                wstr,
-                DWORD(BS_PUSHBUTTON),
-                0, 0, buttonWidth, buttonHeight,
-                context.parent,
-                HMENU(bitPattern: UInt(controlID)),
-                context.hInstance
-            )
+    let hwnd = title.withCString(encodedAs: UTF16.self) { wstr in
+        win32_CreateChildWindow(
+            win32_WC_BUTTON(),
+            wstr,
+            DWORD(BS_PUSHBUTTON),
+            0, 0, buttonWidth, buttonHeight,
+            context.parent,
+            HMENU(bitPattern: UInt(controlID)),
+            context.hInstance
+        )
+    }
+
+    if let hwnd = hwnd {
+        registerCommandHandler(controlID: controlID, action: action)
+        SetWindowSubclass(hwnd, buttonCleanupProc, 0, DWORD_PTR(controlID))
+    }
+
+    return hwnd
+}
+
+/// Create a clickable container that renders a custom label view inside.
+/// This handles Button(action:) { HStack { Text("★").foregroundColor(.yellow); Text("Star") } }
+private func createCustomLabelButton<Label: View>(label: Label, action: @escaping () -> Void, context: RenderContext) -> HWND? {
+    registerCustomButtonClassIfNeeded(hInstance: context.hInstance)
+
+    // Create a lightweight clickable container
+    let container = CreateWindowExW(
+        0, customButtonClassName, nil,
+        DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+        0, 0, 0, 0,
+        context.parent, nil, context.hInstance, nil
+    )
+
+    guard let container = container else { return nil }
+
+    // Render the label view inside the container
+    let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+    let childHwnd = winRenderView(label, in: childContext)
+
+    // Size the container to fit the label + button padding
+    var naturalW: Int32 = 24
+    var naturalH: Int32 = 12
+    if let child = childHwnd {
+        var childRect = RECT()
+        GetWindowRect(child, &childRect)
+        naturalW = (childRect.right - childRect.left) + 16
+        naturalH = (childRect.bottom - childRect.top) + 8
+    }
+    SetWindowPos(container, nil, 0, 0, naturalW, naturalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+    // Center the label inside the container
+    if let child = childHwnd {
+        var childRect = RECT()
+        GetWindowRect(child, &childRect)
+        let cw = childRect.right - childRect.left
+        let ch = childRect.bottom - childRect.top
+        let x = (naturalW - cw) / 2
+        let y = (naturalH - ch) / 2
+        SetWindowPos(child, nil, x, y, cw, ch, UINT(SWP_NOZORDER))
+    }
+
+    // Install click handler
+    let btnInfo = CustomButtonInfo(action: action, child: childHwnd)
+    let infoPtr = Unmanaged.passRetained(btnInfo).toOpaque()
+    SetWindowSubclass(container, customButtonProc, 30, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+    return container
+}
+
+private class CustomButtonInfo {
+    let action: () -> Void
+    let child: HWND?
+    init(action: @escaping () -> Void, child: HWND?) {
+        self.action = action
+        self.child = child
+    }
+}
+
+private let customButtonClassName: UnsafePointer<WCHAR> = {
+    "SwiftUICustomButton".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+private var customButtonClassRegistered = false
+
+private func registerCustomButtonClassIfNeeded(hInstance: HINSTANCE) {
+    guard !customButtonClassRegistered else { return }
+    customButtonClassRegistered = true
+
+    var wc = WNDCLASSEXW()
+    wc.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
+    wc.style = UINT(CS_HREDRAW | CS_VREDRAW)
+    wc.lpfnWndProc = DefWindowProcW
+    wc.hInstance = hInstance
+    wc.hCursor = LoadCursorW(nil, win32_IDC_ARROW())
+    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE)
+    wc.lpszClassName = customButtonClassName
+    RegisterClassExW(&wc)
+}
+
+/// Subclass proc for custom-label buttons: handles click + visual feedback.
+private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    switch uMsg {
+    case UINT(WM_LBUTTONUP):
+        let info = Unmanaged<CustomButtonInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).takeUnretainedValue()
+        info.action()
+        return 0
+
+    case UINT(WM_SIZE):
+        // Re-center child label
+        let info = Unmanaged<CustomButtonInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).takeUnretainedValue()
+        if let child = info.child {
+            var containerRect = RECT()
+            GetClientRect(hwnd, &containerRect)
+            var childRect = RECT()
+            GetWindowRect(child, &childRect)
+            let cw = childRect.right - childRect.left
+            let ch = childRect.bottom - childRect.top
+            let containerW = containerRect.right - containerRect.left
+            let containerH = containerRect.bottom - containerRect.top
+            let x = (containerW - cw) / 2
+            let y = (containerH - ch) / 2
+            SetWindowPos(child, nil, x, y, cw, ch, UINT(SWP_NOZORDER))
         }
+        return 0
 
-        if let hwnd = hwnd {
-            registerCommandHandler(controlID: controlID, action: action)
-            SetWindowSubclass(hwnd, buttonCleanupProc, 0, DWORD_PTR(controlID))
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        // Forward to parent
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
         }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
-        return hwnd
+    case UINT(WM_NCDESTROY):
+        Unmanaged<CustomButtonInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, customButtonProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
@@ -598,6 +852,11 @@ let paddingLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass
         return 0
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        // Forward to parent so BackgroundView ancestors can set their brush.
+        // If no ancestor handles it, DefWindowProc returns the default.
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetBkMode(hdc, TRANSPARENT)
         return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
@@ -685,6 +944,10 @@ let frameLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, 
         return 0
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        // Forward to parent so BackgroundView ancestors can set their brush.
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetBkMode(hdc, TRANSPARENT)
         return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))

@@ -16,11 +16,42 @@
 
 ## Windows (Win32)
 
-- Backend: `BackendWin32` → renders to HWNDs with Win32 API
+- Backend: `BackendWin32` → renders to HWNDs with Win32 API + Direct2D
 - Requires: Visual Studio with Windows SDK
-- Custom layout engine for flexbox-like positioning
+
+### Architecture
+
+Three-layer design mirroring the GTK4 backend:
+
+| Layer | Target | Purpose |
+|-------|--------|---------|
+| `CWin32` | C/C++ shim | Win32 macro expansions + D2D/DirectWrite COM wrappers |
+| `CWin32Bridge` | Swift bridge | HWNDRef, SubclassHandler, ClosureBox, MainThread |
+| `BackendWin32` | Rendering | Win32Backend, WinRenderer, Win32ViewHost, LayoutEngine, D2DRenderer |
+
+### Rendering Strategy
+
+- **HWND-based controls**: Text→STATIC, Button→BUTTON — native Win32 controls for standard widgets
+- **Direct2D**: Color fills, Divider lines, and any custom visual rendering (anti-aliased, alpha-aware)
+- **DirectWrite**: Text measurement via `DWriteTextLayout.GetMetrics()` — more accurate than GDI's `GetTextExtentPoint32W`
+- **Layout**: Custom flexbox-like engine using `SetWindowPos()` for VStack/HStack/ZStack
+
+### Why the D2D C++ Shim?
+
+Swift's C++ interop (as of Swift 6.2) has a [known bug](https://github.com/apple/swift/issues/62354) where **virtual method calls dispatch statically** instead of through the vtable. COM interfaces like `ID2D1RenderTarget` are pure-virtual — every method must go through vtable dispatch. Calling them directly from Swift invokes the wrong function.
+
+The workaround is `d2d1_shim.cpp`: a C++ file that wraps each COM call in a `extern "C"` function. Swift calls the C function, the C++ compiler dispatches through the vtable correctly. The header (`d2d1_shim.h`) exposes COM objects as opaque struct pointers so Swift gets type-safe distinct types.
+
+**When can the shim be removed?** When [swiftlang/swift#62354](https://github.com/apple/swift/issues/62354) is resolved and Swift can dispatch virtual C++ calls through vtables correctly. At that point, the D2D COM interfaces can be imported directly with `import CxxD2D1` or similar.
+
+### Key Implementation Details
+
+- Coalesced rebuilds via `PostMessage(WM_SWIFTUI_REBUILD)` — Win32 equivalent of GTK's `g_idle_add()`
+- Focus save/restore across rebuilds with `suppressNextFocusRestore()` for `@FocusState`
+- Owner-draw buttons (`BS_OWNERDRAW` + `WM_DRAWITEM`) for `.foregroundColor()` on Button controls
+- Recursive font application via `applyFontRecursively()` to reach controls inside modifier wrappers
+- HFONT leak prevention via cleanup subclass on `WM_NCDESTROY`
 - Thread-local environment via `TlsAlloc` / `TlsGetValue`
-- C bridge layer (`CWin32`, `CWin32Bridge`) for Win32 API interop
 
 ## Web (WebAssembly) — Experimental
 

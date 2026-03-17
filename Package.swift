@@ -56,6 +56,8 @@ targets += [
             .linkedLibrary("comctl32"),
             .linkedLibrary("user32"),
             .linkedLibrary("gdi32"),
+            .linkedLibrary("d2d1"),
+            .linkedLibrary("dwrite"),
         ]
     ),
     .target(

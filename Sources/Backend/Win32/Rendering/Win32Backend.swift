@@ -25,10 +25,7 @@ extension WindowGroup: Win32WindowRenderable {
             RegisterClassExW(&wc)
         }
 
-        // Calculate window rect for desired client area size
-        var rect = RECT(left: 0, top: 0, right: 400, bottom: 300)
-        AdjustWindowRectEx(&rect, DWORD(WS_OVERLAPPEDWINDOW), false, 0)
-
+        // Create with default size initially; we'll resize after rendering content
         let titleWide: [WCHAR] = Array(title.utf16) + [0]
         let hwnd = titleWide.withUnsafeBufferPointer { titlePtr in
             className.withUnsafeBufferPointer { classPtr in
@@ -38,8 +35,7 @@ extension WindowGroup: Win32WindowRenderable {
                     titlePtr.baseAddress!,
                     DWORD(WS_OVERLAPPEDWINDOW),
                     Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT),
-                    rect.right - rect.left,
-                    rect.bottom - rect.top,
+                    500, 600,
                     nil,
                     nil,
                     hInstance,
@@ -51,6 +47,27 @@ extension WindowGroup: Win32WindowRenderable {
         // Render the content view tree into the window
         let context = RenderContext(parent: hwnd, hInstance: hInstance)
         if let contentHwnd = winRenderView(content, in: context) {
+            // Auto-size window to fit content's natural size
+            var contentRect = RECT()
+            GetWindowRect(contentHwnd, &contentRect)
+            let contentW = contentRect.right - contentRect.left
+            let contentH = contentRect.bottom - contentRect.top
+
+            // Use content natural size with minimum 300x200, maximum screen size
+            let screenW = GetSystemMetrics(SM_CXSCREEN)
+            let screenH = GetSystemMetrics(SM_CYSCREEN)
+            let clientW = max(300, min(Int32(contentW + 20), screenW * 3 / 4))
+            let clientH = max(200, min(Int32(contentH + 20), screenH * 3 / 4))
+
+            var windowRect = RECT(left: 0, top: 0, right: LONG(clientW), bottom: LONG(clientH))
+            AdjustWindowRectEx(&windowRect, DWORD(WS_OVERLAPPEDWINDOW), false, 0)
+            SetWindowPos(hwnd, nil,
+                         Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT),
+                         windowRect.right - windowRect.left,
+                         windowRect.bottom - windowRect.top,
+                         UINT(SWP_NOMOVE | SWP_NOZORDER))
+
+            // Size content to fill client area
             var clientRect = RECT()
             GetClientRect(hwnd, &clientRect)
             SetWindowPos(
