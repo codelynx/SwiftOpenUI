@@ -1,0 +1,209 @@
+# Web (Wasm) Setup & Development
+
+This documents how to build, run, and develop SwiftOpenUI examples for the browser via WebAssembly.
+
+## Requirements
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| Swift toolchain | 6.2.4 (open-source, via swiftly) | Xcode's Swift lacks the Wasm backend |
+| Wasm SDK | swift-6.2.4-RELEASE_wasm | Install via `./configure` or manually |
+| Node.js | 18+ | For Vite dev server and screenshot tooling |
+| Google Chrome | Any | For Puppeteer screenshots (optional) |
+
+## Quick Start
+
+```bash
+# 1. Setup toolchain + Wasm SDK (one-time)
+./configure
+
+# 2. Build all Wasm examples
+source ~/.swiftly/env.sh
+./web/build-wasm.sh
+
+# 3. Install Node dependencies
+cd web && npm install
+
+# 4. Start dev server
+npx vite
+# Open http://localhost:3000
+```
+
+## How It Works
+
+### Build Pipeline
+
+```
+Swift source → SwiftWasm compiler → .wasm binary
+                                        ↓
+                         PackageToJS plugin (SPM)
+                                        ↓
+                    JS module (index.js, runtime.js, instantiate.js)
+                                        ↓
+                      HTML page + import map → Browser
+```
+
+1. `swift package --swift-sdk ... js --product <name>` compiles Swift to `.wasm` and generates a JS module package at `.build/plugins/PackageToJS/outputs/Package/`
+2. `build-wasm.sh` copies each product's output to `web/examples/<name>/` and creates an HTML page
+3. Vite serves the HTML pages with proper module resolution
+
+### JavaScriptKit Bridge
+
+SwiftOpenUI's WebBackend uses [JavaScriptKit](https://github.com/swiftwasm/JavaScriptKit) to bridge Swift and the browser DOM:
+
+```swift
+// Swift side (WebRenderer.swift)
+let div = document.createElement("div")
+div.style = "display: flex; flex-direction: column;"
+```
+
+JavaScriptKit translates these calls to JavaScript DOM operations at runtime through the Wasm↔JS bridge.
+
+### WASI Shim
+
+WebAssembly programs compiled for WASI need a WASI implementation in the browser. The `@bjorn3/browser_wasi_shim` package provides this. Each example HTML page includes an import map to resolve this dependency:
+
+```html
+<script type="importmap">
+{
+    "imports": {
+        "@bjorn3/browser_wasi_shim": "https://esm.sh/@bjorn3/browser_wasi_shim@0.3.0"
+    }
+}
+</script>
+```
+
+## Project Structure
+
+```
+web/
+├── index.html          ← Example index page (links to all examples)
+├── package.json        ← Node dependencies (Vite, Puppeteer, browser_wasi_shim)
+├── vite.config.js      ← Vite dev server config
+├── build-wasm.sh       ← Builds all Wasm examples + generates HTML pages
+├── screenshot.mjs      ← Puppeteer screenshot capture script
+├── .gitignore          ← Ignores node_modules/, dist/, examples/
+└── examples/           ← Generated (not checked in)
+    ├── HelloWorld/     ← PackageToJS output (JS + .wasm)
+    ├── HelloWorld.html ← HTML page that loads the example
+    ├── TextStyles/
+    ├── TextStyles.html
+    └── ...
+```
+
+## Building Wasm Examples
+
+### All examples at once
+
+```bash
+./web/build-wasm.sh
+```
+
+This builds each product with `swift package --swift-sdk ... js --product <name>`, copies the output to `web/examples/`, and creates HTML pages.
+
+### Single example
+
+```bash
+swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld
+```
+
+Output: `.build/plugins/PackageToJS/outputs/Package/`
+
+### Adding a new example
+
+1. Add the example to `Examples/<name>/main.swift` with the standard `#if` boilerplate
+2. Add an executable target in `Package.swift`
+3. Add the product name to `PRODUCTS` array in `web/build-wasm.sh`
+4. Add a link in `web/index.html`
+5. Add an entry in `web/screenshot.mjs`
+6. Run `./web/build-wasm.sh`
+
+## Development Workflow
+
+### Vite Dev Server
+
+```bash
+cd web
+npm install    # first time only
+npx vite       # starts at http://localhost:3000
+```
+
+The index page at `localhost:3000` links to all examples. Click one to open it.
+
+Vite handles module resolution and serves the Wasm files with the correct MIME types. No import maps needed when serving through Vite with `node_modules` available.
+
+### Rebuilding after Swift changes
+
+After changing Swift source code:
+
+```bash
+./web/build-wasm.sh        # rebuild all
+# or rebuild one:
+swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld
+cp -r .build/plugins/PackageToJS/outputs/Package web/examples/HelloWorld
+```
+
+Then refresh the browser. (No hot reload for Wasm — you must rebuild and refresh.)
+
+### Stale build cache
+
+If you switch between toolchains (e.g. 6.2.4 ↔ 6.3 snapshot), clean first:
+
+```bash
+swift package clean
+```
+
+## How Views Map to DOM
+
+The WebRenderer maps SwiftOpenUI views to HTML elements via CSS:
+
+| SwiftOpenUI | HTML/CSS |
+|-------------|----------|
+| Text("hello") | `<span>hello</span>` |
+| Button("tap") { } | `<button onclick=...>tap</button>` |
+| VStack { } | `<div style="display:flex; flex-direction:column">` |
+| HStack { } | `<div style="display:flex; flex-direction:row">` |
+| ZStack { } | `<div style="display:grid; place-items:center">` (children use `grid-area: 1/1`) |
+| Spacer() | `<div style="flex:1">` |
+| Divider() | `<hr>` |
+| Color.blue | `<div style="background-color:rgba(0,0,255,1)">` |
+| .padding(8) | `<div style="padding:8px">` wrapping child |
+| .frame(width:100) | `<div style="width:100px">` wrapping child |
+| .foregroundColor(.red) | `<div style="color:rgba(255,0,0,1)">` wrapping child |
+| .background(.green) | `<div style="background-color:...">` wrapping child |
+| .font(.title) | `<div style="font-size:28px; font-weight:bold">` wrapping child |
+| .border(.red) | `<div style="border:1px solid rgba(255,0,0,1)">` wrapping child |
+
+### Reactive State (WebViewHost)
+
+When `@State` changes, `WebViewHost` schedules a rebuild via `requestAnimationFrame`. On rebuild:
+1. Container's `innerHTML` is cleared
+2. New DOM elements are created from the updated view tree
+3. Appended to the container in one pass
+
+This is a full re-render, not a diff — acceptable for the current scope.
+
+## Screenshots
+
+Automated via Puppeteer (headless Chrome):
+
+```bash
+# Start Vite in one terminal
+cd web && npx vite
+
+# Run screenshots in another terminal
+cd web && node screenshot.mjs
+```
+
+Saves to `screenshots/web/`. Uses 2x device scale factor and `fullPage: true`.
+
+Requires Google Chrome installed at `/Applications/Google Chrome.app`.
+
+## Known Limitations
+
+- **No hot reload** — Wasm must be rebuilt and the browser refreshed after Swift changes
+- **Debug builds are large** — ~59MB per example (includes full Swift runtime). Release builds with `wasm-opt` would be much smaller.
+- **Spacer doesn't expand** — CSS `flex:1` doesn't work the same as native flex layout without a constrained parent height
+- **Full re-render on state change** — no DOM diffing yet; entire view tree is rebuilt. Fine for small examples, would need optimization for larger apps.
+- **Import maps for standalone serving** — when serving without Vite/Node (e.g. `npx serve`), each HTML page needs an import map for `@bjorn3/browser_wasi_shim`. The `build-wasm.sh` script generates these automatically.
+- **macOS-only toolchain** — Wasm cross-compilation requires the open-source Swift toolchain, which `./configure` installs on macOS. Linux hosts can also cross-compile but are not covered by the setup script.

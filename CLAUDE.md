@@ -114,6 +114,7 @@ Text, Button, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, An
 | `docs/guides/getting-started.md` | Setup, build, run on all platforms |
 | `docs/guides/adding-a-backend.md` | How to implement a new backend |
 | `docs/guides/examples-plan.md` | Examples reorganization plan |
+| `docs/guides/web-setup.md` | Web/Wasm build, Vite, screenshots, DOM mapping |
 | `docs/guides/android-setup.md` | Android cross-compilation setup |
 | `docs/architecture/rendering-backends.md` | Backend architecture, ViewHost patterns |
 | `docs/architecture/android-backend-design.md` | Android backend design (batched JNI diffs) |
