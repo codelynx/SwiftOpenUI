@@ -2002,8 +2002,9 @@ private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
             let x = Double(win32_GET_X_LPARAM(lParam))
             let y = Double(win32_GET_Y_LPARAM(lParam))
             let value = DragGestureValue(
+                startLocation: (x: handler.startX, y: handler.startY),
                 location: (x: x, y: y),
-                startLocation: (x: handler.startX, y: handler.startY)
+                translation: (width: x - handler.startX, height: y - handler.startY)
             )
             handler.onChanged?(value)
         }
@@ -2013,15 +2014,16 @@ private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
         if handler.dragging {
             handler.dragging = false
             ReleaseCapture()
-            // Convert to root coords
             var pt = POINT(x: LONG(win32_GET_X_LPARAM(lParam)), y: LONG(win32_GET_Y_LPARAM(lParam)))
             if hwnd != handler.rootHwnd {
                 ClientToScreen(hwnd, &pt)
                 ScreenToClient(handler.rootHwnd, &pt)
             }
+            let x = Double(pt.x), y = Double(pt.y)
             let value = DragGestureValue(
-                location: (x: Double(pt.x), y: Double(pt.y)),
-                startLocation: (x: handler.startX, y: handler.startY)
+                startLocation: (x: handler.startX, y: handler.startY),
+                location: (x: x, y: y),
+                translation: (width: x - handler.startX, height: y - handler.startY)
             )
             handler.onEnded?(value)
         }
