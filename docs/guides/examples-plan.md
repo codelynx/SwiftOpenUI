@@ -229,7 +229,7 @@ Examples/
 
 These examples require features not yet in SwiftOpenUI. They are roadmap drivers, not current candidates. They will be added to the examples list once the required APIs ship.
 
-### PaintSwift
+### PintaSwift
 **Requires:** Canvas/drawing view, gesture handlers (onDrag, onTapGesture)
 **Drives:** gesture API, canvas rendering, platform-specific drawing extensions
 **Features:**
