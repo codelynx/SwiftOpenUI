@@ -34,6 +34,9 @@ public class WebViewHost: AnyViewHost {
     func rebuild() {
         scheduled = false
 
+        // Release closures from the previous render pass
+        _webRetainedClosures.removeAll()
+
         // Remove old children
         container.innerHTML = ""
 

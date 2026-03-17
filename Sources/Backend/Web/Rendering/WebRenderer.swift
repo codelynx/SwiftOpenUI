@@ -1,6 +1,18 @@
 import JavaScriptKit
 import SwiftOpenUI
 
+// MARK: - JSClosure lifetime management
+
+/// Retains JSClosure instances so they survive until the next rebuild.
+/// Cleared at the start of each WebViewHost rebuild — old closures are
+/// released when their DOM elements are destroyed via innerHTML = "".
+var _webRetainedClosures: [JSClosure] = []
+
+/// Retain a JSClosure so it lives as long as its DOM element.
+func webRetainClosure(_ closure: JSClosure) {
+    _webRetainedClosures.append(closure)
+}
+
 // MARK: - Web rendering protocol
 
 /// Protocol that views implement (via extensions) to provide DOM element creation.
@@ -106,6 +118,7 @@ extension SwiftOpenUI.TextField: WebRenderable {
             }
             return .undefined
         }
+        webRetainClosure(handler)
         _ = input.addEventListener("input", handler)
 
         return input
@@ -138,6 +151,7 @@ extension SwiftOpenUI.Button: WebRenderable {
             self.action()
             return .undefined
         }
+        webRetainClosure(handler)
         button.onclick = .object(handler)
 
         return button
