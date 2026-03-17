@@ -208,16 +208,13 @@ private struct StateDemoView: View {
 
             Divider()
 
-            // @Binding section — parent and child share state
+            // @Binding section — parent owns state, child mutates via Binding
             VStack(spacing: 4) {
                 Text("@Binding").font(.headline)
                 Text("Parent value: \(shared)")
                 Button("Parent +1") { shared += 1 }
-                HStack(spacing: 8) {
-                    Text("Child sees: \(shared)")
-                    Button("Child +1") { shared += 1 }
-                }
-                .padding(4)
+                BindingChildView(value: $shared)
+                    .padding(4)
             }
 
             Divider()
@@ -239,6 +236,20 @@ private struct StateDemoView: View {
             }
         }
         .padding()
+    }
+}
+
+/// Child view that receives a @Binding from the parent.
+/// Demonstrates true parent↔child state sharing — mutations here
+/// update the parent's @State and trigger a full re-render.
+private struct BindingChildView: View {
+    @Binding var value: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Child sees: \(value)")
+            Button("Child +1") { value += 1 }
+        }
     }
 }
 

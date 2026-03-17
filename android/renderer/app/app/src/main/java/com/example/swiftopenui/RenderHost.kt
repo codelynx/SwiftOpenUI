@@ -3,6 +3,8 @@ package com.example.swiftopenui
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -279,8 +281,19 @@ object RenderHost {
     }
 
     private fun createBorder(context: Context, props: JSONObject, children: JSONArray): View {
+        val color = propsToColor(props)
+        val width = props.optDouble("width", 1.0)
         val child = if (children.length() > 0) createView(context, children.getJSONObject(0)) else View(context)
-        // Simple border via background drawable would be complex; skip for now
+        val border = GradientDrawable().apply {
+            setStroke(dpToPx(context, width.toInt().coerceAtLeast(1)), color)
+            setColor(Color.TRANSPARENT)
+        }
+        val existing = child.background
+        child.background = if (existing != null) {
+            LayerDrawable(arrayOf(existing, border))
+        } else {
+            border
+        }
         return child
     }
 

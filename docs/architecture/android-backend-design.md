@@ -282,19 +282,20 @@ This is simpler than the batched diff design above (which remains the Phase 2 ta
 - `.foregroundColor()` → recursive `setTextColor` on child TextViews
 - `.backgroundColor()` → `setBackgroundColor` on child
 - `.font()` → `setTextSize` + `setTypeface` (bold, semibold, light, normal)
-- `.border()` → stub (no visual effect yet)
+- `.border()` → `GradientDrawable` with stroke color and width
 
 #### State
-- Static rendering only — `@State` changes are not yet wired across JNI
+- Interactive `@State`: button tap → JNI `nativeOnButtonClick` → action closure → `@State` mutation → `scheduleRebuild` → full JSON re-render → Kotlin replaces view tree
+- `@Binding`: child views receive `Binding<Value>` from parent's projected `$state`; mutations flow through the same storage + rebuild path
+- Session persistence: `AndroidSession` at module scope survives Activity recreation — `@State` values are preserved across rotation/theme changes
 - One `Activity`, one root `ScrollView` wrapping the rendered tree
 
 #### Examples (defined in JNIBridge.swift)
-- HelloWorld, TextStyles, Buttons, StateDemo, Layout
-- Launched via intent extra: `--es example "TextStyles"`
+- HelloWorld, TextStyles, Buttons, StateDemo (interactive, 5 sections), Layout
+- Launched via intent extra: `--es example "StateDemo"`
 
 ### Not in Phase 1
-- Batched diff operations (the design above)
-- Interactive @State (tap → rebuild → re-render)
+- Batched diff operations (the design above) — currently full JSON re-render
 - Compose
 - Fragments, navigation
 - Text input / focus
