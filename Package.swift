@@ -116,6 +116,26 @@ targets += [
         dependencies: exampleDeps,
         path: "Examples/Showcase2"
     ),
+    .executableTarget(
+        name: "TextStyles",
+        dependencies: exampleDeps,
+        path: "Examples/02-TextStyles"
+    ),
+    .executableTarget(
+        name: "Buttons",
+        dependencies: exampleDeps,
+        path: "Examples/03-Buttons"
+    ),
+    .executableTarget(
+        name: "StateDemo",
+        dependencies: exampleDeps,
+        path: "Examples/04-State"
+    ),
+    .executableTarget(
+        name: "Layout",
+        dependencies: exampleDeps,
+        path: "Examples/05-Layout"
+    ),
 ]
 
 #if os(macOS)
