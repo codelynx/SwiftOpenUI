@@ -1738,6 +1738,60 @@ private func extractTextFromView<V: View>(_ view: V) -> String? {
     return nil
 }
 
+// MARK: - Navigation stubs (render content, ignore navigation for now)
+
+extension NavigationStack: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+extension NavigationLink: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Stub: render label as text, not a button — navigation is not yet
+        // implemented on Win32. A button with a no-op action would be misleading.
+        winRenderView(Text(label), in: context)
+    }
+}
+
+extension NavigationDestinationModifier: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+extension TitledView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+// MARK: - Animation/effect stubs (render content, ignore effects for now)
+
+extension OpacityView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+extension OffsetView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+extension ScaleEffectView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+extension AnimatedView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
 // MARK: - Gesture Win32 extensions
 //
 // Gestures use recursive subclassing: the same subclass proc is installed on
@@ -1953,7 +2007,10 @@ extension DragGestureView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
-        let handler = DragGestureHandler(onChanged: onChanged, onEnded: onEnded, rootHwnd: hwnd)
+        let handler = DragGestureHandler(
+            onChanged: onChanged, onEnded: onEnded,
+            minimumDistance: minimumDistance, rootHwnd: hwnd
+        )
         installGestureRecursively(on: hwnd, handler: handler,
                                   proc: dragGestureProc, subclassID: dragGestureSubclassID)
         return hwnd
@@ -1963,15 +2020,18 @@ extension DragGestureView: WinRenderable {
 private class DragGestureHandler {
     let onChanged: ((DragGestureValue) -> Void)?
     let onEnded: ((DragGestureValue) -> Void)?
+    let minimumDistance: Double
     let rootHwnd: HWND
-    var dragging: Bool = false
+    var tracking: Bool = false  // mouse is down, but drag may not have started
+    var dragging: Bool = false  // distance threshold exceeded, drag is active
     var startX: Double = 0
     var startY: Double = 0
 
     init(onChanged: ((DragGestureValue) -> Void)?, onEnded: ((DragGestureValue) -> Void)?,
-         rootHwnd: HWND) {
+         minimumDistance: Double, rootHwnd: HWND) {
         self.onChanged = onChanged
         self.onEnded = onEnded
+        self.minimumDistance = minimumDistance
         self.rootHwnd = rootHwnd
     }
 }
@@ -1993,44 +2053,62 @@ private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
         }
         handler.startX = Double(pt.x)
         handler.startY = Double(pt.y)
-        handler.dragging = true
+        handler.tracking = true
+        handler.dragging = false
         SetCapture(handler.rootHwnd)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_MOUSEMOVE):
-        if handler.dragging && hwnd == handler.rootHwnd {
+        if handler.tracking && hwnd == handler.rootHwnd {
             let x = Double(win32_GET_X_LPARAM(lParam))
             let y = Double(win32_GET_Y_LPARAM(lParam))
+            let dx = x - handler.startX
+            let dy = y - handler.startY
+            let dist = (dx * dx + dy * dy).squareRoot()
+
+            // Only start dragging once minimumDistance is exceeded
+            if !handler.dragging {
+                guard dist >= handler.minimumDistance else {
+                    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+                }
+                handler.dragging = true
+            }
+
             let value = DragGestureValue(
                 startLocation: (x: handler.startX, y: handler.startY),
                 location: (x: x, y: y),
-                translation: (width: x - handler.startX, height: y - handler.startY)
+                translation: (width: dx, height: dy)
             )
             handler.onChanged?(value)
         }
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_LBUTTONUP):
-        if handler.dragging {
+        if handler.tracking {
+            let wasDragging = handler.dragging
+            handler.tracking = false
             handler.dragging = false
             ReleaseCapture()
-            var pt = POINT(x: LONG(win32_GET_X_LPARAM(lParam)), y: LONG(win32_GET_Y_LPARAM(lParam)))
-            if hwnd != handler.rootHwnd {
-                ClientToScreen(hwnd, &pt)
-                ScreenToClient(handler.rootHwnd, &pt)
+            if wasDragging {
+                var pt = POINT(x: LONG(win32_GET_X_LPARAM(lParam)), y: LONG(win32_GET_Y_LPARAM(lParam)))
+                if hwnd != handler.rootHwnd {
+                    ClientToScreen(hwnd, &pt)
+                    ScreenToClient(handler.rootHwnd, &pt)
+                }
+                let x = Double(pt.x), y = Double(pt.y)
+                let value = DragGestureValue(
+                    startLocation: (x: handler.startX, y: handler.startY),
+                    location: (x: x, y: y),
+                    translation: (width: x - handler.startX, height: y - handler.startY)
+                )
+                handler.onEnded?(value)
             }
-            let x = Double(pt.x), y = Double(pt.y)
-            let value = DragGestureValue(
-                startLocation: (x: handler.startX, y: handler.startY),
-                location: (x: x, y: y),
-                translation: (width: x - handler.startX, height: y - handler.startY)
-            )
-            handler.onEnded?(value)
         }
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_CAPTURECHANGED):
-        if handler.dragging { handler.dragging = false }
+        handler.tracking = false
+        handler.dragging = false
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_NCDESTROY):

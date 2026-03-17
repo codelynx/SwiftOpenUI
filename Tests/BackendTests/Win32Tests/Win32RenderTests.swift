@@ -770,11 +770,13 @@ final class Win32RenderTests: XCTestCase {
             in: ctx
         )!
 
+        // Must exceed minimumDistance (default 10) before onEnded fires
         let startLP = LPARAM(Int16(5)) | (LPARAM(Int16(5)) << 16)
-        let endLP = LPARAM(Int16(50)) | (LPARAM(Int16(50)) << 16)
+        let moveLP = LPARAM(Int16(50)) | (LPARAM(Int16(50)) << 16)
         SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, startLP)
-        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, endLP)
-        XCTAssertTrue(ended, "Drag gesture should fire onEnded on mouse release")
+        SendMessageW(hwnd, UINT(WM_MOUSEMOVE), 0, moveLP)  // exceeds threshold
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, moveLP)
+        XCTAssertTrue(ended, "Drag gesture should fire onEnded after exceeding minimumDistance")
     }
 
     func testTapGestureFiresThroughNestedContainers() {
