@@ -88,6 +88,32 @@ extension Divider: GTKRenderable {
     }
 }
 
+extension TextField: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // Stub: render as a GtkEntry (text input widget)
+        let entry = gtk_entry_new()!
+        let entryPtr = UnsafeMutableRawPointer(entry).assumingMemoryBound(to: GtkEntry.self)
+        let bufferPtr = gtk_entry_get_buffer(entryPtr)
+        gtk_entry_buffer_set_text(bufferPtr, text.wrappedValue, -1)
+        if !title.isEmpty {
+            gtk_entry_set_placeholder_text(entryPtr, title)
+        }
+        return opaqueFromWidget(entry)
+    }
+}
+
+extension FocusedView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkRenderView(content)
+    }
+}
+
+extension FocusedEqualsView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkRenderView(content)
+    }
+}
+
 extension Color: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!

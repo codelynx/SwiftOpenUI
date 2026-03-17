@@ -258,29 +258,56 @@ No crash propagation across the JNI boundary.
 
 ## Phase 1 Scope
 
-Intentionally narrow:
+### Phase 1a: JSON Bridge (Implemented)
 
-### Views
+The initial implementation uses a **full JSON render tree** approach rather than batched diffs. Swift renders the entire view tree to a `RenderNode` graph, serializes to JSON, and sends it across JNI in one call. Kotlin's `RenderHost` deserializes and builds Android Views from scratch.
+
+This is simpler than the batched diff design above (which remains the Phase 2 target) but sufficient for static rendering and screenshot validation.
+
+#### Views
 - `Text` → `TextView`
 - `Button` → `Button`
 - `VStack` → vertical `LinearLayout`
 - `HStack` → horizontal `LinearLayout`
+- `ZStack` → `FrameLayout`
 - `Spacer` → `Space` with layout weight
+- `Divider` → `View` with 1dp height and gray background
+- `Color` → `View` with `MATCH_PARENT` and background color
+- `Group` → vertical `LinearLayout` (transparent container)
+- `EmptyView` → empty `View`
 
-### Modifiers
-- `.padding()` → `setPadding` on the view
-- `.foregroundColor()` → `setTextColor`
-- `.font()` → `setTextSize` + `setTypeface`
+#### Modifiers
+- `.padding()` → wrapper `LinearLayout` with `setPadding`
+- `.frame()` → `FrameLayout` with explicit width/height
+- `.foregroundColor()` → recursive `setTextColor` on child TextViews
+- `.backgroundColor()` → `setBackgroundColor` on child
+- `.font()` → `setTextSize` + `setTypeface` (bold, semibold, light, normal)
+- `.border()` → `GradientDrawable` with stroke color and width
 
-### State
-- `@State` triggers rebuild → diff → batch apply
-- One `Activity`, one root `LinearLayout`
+#### State
+- Interactive `@State`: button tap → JNI `nativeOnButtonClick` → action closure → `@State` mutation → `scheduleRebuild` → full JSON re-render → Kotlin replaces view tree
+- `@Binding`: child views receive `Binding<Value>` from parent's projected `$state`; mutations flow through the same storage + rebuild path
+- Session persistence: `AndroidSession` at module scope survives Activity recreation — `@State` values are preserved across rotation/theme changes
+- One `Activity`, one root `ScrollView` wrapping the rendered tree
+
+#### Examples (defined in JNIBridge.swift)
+- HelloWorld, TextStyles, Buttons, StateDemo (interactive, 5 sections), Layout
+- Launched via intent extra: `--es example "StateDemo"`
+
+### Rebuild Model vs Host Boundary
+
+All backends (GTK4, Win32, Web, Android) use the same **coalesced full-rebuild** model: state mutation → schedule → tear down children → rebuild from scratch. The rebuild granularity is aligned across platforms.
+
+However, Android differs at the **host boundary**: GTK4/Win32/Web render directly from Swift into the platform tree (GTK widgets, HWNDs, DOM nodes). Android renders in Swift, serializes to JSON, crosses the JNI boundary, and rebuilds in Kotlin. This extra serialization + cross-runtime step is the architectural cost unique to Android.
+
+### Incremental Diffs (Future — Cross-Platform)
+
+Batched diff operations (the design above) are deferred. When implemented, they should be built as a **cross-platform diff engine** in `Sources/SwiftOpenUI/` core, with each backend consuming diff ops. This avoids architectural divergence from doing Android-only diffs. Trigger: TextField input performance, IME jank, or visible rebuild flicker.
 
 ### Not in Phase 1
-- ZStack, Divider, Color, ForEach, Group
 - Compose
 - Fragments, navigation
-- Text input / focus
+- Text input / focus (next priority — requires focus/selection/IME preservation design)
 - Gestures beyond button tap
 - Animations
 
@@ -288,21 +315,27 @@ Intentionally narrow:
 
 ```
 Sources/Backend/Android/
-├── CAndroid/                    ← JNI C headers (jni.h wrappers)
-├── CAndroidBridge/              ← Swift JNI helpers (env, class lookup, etc.)
 └── Rendering/
-    ├── AndroidBackend.swift     ← RenderBackend, lifecycle
-    ├── AndroidRenderer.swift    ← View → RenderNode tree
-    ├── AndroidDiffer.swift      ← Diff engine, batch generation
-    └── RenderOp.swift           ← Operation types, serialization
+    ├── AndroidBackend.swift     ← RenderBackend protocol, entry points
+    ├── AndroidRenderer.swift    ← View → RenderNode extensions (AndroidRenderable)
+    ├── RenderNode.swift         ← RenderNode class + JSON serialization (no Foundation)
+    └── JNIBridge.swift          ← JNI entry point, example renderers, JNI string helpers
 
-android-host/                    ← Kotlin Android project (separate from SPM)
-├── app/src/main/
-│   ├── java/.../
-│   │   ├── MainActivity.kt     ← loads .so, wires JNI
-│   │   └── RenderHost.kt       ← applies batched ops to Views
-│   └── AndroidManifest.xml
-└── build.gradle.kts
+android/
+├── hello/                       ← Minimal PoC: Swift .so + Kotlin JNI "Hello from Swift"
+│   ├── app/                     ← Kotlin Android project
+│   └── swift-lib/               ← Swift shared library (Package.swift)
+└── renderer/                    ← Full renderer: Swift view tree → JSON → Android Views
+    ├── app/
+    │   └── app/src/main/java/com/example/swiftopenui/
+    │       ├── MainActivity.kt  ← loads .so, launches examples via intent extras
+    │       ├── RenderBridge.kt  ← JNI bridge class (nativeRenderApp)
+    │       └── RenderHost.kt    ← JSON → Android Views (createView dispatcher)
+    └── build-so.sh              ← Build script for Swift .so
+
+screenshots/
+├── capture-android.sh           ← Automated screenshot capture via adb
+└── android/                     ← Captured screenshots (5 examples)
 ```
 
 ## Open Questions
