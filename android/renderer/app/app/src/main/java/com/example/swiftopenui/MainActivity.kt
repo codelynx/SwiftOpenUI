@@ -47,6 +47,11 @@ class MainActivity : Activity() {
             newJson
         }
 
+        // Wire focus change handler: Kotlin → Swift (no rebuild)
+        RenderHost.onFocusChange = { nodeId, hasFocus ->
+            bridge?.nativeOnFocusChange(nodeId, hasFocus)
+        }
+
         val view = try {
             if (bridge == null) {
                 throw UnsatisfiedLinkError(RenderBridge.loadError ?: "Unknown load error")

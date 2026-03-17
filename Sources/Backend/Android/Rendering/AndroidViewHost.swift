@@ -10,6 +10,10 @@ public class AndroidViewHost: AnyViewHost {
     /// The JNI caller reads it after nativeOnButtonClick returns.
     public var pendingJSON: String?
 
+    /// When true, the next rebuild should not restore focus from InputSnapshot.
+    /// Set by setProgrammatic(nil) on @FocusState to actively clear focus.
+    public var suppressFocusRestore: Bool = false
+
     public init(buildBody: @escaping () -> String) {
         self.buildBody = buildBody
         self.capturedEnvironment = getCurrentEnvironment()
@@ -22,7 +26,7 @@ public class AndroidViewHost: AnyViewHost {
     }
 
     public func suppressNextFocusRestore() {
-        // No-op on Android
+        suppressFocusRestore = true
     }
 
     func rebuild() {
@@ -31,5 +35,7 @@ public class AndroidViewHost: AnyViewHost {
         androidBeginRenderPass()
         pendingJSON = buildBody()
         setCurrentEnvironment(prev)
+        // Reset flag after each rebuild
+        suppressFocusRestore = false
     }
 }

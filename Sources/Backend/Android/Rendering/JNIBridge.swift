@@ -116,6 +116,24 @@ public func jniOnTextInput(
     return nil
 }
 
+/// Handle a focus change event from Kotlin.
+/// Updates @FocusState via the registered handler.
+/// Focus changes use setValue (not setProgrammatic), so they do NOT
+/// trigger rebuilds — this avoids destroying the focused widget.
+///
+/// Called from Kotlin: `RenderBridge.nativeOnFocusChange(nodeId, hasFocus)`
+@_cdecl("Java_com_example_swiftopenui_RenderBridge_nativeOnFocusChange")
+public func jniOnFocusChange(
+    env: UnsafeMutableRawPointer?,
+    thisObj: UnsafeMutableRawPointer?,
+    nodeId: Int64,
+    hasFocus: UInt8 // JNI jboolean is UInt8
+) {
+    if let handler = androidFocusHandlers[nodeId] {
+        handler(hasFocus != 0)
+    }
+}
+
 /// Legacy one-shot render for backward compatibility.
 /// Called from Kotlin: `RenderBridge.nativeRenderApp(name)`
 @_cdecl("Java_com_example_swiftopenui_RenderBridge_nativeRenderApp")

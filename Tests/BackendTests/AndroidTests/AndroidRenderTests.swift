@@ -139,18 +139,116 @@ final class AndroidRenderTests: XCTestCase {
         XCTAssertNotEqual(ids[0], ids[1], "Different fields should have different node IDs")
     }
 
-    // MARK: - Focused modifier pass-through
+    // MARK: - Focus modifier
 
-    func testFocusedViewPassesThrough() {
+    func testFocusedViewRendersFocusProp() {
         let state = State<String>(wrappedValue: "hi")
-        let focusState = FocusState<Bool>()
+        let focus = FocusState<Bool>()
         let view = TextField("F", text: state.projectedValue)
-            .focused(focusState)
+            .focused(focus)
         let node = androidRenderView(view)
 
-        // FocusedView is a pass-through — should render the TextField directly
         XCTAssertEqual(node.type, "textfield")
         XCTAssertEqual(node.props["text"], "hi")
+        XCTAssertEqual(node.props["focused"], "false")
+    }
+
+    func testFocusedViewPropTrueWhenFocused() {
+        let state = State<String>(wrappedValue: "")
+        let focus = FocusState<Bool>()
+        focus.wrappedValue = true
+        let view = TextField("F", text: state.projectedValue)
+            .focused(focus)
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.props["focused"], "true")
+    }
+
+    func testFocusedViewRegistersFocusHandler() {
+        let state = State<String>(wrappedValue: "")
+        let focus = FocusState<Bool>()
+        let view = TextField("F", text: state.projectedValue)
+            .focused(focus)
+
+        XCTAssertTrue(androidFocusHandlers.isEmpty)
+        let node = androidRenderView(view)
+        XCTAssertEqual(androidFocusHandlers.count, 1)
+
+        // Handler must be registered under the child's node ID (what Kotlin sees),
+        // not the FocusedView wrapper's ID
+        XCTAssertNotNil(androidFocusHandlers[node.id],
+            "Focus handler should be keyed to the child node's ID")
+    }
+
+    func testFocusHandlerUpdatesFocusState() {
+        let state = State<String>(wrappedValue: "")
+        let focus = FocusState<Bool>()
+        let view = TextField("F", text: state.projectedValue)
+            .focused(focus)
+        let node = androidRenderView(view)
+
+        // Look up by child node ID (what Kotlin sends)
+        guard let handler = androidFocusHandlers[node.id] else {
+            XCTFail("No focus handler registered for node ID \(node.id)")
+            return
+        }
+        handler(true)
+        XCTAssertEqual(focus.storage.value, true)
+
+        handler(false)
+        XCTAssertEqual(focus.storage.value, false)
+    }
+
+    func testFocusedEqualsViewRendersFocusProp() {
+        enum Field: Hashable { case name, email }
+        let state = State<String>(wrappedValue: "")
+        let focus = FocusState<Field?>()
+        let view = TextField("Name", text: state.projectedValue)
+            .focused(focus, equals: .name)
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.props["focused"], "false")
+    }
+
+    func testFocusedEqualsViewPropTrueWhenMatched() {
+        enum Field: Hashable { case name, email }
+        let state = State<String>(wrappedValue: "")
+        let focus = FocusState<Field?>()
+        focus.wrappedValue = .name
+        let view = TextField("Name", text: state.projectedValue)
+            .focused(focus, equals: .name)
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.props["focused"], "true")
+    }
+
+    func testFocusedEqualsHandlerSetsValue() {
+        enum Field: Hashable { case name, email }
+        let state = State<String>(wrappedValue: "")
+        let focus = FocusState<Field?>()
+        let view = TextField("Name", text: state.projectedValue)
+            .focused(focus, equals: .name)
+        let node = androidRenderView(view)
+
+        guard let handler = androidFocusHandlers[node.id] else {
+            XCTFail("No focus handler registered for node ID \(node.id)")
+            return
+        }
+        handler(true)
+        XCTAssertEqual(focus.storage.value, Field.name)
+
+        handler(false)
+        XCTAssertNil(focus.storage.value)
+    }
+
+    func testBeginRenderPassClearsFocusHandlers() {
+        let state = State<String>(wrappedValue: "")
+        let focus = FocusState<Bool>()
+        _ = androidRenderView(TextField("", text: state.projectedValue).focused(focus))
+        XCTAssertFalse(androidFocusHandlers.isEmpty)
+
+        androidBeginRenderPass()
+        XCTAssertTrue(androidFocusHandlers.isEmpty)
     }
 
     // MARK: - Primitive views

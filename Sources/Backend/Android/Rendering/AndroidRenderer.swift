@@ -271,14 +271,47 @@ extension BorderView: AndroidRenderable {
 
 extension FocusedView: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
-        // Pass through — focus binding is handled at the platform level
-        androidRenderView(content)
+        let node = androidRenderView(content)
+
+        // Tell Kotlin whether this node should have focus
+        node.props["focused"] = focusState.wrappedValue ? "true" : "false"
+
+        // Register handler under the CHILD node's ID — that's what Kotlin
+        // sees and sends back via nativeOnFocusChange.
+        let storage = focusState.storage
+        androidFocusHandlers[node.id] = { hasFocus in
+            // Use setValue (not setProgrammatic) — platform-originated,
+            // should NOT trigger rebuild to avoid losing focus
+            storage.setValue(hasFocus)
+        }
+
+        return node
     }
 }
 
 extension FocusedEqualsView: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
-        androidRenderView(content)
+        let node = androidRenderView(content)
+
+        // Tell Kotlin whether this node should have focus
+        let isFocused = focusState.storage.value == value
+        node.props["focused"] = isFocused ? "true" : "false"
+
+        // Register handler under the CHILD node's ID
+        let storage = focusState.storage
+        let matchValue = value
+        androidFocusHandlers[node.id] = { hasFocus in
+            if hasFocus {
+                storage.setValue(matchValue)
+            } else {
+                // Only clear if still this value
+                if storage.value == matchValue {
+                    storage.setValue(nil)
+                }
+            }
+        }
+
+        return node
     }
 }
 

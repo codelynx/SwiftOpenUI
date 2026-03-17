@@ -23,6 +23,14 @@ public var androidButtonActions: [Int64: () -> Void] = [:]
 /// Cleared at the start of each render pass, populated during rendering.
 public var androidTextBindings: [Int64: Binding<String>] = [:]
 
+/// Closure that updates a FocusState when the platform reports a focus change.
+/// The Bool parameter is true for focus gained, false for focus lost.
+public typealias FocusChangeHandler = (Bool) -> Void
+
+/// Maps stable node IDs (Int64) to focus change handlers.
+/// Cleared at the start of each render pass, populated during rendering.
+public var androidFocusHandlers: [Int64: FocusChangeHandler] = [:]
+
 /// Counter for generating structural node IDs during a render pass.
 /// Uses FNV-1a-inspired hashing of the path components.
 private var _idPathStack: [Int64] = [0]  // root hash
@@ -32,6 +40,7 @@ private var _idChildCounters: [Int] = [0]
 public func androidBeginRenderPass() {
     androidButtonActions.removeAll()
     androidTextBindings.removeAll()
+    androidFocusHandlers.removeAll()
     _idPathStack = [0]
     _idChildCounters = [0]
 }

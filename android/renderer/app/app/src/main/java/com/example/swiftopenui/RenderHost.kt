@@ -25,6 +25,10 @@ object RenderHost {
     /// Returns new JSON if state changed, null otherwise.
     var onTextInput: ((Long, String) -> String?)? = null
 
+    /// Callback invoked when focus changes. Set by MainActivity.
+    /// Does not return JSON — focus changes don't trigger rebuilds.
+    var onFocusChange: ((Long, Boolean) -> Unit)? = null
+
     /// Input state snapshots keyed by node ID. Saved before rebuild,
     /// restored after rebuild to preserve cursor, selection, and focus.
     private val inputSnapshots = mutableMapOf<Long, InputSnapshot>()
@@ -56,7 +60,7 @@ object RenderHost {
         val props = if (node.has("props")) node.getJSONObject("props") else JSONObject()
         val children = if (node.has("children")) node.getJSONArray("children") else JSONArray()
 
-        return when (type) {
+        val view = when (type) {
             "window" -> createContainer(context, children, LinearLayout.VERTICAL)
             "text" -> createText(context, props)
             "button" -> createButton(context, nodeId, props, children)
@@ -76,6 +80,51 @@ object RenderHost {
             "font" -> createFont(context, props, children)
             "border" -> createBorder(context, props, children)
             else -> TextView(context).apply { text = "[$type]" }
+        }
+
+        // Apply focus binding if present (set by .focused() modifier)
+        applyFocusProps(view, nodeId, props)
+
+        return view
+    }
+
+    /// Apply focus behavior to a view after creation.
+    ///
+    /// If a "focused" prop exists (from .focused() modifier):
+    /// - Wire OnFocusChangeListener → Swift nativeOnFocusChange
+    /// - "true": requestFocus (programmatic focus from @FocusState)
+    /// - "false": clearFocus + remove snapshot (programmatic unfocus)
+    ///
+    /// If no "focused" prop but an InputSnapshot exists with hasFocus:
+    /// - Restore focus from snapshot (e.g. text field without .focused())
+    private fun applyFocusProps(view: View, nodeId: Long, props: JSONObject) {
+        val focusedProp = props.optString("focused", "")
+
+        if (focusedProp.isNotEmpty()) {
+            // Node has .focused() modifier — wire focus listener
+            if (nodeId != 0L) {
+                view.isFocusable = true
+                view.isFocusableInTouchMode = true
+                view.setOnFocusChangeListener { _, hasFocus ->
+                    onFocusChange?.invoke(nodeId, hasFocus)
+                }
+            }
+
+            if (focusedProp == "true") {
+                view.post { view.requestFocus() }
+            } else {
+                // Programmatic unfocus — clear snapshot and focus
+                inputSnapshots.remove(nodeId)
+                if (view.hasFocus()) {
+                    view.post { view.clearFocus() }
+                }
+            }
+        } else {
+            // No .focused() modifier — fall back to snapshot-based focus restore
+            val snapshot = inputSnapshots.remove(nodeId)
+            if (snapshot != null && snapshot.hasFocus) {
+                view.post { view.requestFocus() }
+            }
         }
     }
 
@@ -121,17 +170,15 @@ object RenderHost {
             setText(text)
             suppressTextWatcher = false
 
-            // Restore input state if we have a snapshot from a previous render
-            val snapshot = inputSnapshots.remove(nodeId)
+            // Restore cursor/selection from snapshot (but NOT focus —
+            // focus is managed by applyFocusProps which runs after creation)
+            val snapshot = inputSnapshots[nodeId]
             if (snapshot != null) {
                 val len = getText().length
                 setSelection(
                     snapshot.selectionStart.coerceIn(0, len),
                     snapshot.selectionEnd.coerceIn(0, len)
                 )
-                if (snapshot.hasFocus) {
-                    requestFocus()
-                }
             }
 
             // Wire TextWatcher — sends text changes to Swift immediately
