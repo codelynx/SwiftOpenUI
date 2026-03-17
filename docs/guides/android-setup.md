@@ -60,18 +60,18 @@ Expected output: `Build of target: 'SwiftOpenUI' complete!`
 
 ## Running the Hello World POC on Android
 
-The `android-hello/` directory contains a minimal proof-of-concept: Swift function called from Kotlin via JNI, displayed in a `TextView`.
+The `android/hello/` directory contains a minimal proof-of-concept: Swift function called from Kotlin via JNI, displayed in a `TextView`.
 
 ### Build the Swift shared library
 
 ```bash
-cd android-hello/swift-lib
+cd android/hello/swift-lib
 swiftly use 6.3-snapshot
 swift build --swift-sdk swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android \
   --triple aarch64-unknown-linux-android28 -c release
 ```
 
-Output: `android-hello/swift-lib/.build/aarch64-unknown-linux-android28/release/libSwiftHello.so` (22KB)
+Output: `android/hello/swift-lib/.build/aarch64-unknown-linux-android28/release/libSwiftHello.so` (22KB)
 
 ### Copy .so files to the Android project
 
@@ -80,10 +80,10 @@ The Swift `.so` needs the Swift runtime libraries and `libc++_shared.so` from th
 ```bash
 SWIFT_LIBS=~/Library/org.swift.swiftpm/swift-sdks/swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android.artifactbundle/swift-android/swift-resources/usr/lib/swift-aarch64/android
 NDK_LIBS=~/Library/Android/sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android
-JNILIBS=android-hello/app/app/src/main/jniLibs/arm64-v8a
+JNILIBS=android/hello/app/app/src/main/jniLibs/arm64-v8a
 
 # Swift library
-cp android-hello/swift-lib/.build/aarch64-unknown-linux-android28/release/libSwiftHello.so "$JNILIBS/"
+cp android/hello/swift-lib/.build/aarch64-unknown-linux-android28/release/libSwiftHello.so "$JNILIBS/"
 
 # Swift runtime (all .so files)
 cp "$SWIFT_LIBS"/*.so "$JNILIBS/"
@@ -94,7 +94,7 @@ cp "$NDK_LIBS/libc++_shared.so" "$JNILIBS/"
 
 ### Run in Android Studio
 
-1. Open `android-hello/app/` in Android Studio
+1. Open `android/hello/app/` in Android Studio
 2. Sync Gradle (should succeed with no errors)
 3. Device Manager → launch Pixel_8 or Pixel_9 emulator
 4. Wait for emulator to boot to home screen
