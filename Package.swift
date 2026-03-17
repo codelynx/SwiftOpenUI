@@ -89,6 +89,11 @@ targets += [
         dependencies: ["SwiftOpenUI"],
         path: "Sources/Backend/Android/Rendering"
     ),
+    .testTarget(
+        name: "AndroidRenderTests",
+        dependencies: ["SwiftOpenUI", "BackendAndroid"],
+        path: "Tests/BackendTests/AndroidTests"
+    ),
 ]
 #endif
 
