@@ -136,6 +136,25 @@ extension Spacer: WinRenderable {
     }
 }
 
+/// Property name for retaining a TextFieldState on the HWND.
+private let textFieldStatePropName: UnsafePointer<WCHAR> = {
+    "SwiftUITextFieldState".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+/// Retains the SubclassHandler so it lives as long as the HWND.
+/// SubclassHandler.init passRetains itself for the C callback, but Swift's
+/// ARC will release the local variable when winCreateWidget returns.
+/// Storing the handler here prevents premature dealloc.
+private class TextFieldState {
+    let handler: SubclassHandler
+    init(handler: SubclassHandler) { self.handler = handler }
+}
+
 extension TextField: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let currentText = text.wrappedValue
@@ -172,8 +191,27 @@ extension TextField: WinRenderable {
             }
         }
 
+        // Retain the handler so it lives as long as the HWND.
+        // SubclassHandler.init already passRetained itself for the C callback,
+        // but ARC would release the local `handler` variable when this function
+        // returns, triggering deinit → remove() and unregistering the subclass.
+        let state = TextFieldState(handler: handler)
+        let statePtr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(hwnd, textFieldCleanupProc, 41, DWORD_PTR(UInt(bitPattern: statePtr)))
+
         return hwnd
     }
+}
+
+/// Releases the TextFieldState (and thus the SubclassHandler) on WM_NCDESTROY.
+private let textFieldCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    if uMsg == UINT(WM_NCDESTROY), dwRefData != 0 {
+        Unmanaged<TextFieldState>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, textFieldCleanupProc, uIdSubclass)
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 }
 
 extension FocusedView: WinRenderable {
@@ -182,23 +220,20 @@ extension FocusedView: WinRenderable {
 
         // Install focus tracking: WM_SETFOCUS/WM_KILLFOCUS update the @FocusState<Bool>
         let storage = focusState.storage
+        let hwndKey = AnyHashable(Int(bitPattern: hwnd))
         let focusInfo = FocusTrackingInfo(
             onGainFocus: { storage.setValue(true) },
             onLoseFocus: { storage.setValue(false) },
-            setNativeFocus: { shouldFocus in
-                if shouldFocus {
-                    SetFocus(hwnd)
-                }
-                // false (clear focus) is handled by suppressNextFocusRestore
-            }
+            onDestroy: { storage.removePlatformFocusCallback(key: hwndKey) }
         )
         let infoPtr = Unmanaged.passRetained(focusInfo).toOpaque()
         SetWindowSubclass(hwnd, focusTrackingProc, 40, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
-        // Override platformFocusChanged to drive native focus from @FocusState
-        storage.platformFocusChangedCallback = { [weak focusInfo] (newValue: Bool?) in
-            guard let fi = focusInfo else { return }
-            fi.setNativeFocus(newValue == true)
+        // Register keyed callback so programmatic @FocusState changes drive SetFocus
+        storage.addPlatformFocusCallback(key: hwndKey) { (newValue: Bool?) in
+            if newValue == true {
+                SetFocus(hwnd)
+            }
         }
 
         return hwnd
@@ -213,6 +248,7 @@ extension FocusedEqualsView: WinRenderable {
         // WM_KILLFOCUS sets it to nil (unless another FocusedEqualsView takes over)
         let storage = focusState.storage
         let matchValue = value
+        let hwndKey = AnyHashable(Int(bitPattern: hwnd))
         let focusInfo = FocusTrackingInfo(
             onGainFocus: { storage.setValue(matchValue) },
             onLoseFocus: {
@@ -221,15 +257,13 @@ extension FocusedEqualsView: WinRenderable {
                     storage.setValue(nil)
                 }
             },
-            setNativeFocus: { shouldFocus in
-                if shouldFocus { SetFocus(hwnd) }
-            }
+            onDestroy: { storage.removePlatformFocusCallback(key: hwndKey) }
         )
         let infoPtr = Unmanaged.passRetained(focusInfo).toOpaque()
         SetWindowSubclass(hwnd, focusTrackingProc, 40, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
-        // Override platformFocusChanged to drive native focus from @FocusState
-        storage.platformFocusChangedCallback = { (newValue: Value??) in
+        // Register keyed callback: only this field responds when storage matches its value
+        storage.addPlatformFocusCallback(key: hwndKey) { (newValue: Value??) in
             if let nv = newValue, nv == matchValue {
                 SetFocus(hwnd)
             }
@@ -246,14 +280,14 @@ extension FocusedEqualsView: WinRenderable {
 private class FocusTrackingInfo {
     let onGainFocus: () -> Void
     let onLoseFocus: () -> Void
-    let setNativeFocus: (Bool) -> Void
+    let onDestroy: () -> Void
 
     init(onGainFocus: @escaping () -> Void,
          onLoseFocus: @escaping () -> Void,
-         setNativeFocus: @escaping (Bool) -> Void) {
+         onDestroy: @escaping () -> Void) {
         self.onGainFocus = onGainFocus
         self.onLoseFocus = onLoseFocus
-        self.setNativeFocus = setNativeFocus
+        self.onDestroy = onDestroy
     }
 }
 
@@ -275,9 +309,11 @@ private let focusTrackingProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uId
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_NCDESTROY):
-        Unmanaged<FocusTrackingInfo>.fromOpaque(
+        let destroyInfo = Unmanaged<FocusTrackingInfo>.fromOpaque(
             UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-        ).release()
+        )
+        destroyInfo.takeUnretainedValue().onDestroy()
+        destroyInfo.release()
         RemoveWindowSubclass(hwnd, focusTrackingProc, uIdSubclass)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 

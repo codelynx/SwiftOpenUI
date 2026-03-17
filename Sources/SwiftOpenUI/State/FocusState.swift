@@ -59,14 +59,27 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
         lock.unlock()
     }
 
-    /// Callback set by platform backends to handle native focus changes.
-    /// This is an alternative to subclassing — backends can set this closure
-    /// from their renderer when installing focus tracking on an HWND or widget.
-    public var platformFocusChangedCallback: ((Value?) -> Void)?
+    /// Keyed callbacks set by platform backends to handle native focus changes.
+    /// Multiple views can register under different keys (e.g., one per HWND).
+    /// This supports FocusedEqualsView where N fields share one storage.
+    private var platformFocusCallbacks: [AnyHashable: (Value?) -> Void] = [:]
+
+    /// Register a focus callback under a unique key. Replaces any existing
+    /// callback for the same key. Use the HWND pointer or ObjectIdentifier as key.
+    public func addPlatformFocusCallback(key: AnyHashable, _ callback: @escaping (Value?) -> Void) {
+        platformFocusCallbacks[key] = callback
+    }
+
+    /// Remove a focus callback by key (e.g., when the HWND is destroyed).
+    public func removePlatformFocusCallback(key: AnyHashable) {
+        platformFocusCallbacks.removeValue(forKey: key)
+    }
 
     /// Override in platform backends to handle native focus changes.
     open func platformFocusChanged(_ newValue: Value?) {
-        platformFocusChangedCallback?(newValue)
+        for callback in platformFocusCallbacks.values {
+            callback(newValue)
+        }
     }
 }
 
