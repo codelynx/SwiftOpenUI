@@ -1741,6 +1741,243 @@ private func extractTextFromView<V: View>(_ view: V) -> String? {
     return nil
 }
 
+// MARK: - Gesture Win32 extensions
+
+extension TapGestureView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        let tapAction = action
+        let tapCount = count
+        let info = TapGestureInfo(action: tapAction, requiredCount: tapCount)
+        let infoPtr = Unmanaged.passRetained(info).toOpaque()
+        makeMouseTransparentDescendants(hwnd)
+        SetWindowSubclass(hwnd, tapGestureProc, 60, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        return hwnd
+    }
+}
+
+private class TapGestureInfo {
+    let action: () -> Void
+    let requiredCount: Int
+    var clickCount: Int = 0
+    var lastClickTime: UInt32 = 0
+
+    init(action: @escaping () -> Void, requiredCount: Int) {
+        self.action = action
+        self.requiredCount = requiredCount
+    }
+}
+
+private let tapGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let info = Unmanaged<TapGestureInfo>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_LBUTTONUP):
+        let now = GetTickCount()
+        let doubleClickTime = GetDoubleClickTime()
+
+        if info.requiredCount <= 1 {
+            info.action()
+        } else {
+            // Multi-tap: track click count within double-click interval
+            if now - info.lastClickTime <= doubleClickTime {
+                info.clickCount += 1
+            } else {
+                info.clickCount = 1
+            }
+            info.lastClickTime = now
+            if info.clickCount >= info.requiredCount {
+                info.clickCount = 0
+                info.action()
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        Unmanaged<TapGestureInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, tapGestureProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+extension LongPressGestureView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        let lpAction = action
+        let durationMs = UInt32(minimumDuration * 1000)
+        let info = LongPressGestureInfo(action: lpAction, durationMs: durationMs, hwnd: hwnd)
+        let infoPtr = Unmanaged.passRetained(info).toOpaque()
+        makeMouseTransparentDescendants(hwnd)
+        SetWindowSubclass(hwnd, longPressGestureProc, 61, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        return hwnd
+    }
+}
+
+private let longPressTimerID: UINT_PTR = 9001
+
+private class LongPressGestureInfo {
+    let action: () -> Void
+    let durationMs: UInt32
+    let hwnd: HWND
+    var timerActive: Bool = false
+
+    init(action: @escaping () -> Void, durationMs: UInt32, hwnd: HWND) {
+        self.action = action
+        self.durationMs = durationMs
+        self.hwnd = hwnd
+    }
+}
+
+private let longPressGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let info = Unmanaged<LongPressGestureInfo>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_LBUTTONDOWN):
+        // Start timer — if it fires before LBUTTONUP, it's a long press
+        SetTimer(hwnd, longPressTimerID, info.durationMs, nil)
+        info.timerActive = true
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_LBUTTONUP):
+        // Cancel — released before timer fired
+        if info.timerActive {
+            KillTimer(hwnd, longPressTimerID)
+            info.timerActive = false
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_TIMER):
+        if UINT_PTR(wParam) == longPressTimerID {
+            KillTimer(hwnd, longPressTimerID)
+            info.timerActive = false
+            info.action()
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        if info.timerActive {
+            KillTimer(hwnd, longPressTimerID)
+        }
+        Unmanaged<LongPressGestureInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, longPressGestureProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+extension DragGestureView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        let info = DragGestureInfo(onChanged: onChanged, onEnded: onEnded)
+        let infoPtr = Unmanaged.passRetained(info).toOpaque()
+        makeMouseTransparentDescendants(hwnd)
+        SetWindowSubclass(hwnd, dragGestureProc, 62, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        return hwnd
+    }
+}
+
+private class DragGestureInfo {
+    let onChanged: ((DragGestureValue) -> Void)?
+    let onEnded: ((DragGestureValue) -> Void)?
+    var dragging: Bool = false
+    var startX: Double = 0
+    var startY: Double = 0
+
+    init(onChanged: ((DragGestureValue) -> Void)?, onEnded: ((DragGestureValue) -> Void)?) {
+        self.onChanged = onChanged
+        self.onEnded = onEnded
+    }
+}
+
+private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let info = Unmanaged<DragGestureInfo>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_LBUTTONDOWN):
+        info.startX = Double(win32_GET_X_LPARAM(lParam))
+        info.startY = Double(win32_GET_Y_LPARAM(lParam))
+        info.dragging = true
+        SetCapture(hwnd)
+        return 0
+
+    case UINT(WM_MOUSEMOVE):
+        if info.dragging {
+            let x = Double(win32_GET_X_LPARAM(lParam))
+            let y = Double(win32_GET_Y_LPARAM(lParam))
+            let value = DragGestureValue(
+                location: (x: x, y: y),
+                startLocation: (x: info.startX, y: info.startY)
+            )
+            info.onChanged?(value)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_LBUTTONUP):
+        if info.dragging {
+            info.dragging = false
+            ReleaseCapture()
+            let x = Double(win32_GET_X_LPARAM(lParam))
+            let y = Double(win32_GET_Y_LPARAM(lParam))
+            let value = DragGestureValue(
+                location: (x: x, y: y),
+                startLocation: (x: info.startX, y: info.startY)
+            )
+            info.onEnded?(value)
+        }
+        return 0
+
+    case UINT(WM_NCDESTROY):
+        Unmanaged<DragGestureInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, dragGestureProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+/// Make all descendant HWNDs mouse-transparent so gesture events reach the container.
+/// Same pattern as custom-label buttons.
+private func makeMouseTransparentDescendants(_ hwnd: HWND) {
+    var child = GetWindow(hwnd, UINT(GW_CHILD))
+    while let c = child {
+        let exStyle = win32_GetWindowLongPtrW(c, GWL_EXSTYLE)
+        win32_SetWindowLongPtrW(c, GWL_EXSTYLE, exStyle | LONG_PTR(WS_EX_TRANSPARENT))
+        makeMouseTransparentDescendants(c)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+}
+
 // MARK: - TupleView Win32 extensions (needed when TupleViews appear at top level)
 
 // TupleViews are already MultiChildView, so winRenderChildren handles them.

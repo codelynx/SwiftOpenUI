@@ -670,6 +670,82 @@ final class Win32RenderTests: XCTestCase {
                 "Edit cursor should be preserved even when focus restore is suppressed")
         }
     }
+    // MARK: - Gesture views
+
+    func testTapGestureViewCreatesHWND() {
+        let ctx = testContext()
+        let view = Text("Tap me").onTapGesture { }
+        XCTAssertTrue(view is WinRenderable)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testTapGestureFiresOnClick() {
+        let ctx = testContext()
+        var tapped = false
+        let hwnd = winRenderView(Text("Tap").onTapGesture { tapped = true }, in: ctx)!
+
+        // Simulate click: LBUTTONDOWN then LBUTTONUP
+        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, 0)
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertTrue(tapped, "Tap gesture should fire on mouse click")
+    }
+
+    func testLongPressGestureViewCreatesHWND() {
+        let ctx = testContext()
+        let view = Text("Hold me").onLongPressGesture { }
+        XCTAssertTrue(view is WinRenderable)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testDragGestureViewCreatesHWND() {
+        let ctx = testContext()
+        let view = Text("Drag me").onDrag(onChanged: { _ in }, onEnded: { _ in })
+        XCTAssertTrue(view is WinRenderable)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testDragGestureFiresOnChanged() {
+        let ctx = testContext()
+        var lastTranslation: (width: Double, height: Double)?
+        let hwnd = winRenderView(
+            Text("Drag").onDrag(
+                onChanged: { value in lastTranslation = value.translation },
+                onEnded: nil
+            ),
+            in: ctx
+        )!
+
+        // Simulate drag: LBUTTONDOWN at (10,10), MOUSEMOVE to (30,20)
+        let startLP = LPARAM(Int16(10)) | (LPARAM(Int16(10)) << 16)
+        let moveLP = LPARAM(Int16(30)) | (LPARAM(Int16(20)) << 16)
+        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, startLP)
+        SendMessageW(hwnd, UINT(WM_MOUSEMOVE), 0, moveLP)
+
+        XCTAssertNotNil(lastTranslation)
+        XCTAssertEqual(lastTranslation!.width, 20, accuracy: 0.1)
+        XCTAssertEqual(lastTranslation!.height, 10, accuracy: 0.1)
+
+        // Release
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, moveLP)
+    }
+
+    func testDragGestureFiresOnEnded() {
+        let ctx = testContext()
+        var ended = false
+        let hwnd = winRenderView(
+            Text("Drag").onDrag(onChanged: nil, onEnded: { _ in ended = true }),
+            in: ctx
+        )!
+
+        let startLP = LPARAM(Int16(5)) | (LPARAM(Int16(5)) << 16)
+        let endLP = LPARAM(Int16(50)) | (LPARAM(Int16(50)) << 16)
+        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, startLP)
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, endLP)
+        XCTAssertTrue(ended, "Drag gesture should fire onEnded on mouse release")
+    }
 }
 
 // MARK: - Test helpers
