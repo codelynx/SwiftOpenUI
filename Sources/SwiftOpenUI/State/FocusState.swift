@@ -34,8 +34,11 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
 
         guard changed else { return }
 
-        // Notify the platform backend of the focus change
-        platformFocusChanged(newValue)
+        // Only drive native focus for programmatic changes.
+        // UI-driven focus events (GTK enter/leave) should not loop back.
+        if programmatic {
+            platformFocusChanged(newValue)
+        }
 
         // Only rebuild when programmatic (e.g., button sets focusedField).
         // Platform focus events should NOT trigger rebuilds —
@@ -60,9 +63,22 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
     }
 
     /// Keyed callbacks set by platform backends to handle native focus changes.
-    /// Multiple views can register under different keys (e.g., one per HWND).
+    /// Multiple views can register under different keys (e.g., one per HWND/widget).
     /// This supports FocusedEqualsView where N fields share one storage.
     private var platformFocusCallbacks: [AnyHashable: (Value?) -> Void] = [:]
+
+    /// Single-callback convenience used by GTK4 backend.
+    /// Delegates to the keyed callback system under a fixed key.
+    public var onProgrammaticFocusChange: ((Value?) -> Void)? {
+        get { platformFocusCallbacks[AnyHashable("_single")] }
+        set {
+            if let cb = newValue {
+                platformFocusCallbacks[AnyHashable("_single")] = cb
+            } else {
+                platformFocusCallbacks.removeValue(forKey: AnyHashable("_single"))
+            }
+        }
+    }
 
     /// Register a focus callback under a unique key. Replaces any existing
     /// callback for the same key. Use the HWND pointer or ObjectIdentifier as key.

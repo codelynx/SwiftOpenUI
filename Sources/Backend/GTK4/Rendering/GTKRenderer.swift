@@ -90,7 +90,6 @@ extension Divider: GTKRenderable {
 
 extension TextField: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        // Stub: render as a GtkEntry (text input widget)
         let entry = gtk_entry_new()!
         let entryPtr = UnsafeMutableRawPointer(entry).assumingMemoryBound(to: GtkEntry.self)
         let bufferPtr = gtk_entry_get_buffer(entryPtr)
@@ -98,19 +97,149 @@ extension TextField: GTKRenderable {
         if !title.isEmpty {
             gtk_entry_set_placeholder_text(entryPtr, title)
         }
+
+        // Wire text changes back through Binding<String>.
+        // Listen on the GtkEntryBuffer's "notify::text" signal so we catch
+        // all changes (typing, paste, programmatic).
+        let binding = text
+        let box = Unmanaged.passRetained(StringClosureBox { newText in
+            // Avoid feedback loop: only set if value actually changed
+            if binding.wrappedValue != newText {
+                binding.wrappedValue = newText
+            }
+        }).toOpaque()
+
+        g_signal_connect_data(
+            gpointer(bufferPtr),
+            "notify::text",
+            unsafeBitCast({ (buffer: gpointer?, _: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<StringClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                let bufPtr = UnsafeMutableRawPointer(buffer!).assumingMemoryBound(to: GtkEntryBuffer.self)
+                let cStr = gtk_entry_buffer_get_text(bufPtr)!
+                let text = String(cString: cStr)
+                box.closure(text)
+            } as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<StringClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
         return opaqueFromWidget(entry)
     }
 }
 
 extension FocusedView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        gtkRenderView(content)
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_focusable(widget, 1)
+
+        let state = focusState
+        let controller = gtk_event_controller_focus_new()!
+
+        // Focus-in: set @FocusState to true
+        let enterBox = Unmanaged.passRetained(ClosureBox {
+            if !state.wrappedValue { state.storage.setValue(true) }
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(controller), "enter",
+            unsafeBitCast({ (_: gpointer?, ud: gpointer?) in
+                Unmanaged<ClosureBox>.fromOpaque(ud!).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            enterBox,
+            { (ud: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<ClosureBox>.fromOpaque(ud!).release()
+            }, GConnectFlags(rawValue: 0))
+
+        // Focus-out: set @FocusState to false
+        let leaveBox = Unmanaged.passRetained(ClosureBox {
+            if state.wrappedValue { state.storage.setValue(false) }
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(controller), "leave",
+            unsafeBitCast({ (_: gpointer?, ud: gpointer?) in
+                Unmanaged<ClosureBox>.fromOpaque(ud!).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            leaveBox,
+            { (ud: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<ClosureBox>.fromOpaque(ud!).release()
+            }, GConnectFlags(rawValue: 0))
+
+        // Register programmatic focus handler: when user code sets
+        // @FocusState = true, grab GTK focus on this widget.
+        // No g_object_ref — check liveness before use to avoid leaking widgets.
+        state.storage.onProgrammaticFocusChange = { [weak storage = state.storage] newValue in
+            guard storage != nil else { return }
+            guard gtk_swift_is_widget(widget) != 0 else { return }
+            if newValue == true {
+                gtk_swift_grab_focus(widget)
+            } else {
+                gtk_swift_clear_focus(widget)
+            }
+        }
+
+        gtk_widget_add_controller(widget, controller)
+        return opaqueFromWidget(widget)
     }
 }
 
 extension FocusedEqualsView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        gtkRenderView(content)
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_focusable(widget, 1)
+
+        let state = focusState
+        let matchValue = value
+        let controller = gtk_event_controller_focus_new()!
+
+        // Focus-in: set @FocusState to this value
+        let enterBox = Unmanaged.passRetained(ClosureBox {
+            state.storage.setValue(matchValue)
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(controller), "enter",
+            unsafeBitCast({ (_: gpointer?, ud: gpointer?) in
+                Unmanaged<ClosureBox>.fromOpaque(ud!).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            enterBox,
+            { (ud: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<ClosureBox>.fromOpaque(ud!).release()
+            }, GConnectFlags(rawValue: 0))
+
+        // Focus-out: clear @FocusState to nil if still this value
+        let leaveBox = Unmanaged.passRetained(ClosureBox {
+            if state.storage.value == matchValue { state.storage.setValue(nil) }
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(controller), "leave",
+            unsafeBitCast({ (_: gpointer?, ud: gpointer?) in
+                Unmanaged<ClosureBox>.fromOpaque(ud!).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            leaveBox,
+            { (ud: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<ClosureBox>.fromOpaque(ud!).release()
+            }, GConnectFlags(rawValue: 0))
+
+        // Register programmatic focus handler: when user code sets
+        // @FocusState to this value, grab GTK focus on this widget.
+        // No g_object_ref — check liveness before use to avoid leaking widgets.
+        let prevHandler = state.storage.onProgrammaticFocusChange
+        state.storage.onProgrammaticFocusChange = { newValue in
+            if newValue == matchValue {
+                guard gtk_swift_is_widget(widget) != 0 else { return }
+                gtk_swift_grab_focus(widget)
+            } else if newValue == nil {
+                if gtk_swift_is_widget(widget) != 0 {
+                    gtk_swift_clear_focus(widget)
+                }
+            } else {
+                prevHandler?(newValue)
+            }
+        }
+
+        gtk_widget_add_controller(widget, controller)
+        return opaqueFromWidget(widget)
     }
 }
 
