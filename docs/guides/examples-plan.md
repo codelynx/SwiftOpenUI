@@ -13,10 +13,20 @@ No clear theme per example. Features overlap. Hard to know what's tested where. 
 ## Principles
 
 1. **One theme per example** — each example demonstrates a specific category
-2. **Progressive complexity** — start simple, build up
-3. **Every framework feature exercised** — if it exists in SwiftOpenUI, an example uses it
-4. **Platform validation** — examples that specifically stress cross-platform differences
-5. **Practical patterns** — real-world-ish apps, not just feature demos
+2. **Single source, all platforms** — every example is one `main.swift` with `#if` import/entry-point boilerplate. View code is shared across macOS, Linux, Windows, and Web.
+3. **Progressive complexity** — start simple, build up
+4. **Every framework feature exercised** — if it exists in SwiftOpenUI, an example uses it
+5. **Platform limitations labeled inline** — if a feature isn't available on a platform, the view shows a message instead of failing to compile:
+   ```swift
+   #if os(macOS)
+   Canvas { context, size in ... }
+   #else
+   Text("Canvas not yet available on this platform")
+       .foregroundColor(.gray)
+   #endif
+   ```
+6. **Always compiles, always runs** — no example should fail to build on any supported platform
+7. **Practical patterns** — real-world-ish apps, not just feature demos
 
 ## Proposed Structure
 
