@@ -136,6 +136,38 @@ extension Spacer: WinRenderable {
     }
 }
 
+extension TextField: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Stub: render as a Win32 EDIT control
+        let currentText = text.wrappedValue
+        let measured = measureText(currentText.isEmpty ? title : currentText, hwnd: context.parent)
+        let hwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_EDIT(),
+                wstr,
+                DWORD(WS_BORDER | ES_AUTOHSCROLL),
+                0, 0, max(measured.width + 16, 150), measured.height + 8,
+                context.parent,
+                nil,
+                context.hInstance
+            )
+        }
+        return hwnd
+    }
+}
+
+extension FocusedView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+extension FocusedEqualsView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
 extension Divider: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         registerD2DViewClassIfNeeded(hInstance: context.hInstance)

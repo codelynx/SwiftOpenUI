@@ -85,6 +85,29 @@ extension SwiftOpenUI.Divider: WebRenderable {
     }
 }
 
+extension SwiftOpenUI.TextField: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let input = document.createElement("input")
+        input.type = "text"
+        input.value = .string(text.wrappedValue)
+        input.placeholder = .string(title)
+        input.style = "padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box;"
+        return input
+    }
+}
+
+extension FocusedView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        webRenderView(content)
+    }
+}
+
+extension FocusedEqualsView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        webRenderView(content)
+    }
+}
+
 extension SwiftOpenUI.Button: WebRenderable {
     public func webCreateElement() -> JSValue {
         let button = document.createElement("button")

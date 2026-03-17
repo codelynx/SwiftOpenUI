@@ -12,6 +12,9 @@ class RenderBridge {
     /// Handle a button click. Returns new JSON if @State changed, or null if not.
     external fun nativeOnButtonClick(nodeId: Long): String?
 
+    /// Handle a text input change. Returns new JSON if @State changed, or null if not.
+    external fun nativeOnTextInput(nodeId: Long, text: String): String?
+
     companion object {
         private var loaded = false
         var loadError: String? = null

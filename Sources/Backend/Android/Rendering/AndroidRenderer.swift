@@ -99,6 +99,17 @@ extension SwiftOpenUI.Button: AndroidRenderable {
     }
 }
 
+extension SwiftOpenUI.TextField: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "textfield")
+        node.props["placeholder"] = title
+        node.props["text"] = text.wrappedValue
+        let nodeId = androidCurrentNodeId()
+        androidTextBindings[nodeId] = text
+        return node
+    }
+}
+
 extension SwiftOpenUI.Color: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let node = RenderNode(type: "color")
@@ -253,6 +264,21 @@ extension BorderView: AndroidRenderable {
         node.props["width"] = "\(width)"
         node.children = [androidRenderView(content)]
         return node
+    }
+}
+
+// MARK: - Focus modifier views
+
+extension FocusedView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        // Pass through — focus binding is handled at the platform level
+        androidRenderView(content)
+    }
+}
+
+extension FocusedEqualsView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        androidRenderView(content)
     }
 }
 

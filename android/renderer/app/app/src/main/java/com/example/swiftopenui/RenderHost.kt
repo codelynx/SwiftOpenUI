@@ -5,6 +5,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -18,6 +20,23 @@ object RenderHost {
     /// Callback invoked when a button is clicked. Set by MainActivity.
     /// Returns new JSON if state changed, null otherwise.
     var onButtonClick: ((Long) -> String?)? = null
+
+    /// Callback invoked when text input changes. Set by MainActivity.
+    /// Returns new JSON if state changed, null otherwise.
+    var onTextInput: ((Long, String) -> String?)? = null
+
+    /// Input state snapshots keyed by node ID. Saved before rebuild,
+    /// restored after rebuild to preserve cursor, selection, and focus.
+    private val inputSnapshots = mutableMapOf<Long, InputSnapshot>()
+
+    /// Set to true during programmatic setText to suppress TextWatcher feedback.
+    private var suppressTextWatcher = false
+
+    data class InputSnapshot(
+        val selectionStart: Int,
+        val selectionEnd: Int,
+        val hasFocus: Boolean
+    )
 
     fun renderFromJSON(context: Context, json: String): View {
         return try {
@@ -41,6 +60,7 @@ object RenderHost {
             "window" -> createContainer(context, children, LinearLayout.VERTICAL)
             "text" -> createText(context, props)
             "button" -> createButton(context, nodeId, props, children)
+            "textfield" -> createTextField(context, nodeId, props)
             "vstack" -> createVStack(context, props, children)
             "hstack" -> createHStack(context, props, children)
             "zstack" -> createZStack(context, children)
@@ -79,6 +99,60 @@ object RenderHost {
                 setOnClickListener {
                     onButtonClick?.invoke(nodeId)
                 }
+            }
+        }
+    }
+
+    private fun createTextField(context: Context, nodeId: Long, props: JSONObject): EditText {
+        val placeholder = props.optString("placeholder", "")
+        val text = props.optString("text", "")
+
+        return EditText(context).apply {
+            hint = placeholder
+            setSingleLine(true)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+
+            // Set initial text without triggering the watcher
+            suppressTextWatcher = true
+            setText(text)
+            suppressTextWatcher = false
+
+            // Restore input state if we have a snapshot from a previous render
+            val snapshot = inputSnapshots.remove(nodeId)
+            if (snapshot != null) {
+                val len = getText().length
+                setSelection(
+                    snapshot.selectionStart.coerceIn(0, len),
+                    snapshot.selectionEnd.coerceIn(0, len)
+                )
+                if (snapshot.hasFocus) {
+                    requestFocus()
+                }
+            }
+
+            // Wire TextWatcher — sends text changes to Swift immediately
+            if (nodeId != 0L) {
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                    override fun afterTextChanged(s: Editable?) {
+                        if (suppressTextWatcher) return
+                        val newText = s?.toString() ?: ""
+
+                        // Save input state before the rebuild replaces this view
+                        inputSnapshots[nodeId] = InputSnapshot(
+                            selectionStart = selectionStart,
+                            selectionEnd = selectionEnd,
+                            hasFocus = hasFocus()
+                        )
+
+                        onTextInput?.invoke(nodeId, newText)
+                    }
+                })
             }
         }
     }

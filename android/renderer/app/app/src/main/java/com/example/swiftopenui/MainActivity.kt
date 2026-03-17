@@ -38,6 +38,15 @@ class MainActivity : Activity() {
             newJson
         }
 
+        // Wire text input handler: Kotlin → Swift → returns new JSON
+        RenderHost.onTextInput = { nodeId, text ->
+            val newJson = bridge?.nativeOnTextInput(nodeId, text)
+            if (newJson != null) {
+                replaceContent(newJson)
+            }
+            newJson
+        }
+
         val view = try {
             if (bridge == null) {
                 throw UnsatisfiedLinkError(RenderBridge.loadError ?: "Unknown load error")

@@ -80,6 +80,42 @@ public func jniOnButtonClick(
     return nil
 }
 
+/// Handle a text input change. Updates the TextField's @Binding<String>,
+/// which may mutate @State and trigger a rebuild.
+/// Returns new JSON if the tree was rebuilt, or null if no state changed.
+///
+/// Called from Kotlin: `RenderBridge.nativeOnTextInput(nodeId, text)`
+///
+/// Kotlin sends text changes immediately (not debounced) so the Binding
+/// stays in sync. Rebuild coalescing happens on the Swift side.
+@_cdecl("Java_com_example_swiftopenui_RenderBridge_nativeOnTextInput")
+public func jniOnTextInput(
+    env: UnsafeMutableRawPointer?,
+    thisObj: UnsafeMutableRawPointer?,
+    nodeId: Int64,
+    jText: UnsafeMutableRawPointer?
+) -> UnsafeMutableRawPointer? {
+    guard let env = env, let jText = jText, let session = currentSession else { return nil }
+
+    let newText = jniGetString(env: env, jstring: jText)
+
+    // Clear any pending rebuild
+    session.host.pendingJSON = nil
+
+    // Update the binding — this triggers @State mutation → scheduleRebuild
+    if let binding = androidTextBindings[nodeId] {
+        binding.wrappedValue = newText
+    }
+
+    // If @State changed, return the new tree
+    if let json = session.host.pendingJSON {
+        session.host.pendingJSON = nil
+        return jniNewString(env: env, string: json)
+    }
+
+    return nil
+}
+
 /// Legacy one-shot render for backward compatibility.
 /// Called from Kotlin: `RenderBridge.nativeRenderApp(name)`
 @_cdecl("Java_com_example_swiftopenui_RenderBridge_nativeRenderApp")
@@ -121,6 +157,8 @@ private func createSessionForExample(name: String) -> AndroidViewHost {
     switch name {
     case "StateDemo":
         return createStateDemoSession()
+    case "TextFieldDemo":
+        return createTextFieldDemoSession()
     default:
         // Non-interactive examples: wrap in a host that just re-renders statically
         return AndroidViewHost {
@@ -250,6 +288,70 @@ private struct BindingChildView: View {
             Text("Child sees: \(value)")
             Button("Child +1") { value += 1 }
         }
+    }
+}
+
+// MARK: - TextField demo
+
+/// Create an interactive TextField demo session.
+private func createTextFieldDemoSession() -> AndroidViewHost {
+    var view = TextFieldDemoView() // swiftlint:disable:this redundant_var
+
+    let host = AndroidViewHost { [view] in
+        let rootNode = androidRenderView(view.body)
+        let wrapper = RenderNode(type: "window")
+        wrapper.props["title"] = "SwiftOpenUI"
+        wrapper.children = [rootNode]
+        return renderNodeToJSON(wrapper)
+    }
+
+    installState(view, host: host)
+    return host
+}
+
+/// Interactive text field demo with live binding.
+private struct TextFieldDemoView: View {
+    @State var name: String = ""
+    @State var email: String = ""
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("TextField Demo").font(.title)
+
+            Divider()
+
+            VStack(spacing: 4) {
+                Text("Name").font(.headline)
+                TextField("Enter your name", text: $name)
+                Text("Hello, \(name.isEmpty ? "stranger" : name)!")
+                    .foregroundColor(.blue)
+            }
+
+            Divider()
+
+            VStack(spacing: 4) {
+                Text("Email").font(.headline)
+                TextField("Enter your email", text: $email)
+                if !email.isEmpty {
+                    Text("Email: \(email)")
+                        .foregroundColor(.green)
+                }
+            }
+
+            Divider()
+
+            VStack(spacing: 4) {
+                Text("Combined").font(.headline)
+                if !name.isEmpty && !email.isEmpty {
+                    Text("\(name) <\(email)>")
+                }
+                Button("Clear All") {
+                    name = ""
+                    email = ""
+                }
+            }
+        }
+        .padding()
     }
 }
 

@@ -19,6 +19,10 @@ public struct AndroidBackend: RenderBackend {
 /// Cleared at the start of each render pass, populated during rendering.
 public var androidButtonActions: [Int64: () -> Void] = [:]
 
+/// Maps stable node IDs (Int64) to text field bindings.
+/// Cleared at the start of each render pass, populated during rendering.
+public var androidTextBindings: [Int64: Binding<String>] = [:]
+
 /// Counter for generating structural node IDs during a render pass.
 /// Uses FNV-1a-inspired hashing of the path components.
 private var _idPathStack: [Int64] = [0]  // root hash
@@ -27,6 +31,7 @@ private var _idChildCounters: [Int] = [0]
 /// Begin a new render pass — clears action registry and resets ID generation.
 public func androidBeginRenderPass() {
     androidButtonActions.removeAll()
+    androidTextBindings.removeAll()
     _idPathStack = [0]
     _idChildCounters = [0]
 }

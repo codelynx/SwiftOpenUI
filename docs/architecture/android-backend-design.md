@@ -294,11 +294,20 @@ This is simpler than the batched diff design above (which remains the Phase 2 ta
 - HelloWorld, TextStyles, Buttons, StateDemo (interactive, 5 sections), Layout
 - Launched via intent extra: `--es example "StateDemo"`
 
+### Rebuild Model vs Host Boundary
+
+All backends (GTK4, Win32, Web, Android) use the same **coalesced full-rebuild** model: state mutation → schedule → tear down children → rebuild from scratch. The rebuild granularity is aligned across platforms.
+
+However, Android differs at the **host boundary**: GTK4/Win32/Web render directly from Swift into the platform tree (GTK widgets, HWNDs, DOM nodes). Android renders in Swift, serializes to JSON, crosses the JNI boundary, and rebuilds in Kotlin. This extra serialization + cross-runtime step is the architectural cost unique to Android.
+
+### Incremental Diffs (Future — Cross-Platform)
+
+Batched diff operations (the design above) are deferred. When implemented, they should be built as a **cross-platform diff engine** in `Sources/SwiftOpenUI/` core, with each backend consuming diff ops. This avoids architectural divergence from doing Android-only diffs. Trigger: TextField input performance, IME jank, or visible rebuild flicker.
+
 ### Not in Phase 1
-- Batched diff operations (the design above) — currently full JSON re-render
 - Compose
 - Fragments, navigation
-- Text input / focus
+- Text input / focus (next priority — requires focus/selection/IME preservation design)
 - Gestures beyond button tap
 - Animations
 
