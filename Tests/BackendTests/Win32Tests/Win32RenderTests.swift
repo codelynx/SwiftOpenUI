@@ -580,4 +580,107 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(focus.storage.value, .b,
                        "Storage should be .b, not nil — B's gain should override A's clear")
     }
+
+    // MARK: - Input state preservation
+
+    func testSaveRestoreEditCursorPosition() {
+        let ctx = testContext()
+        let host = Win32ViewHost(context: ctx, buildBody: { ctx in
+            let binding = Binding<String>(get: { "Hello World" }, set: { _ in })
+            return winRenderView(TextField("", text: binding), in: ctx)
+        })
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+
+        // Find the Edit control and set cursor to position 5
+        var edits: [HWND] = []
+        collectEditControls(in: host.container, into: &edits)
+        guard let edit = edits.first else {
+            XCTFail("Should have an Edit control")
+            return
+        }
+        SendMessageW(edit, UINT(EM_SETSEL), 5, 5)
+
+        // Save state
+        let snapshot = saveInputState(in: host.container)
+        XCTAssertEqual(snapshot.editStates.count, 1)
+        XCTAssertEqual(snapshot.editStates[0].selStart, 5)
+        XCTAssertEqual(snapshot.editStates[0].selEnd, 5)
+    }
+
+    func testMultipleEditsCursorPreservation() {
+        let ctx = testContext()
+
+        // Create two TextFields in a VStack
+        let binding1 = Binding<String>(get: { "First" }, set: { _ in })
+        let binding2 = Binding<String>(get: { "Second" }, set: { _ in })
+        let hwnd = winRenderView(VStack {
+            TextField("A", text: binding1)
+            TextField("B", text: binding2)
+        }, in: ctx)!
+
+        // Find all Edit controls
+        var edits: [HWND] = []
+        collectEditControls(in: hwnd, into: &edits)
+        XCTAssertEqual(edits.count, 2, "Should have 2 Edit controls")
+
+        // Set different cursor positions
+        SendMessageW(edits[0], UINT(EM_SETSEL), 3, 3) // cursor at position 3
+        SendMessageW(edits[1], UINT(EM_SETSEL), 1, 4) // selection from 1 to 4
+
+        // Save state
+        let snapshot = saveInputState(in: hwnd)
+        XCTAssertEqual(snapshot.editStates.count, 2)
+        XCTAssertEqual(snapshot.editStates[0].selStart, 3)
+        XCTAssertEqual(snapshot.editStates[0].selEnd, 3)
+        XCTAssertEqual(snapshot.editStates[1].selStart, 1)
+        XCTAssertEqual(snapshot.editStates[1].selEnd, 4)
+    }
+
+    func testSuppressFocusDoesNotSuppressEditState() {
+        let ctx = testContext()
+        let host = Win32ViewHost(context: ctx, buildBody: { ctx in
+            let binding = Binding<String>(get: { "Test" }, set: { _ in })
+            return winRenderView(TextField("", text: binding), in: ctx)
+        })
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+
+        // Set cursor position
+        var edits: [HWND] = []
+        collectEditControls(in: host.container, into: &edits)
+        if let edit = edits.first {
+            SetFocus(edit)
+            SendMessageW(edit, UINT(EM_SETSEL), 2, 2)
+        }
+
+        // Suppress focus restore and rebuild
+        host.suppressNextFocusRestore()
+        host.rebuild()
+
+        // After rebuild, Edit cursor should still be restored even though focus was suppressed
+        var newEdits: [HWND] = []
+        collectEditControls(in: host.container, into: &newEdits)
+        if let edit = newEdits.first {
+            let sel = SendMessageW(edit, UINT(EM_GETSEL), 0, 0)
+            let selStart = Int(win32_LOWORD(DWORD_PTR(sel)))
+            XCTAssertEqual(selStart, 2,
+                "Edit cursor should be preserved even when focus restore is suppressed")
+        }
+    }
+}
+
+// MARK: - Test helpers
+
+private func collectEditControls(in parent: HWND, into result: inout [HWND]) {
+    var child = GetWindow(parent, UINT(GW_CHILD))
+    while let c = child {
+        if className(of: c) == "Edit" {
+            result.append(c)
+        }
+        collectEditControls(in: c, into: &result)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
 }
