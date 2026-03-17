@@ -78,8 +78,9 @@ exampleDeps.append("BackendWin32")
 #endif
 
 // Web backend (WebAssembly)
-// Always declared — manifest #if arch() checks HOST, not cross-compile target.
-// JavaScriptKit is only resolved when building for wasm32.
+// Gated to macOS host — Wasm cross-compilation always happens from macOS.
+// On Linux, this avoids pulling JavaScriptKit into native GTK builds.
+#if os(macOS)
 targets += [
     .target(
         name: "BackendWeb",
@@ -91,6 +92,7 @@ targets += [
     ),
 ]
 exampleDeps.append("BackendWeb")
+#endif
 
 // Examples
 targets += [
@@ -116,9 +118,13 @@ targets += [
     ),
 ]
 
+#if os(macOS)
 let deps: [Package.Dependency] = [
     .package(url: "https://github.com/swiftwasm/JavaScriptKit.git", from: "0.20.0"),
 ]
+#else
+let deps: [Package.Dependency] = []
+#endif
 
 let package = Package(
     name: "SwiftOpenUI",
