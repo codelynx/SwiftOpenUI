@@ -34,8 +34,11 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
 
         guard changed else { return }
 
-        // Notify the platform backend of the focus change
-        platformFocusChanged(newValue)
+        // Only drive native focus for programmatic changes.
+        // UI-driven focus events (GTK enter/leave) should not loop back.
+        if programmatic {
+            platformFocusChanged(newValue)
+        }
 
         // Only rebuild when programmatic (e.g., button sets focusedField).
         // Platform focus events should NOT trigger rebuilds —
@@ -59,8 +62,15 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
         lock.unlock()
     }
 
+    /// Closure set by platform backends to drive native focus when
+    /// @FocusState is changed programmatically. Called with the new value
+    /// only for programmatic changes (not UI-driven focus events).
+    public var onProgrammaticFocusChange: ((Value?) -> Void)?
+
     /// Override in platform backends to handle native focus changes.
-    open func platformFocusChanged(_ newValue: Value?) {}
+    open func platformFocusChanged(_ newValue: Value?) {
+        onProgrammaticFocusChange?(newValue)
+    }
 }
 
 /// A property wrapper that tracks keyboard focus state, matching SwiftUI's @FocusState.

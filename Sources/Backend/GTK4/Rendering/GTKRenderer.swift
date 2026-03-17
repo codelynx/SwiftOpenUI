@@ -166,6 +166,19 @@ extension FocusedView: GTKRenderable {
                 Unmanaged<ClosureBox>.fromOpaque(ud!).release()
             }, GConnectFlags(rawValue: 0))
 
+        // Register programmatic focus handler: when user code sets
+        // @FocusState = true, grab GTK focus on this widget.
+        // Use g_object_ref so the widget stays alive for the closure.
+        g_object_ref(gpointer(widget))
+        state.storage.onProgrammaticFocusChange = { [weak storage = state.storage] newValue in
+            guard storage != nil else { return }
+            if newValue == true {
+                gtk_swift_grab_focus(widget)
+            } else {
+                gtk_swift_clear_focus(widget)
+            }
+        }
+
         gtk_widget_add_controller(widget, controller)
         return opaqueFromWidget(widget)
     }
@@ -207,6 +220,21 @@ extension FocusedEqualsView: GTKRenderable {
             { (ud: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
                 Unmanaged<ClosureBox>.fromOpaque(ud!).release()
             }, GConnectFlags(rawValue: 0))
+
+        // Register programmatic focus handler: when user code sets
+        // @FocusState to this value, grab GTK focus on this widget.
+        g_object_ref(gpointer(widget))
+        let prevHandler = state.storage.onProgrammaticFocusChange
+        state.storage.onProgrammaticFocusChange = { newValue in
+            if newValue == matchValue {
+                gtk_swift_grab_focus(widget)
+            } else if newValue == nil {
+                gtk_swift_clear_focus(widget)
+            } else {
+                // Different value — let another FocusedEqualsView handle it
+                prevHandler?(newValue)
+            }
+        }
 
         gtk_widget_add_controller(widget, controller)
         return opaqueFromWidget(widget)
