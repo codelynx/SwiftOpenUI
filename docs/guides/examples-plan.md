@@ -43,8 +43,7 @@ Examples/
 ├── 09-ObservableObject/    # @ObservedObject, @StateObject, @Published
 ├── 10-Composition/         # Custom views, ViewModifier, AnyView, conditionals
 ├── 11-Calculator/          # Real app: layout grid, state, interaction
-├── 12-PaintSwift/          # Real app: drawing, gestures, color (aspirational)
-└── 13-PlatformTest/        # Platform-specific stress tests
+└── 12-PlatformTest/        # Platform-specific stress tests
 ```
 
 ## Example Details
@@ -78,6 +77,7 @@ Examples/
 - @State with String (text toggle)
 - @State with Bool (toggle visibility)
 - @Binding (parent ↔ child two-way)
+- @FocusState (focus tracking)
 - Multiple @State properties in one view
 - State driving conditional rendering (if/else in ViewBuilder)
 
@@ -155,17 +155,7 @@ Examples/
 - .font(), .foregroundColor(), .background(), .frame() on every cell
 - Exercises layout precision across platforms
 
-### 12-PaintSwift
-**Theme:** A real app — drawing, gestures, color
-**Features:**
-- Canvas/drawing area (requires new Canvas view or Color fill area)
-- Gesture handling (drag to draw — requires onDrag/onTapGesture)
-- Color picker (grid of color swatches)
-- @State for stroke list, current color
-- Aspirational — drives development of gesture and canvas APIs
-- May require platform-specific rendering extensions
-
-### 13-PlatformTest
+### 12-PlatformTest
 **Theme:** Cross-platform rendering validation
 **Features:**
 - Color rendering (named colors, custom RGB, opacity)
@@ -209,15 +199,16 @@ Examples/
 | AnyView | — | 10 |
 | _ConditionalView | — | 10 |
 | Optional view | — | 10 |
+| @FocusState | — | 04 |
 
 ## Migration Strategy
 
 1. Keep `HelloWorld` as-is (01)
 2. Remove `Counter` (absorbed into 04-State)
 3. Replace `Showcase1` and `Showcase2` with the new themed examples
-3. Add new examples incrementally — don't need all 12 at once
-4. Update Package.swift executable targets as examples are added/removed
-5. Each example is self-contained: one `main.swift`, same boilerplate import/entry-point pattern
+4. Add new examples incrementally — don't need all 12 at once
+5. Update Package.swift executable targets as examples are added/removed
+6. Each example is self-contained: one `main.swift`, same boilerplate import/entry-point pattern
 
 ## Priority Order
 
@@ -232,5 +223,18 @@ Examples/
 9. **09-ObservableObject** — currently untested in examples
 10. **10-Composition** — advanced patterns
 11. **11-Calculator** — real app, exercises layout + state + interaction
-12. **12-PaintSwift** — aspirational, drives gesture/canvas API development
-13. **13-PlatformTest** — backend validation
+12. **12-PlatformTest** — backend validation
+
+## Future Examples (blocked on new APIs)
+
+These examples require features not yet in SwiftOpenUI. They are roadmap drivers, not current candidates. They will be added to the examples list once the required APIs ship.
+
+### PaintSwift
+**Requires:** Canvas/drawing view, gesture handlers (onDrag, onTapGesture)
+**Drives:** gesture API, canvas rendering, platform-specific drawing extensions
+**Features:**
+- Canvas/drawing area
+- Drag-to-draw gesture
+- Color picker (grid of swatches)
+- @State for stroke list, current color
+- Would exercise every platform's native drawing path
