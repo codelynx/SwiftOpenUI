@@ -11,3 +11,6 @@ DerivedData/
 .claude/
 .untracked/
 .vscode/
+
+# Java/Android artifacts
+*.hprof

@@ -1,21 +1,25 @@
 package com.example.swiftopenui
 
-import android.app.Activity
 import android.os.Bundle
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.graphics.Color
 import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     companion object {
         const val TAG = "SwiftOpenUI"
         /// Application-scoped: session bridge survives Activity recreation.
         private val bridge = if (RenderBridge.isLoaded) RenderBridge() else null
     }
-
-    private lateinit var scrollView: ScrollView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,77 +27,57 @@ class MainActivity : Activity() {
         val exampleName = intent.getStringExtra("example") ?: "HelloWorld"
         Log.d(TAG, "Starting example: $exampleName")
 
-        scrollView = ScrollView(this).apply {
-            fitsSystemWindows = true
-        }
-
-        // Wire button click handler: Kotlin → Swift → returns new JSON
-        RenderHost.onButtonClick = { nodeId ->
+        // Wire callbacks: Kotlin → Swift
+        ComposeRenderHost.onButtonClick = { nodeId ->
             Log.d(TAG, "Button clicked: nodeId=$nodeId")
-            val newJson = bridge?.nativeOnButtonClick(nodeId)
-            if (newJson != null) {
-                Log.d(TAG, "State changed, re-rendering (${newJson.length} chars)")
-                replaceContent(newJson)
-            }
-            newJson
+            bridge?.nativeOnButtonClick(nodeId)
         }
 
-        // Wire text input handler: Kotlin → Swift → returns new JSON
-        RenderHost.onTextInput = { nodeId, text ->
-            val newJson = bridge?.nativeOnTextInput(nodeId, text)
-            if (newJson != null) {
-                replaceContent(newJson)
-            }
-            newJson
+        ComposeRenderHost.onTextInput = { nodeId, text ->
+            bridge?.nativeOnTextInput(nodeId, text)
         }
 
-        // Wire focus change handler: Kotlin → Swift (no rebuild)
-        RenderHost.onFocusChange = { nodeId, hasFocus ->
+        ComposeRenderHost.onFocusChange = { nodeId, hasFocus ->
             bridge?.nativeOnFocusChange(nodeId, hasFocus)
         }
 
-        val view = try {
+        val initialJson = try {
             if (bridge == null) {
                 throw UnsatisfiedLinkError(RenderBridge.loadError ?: "Unknown load error")
             }
-            // Use session-based API — Swift reuses existing session if example matches
             val json = bridge.nativeCreateSession(exampleName)
             Log.d(TAG, "JSON length: ${json.length}")
-            val rendered = RenderHost.renderFromJSON(this, json)
-            Log.d(TAG, "Render complete")
-            rendered
-        } catch (e: UnsatisfiedLinkError) {
-            TextView(this).apply {
-                text = "Failed to load Swift library:\n${e.message}"
-                setTextColor(Color.RED)
-                setPadding(32, 32, 32, 32)
-                textSize = 16f
-            }
+            json
         } catch (e: Exception) {
             Log.e(TAG, "Error: ${e.message}", e)
-            TextView(this).apply {
-                text = "Error:\n${e.message}"
-                setTextColor(Color.RED)
-                setPadding(32, 32, 32, 32)
-                textSize = 14f
-            }
+            null
         }
 
-        scrollView.addView(view, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ))
-        setContentView(scrollView)
-    }
+        setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    if (initialJson != null) {
+                        var currentJson by remember { mutableStateOf(initialJson) }
 
-    private fun replaceContent(json: String) {
-        runOnUiThread {
-            scrollView.removeAllViews()
-            val newView = RenderHost.renderFromJSON(this, json)
-            scrollView.addView(newView, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ))
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            ComposeRenderHost.RenderFromJSON(currentJson) { newJson ->
+                                Log.d(TAG, "State changed, re-rendering (${newJson.length} chars)")
+                                currentJson = newJson
+                            }
+                        }
+                        Log.d(TAG, "Render complete")
+                    } else {
+                        Text(
+                            text = "Failed to load Swift library:\n${RenderBridge.loadError ?: "Unknown error"}",
+                            color = Color.Red
+                        )
+                    }
+                }
+            }
         }
     }
 }
