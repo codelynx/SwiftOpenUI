@@ -94,14 +94,13 @@ extension Text: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let measured = measureText(content, hwnd: context.parent)
 
-        // SS_LEFTNOWORDWRAP prevents the STATIC from wrapping text to
-        // multiple lines. Our measurement is single-line, so wrapping
-        // would show text that extends below the measured height.
+        // SS_LEFTNOWORDWRAP prevents wrapping (matches single-line measurement).
+        // SS_NOTIFY enables WM_LBUTTONDOWN/UP delivery so gesture subclasses work.
         let hwnd = content.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(),
                 wstr,
-                DWORD(SS_LEFTNOWORDWRAP),
+                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
                 0, 0, measured.width + 4, measured.height + 2,
                 context.parent,
                 nil,
@@ -1859,7 +1858,10 @@ private let tapGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSub
     ).takeUnretainedValue()
 
     switch uMsg {
-    case UINT(WM_LBUTTONDOWN):
+    case UINT(WM_LBUTTONDOWN), UINT(WM_LBUTTONDBLCLK):
+        // WM_LBUTTONDBLCLK is sent instead of WM_LBUTTONDOWN for the second
+        // click of a double-click when the window class has CS_DBLCLKS.
+        // STATIC controls have this by default.
         handler.armed = true
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
