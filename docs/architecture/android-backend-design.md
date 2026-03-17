@@ -258,41 +258,45 @@ No crash propagation across the JNI boundary.
 
 ## Phase 1 Scope
 
-### Phase 1a: JSON Bridge (Implemented)
+### Phase 1a: JSON Bridge + Jetpack Compose (Implemented)
 
-The initial implementation uses a **full JSON render tree** approach rather than batched diffs. Swift renders the entire view tree to a `RenderNode` graph, serializes to JSON, and sends it across JNI in one call. Kotlin's `RenderHost` deserializes and builds Android Views from scratch.
+Swift renders the entire view tree to a `RenderNode` graph, serializes to JSON, and sends it across JNI in one call. Kotlin's `ComposeRenderHost` deserializes the JSON and builds a `@Composable` tree via Jetpack Compose.
 
-This is simpler than the batched diff design above (which remains the Phase 2 target) but sufficient for static rendering and screenshot validation.
+State changes from Swift produce new JSON, which updates a `mutableStateOf(json)` — Compose recomposes only the changed subtrees.
 
-#### Views
-- `Text` → `TextView`
-- `Button` → `Button`
-- `VStack` → vertical `LinearLayout`
-- `HStack` → horizontal `LinearLayout`
-- `ZStack` → `FrameLayout`
-- `Spacer` → `Space` with layout weight
-- `Divider` → `View` with 1dp height and gray background
-- `Color` → `View` with `MATCH_PARENT` and background color
-- `Group` → vertical `LinearLayout` (transparent container)
-- `EmptyView` → empty `View`
+#### Views (JSON → Compose)
+- `Text` → `Text()`
+- `Button` → `Button()` (Material3)
+- `TextField` → `BasicTextField` with `TextFieldValue` (preserves cursor/selection/IME)
+- `VStack` → `Column`
+- `HStack` → `Row`
+- `ZStack` → `Box`
+- `Spacer` → `Spacer` with `Modifier.weight(1f)` in Row/Column scope
+- `Divider` → `Divider()`
+- `Color` → `Box` with `Modifier.background`
+- `Group` → `Column`
+- `EmptyView` → no-op
 
 #### Modifiers
-- `.padding()` → wrapper `LinearLayout` with `setPadding`
-- `.frame()` → `FrameLayout` with explicit width/height
-- `.foregroundColor()` → recursive `setTextColor` on child TextViews
-- `.backgroundColor()` → `setBackgroundColor` on child
-- `.font()` → `setTextSize` + `setTypeface` (bold, semibold, light, normal)
-- `.border()` → `GradientDrawable` with stroke color and width
+- `.padding()` → `Modifier.padding`
+- `.frame()` → `Modifier.width/height`
+- `.foregroundColor()` → `CompositionLocalProvider(LocalContentColor)`
+- `.backgroundColor()` → `Modifier.background`
+- `.font()` → `CompositionLocalProvider(LocalTextStyle)`
+- `.border()` → `Modifier.border`
+- `.focused()` → `FocusRequester` + `onFocusChanged` + `clearFocus`
 
 #### State
-- Interactive `@State`: button tap → JNI `nativeOnButtonClick` → action closure → `@State` mutation → `scheduleRebuild` → full JSON re-render → Kotlin replaces view tree
-- `@Binding`: child views receive `Binding<Value>` from parent's projected `$state`; mutations flow through the same storage + rebuild path
-- Session persistence: `AndroidSession` at module scope survives Activity recreation — `@State` values are preserved across rotation/theme changes
-- One `Activity`, one root `ScrollView` wrapping the rendered tree
+- Interactive `@State`: button tap → JNI `nativeOnButtonClick` → action closure → `@State` mutation → `scheduleRebuild` → new JSON → Compose recomposition
+- `@Binding`: child views receive `Binding<Value>` from parent's projected `$state`
+- `TextField`: `nativeOnTextInput` JNI → immediate `Binding<String>` update → recomposition. `TextFieldValue` preserves cursor/selection across external updates
+- `.focused()`: bidirectional — `nativeOnFocusChange` JNI for platform events (no rebuild), `"focused"` prop for programmatic focus/unfocus
+- Session persistence: `AndroidSession` at module scope survives Activity recreation
+- `ComponentActivity` with `setContent { }`, `MaterialTheme`, scrollable `Box`
 
 #### Examples (defined in JNIBridge.swift)
-- HelloWorld, TextStyles, Buttons, StateDemo (interactive, 5 sections), Layout
-- Launched via intent extra: `--es example "StateDemo"`
+- HelloWorld, TextStyles, Buttons, StateDemo (interactive, 5 sections), Layout, TextFieldDemo
+- Launched via intent extra: `--es example "TextFieldDemo"`
 
 ### Rebuild Model vs Host Boundary
 
@@ -304,12 +308,10 @@ However, Android differs at the **host boundary**: GTK4/Win32/Web render directl
 
 Batched diff operations (the design above) are deferred. When implemented, they should be built as a **cross-platform diff engine** in `Sources/SwiftOpenUI/` core, with each backend consuming diff ops. This avoids architectural divergence from doing Android-only diffs. Trigger: TextField input performance, IME jank, or visible rebuild flicker.
 
-### Not in Phase 1
-- Compose
-- Fragments, navigation
-- Text input / focus (next priority — requires focus/selection/IME preservation design)
-- Gestures beyond button tap
-- Animations
+### Not in Phase 1 (Cross-Platform Future Work)
+- Navigation (`NavigationStack`, `NavigationLink`)
+- Gestures beyond button tap (`onTapGesture`, `onLongPressGesture`, `DragGesture`)
+- Animations (`withAnimation`, `.animation()` modifier)
 
 ## Project Structure
 
@@ -325,17 +327,17 @@ android/
 ├── hello/                       ← Minimal PoC: Swift .so + Kotlin JNI "Hello from Swift"
 │   ├── app/                     ← Kotlin Android project
 │   └── swift-lib/               ← Swift shared library (Package.swift)
-└── renderer/                    ← Full renderer: Swift view tree → JSON → Android Views
+└── renderer/                    ← Full renderer: Swift view tree → JSON → Compose
     ├── app/
     │   └── app/src/main/java/com/example/swiftopenui/
-    │       ├── MainActivity.kt  ← loads .so, launches examples via intent extras
-    │       ├── RenderBridge.kt  ← JNI bridge class (nativeRenderApp)
-    │       └── RenderHost.kt    ← JSON → Android Views (createView dispatcher)
-    └── build-so.sh              ← Build script for Swift .so
+    │       ├── MainActivity.kt       ← ComponentActivity with setContent, loads .so
+    │       ├── RenderBridge.kt       ← JNI bridge class
+    │       └── ComposeRenderHost.kt  ← JSON → @Composable tree
+    └── build-so.sh                   ← Build script for Swift .so
 
 screenshots/
 ├── capture-android.sh           ← Automated screenshot capture via adb
-└── android/                     ← Captured screenshots (5 examples)
+└── android/                     ← Captured screenshots (6 examples)
 ```
 
 ## Open Questions

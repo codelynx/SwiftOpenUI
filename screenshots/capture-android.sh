@@ -25,14 +25,15 @@ DELAY=3  # seconds to wait for render
 # Density threshold: scale if device density > this value
 SCALE_THRESHOLD=320
 
-TARGETS=(HelloWorld TextStyles Buttons StateDemo Layout)
+TARGETS=(HelloWorld TextStyles Buttons StateDemo Layout TextFieldDemo)
 typeset -A FILENAMES
 FILENAMES=(
-    HelloWorld  "01-HelloWorld"
-    TextStyles  "02-TextStyles"
-    Buttons     "03-Buttons"
-    StateDemo   "04-State"
-    Layout      "05-Layout"
+    HelloWorld     "01-HelloWorld"
+    TextStyles     "02-TextStyles"
+    Buttons        "03-Buttons"
+    StateDemo      "04-State"
+    Layout         "05-Layout"
+    TextFieldDemo  "06-TextField"
 )
 
 # Check adb

@@ -74,6 +74,7 @@ Screenshots are named to match example numbers:
 | `03-Buttons.png` | Buttons | `swift run Buttons` |
 | `04-State.png` | State | `swift run StateDemo` |
 | `05-Layout.png` | Layout | `swift run Layout` |
+| `06-TextField.png` | TextFieldDemo | Android only (JNIBridge.swift) |
 
 ## Cross-Platform Comparison
 
@@ -164,23 +165,24 @@ All examples use the same Swift source (`main.swift`) with `#if os(macOS)` to se
 - ZStack, Frame, and nested stacks all render correctly
 - Buttons use native HTML `<button>` elements
 
-### Android (Swift .so + Kotlin Views via JSON)
+### Android (Swift .so + Jetpack Compose via JSON)
 
 | 01-HelloWorld | 02-TextStyles | 03-Buttons |
 |---------------|--------------|------------|
 | ![Android](android/01-HelloWorld.png) | ![Android](android/02-TextStyles.png) | ![Android](android/03-Buttons.png) |
 
-| 04-State | 05-Layout |
-|----------|----------|
-| ![Android](android/04-State.png) | ![Android](android/05-Layout.png) |
+| 04-State | 05-Layout | 06-TextField |
+|----------|----------|-------------|
+| ![Android](android/04-State.png) | ![Android](android/05-Layout.png) | ![Android](android/06-TextField.png) |
 
-- Swift renders view tree to JSON, Kotlin `RenderHost` builds Android Views
+- Swift renders view tree to JSON, Kotlin `ComposeRenderHost` builds Compose UI
+- Jetpack Compose: Column/Row/Box, Material3 buttons, BasicTextField with TextFieldValue
 - Font hierarchy (Large Title → Caption) renders with correct sizes and weights
-- Buttons use native Android `Button` widget
-- Spacer works in VStack; HStack spacer weight is set but layout may not expand fully depending on parent constraints
+- TextField with live Binding, cursor/selection preservation, placeholder support
+- Spacer works in VStack and HStack via `Modifier.weight(1f)`
 - ZStack with Color background constrained by `.frame(width:200, height:100)`
+- `.focused()` wired bidirectionally via FocusRequester + onFocusChanged
 - No action bar — uses `Theme.Material.Light.NoActionBar` for clean display
-- Android examples are simpler (defined in `JNIBridge.swift`) than the full Phase 1 macOS examples
 
 ### Updated Summary
 
