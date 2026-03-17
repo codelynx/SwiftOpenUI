@@ -154,6 +154,15 @@ class Win32NavigationContext {
             SetWindowTextW(titleLabel, wstr)
         }
         ShowWindow(backButton, entries.count > 1 ? SW_SHOW : SW_HIDE)
+        // Re-layout header to position back button and title correctly
+        layoutNavContainer(self)
+        // Size the visible entry to fill the content area
+        if let top = entries.last {
+            var caRect = RECT()
+            GetClientRect(contentArea, &caRect)
+            SetWindowPos(top.hwnd, nil, 0, 0,
+                         caRect.right, caRect.bottom, UINT(SWP_NOZORDER))
+        }
     }
 }
 
@@ -249,18 +258,10 @@ private let navContainerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         return 0
 
     case UINT(WM_COMMAND):
-        // Check if it's the back button
-        let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
-        if userData != 0 {
-            let ctx = Unmanaged<Win32NavigationContext>.fromOpaque(
-                UnsafeMutableRawPointer(bitPattern: Int(userData))!
-            ).takeUnretainedValue()
-            if lParam != 0 && HWND(bitPattern: Int(lParam)) == ctx.backButton {
-                ctx.pop()
-                return 0
-            }
+        // Forward to root for global command dispatch (back button, etc.)
+        if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
+            SendMessageW(childHwnd, uMsg, wParam, lParam)
         }
-        // Forward to root for button command dispatch
         if let root = findRootWindow(from: hwnd!) as HWND? {
             return SendMessageW(root, uMsg, wParam, lParam)
         }
@@ -298,7 +299,7 @@ private func layoutNavContainer(_ ctx: Win32NavigationContext) {
     let headerHeight: Int32 = 32
     SetWindowPos(ctx.headerContainer, nil, 0, 0, w, headerHeight, UINT(SWP_NOZORDER))
 
-    // Layout header children: [Back] [Title]
+    // Layout back button (child of headerContainer)
     let backVisible = IsWindowVisible(ctx.backButton) != false
     let backWidth: Int32 = backVisible ? 60 : 0
     if backVisible {
@@ -338,7 +339,10 @@ extension NavigationStack: WinRenderable {
             container, nil, context.hInstance, nil
         )!
 
-        // Back button (hidden initially)
+        // Back button — child of headerContainer for correct z-order.
+        // WM_COMMAND routing: headerContainer uses stackContainerClassName which
+        // has no subclass, but WM_COMMAND from buttons goes to the button's
+        // direct parent. We use registerCommandHandler + dispatchCommand via root.
         let backControlID = nextControlID()
         let backButton = "← Back".withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
@@ -350,6 +354,9 @@ extension NavigationStack: WinRenderable {
             )
         }!
         ShowWindow(backButton, SW_HIDE)
+
+        // Install a subclass on headerContainer to forward WM_COMMAND to root
+        SetWindowSubclass(headerContainer, stackLayoutProc, 1, 0)
 
         // Title label
         let titleLabel = win32_CreateChildWindow(
@@ -418,12 +425,29 @@ extension NavigationStack: WinRenderable {
         setCurrentEnvironment(prevEnv)
         setCurrentNavigationContext(nil)
 
-        // Add root as first entry
+        // Add root as first entry and size the nav container
+        let headerHeight: Int32 = 32
         if let rootHwnd = rootHwnd {
-            var contentRect = RECT()
-            GetClientRect(contentArea, &contentRect)
+            // Get root content's natural size
+            var rootRect = RECT()
+            GetWindowRect(rootHwnd, &rootRect)
+            let rootW = rootRect.right - rootRect.left
+            let rootH = rootRect.bottom - rootRect.top
+
+            // Size the nav container = root content + header
+            let totalH = rootH + headerHeight
+            let totalW = max(rootW, 200)
+            SetWindowPos(container, nil, 0, 0, totalW, totalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+            // Now layout header + content area inside the sized container
+            layoutNavContainer(navCtx)
+
+            // Size root to fill content area
+            var caRect = RECT()
+            GetClientRect(contentArea, &caRect)
             SetWindowPos(rootHwnd, nil, 0, 0,
-                         contentRect.right, contentRect.bottom, UINT(SWP_NOZORDER))
+                         caRect.right, caRect.bottom, UINT(SWP_NOZORDER))
+
             navCtx.entries.append(Win32NavigationEntry(title: title, hwnd: rootHwnd))
         }
 
