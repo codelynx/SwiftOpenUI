@@ -34,6 +34,14 @@
 - Debug builds are ~59MB; release builds will be significantly smaller
 - DOM mapping: VStack → `flex-direction: column`, HStack → `row`, ZStack → CSS grid, etc.
 
+## Android (experimental)
+
+- No backend yet — only the core library cross-compiles (see [Android Setup Guide](../guides/android-setup.md))
+- Requires Swift 6.3 dev snapshot toolchain (opt-in, not the repo default)
+- Architecture design: Swift owns state/diff, Kotlin host owns UI (see [Android Backend Design](../architecture/android-backend-design.md))
+- SwiftOpenUI core compiles for `aarch64-unknown-linux-android28` via the official Swift Android SDK
+- `pthread` TLS works on Android via `canImport(Glibc)`
+
 ## Cross-Compilation Notes
 
 - `#if os()` in `Package.swift` checks the **host** platform, not the cross-compile target

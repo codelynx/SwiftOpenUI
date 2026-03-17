@@ -28,7 +28,7 @@
 ### Backends
 - Web: release build optimization (reduce from 59MB debug)
 - Web: serve workflow (dev server with hot reload)
-- Android: JNI bridge to Android Views (research phase)
+- Android: core library cross-compiles (see [setup guide](guides/android-setup.md)); backend design complete (see [design doc](architecture/android-backend-design.md)); Phase 1 implementation pending (Text, Button, VStack/HStack, @State via batched JNI diffs to Kotlin host)
 
 ### Infrastructure
 - CI: GitHub Actions for macOS + Linux + Wasm builds

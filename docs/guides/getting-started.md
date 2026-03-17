@@ -75,6 +75,10 @@ swift run HelloWorld
 
 Requires Visual Studio with the Windows SDK installed.
 
+### Android (experimental)
+
+See [Android Setup Guide](android-setup.md) for cross-compilation from macOS. Requires Swift 6.3 dev snapshot (opt-in).
+
 ## Your First App
 
 ```swift
