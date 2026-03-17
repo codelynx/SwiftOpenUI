@@ -9,15 +9,19 @@ import android.view.Gravity
 class MainActivity : Activity() {
 
     // JNI function implemented in Swift
-    external fun helloFromSwift(): String
+    private external fun helloFromSwift(): String
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val message = try {
-            helloFromSwift()
-        } catch (e: UnsatisfiedLinkError) {
-            "Failed to load Swift library: ${e.message}"
+        val message = if (nativeLoaded) {
+            try {
+                helloFromSwift()
+            } catch (e: UnsatisfiedLinkError) {
+                "JNI call failed: ${e.message}"
+            }
+        } else {
+            "Failed to load Swift library: $loadError"
         }
 
         val layout = LinearLayout(this).apply {
@@ -37,8 +41,16 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        private var nativeLoaded = false
+        private var loadError: String? = null
+
         init {
-            System.loadLibrary("SwiftHello")
+            try {
+                System.loadLibrary("SwiftHello")
+                nativeLoaded = true
+            } catch (e: UnsatisfiedLinkError) {
+                loadError = e.message
+            }
         }
     }
 }
