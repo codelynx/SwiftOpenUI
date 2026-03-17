@@ -50,7 +50,7 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 - **Core is platform-independent**: `Sources/SwiftOpenUI/` has zero platform imports. All GTK/Win32/Web code lives in `Sources/Backend/`.
 - **Protocol-based rendering**: Backends extend core views with `GTKRenderable` / `WebRenderable` / etc. The renderer checks `if let renderable = view as? Renderable` before falling back to body recursion.
 - **On macOS, examples use real SwiftUI**: `#if os(macOS) import SwiftUI` — validates API compatibility.
-- **Manifest conditionals check HOST, not target**: `#if os()` and `#if arch()` in Package.swift evaluate the build machine. Example deps always include SwiftOpenUI; Web backend + JavaScriptKit are declared unconditionally to support cross-compilation from macOS to Wasm.
+- **Manifest conditionals check HOST, not target**: `#if os()` and `#if arch()` in Package.swift evaluate the build machine. Example deps always include SwiftOpenUI. Web backend + JavaScriptKit are gated to `#if os(macOS)` (Wasm cross-compilation always happens from macOS). GTK4 and Win32 backends are gated to their native OS.
 - **Namespace conflicts**: On macOS, `ObservableObject` and `Published` clash with Combine. Tests qualify as `SwiftOpenUI.ObservableObject` and `@SwiftOpenUI.Published`. See `docs/issues/observable-namespace-conflict.md`.
 - **State management** (@State, @Binding, @ObservedObject, @Published, @StateObject, @EnvironmentObject, @FocusState) is fully platform-independent with thread-safe storage.
 - **Environment TLS**: pthread on Linux/macOS, TlsAlloc on Windows, simple global on Wasm (single-threaded).
@@ -74,11 +74,23 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 └──────────────┴───────────────┴──────────────────────┘
 ```
 
+## Current Views & Modifiers
+
+### Views (Sources/SwiftOpenUI/Views/)
+Text, Button, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView
+
+### Modifiers (Sources/SwiftOpenUI/Modifiers/)
+.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .environmentObject(), .environment(), custom ViewModifier
+
+### State (Sources/SwiftOpenUI/State/)
+@State, @Binding, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @FocusState (storage only — no .focused() modifier or TextField yet)
+
 ## Adding a New View
 
 1. Define the view struct in `Sources/SwiftOpenUI/Views/` — pure data, `Body = Never`
 2. Add backend rendering in each backend's Renderer as `extension MyView: PlatformRenderable`
 3. Add tests in `Tests/SwiftOpenUITests/`
+4. See `docs/guides/adding-a-backend.md` for the full pattern
 
 ## Adding a New Modifier
 
@@ -86,6 +98,27 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 2. Add the `extension View` convenience method
 3. Add backend rendering extensions in each Renderer
 4. Add tests
+
+## Examples
+
+- Current: HelloWorld, Counter, Showcase1, Showcase2
+- Reorganization plan: `docs/guides/examples-plan.md` — 12 themed examples
+- **Rules**: single `main.swift` per example, compiles and runs on all platforms, platform limitations labeled inline with fallback text (never build errors)
+- Import boilerplate: `#if os(macOS) import SwiftUI #else import SwiftOpenUI + backend imports #endif`
+- Entry point: `#if os(macOS) App.main() #elseif canImport(BackendGTK4) GTK4Backend().run() ...`
+
+## Key Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| `docs/guides/getting-started.md` | Setup, build, run on all platforms |
+| `docs/guides/adding-a-backend.md` | How to implement a new backend |
+| `docs/guides/examples-plan.md` | Examples reorganization plan |
+| `docs/guides/android-setup.md` | Android cross-compilation setup |
+| `docs/architecture/rendering-backends.md` | Backend architecture, ViewHost patterns |
+| `docs/architecture/android-backend-design.md` | Android backend design (batched JNI diffs) |
+| `docs/porting/platform-notes.md` | Platform quirks: macOS, Linux, Windows, Web, Android |
+| `docs/issues/observable-namespace-conflict.md` | ObservableObject/Published clash on macOS |
 
 ## Reference Projects
 
