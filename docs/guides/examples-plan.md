@@ -77,7 +77,7 @@ Examples/
 - @State with String (text toggle)
 - @State with Bool (toggle visibility)
 - @Binding (parent ↔ child two-way)
-- @FocusState (focus tracking)
+- @FocusState (focus tracking — pending `.focused()` modifier and TextField)
 - Multiple @State properties in one view
 - State driving conditional rendering (if/else in ViewBuilder)
 
@@ -199,7 +199,7 @@ Examples/
 | AnyView | — | 10 |
 | _ConditionalView | — | 10 |
 | Optional view | — | 10 |
-| @FocusState | — | 04 |
+| @FocusState | — | 04 (blocked: needs `.focused()` modifier + TextField) |
 
 ## Migration Strategy
 
