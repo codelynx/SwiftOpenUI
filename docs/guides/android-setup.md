@@ -161,6 +161,42 @@ This is the same core that compiles for macOS, Linux, Windows, and WebAssembly.
 - The "multiple Swift SDKs match" warning is harmless — the SDK bundles multiple arch variants.
 - Debug APK is large (~77MB) due to unstripped Swift runtime libraries.
 
+## Running the Full Renderer on Android
+
+The `android/renderer/` directory contains the full SwiftOpenUI renderer: Swift renders view trees to JSON, Kotlin `RenderHost` builds Android Views.
+
+### Build the Swift shared library
+
+```bash
+cd android/renderer
+./build-so.sh
+```
+
+This builds `libBackendAndroid.so` and copies it along with all Swift runtime `.so` files to the Kotlin project's `jniLibs/arm64-v8a/`.
+
+### Run in Android Studio
+
+1. Open `android/renderer/app/` in Android Studio (not `android/hello/app/`)
+2. Sync Gradle
+3. Select an ARM64 emulator (e.g. Pixel 9, API 36)
+4. Click Run
+
+The app launches with the HelloWorld example by default. To switch examples, launch via `adb`:
+
+```bash
+adb shell am start -n com.example.swiftopenui/.MainActivity --es example "TextStyles"
+```
+
+Available examples: `HelloWorld`, `TextStyles`, `Buttons`, `StateDemo`, `Layout`.
+
+### Capturing Screenshots
+
+```bash
+./screenshots/capture-android.sh
+```
+
+The script auto-detects the emulator with the app installed, force-stops between captures, and scales to 50% on high-density displays. See `screenshots/README.md` for details.
+
 ## Switching Back to Stable
 
 After Android work, switch back to the stable toolchain:

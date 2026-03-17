@@ -258,26 +258,43 @@ No crash propagation across the JNI boundary.
 
 ## Phase 1 Scope
 
-Intentionally narrow:
+### Phase 1a: JSON Bridge (Implemented)
 
-### Views
+The initial implementation uses a **full JSON render tree** approach rather than batched diffs. Swift renders the entire view tree to a `RenderNode` graph, serializes to JSON, and sends it across JNI in one call. Kotlin's `RenderHost` deserializes and builds Android Views from scratch.
+
+This is simpler than the batched diff design above (which remains the Phase 2 target) but sufficient for static rendering and screenshot validation.
+
+#### Views
 - `Text` → `TextView`
 - `Button` → `Button`
 - `VStack` → vertical `LinearLayout`
 - `HStack` → horizontal `LinearLayout`
+- `ZStack` → `FrameLayout`
 - `Spacer` → `Space` with layout weight
+- `Divider` → `View` with 1dp height and gray background
+- `Color` → `View` with `MATCH_PARENT` and background color
+- `Group` → vertical `LinearLayout` (transparent container)
+- `EmptyView` → empty `View`
 
-### Modifiers
-- `.padding()` → `setPadding` on the view
-- `.foregroundColor()` → `setTextColor`
-- `.font()` → `setTextSize` + `setTypeface`
+#### Modifiers
+- `.padding()` → wrapper `LinearLayout` with `setPadding`
+- `.frame()` → `FrameLayout` with explicit width/height
+- `.foregroundColor()` → recursive `setTextColor` on child TextViews
+- `.backgroundColor()` → `setBackgroundColor` on child
+- `.font()` → `setTextSize` + `setTypeface` (bold, semibold, light, normal)
+- `.border()` → stub (no visual effect yet)
 
-### State
-- `@State` triggers rebuild → diff → batch apply
-- One `Activity`, one root `LinearLayout`
+#### State
+- Static rendering only — `@State` changes are not yet wired across JNI
+- One `Activity`, one root `ScrollView` wrapping the rendered tree
+
+#### Examples (defined in JNIBridge.swift)
+- HelloWorld, TextStyles, Buttons, StateDemo, Layout
+- Launched via intent extra: `--es example "TextStyles"`
 
 ### Not in Phase 1
-- ZStack, Divider, Color, ForEach, Group
+- Batched diff operations (the design above)
+- Interactive @State (tap → rebuild → re-render)
 - Compose
 - Fragments, navigation
 - Text input / focus
@@ -288,21 +305,27 @@ Intentionally narrow:
 
 ```
 Sources/Backend/Android/
-├── CAndroid/                    ← JNI C headers (jni.h wrappers)
-├── CAndroidBridge/              ← Swift JNI helpers (env, class lookup, etc.)
 └── Rendering/
-    ├── AndroidBackend.swift     ← RenderBackend, lifecycle
-    ├── AndroidRenderer.swift    ← View → RenderNode tree
-    ├── AndroidDiffer.swift      ← Diff engine, batch generation
-    └── RenderOp.swift           ← Operation types, serialization
+    ├── AndroidBackend.swift     ← RenderBackend protocol, entry points
+    ├── AndroidRenderer.swift    ← View → RenderNode extensions (AndroidRenderable)
+    ├── RenderNode.swift         ← RenderNode class + JSON serialization (no Foundation)
+    └── JNIBridge.swift          ← JNI entry point, example renderers, JNI string helpers
 
-android-host/                    ← Kotlin Android project (separate from SPM)
-├── app/src/main/
-│   ├── java/.../
-│   │   ├── MainActivity.kt     ← loads .so, wires JNI
-│   │   └── RenderHost.kt       ← applies batched ops to Views
-│   └── AndroidManifest.xml
-└── build.gradle.kts
+android/
+├── hello/                       ← Minimal PoC: Swift .so + Kotlin JNI "Hello from Swift"
+│   ├── app/                     ← Kotlin Android project
+│   └── swift-lib/               ← Swift shared library (Package.swift)
+└── renderer/                    ← Full renderer: Swift view tree → JSON → Android Views
+    ├── app/
+    │   └── app/src/main/java/com/example/swiftopenui/
+    │       ├── MainActivity.kt  ← loads .so, launches examples via intent extras
+    │       ├── RenderBridge.kt  ← JNI bridge class (nativeRenderApp)
+    │       └── RenderHost.kt    ← JSON → Android Views (createView dispatcher)
+    └── build-so.sh              ← Build script for Swift .so
+
+screenshots/
+├── capture-android.sh           ← Automated screenshot capture via adb
+└── android/                     ← Captured screenshots (5 examples)
 ```
 
 ## Open Questions

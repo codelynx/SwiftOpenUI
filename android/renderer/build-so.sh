@@ -5,7 +5,19 @@ cd "$(dirname "$0")/../.."
 
 echo "Building BackendAndroid for Android ARM64..."
 source ~/.swiftly/env.sh
-swiftly use 6.3-snapshot 2>&1 | tail -1
+
+# Use the 6.3 snapshot for this build only (does not change the user's global selection)
+SWIFT_TOOLCHAIN=$(swiftly list-available 2>/dev/null | grep 6.3-snapshot | head -1 || echo "6.3-snapshot")
+TOOLCHAIN_BIN=~/.swiftly/toolchains/swift-DEVELOPMENT-SNAPSHOT-2026-03-05-a/usr/bin
+
+if [ -d "$TOOLCHAIN_BIN" ]; then
+    export PATH="$TOOLCHAIN_BIN:$PATH"
+    echo "Using toolchain: $("$TOOLCHAIN_BIN/swift" --version 2>&1 | head -1)"
+else
+    echo "Warning: 6.3 snapshot toolchain not found at $TOOLCHAIN_BIN"
+    echo "Falling back to 'swiftly run 6.3-snapshot' — this may change your global selection."
+    swiftly use 6.3-snapshot 2>&1 | tail -1
+fi
 
 swift build \
     --swift-sdk swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android \

@@ -67,11 +67,45 @@ The workaround is `d2d1_shim.cpp`: a C++ file that wraps each COM call in a `ext
 
 ## Android (experimental)
 
-- No backend yet — only the core library cross-compiles (see [Android Setup Guide](../guides/android-setup.md))
+- Backend: `BackendAndroid` → Swift renders view tree to JSON → Kotlin `RenderHost` builds Android Views
 - Requires Swift 6.3 dev snapshot toolchain (opt-in, not the repo default)
 - Architecture design: Swift owns state/diff, Kotlin host owns UI (see [Android Backend Design](../architecture/android-backend-design.md))
+- Setup: see [Android Setup Guide](../guides/android-setup.md)
 - SwiftOpenUI core compiles for `aarch64-unknown-linux-android28` via the official Swift Android SDK
 - `pthread` TLS works on Android via `canImport(Glibc)`
+
+### Architecture
+
+- **JSON bridge**: Swift `AndroidRenderer` walks the SwiftOpenUI view tree, produces `RenderNode` graph, serializes to JSON (hand-written, no Foundation JSONSerialization)
+- **JNI entry point**: `@_cdecl("Java_com_example_swiftopenui_RenderBridge_nativeRenderApp")` — single JNI call returns full JSON render tree
+- **Kotlin host**: `RenderHost.renderFromJSON()` recursively maps JSON nodes to Android Views (TextView, Button, LinearLayout, FrameLayout, etc.)
+- **Manual JNI**: no swift-java bindings — JNI function table navigated manually (NewStringUTF at index 167, GetStringUTFChars at 169)
+
+### Supported Views and Mapping
+
+| SwiftOpenUI | Android View | Notes |
+|-------------|-------------|-------|
+| Text | TextView | setTextColor(BLACK), SP units |
+| Button | Button | isAllCaps=false |
+| VStack | LinearLayout (VERTICAL) | alignment → Gravity, spacing → topMargin |
+| HStack | LinearLayout (HORIZONTAL) | alignment → Gravity, spacing → leftMargin |
+| ZStack | FrameLayout | Color children → MATCH_PARENT, others → CENTER |
+| Spacer | Space | layout weight=1 in HStack/VStack |
+| Divider | View (1dp, gray) | |
+| Color | View (MATCH_PARENT) | rgba from props |
+| .padding() | wrapper LinearLayout | setPadding in dp |
+| .frame() | FrameLayout | explicit width/height in dp |
+| .font() | setTextSize + setTypeface | recursive into child views |
+| .foregroundColor() | setTextColor | recursive into child TextViews |
+| .backgroundColor() | setBackgroundColor | |
+
+### Key Quirks
+
+- Debug APK is ~77MB due to unstripped Swift runtime `.so` files
+- Theme: `Theme.Material.Light.NoActionBar` for clean rendering
+- `fitsSystemWindows=true` on ScrollView to avoid status bar overlap
+- Intent extra `--es example "name"` selects which example to render
+- Must force-stop app between intent launches (Android reuses existing Activity otherwise)
 
 ## Cross-Compilation Notes
 

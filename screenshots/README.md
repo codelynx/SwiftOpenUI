@@ -6,6 +6,7 @@ Cross-platform screenshot comparison for SwiftOpenUI examples.
 
 ```
 screenshots/
+├── android/    ← Android Views (captured via adb screencap)
 ├── linux/      ← GTK4 (captured via gnome-screenshot)
 ├── macos/      ← Native SwiftUI (captured via CGWindowID + screencapture)
 ├── windows/    ← Win32/D2D (captured via GDI+ CopyFromScreen)
@@ -37,6 +38,18 @@ Uses a compiled Swift helper (`window-capture.swift`) to find the CGWindowID by 
 ```
 
 Requires `gnome-screenshot` and a running display server (X11 or Wayland).
+
+### Android
+
+```bash
+# Capture all examples (requires running emulator with APK installed)
+./screenshots/capture-android.sh
+
+# Capture one example
+./screenshots/capture-android.sh HelloWorld
+```
+
+Auto-detects the emulator with the app installed (scans all `adb devices`). Force-stops between captures to ensure fresh intent extras. Scales to 50% if device density > 320dpi (Retina Mac emulators produce high-density screenshots). Requires `adb` in PATH and `sips` (macOS) for scaling.
 
 ### Windows
 
@@ -151,19 +164,37 @@ All examples use the same Swift source (`main.swift`) with `#if os(macOS)` to se
 - ZStack, Frame, and nested stacks all render correctly
 - Buttons use native HTML `<button>` elements
 
+### Android (Swift .so + Kotlin Views via JSON)
+
+| 01-HelloWorld | 02-TextStyles | 03-Buttons |
+|---------------|--------------|------------|
+| ![Android](android/01-HelloWorld.png) | ![Android](android/02-TextStyles.png) | ![Android](android/03-Buttons.png) |
+
+| 04-State | 05-Layout |
+|----------|----------|
+| ![Android](android/04-State.png) | ![Android](android/05-Layout.png) |
+
+- Swift renders view tree to JSON, Kotlin `RenderHost` builds Android Views
+- Font hierarchy (Large Title → Caption) renders with correct sizes and weights
+- Buttons use native Android `Button` widget
+- Spacer works in VStack; HStack spacer weight is set but layout may not expand fully depending on parent constraints
+- ZStack with Color background constrained by `.frame(width:200, height:100)`
+- No action bar — uses `Theme.Material.Light.NoActionBar` for clean display
+- Android examples are simpler (defined in `JNIBridge.swift`) than the full Phase 1 macOS examples
+
 ### Updated Summary
 
-| Aspect | macOS | Linux | Windows | Web |
-|--------|-------|-------|---------|-----|
-| Text rendering | Native SF | Native GTK font | Direct2D | Browser CSS |
-| Font sizes | All correct | All correct | All correct | All correct |
-| Colors | All correct | All correct | All correct | All correct |
-| Button styling | Rounded, native | GTK theme | Flat, Win32 | HTML button |
-| VStack/HStack | Precise | Close match | Some alignment gaps | CSS flexbox |
-| ZStack | Correct | Correct | Correct | CSS grid |
-| Spacer | Correct | Correct | Correct | Needs work |
-| Frame | Correct | Correct | Needs refinement | Correct |
-| @State reactivity | Works | Works | Works | Works |
-| @Binding | Works | Works | Works | Works |
+| Aspect | macOS | Linux | Windows | Web | Android |
+|--------|-------|-------|---------|-----|---------|
+| Text rendering | Native SF | Native GTK font | Direct2D | Browser CSS | Android TextView |
+| Font sizes | All correct | All correct | All correct | All correct | All correct |
+| Colors | All correct | All correct | All correct | All correct | All correct |
+| Button styling | Rounded, native | GTK theme | Flat, Win32 | HTML button | Material button |
+| VStack/HStack | Precise | Close match | Some alignment gaps | CSS flexbox | LinearLayout |
+| ZStack | Correct | Correct | Correct | CSS grid | FrameLayout |
+| Spacer | Correct | Correct | Correct | Needs work | VStack only |
+| Frame | Correct | Correct | Needs refinement | Correct | Correct |
+| @State reactivity | Works | Works | Works | Works | Static (Phase 1) |
+| @Binding | Works | Works | Works | Works | Not yet |
 
-**Overall:** The same Swift source renders functionally correct on all 4 platforms. Each platform uses its native rendering: SwiftUI on macOS, GTK4 on Linux, Win32/D2D on Windows, and DOM/CSS on Web.
+**Overall:** The same Swift source renders functionally correct on all 5 platforms. Each platform uses its native rendering: SwiftUI on macOS, GTK4 on Linux, Win32/D2D on Windows, DOM/CSS on Web, and Android Views via JSON bridge on Android.

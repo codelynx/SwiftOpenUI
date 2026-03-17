@@ -306,18 +306,24 @@ extension TupleView6: AndroidMultiChildRenderable {
 
 extension EnvironmentObjectModifierView: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
-        var env = getCurrentEnvironment()
+        let prev = getCurrentEnvironment()
+        var env = prev
         env.setObject(object)
         setCurrentEnvironment(env)
-        return androidRenderView(content)
+        let node = androidRenderView(content)
+        setCurrentEnvironment(prev)
+        return node
     }
 }
 
 extension EnvironmentModifierView: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
-        var env = getCurrentEnvironment()
+        let prev = getCurrentEnvironment()
+        var env = prev
         env[keyPath: keyPath] = value
         setCurrentEnvironment(env)
-        return androidRenderView(content)
+        let node = androidRenderView(content)
+        setCurrentEnvironment(prev)
+        return node
     }
 }

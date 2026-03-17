@@ -56,6 +56,7 @@ object RenderHost {
         return TextView(context).apply {
             text = props.optString("content", "")
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextColor(Color.BLACK)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -87,9 +88,10 @@ object RenderHost {
             }
             for (i in 0 until children.length()) {
                 val child = createView(context, children.getJSONObject(i))
+                val childLp = child.layoutParams
                 val params = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
+                    childLp?.width ?: LinearLayout.LayoutParams.WRAP_CONTENT,
+                    childLp?.height ?: LinearLayout.LayoutParams.WRAP_CONTENT
                 )
                 if (i > 0 && spacing > 0) {
                     params.topMargin = dpToPx(context, spacing)
@@ -105,6 +107,10 @@ object RenderHost {
 
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
             gravity = when {
                 alignment.contains("top") -> Gravity.TOP
                 alignment.contains("bottom") -> Gravity.BOTTOM
@@ -112,9 +118,10 @@ object RenderHost {
             }
             for (i in 0 until children.length()) {
                 val child = createView(context, children.getJSONObject(i))
+                val childLp = child.layoutParams
                 val params = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
+                    childLp?.width ?: LinearLayout.LayoutParams.WRAP_CONTENT,
+                    childLp?.height ?: LinearLayout.LayoutParams.WRAP_CONTENT
                 )
                 if (i > 0 && spacing > 0) {
                     params.leftMargin = dpToPx(context, spacing)
@@ -132,12 +139,22 @@ object RenderHost {
     private fun createZStack(context: Context, children: JSONArray): FrameLayout {
         return FrameLayout(context).apply {
             for (i in 0 until children.length()) {
-                val child = createView(context, children.getJSONObject(i))
-                val params = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER
-                )
+                val childNode = children.getJSONObject(i)
+                val child = createView(context, childNode)
+                val childType = childNode.getString("type")
+                // Color views fill the ZStack; other views center
+                val params = if (childType == "color") {
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                } else {
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.CENTER
+                    )
+                }
                 addView(child, params)
             }
         }
@@ -163,9 +180,9 @@ object RenderHost {
         val color = propsToColor(props)
         return View(context).apply {
             setBackgroundColor(color)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dpToPx(context, 20)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
             )
         }
     }
