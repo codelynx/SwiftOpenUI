@@ -541,7 +541,8 @@ extension Button: WinRenderable {
 }
 
 /// Create a native Win32 BUTTON control with a text label.
-private func createNativeButton(title: String, action: @escaping () -> Void, context: RenderContext) -> HWND? {
+/// Create a native Win32 BUTTON control with a text label.
+func createNativeButton(title: String, action: @escaping () -> Void, context: RenderContext) -> HWND? {
     let measured = measureText(title, hwnd: context.parent)
     let buttonWidth = measured.width + 24
     let buttonHeight = measured.height + 12
@@ -1738,34 +1739,6 @@ private func extractTextFromView<V: View>(_ view: V) -> String? {
         return extractTextFromView(view.body)
     }
     return nil
-}
-
-// MARK: - Navigation stubs (render content, ignore navigation for now)
-
-extension NavigationStack: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        winRenderView(content, in: context)
-    }
-}
-
-extension NavigationLink: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Stub: render label as text, not a button — navigation is not yet
-        // implemented on Win32. A button with a no-op action would be misleading.
-        winRenderView(Text(label), in: context)
-    }
-}
-
-extension NavigationDestinationModifier: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        winRenderView(content, in: context)
-    }
-}
-
-extension TitledView: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        winRenderView(content, in: context)
-    }
 }
 
 // MARK: - Animation/effect stubs (render content, ignore effects for now)
