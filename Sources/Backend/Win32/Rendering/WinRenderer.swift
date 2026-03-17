@@ -94,11 +94,14 @@ extension Text: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let measured = measureText(content, hwnd: context.parent)
 
+        // SS_LEFTNOWORDWRAP prevents the STATIC from wrapping text to
+        // multiple lines. Our measurement is single-line, so wrapping
+        // would show text that extends below the measured height.
         let hwnd = content.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(),
                 wstr,
-                DWORD(SS_LEFT),
+                DWORD(SS_LEFTNOWORDWRAP),
                 0, 0, measured.width + 4, measured.height + 2,
                 context.parent,
                 nil,
