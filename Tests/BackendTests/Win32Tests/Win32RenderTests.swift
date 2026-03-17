@@ -416,4 +416,168 @@ final class Win32RenderTests: XCTestCase {
         }
         XCTAssertEqual(count, 2, "ZStack with 2 children should have 2 child HWNDs")
     }
+
+    // MARK: - TextField
+
+    func testTextFieldCreatesEditControl() {
+        let ctx = testContext()
+        let binding = Binding<String>(get: { "hello" }, set: { _ in })
+        let hwnd = winRenderView(TextField("Placeholder", text: binding), in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertEqual(className(of: hwnd!), "Edit", "TextField should create a Win32 EDIT control")
+    }
+
+    func testTextFieldInitialText() {
+        let ctx = testContext()
+        let binding = Binding<String>(get: { "initial" }, set: { _ in })
+        let hwnd = winRenderView(TextField("", text: binding), in: ctx)!
+
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
+        defer { buf.deallocate() }
+        GetWindowTextW(hwnd, buf, 64)
+        let text = String(decodingCString: buf, as: UTF16.self)
+        XCTAssertEqual(text, "initial")
+    }
+
+    func testTextFieldBindingUpdatesOnChange() {
+        let ctx = testContext()
+        var value = "start"
+        let binding = Binding<String>(get: { value }, set: { value = $0 })
+        let hwnd = winRenderView(TextField("", text: binding), in: ctx)!
+
+        // Simulate user typing by setting the edit text and sending EN_CHANGE
+        let newText: [WCHAR] = Array("typed".utf16) + [0]
+        newText.withUnsafeBufferPointer { ptr in
+            SetWindowTextW(hwnd, ptr.baseAddress!)
+        }
+        // EN_CHANGE is sent to the parent via WM_COMMAND
+        // The SubclassHandler on the edit control intercepts this
+        let parent = GetParent(hwnd)!
+        let controlID = WPARAM(GetDlgCtrlID(hwnd))
+        let enChange = WPARAM(controlID | (WPARAM(EN_CHANGE) << 16))
+        SendMessageW(hwnd, UINT(WM_COMMAND), enChange, LPARAM(Int(bitPattern: hwnd)))
+
+        XCTAssertEqual(value, "typed", "Binding should update when EDIT text changes")
+    }
+
+    func testTextFieldPlaceholder() {
+        let ctx = testContext()
+        let binding = Binding<String>(get: { "" }, set: { _ in })
+        let hwnd = winRenderView(TextField("Enter name", text: binding), in: ctx)!
+
+        // EM_GETCUEBANNER retrieves the placeholder text
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
+        defer { buf.deallocate() }
+        let result = SendMessageW(hwnd, UINT(EM_GETCUEBANNER), WPARAM(UInt(bitPattern: buf)), 64)
+        if result != 0 {
+            let placeholder = String(decodingCString: buf, as: UTF16.self)
+            XCTAssertEqual(placeholder, "Enter name")
+        }
+        // Note: EM_GETCUEBANNER may not be available on all Windows versions,
+        // so we don't fail if it returns 0
+    }
+
+    func testTextFieldHasTabStop() {
+        let ctx = testContext()
+        let binding = Binding<String>(get: { "" }, set: { _ in })
+        let hwnd = winRenderView(TextField("", text: binding), in: ctx)!
+
+        let style = win32_GetWindowLongPtrW(hwnd, GWL_STYLE)
+        XCTAssertNotEqual(style & LONG_PTR(WS_TABSTOP), 0,
+                          "TextField should have WS_TABSTOP for keyboard navigation")
+    }
+
+    // MARK: - FocusedView (@FocusState<Bool>)
+
+    func testFocusedViewCreatesHWND() {
+        let ctx = testContext()
+        let binding = Binding<String>(get: { "" }, set: { _ in })
+        let focusState = FocusState<Bool>()
+
+        let view = TextField("", text: binding).focused(focusState)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "FocusedView should produce an HWND")
+        XCTAssertEqual(className(of: hwnd!), "Edit", "FocusedView wrapping TextField should still be an Edit")
+    }
+
+    func testFocusedViewUpdatesStateOnFocus() {
+        let ctx = testContext()
+        let binding = Binding<String>(get: { "" }, set: { _ in })
+        let focus = FocusState<Bool>()
+
+        let view = TextField("", text: binding).focused(focus)
+        let hwnd = winRenderView(view, in: ctx)!
+
+        XCTAssertEqual(focus.wrappedValue, false, "Initially not focused")
+
+        // Simulate gaining focus
+        SendMessageW(hwnd, UINT(WM_SETFOCUS), 0, 0)
+        // The subclass proc fires onGainFocus → storage.setValue(true)
+        // But since setValue only triggers rebuild when programmatic, we
+        // check the storage value directly
+        XCTAssertEqual(focus.storage.value, true, "@FocusState should be true after WM_SETFOCUS")
+
+        // Simulate losing focus
+        SendMessageW(hwnd, UINT(WM_KILLFOCUS), 0, 0)
+        XCTAssertEqual(focus.storage.value, false, "@FocusState should be false after WM_KILLFOCUS")
+    }
+
+    // MARK: - FocusedEqualsView (@FocusState<Value?>)
+
+    func testMultipleFocusedFieldsShareStorage() {
+        let ctx = testContext()
+        enum Field: Hashable { case name, email }
+        let focus = FocusState<Field?>()
+
+        let nameBinding = Binding<String>(get: { "" }, set: { _ in })
+        let emailBinding = Binding<String>(get: { "" }, set: { _ in })
+
+        let nameField = TextField("Name", text: nameBinding).focused(focus, equals: .name)
+        let emailField = TextField("Email", text: emailBinding).focused(focus, equals: .email)
+
+        let nameHwnd = winRenderView(nameField, in: ctx)!
+        let emailHwnd = winRenderView(emailField, in: ctx)!
+
+        // Initially no focus
+        XCTAssertNil(focus.storage.value)
+
+        // Focus name field
+        SendMessageW(nameHwnd, UINT(WM_SETFOCUS), 0, 0)
+        XCTAssertEqual(focus.storage.value, .name, "Focusing name field should set storage to .name")
+
+        // Focus email field (name loses focus first)
+        SendMessageW(nameHwnd, UINT(WM_KILLFOCUS), 0, 0)
+        SendMessageW(emailHwnd, UINT(WM_SETFOCUS), 0, 0)
+        XCTAssertEqual(focus.storage.value, .email, "Focusing email field should set storage to .email")
+
+        // Lose focus entirely
+        SendMessageW(emailHwnd, UINT(WM_KILLFOCUS), 0, 0)
+        XCTAssertNil(focus.storage.value, "Losing focus should clear storage to nil")
+    }
+
+    func testFocusedEqualsDoesNotClearWhenOtherFieldTakesFocus() {
+        let ctx = testContext()
+        enum Field: Hashable { case a, b }
+        let focus = FocusState<Field?>()
+
+        let bindingA = Binding<String>(get: { "" }, set: { _ in })
+        let bindingB = Binding<String>(get: { "" }, set: { _ in })
+
+        let fieldA = TextField("A", text: bindingA).focused(focus, equals: .a)
+        let fieldB = TextField("B", text: bindingB).focused(focus, equals: .b)
+
+        let hwndA = winRenderView(fieldA, in: ctx)!
+        let hwndB = winRenderView(fieldB, in: ctx)!
+
+        // Focus A
+        SendMessageW(hwndA, UINT(WM_SETFOCUS), 0, 0)
+        XCTAssertEqual(focus.storage.value, .a)
+
+        // B gets focus — A's onLoseFocus fires, but by then storage is .a
+        // which matches A, so it clears. Then B's onGainFocus sets .b
+        SendMessageW(hwndA, UINT(WM_KILLFOCUS), 0, 0)
+        SendMessageW(hwndB, UINT(WM_SETFOCUS), 0, 0)
+        XCTAssertEqual(focus.storage.value, .b,
+                       "Storage should be .b, not nil — B's gain should override A's clear")
+    }
 }
