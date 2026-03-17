@@ -1,0 +1,20 @@
+{
+  "name": "swiftopenui-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:wasm": "cd .. && swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld && swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product TextStyles && swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product Buttons && swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product StateDemo && swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product Layout",
+    "screenshot": "node screenshot.mjs"
+  },
+  "dependencies": {
+    "@bjorn3/browser_wasi_shim": "^0.3.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "puppeteer": "^24.0.0"
+  }
+}

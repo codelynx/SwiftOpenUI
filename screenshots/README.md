@@ -135,4 +135,35 @@ All examples use the same Swift source (`main.swift`) with `#if os(macOS)` to se
 | @State reactivity | Works | Works | Works |
 | @Binding | Works | Works | Works |
 
-**Overall:** The same Swift source renders functionally correct on all 3 platforms with platform-native look and feel. Windows has some layout rough edges compared to macOS and Linux.
+### Web (Wasm + DOM)
+
+| 01-HelloWorld | 02-TextStyles | 03-Buttons |
+|---------------|--------------|------------|
+| ![Web](web/01-HelloWorld.png) | ![Web](web/02-TextStyles.png) | ![Web](web/03-Buttons.png) |
+
+| 04-State | 05-Layout |
+|----------|----------|
+| ![Web](web/04-State.png) | ![Web](web/05-Layout.png) |
+
+- Clean DOM rendering via CSS flexbox/grid
+- Font sizes and colors render correctly
+- Spacer layout needs refinement (not expanding as expected)
+- ZStack, Frame, and nested stacks all render correctly
+- Buttons use native HTML `<button>` elements
+
+### Updated Summary
+
+| Aspect | macOS | Linux | Windows | Web |
+|--------|-------|-------|---------|-----|
+| Text rendering | Native SF | Native GTK font | Direct2D | Browser CSS |
+| Font sizes | All correct | All correct | All correct | All correct |
+| Colors | All correct | All correct | All correct | All correct |
+| Button styling | Rounded, native | GTK theme | Flat, Win32 | HTML button |
+| VStack/HStack | Precise | Close match | Some alignment gaps | CSS flexbox |
+| ZStack | Correct | Correct | Correct | CSS grid |
+| Spacer | Correct | Correct | Correct | Needs work |
+| Frame | Correct | Correct | Needs refinement | Correct |
+| @State reactivity | Works | Works | Works | Works |
+| @Binding | Works | Works | Works | Works |
+
+**Overall:** The same Swift source renders functionally correct on all 4 platforms. Each platform uses its native rendering: SwiftUI on macOS, GTK4 on Linux, Win32/D2D on Windows, and DOM/CSS on Web.

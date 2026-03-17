@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SwiftOpenUI Examples</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 24px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 { margin-bottom: 8px; }
+        p.subtitle { color: #666; margin-bottom: 24px; }
+        .examples { display: flex; flex-direction: column; gap: 12px; }
+        a {
+            display: block;
+            padding: 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #333;
+            transition: border-color 0.2s;
+        }
+        a:hover { border-color: #007aff; }
+        .name { font-weight: 600; font-size: 18px; }
+        .desc { color: #666; font-size: 14px; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <h1>SwiftOpenUI</h1>
+    <p class="subtitle">Write SwiftUI, run anywhere — Web examples</p>
+    <div class="examples">
+        <a href="/examples/HelloWorld.html">
+            <div class="name">01 - Hello World</div>
+            <div class="desc">Minimal app: Text + padding</div>
+        </a>
+        <a href="/examples/TextStyles.html">
+            <div class="name">02 - Text Styles</div>
+            <div class="desc">Fonts, colors, opacity</div>
+        </a>
+        <a href="/examples/Buttons.html">
+            <div class="name">03 - Buttons</div>
+            <div class="desc">String labels, custom labels, actions</div>
+        </a>
+        <a href="/examples/StateDemo.html">
+            <div class="name">04 - State</div>
+            <div class="desc">@State, @Binding, conditional rendering</div>
+        </a>
+        <a href="/examples/Layout.html">
+            <div class="name">05 - Layout</div>
+            <div class="desc">VStack, HStack, ZStack, Spacer, Frame</div>
+        </a>
+    </div>
+</body>
+</html>
