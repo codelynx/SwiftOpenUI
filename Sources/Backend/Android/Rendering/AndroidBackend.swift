@@ -13,6 +13,56 @@ public struct AndroidBackend: RenderBackend {
     }
 }
 
+// MARK: - Button action registry
+
+/// Maps stable node IDs (Int64) to button action closures.
+/// Cleared at the start of each render pass, populated during rendering.
+public var androidButtonActions: [Int64: () -> Void] = [:]
+
+/// Counter for generating structural node IDs during a render pass.
+/// Uses FNV-1a-inspired hashing of the path components.
+private var _idPathStack: [Int64] = [0]  // root hash
+private var _idChildCounters: [Int] = [0]
+
+/// Begin a new render pass — clears action registry and resets ID generation.
+public func androidBeginRenderPass() {
+    androidButtonActions.removeAll()
+    _idPathStack = [0]
+    _idChildCounters = [0]
+}
+
+/// Push a child context for ID generation.
+/// Call before rendering a child; the type tag differentiates sibling types.
+public func androidPushChild(typeTag: String) -> Int64 {
+    let index = _idChildCounters[_idChildCounters.count - 1]
+    _idChildCounters[_idChildCounters.count - 1] = index + 1
+
+    // FNV-1a-inspired hash combining parent hash + type + index
+    let parentHash = _idPathStack.last ?? 0
+    var hash: Int64 = parentHash &* 16777619
+    for byte in typeTag.utf8 {
+        hash ^= Int64(byte)
+        hash = hash &* 16777619
+    }
+    hash ^= Int64(index)
+    hash = hash &* 16777619
+
+    _idPathStack.append(hash)
+    _idChildCounters.append(0)
+    return hash
+}
+
+/// Pop the current child context after rendering.
+public func androidPopChild() {
+    _idPathStack.removeLast()
+    _idChildCounters.removeLast()
+}
+
+/// Get the current node's ID (top of the path stack).
+public func androidCurrentNodeId() -> Int64 {
+    _idPathStack.last ?? 0
+}
+
 /// Render an App's view tree to a JSON string for the Kotlin host.
 public func androidRenderAppToJSON<A: App>(_ appType: A.Type) -> String {
     let instance = A()

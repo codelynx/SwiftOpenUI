@@ -5,6 +5,8 @@ import SwiftOpenUI
 /// The tree is serialized to JSON and sent to Kotlin via JNI.
 public class RenderNode {
     public let type: String
+    /// Stable structural identity — Int64 hash of the node's position in the view tree.
+    public var id: Int64 = 0
     public var props: [String: String] = [:]
     public var children: [RenderNode] = []
 
@@ -15,6 +17,9 @@ public class RenderNode {
     /// Serialize to a JSON-compatible dictionary.
     public func toDict() -> [String: Any] {
         var dict: [String: Any] = ["type": type]
+        if id != 0 {
+            dict["id"] = id
+        }
         if !props.isEmpty {
             dict["props"] = props
         }
@@ -45,6 +50,8 @@ private func valueToJSON(_ value: Any) -> String {
     case let s as String:
         return "\"\(escapeJSON(s))\""
     case let i as Int:
+        return "\(i)"
+    case let i as Int64:
         return "\(i)"
     case let d as Double:
         return "\(d)"

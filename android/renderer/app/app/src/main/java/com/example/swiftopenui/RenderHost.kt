@@ -13,6 +13,10 @@ import org.json.JSONArray
 /// Decodes a JSON render tree from Swift and creates Android Views.
 object RenderHost {
 
+    /// Callback invoked when a button is clicked. Set by MainActivity.
+    /// Returns new JSON if state changed, null otherwise.
+    var onButtonClick: ((Long) -> String?)? = null
+
     fun renderFromJSON(context: Context, json: String): View {
         return try {
             val root = JSONObject(json)
@@ -27,13 +31,14 @@ object RenderHost {
 
     private fun createView(context: Context, node: JSONObject): View {
         val type = node.getString("type")
+        val nodeId = node.optLong("id", 0L)
         val props = if (node.has("props")) node.getJSONObject("props") else JSONObject()
         val children = if (node.has("children")) node.getJSONArray("children") else JSONArray()
 
         return when (type) {
             "window" -> createContainer(context, children, LinearLayout.VERTICAL)
             "text" -> createText(context, props)
-            "button" -> createButton(context, props, children)
+            "button" -> createButton(context, nodeId, props, children)
             "vstack" -> createVStack(context, props, children)
             "hstack" -> createHStack(context, props, children)
             "zstack" -> createZStack(context, children)
@@ -64,10 +69,15 @@ object RenderHost {
         }
     }
 
-    private fun createButton(context: Context, props: JSONObject, children: JSONArray): Button {
+    private fun createButton(context: Context, nodeId: Long, props: JSONObject, children: JSONArray): Button {
         return Button(context).apply {
             text = props.optString("label", "Button")
             isAllCaps = false
+            if (nodeId != 0L) {
+                setOnClickListener {
+                    onButtonClick?.invoke(nodeId)
+                }
+            }
         }
     }
 

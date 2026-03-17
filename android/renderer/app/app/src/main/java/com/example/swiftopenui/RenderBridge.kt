@@ -2,8 +2,15 @@ package com.example.swiftopenui
 
 /// JNI bridge to Swift BackendAndroid.
 class RenderBridge {
-    /// Render a named example to a JSON render tree.
+    /// Legacy: render a named example to a JSON render tree (one-shot, no state).
     external fun nativeRenderApp(name: String): String
+
+    /// Create a session for a named example. Returns initial JSON render tree.
+    /// The session lives in Swift module scope (survives Activity recreation).
+    external fun nativeCreateSession(name: String): String
+
+    /// Handle a button click. Returns new JSON if @State changed, or null if not.
+    external fun nativeOnButtonClick(nodeId: Long): String?
 
     companion object {
         private var loaded = false

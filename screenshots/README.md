@@ -194,7 +194,7 @@ All examples use the same Swift source (`main.swift`) with `#if os(macOS)` to se
 | ZStack | Correct | Correct | Correct | CSS grid | FrameLayout |
 | Spacer | Correct | Correct | Correct | Needs work | VStack only |
 | Frame | Correct | Correct | Needs refinement | Correct | Correct |
-| @State reactivity | Works | Works | Works | Works | Static (Phase 1) |
+| @State reactivity | Works | Works | Works | Works | Works (full re-render) |
 | @Binding | Works | Works | Works | Works | Not yet |
 
 **Overall:** The same Swift source renders functionally correct on all 5 platforms. Each platform uses its native rendering: SwiftUI on macOS, GTK4 on Linux, Win32/D2D on Windows, DOM/CSS on Web, and Android Views via JSON bridge on Android.

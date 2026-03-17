@@ -15,9 +15,16 @@ public protocol AndroidMultiChildRenderable {
 // MARK: - Rendering dispatch
 
 /// Render any SwiftOpenUI View into a RenderNode tree.
+/// Each call pushes a structural path context so node IDs are position-stable.
 public func androidRenderView<V: View>(_ view: V) -> RenderNode {
+    let typeTag = String(describing: V.self).prefix(32)
+    let nodeId = androidPushChild(typeTag: String(typeTag))
+    defer { androidPopChild() }
+
     if let renderable = view as? AndroidRenderable {
-        return renderable.androidCreateNode()
+        let node = renderable.androidCreateNode()
+        if node.id == 0 { node.id = nodeId }
+        return node
     }
 
     // Composite view — recurse through body
@@ -75,6 +82,11 @@ extension SwiftOpenUI.Divider: AndroidRenderable {
 extension SwiftOpenUI.Button: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let node = RenderNode(type: "button")
+        // node.id is set by androidRenderView dispatch
+        // Register action closure — id will be assigned after return
+        // We need the id now, so read it from the current path stack
+        let nodeId = androidCurrentNodeId()
+        androidButtonActions[nodeId] = action
         // Render label to get text content
         let labelNode = androidRenderView(label)
         if labelNode.type == "text", let text = labelNode.props["content"] {
