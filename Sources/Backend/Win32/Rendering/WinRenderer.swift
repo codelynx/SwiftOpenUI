@@ -1765,28 +1765,39 @@ private class TapGestureInfo {
     let requiredCount: Int
     var clickCount: Int = 0
     var lastClickTime: UInt32 = 0
+    var mouseDown: Bool = false
 
     init(action: @escaping () -> Void, requiredCount: Int) {
         self.action = action
         self.requiredCount = requiredCount
     }
-}
 
-private func handleTap(_ info: TapGestureInfo) {
-    let now = GetTickCount()
-    if info.requiredCount <= 1 {
-        info.action()
-    } else {
-        let doubleClickTime = GetDoubleClickTime()
-        if now - info.lastClickTime <= doubleClickTime {
-            info.clickCount += 1
+    func completeTap(_ hwnd: HWND?, lParam: LPARAM) {
+        guard mouseDown else { return }
+        mouseDown = false
+
+        // Validate pointer is still inside the view
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let x = Int32(win32_GET_X_LPARAM(lParam))
+        let y = Int32(win32_GET_Y_LPARAM(lParam))
+        guard x >= 0, y >= 0, x < rect.right, y < rect.bottom else { return }
+
+        let now = GetTickCount()
+        if requiredCount <= 1 {
+            action()
         } else {
-            info.clickCount = 1
-        }
-        info.lastClickTime = now
-        if info.clickCount >= info.requiredCount {
-            info.clickCount = 0
-            info.action()
+            let doubleClickTime = GetDoubleClickTime()
+            if now - lastClickTime <= doubleClickTime {
+                clickCount += 1
+            } else {
+                clickCount = 1
+            }
+            lastClickTime = now
+            if clickCount >= requiredCount {
+                clickCount = 0
+                action()
+            }
         }
     }
 }
@@ -1799,16 +1810,29 @@ private let tapGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSub
     ).takeUnretainedValue()
 
     switch uMsg {
-    case UINT(WM_LBUTTONUP):
-        // Direct click on the container background
-        handleTap(info)
+    case UINT(WM_LBUTTONDOWN):
+        // Direct press on the container — start tracking
+        info.mouseDown = true
+        SetCapture(hwnd)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_PARENTNOTIFY):
-        // Child control was clicked — WM_PARENTNOTIFY with WM_LBUTTONDOWN
+        // Child control was pressed — start tracking for tap completion
         if win32_LOWORD(DWORD_PTR(wParam)) == WORD(WM_LBUTTONDOWN) {
-            handleTap(info)
+            info.mouseDown = true
+            SetCapture(hwnd)
         }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_LBUTTONUP):
+        // Complete tap on mouse-up (both direct and child paths)
+        info.completeTap(hwnd, lParam: lParam)
+        if GetCapture() == hwnd { ReleaseCapture() }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_CAPTURECHANGED):
+        // Capture stolen — cancel the tap
+        info.mouseDown = false
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_NCDESTROY):

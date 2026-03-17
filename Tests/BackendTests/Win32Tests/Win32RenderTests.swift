@@ -732,7 +732,23 @@ final class Win32RenderTests: XCTestCase {
         SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, moveLP)
     }
 
-    func testDragGestureFiresOnEnded() {
+    func testTapGestureCancelsByDraggingOut() {
+        let ctx = testContext()
+        var tapped = false
+        let hwnd = winRenderView(
+            Text("Tap").frame(width: 100, height: 50).onTapGesture { tapped = true },
+            in: ctx
+        )!
+
+        // Press inside, then release outside — should NOT fire
+        let downLP = LPARAM(Int16(10)) | (LPARAM(Int16(10)) << 16)
+        let upLP = LPARAM(Int16(-50)) | (LPARAM(Int16(-50)) << 16) // outside
+        SendMessageW(hwnd, UINT(WM_LBUTTONDOWN), 0, downLP)
+        SendMessageW(hwnd, UINT(WM_LBUTTONUP), 0, upLP)
+        XCTAssertFalse(tapped, "Tap should cancel when released outside the view")
+    }
+
+    func testTapGestureFiresOnEnded() {
         let ctx = testContext()
         var ended = false
         let hwnd = winRenderView(
