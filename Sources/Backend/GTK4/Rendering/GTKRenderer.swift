@@ -168,10 +168,10 @@ extension FocusedView: GTKRenderable {
 
         // Register programmatic focus handler: when user code sets
         // @FocusState = true, grab GTK focus on this widget.
-        // Use g_object_ref so the widget stays alive for the closure.
-        g_object_ref(gpointer(widget))
+        // No g_object_ref — check liveness before use to avoid leaking widgets.
         state.storage.onProgrammaticFocusChange = { [weak storage = state.storage] newValue in
             guard storage != nil else { return }
+            guard gtk_swift_is_widget(widget) != 0 else { return }
             if newValue == true {
                 gtk_swift_grab_focus(widget)
             } else {
@@ -223,15 +223,17 @@ extension FocusedEqualsView: GTKRenderable {
 
         // Register programmatic focus handler: when user code sets
         // @FocusState to this value, grab GTK focus on this widget.
-        g_object_ref(gpointer(widget))
+        // No g_object_ref — check liveness before use to avoid leaking widgets.
         let prevHandler = state.storage.onProgrammaticFocusChange
         state.storage.onProgrammaticFocusChange = { newValue in
             if newValue == matchValue {
+                guard gtk_swift_is_widget(widget) != 0 else { return }
                 gtk_swift_grab_focus(widget)
             } else if newValue == nil {
-                gtk_swift_clear_focus(widget)
+                if gtk_swift_is_widget(widget) != 0 {
+                    gtk_swift_clear_focus(widget)
+                }
             } else {
-                // Different value — let another FocusedEqualsView handle it
                 prevHandler?(newValue)
             }
         }
