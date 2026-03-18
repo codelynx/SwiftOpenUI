@@ -109,7 +109,8 @@ targets += [
 
 // Web backend (WebAssembly)
 // Gated to macOS host — Wasm cross-compilation always happens from macOS.
-// NOT added to exampleDeps — Web builds use --swift-sdk wasm separately.
+// NOT added to exampleDeps — examples import BackendWeb via #if canImport,
+// but the dependency is not forced. Web builds use --swift-sdk wasm.
 #if os(macOS)
 targets += [
     .target(

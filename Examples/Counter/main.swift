@@ -1,11 +1,29 @@
+#if os(macOS)
+import SwiftUI
+#else
 import SwiftOpenUI
-import ExamplesShared
 #if canImport(BackendGTK4)
 import BackendGTK4
 #endif
 #if canImport(BackendWin32)
 import BackendWin32
 #endif
+#if canImport(BackendWeb)
+import BackendWeb
+#endif
+#endif
+
+struct CounterView: View {
+    @State private var count = 0
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("Count: \(count)")
+            Button("Increment") { count += 1 }
+        }
+        .padding()
+    }
+}
 
 struct CounterApp: App {
     var body: some Scene {
@@ -15,12 +33,14 @@ struct CounterApp: App {
     }
 }
 
-#if canImport(BackendGTK4)
+#if os(macOS)
+CounterApp.main()
+#elseif canImport(BackendGTK4)
 GTK4Backend().run(CounterApp.self)
 #elseif canImport(BackendWin32)
 Win32Backend().run(CounterApp.self)
-#elseif os(macOS)
-print("Counter: Use apple/Examples.xcodeproj on macOS, or run on Linux/Windows.")
+#elseif canImport(BackendWeb)
+WebBackend().run(CounterApp.self)
 #else
-print("Counter: No backend available on this platform.")
+print("Counter app defined. No backend available on this platform.")
 #endif
