@@ -8,7 +8,9 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 |---------|------|------|-------|-----|---------|
 | **NavigationStack** | ✅ | ✅ GtkStack | ✅ Win32 | ✅ DOM stack | ✅ Compose (flat only) |
 | **NavigationLink** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **NavigationPath binding** | ✅ | ✅ bidirectional | ✅ bidirectional | ❌ | ❌ |
+| **NavigationPath binding** | ✅ | ✅ bidirectional | ✅ bidirectional | ✅ bidirectional | ❌ (needs JNI bridge) |
+| **NavigateAction (@Environment)** | ✅ | ✅ | ✅ | ✅ push/pop/popToRoot | ❌ |
+| **Destination registry (.navigationDestination)** | ✅ | ✅ | ✅ | ✅ type-based | ❌ |
 | **navigationTitle** | ✅ | ✅ header bar | ✅ header bar | ✅ header bar | ✅ header bar |
 | **onTapGesture** | ✅ | ✅ gtk_gesture_click | ✅ WM_LBUTTONDOWN/UP | ✅ click event | ✅ combinedClickable |
 | **onTapGesture(count: 2)** | ✅ | ✅ nPress | ✅ GetDoubleClickTime | ✅ click count + timeout | ✅ onDoubleTap |
@@ -44,10 +46,10 @@ Most complete Phase 2 implementation. Navigation uses `GtkStack` with slide tran
 Navigation and gestures fully working. Gesture installation is recursive (root + all children). Animation timing is stub — `withAnimation()` state changes trigger rebuilds but transitions are instant. Opacity and scale only work on D2D-rendered content (custom surface); native HWND controls cannot be alpha-blended or scaled.
 
 ### Web (Wasm)
-Full Phase 2 coverage. Navigation uses a JS-side stack with header bar and back button. Gestures use pointer events (tap, double-tap via click count, long press via setTimeout, drag via pointermove). Animations use CSS transitions with timing curves. Known issue: animation demo shows double-rendered text due to a rendering bug.
+Full Phase 2 coverage. Navigation uses a JS-side stack with header bar and back button. NavigationPath binding is bidirectional with re-entrancy guard (matching GTK4/Win32 pattern). Destination registry supports type-based path navigation via `.navigationDestination(for:)`. `NavigateAction` is wired into the environment for programmatic push/pop/popToRoot — including inside pushed destinations. Gestures use pointer events (tap, double-tap via click count, long press via setTimeout, drag via pointermove). Animations use CSS transitions with timing curves. Known issue: animation demo shows double-rendered text due to a rendering bug.
 
 ### Android (Compose)
-Phase 2 renderers implemented for navigation, gestures, and animation modifiers. State works for flat root views (`AndroidStateDemoView`). Nested composed views with their own `@State` don't persist across renders — needs structural state store (see [android-package-split-regression.md](../issues/android-package-split-regression.md)). Display cutout and HStack centering fixed.
+Phase 2 renderers implemented for navigation, gestures, and animation modifiers. Compose handlers (`ComposeRenderHost.kt`) dispatch all Phase 2 node types: `opacity` → `Modifier.alpha`, `offset` → `Modifier.offset`, `scaleEffect` → `Modifier.graphicsLayer`, `navigationStack` → header bar + content Column, `navigationLink` → Button. State works for flat root views (`AndroidStateDemoView`). Nested composed views with their own `@State` don't persist across renders — needs structural state store. NavigationPath binding not yet implemented (requires JNI bridge for programmatic push/pop). Display cutout and HStack centering fixed.
 
 **Build note:** BackendAndroid must be built from the root `Package.swift`, not a separate package. See [android-package-split-regression.md](../issues/android-package-split-regression.md) for details.
 
