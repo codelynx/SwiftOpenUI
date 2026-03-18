@@ -1,5 +1,5 @@
 import SwiftOpenUI
-import ExamplesShared
+import Examples
 
 // MARK: - Session state (Application-scoped, survives Activity recreation)
 

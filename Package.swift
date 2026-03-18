@@ -13,9 +13,9 @@ var targets: [Target] = [
     // On macOS: #if canImport(SwiftUI) selects real SwiftUI
     // On other platforms: imports SwiftOpenUI
     .target(
-        name: "ExamplesShared",
+        name: "Examples",
         dependencies: ["SwiftOpenUI"],
-        path: "Sources/ExamplesShared"
+        path: "Sources/Examples"
     ),
 
     // Core tests
@@ -95,12 +95,12 @@ exampleDeps.append("BackendWin32")
 targets += [
     .target(
         name: "BackendAndroid",
-        dependencies: ["SwiftOpenUI", "ExamplesShared"],
+        dependencies: ["SwiftOpenUI", "Examples"],
         path: "Sources/Backend/Android/Rendering"
     ),
     .testTarget(
         name: "AndroidRenderTests",
-        dependencies: ["SwiftOpenUI", "BackendAndroid", "ExamplesShared"],
+        dependencies: ["SwiftOpenUI", "BackendAndroid", "Examples"],
         path: "Tests/BackendTests/AndroidTests"
     ),
 ]
@@ -123,7 +123,7 @@ targets += [
 exampleDeps.append("BackendWeb")
 #endif
 
-// Examples — thin runners that wire ExamplesShared views to platform entry points
+// Examples — thin runners that wire Examples views to platform entry points
 targets += [
     .executableTarget(
         name: "HelloWorld",
@@ -191,7 +191,7 @@ let package = Package(
     products: {
         var p: [Product] = [
             .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
-            .library(name: "ExamplesShared", targets: ["ExamplesShared"]),
+            .library(name: "Examples", targets: ["Examples"]),
         ]
         #if os(macOS)
         p.append(.library(name: "BackendAndroid", type: .dynamic, targets: ["BackendAndroid"]))
