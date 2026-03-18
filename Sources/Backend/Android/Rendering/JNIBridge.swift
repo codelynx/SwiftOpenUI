@@ -30,6 +30,7 @@ public func jniCreateSession(
     // Reuse existing session if it matches — preserves @State across Activity recreation
     if let existing = currentSession, existing.exampleName == name {
         // Re-render current state (e.g. after Activity recreation)
+        androidCurrentHost = existing.host
         androidBeginRenderPass()
         let json = existing.host.buildBody()
         existing.host.pendingJSON = nil
@@ -41,6 +42,7 @@ public func jniCreateSession(
     currentSession = AndroidSession(host: host, exampleName: name)
 
     // Initial render
+    androidCurrentHost = host
     androidBeginRenderPass()
     let json = host.buildBody()
     host.pendingJSON = nil  // consumed immediately
@@ -193,8 +195,8 @@ private func createSessionForExample(name: String) -> AndroidViewHost {
         return createStateDemoSession()
     case "NavigationDemo":
         return createNavigationDemoSession()
-    // case "TextFieldDemo":
-    //     return createTextFieldDemoSession()
+    case "TextFieldDemo":
+        return createTextFieldDemoSession()
     default:
         // Non-interactive examples: wrap in a host that just re-renders statically
         return AndroidViewHost {
@@ -221,42 +223,18 @@ private func createStateDemoSession() -> AndroidViewHost {
     return host
 }
 
-/// Flat state demo — all @State on one struct for Android compatibility.
+/// State demo — uses nested child views with their own @State.
+/// The structural state cache preserves child @State across rebuilds.
 private struct AndroidStateDemoView: View {
-    @State var count: Int = 0
-    @State var message: String = "Hello"
-    @State var showDetail: Bool = false
     @State var shared: Int = 0
-    @State var a: Int = 0
-    @State var b: Int = 0
 
     var body: some View {
         VStack(spacing: 12) {
             Text("State Management").font(.title)
             Divider()
-            VStack(spacing: 4) {
-                Text("Counter").font(.headline)
-                Text("Count: \(count)")
-                HStack(spacing: 8) {
-                    Button("−") { count -= 1 }
-                    Button("+") { count += 1 }
-                    Button("Reset") { count = 0 }
-                }
-            }
+            NestedCounterSection()
             Divider()
-            VStack(spacing: 4) {
-                Text("Text Toggle").font(.headline)
-                Text(message).foregroundColor(.blue)
-                Button("Toggle") { message = message == "Hello" ? "World" : "Hello" }
-            }
-            Divider()
-            VStack(spacing: 4) {
-                Text("Conditional Rendering").font(.headline)
-                Button(showDetail ? "Hide Detail" : "Show Detail") { showDetail = !showDetail }
-                if showDetail {
-                    Text("Here is the detail!").foregroundColor(.green).padding(4)
-                }
-            }
+            NestedToggleSection()
             Divider()
             VStack(spacing: 4) {
                 Text("@Binding").font(.headline)
@@ -268,15 +246,60 @@ private struct AndroidStateDemoView: View {
                 }.padding(4)
             }
             Divider()
-            VStack(spacing: 4) {
-                Text("Multiple @State").font(.headline)
-                HStack(spacing: 16) {
-                    VStack { Text("A: \(a)"); Button("A+") { a += 1 } }
-                    VStack { Text("B: \(b)"); Button("B+") { b += 1 } }
-                }
-                Text("A + B = \(a + b)")
-            }
+            NestedMultiSection()
         }.padding()
+    }
+}
+
+/// Nested child view with its own @State — tests structural state cache.
+private struct NestedCounterSection: View {
+    @State var count: Int = 0
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("Counter (nested @State)").font(.headline)
+            Text("Count: \(count)")
+            HStack(spacing: 8) {
+                Button("−") { count -= 1 }
+                Button("+") { count += 1 }
+                Button("Reset") { count = 0 }
+            }
+        }
+    }
+}
+
+/// Nested child view with its own @State.
+private struct NestedToggleSection: View {
+    @State var message: String = "Hello"
+    @State var showDetail: Bool = false
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("Toggle (nested @State)").font(.headline)
+            Text(message).foregroundColor(.blue)
+            Button("Toggle") { message = message == "Hello" ? "World" : "Hello" }
+            Button(showDetail ? "Hide Detail" : "Show Detail") { showDetail = !showDetail }
+            if showDetail {
+                Text("Here is the detail!").foregroundColor(.green).padding(4)
+            }
+        }
+    }
+}
+
+/// Nested child view with multiple @State properties.
+private struct NestedMultiSection: View {
+    @State var a: Int = 0
+    @State var b: Int = 0
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("Multiple @State (nested)").font(.headline)
+            HStack(spacing: 16) {
+                VStack { Text("A: \(a)"); Button("A+") { a += 1 } }
+                VStack { Text("B: \(b)"); Button("B+") { b += 1 } }
+            }
+            Text("A + B = \(a + b)")
+        }
     }
 }
 
@@ -349,16 +372,10 @@ private struct AndroidNavigationDemo: View {
     }
 }
 
-// View structs imported from ExamplesShared:
-// - StateDemoRootView (CounterSection, TextToggleSection, etc.)
-// - BindingChild
-// - TextFieldDemoView
+// MARK: - TextField demo
 
-// MARK: - TextField demo (disabled — TextFieldDemoView from AndroidExamples not available in root build)
-
-/*
 private func createTextFieldDemoSession() -> AndroidViewHost {
-    var view = TextFieldDemoView()
+    var view = AndroidTextFieldDemo() // swiftlint:disable:this redundant_var
 
     let host = AndroidViewHost { [view] in
         let rootNode = androidRenderView(view)
@@ -371,7 +388,53 @@ private func createTextFieldDemoSession() -> AndroidViewHost {
     installState(view, host: host)
     return host
 }
-*/
+
+/// Flat TextField demo — all @State on one struct for Android compatibility.
+private struct AndroidTextFieldDemo: View {
+    @State var name: String = ""
+    @State var email: String = ""
+    @State var counter: Int = 0
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("TextField Demo").font(.title)
+            Divider()
+            VStack(spacing: 4) {
+                Text("Name").font(.headline)
+                TextField("Enter your name", text: $name)
+                Text("Hello, \(name.isEmpty ? "stranger" : name)!")
+                    .foregroundColor(.blue)
+            }
+            Divider()
+            VStack(spacing: 4) {
+                Text("Email").font(.headline)
+                TextField("Enter your email", text: $email)
+                if !email.isEmpty {
+                    Text("Email: \(email)")
+                        .foregroundColor(.green)
+                }
+            }
+            Divider()
+            VStack(spacing: 4) {
+                Text("Combined").font(.headline)
+                if !name.isEmpty && !email.isEmpty {
+                    Text("\(name) <\(email)>")
+                }
+                Button("Clear All") {
+                    name = ""
+                    email = ""
+                }
+            }
+            Divider()
+            VStack(spacing: 4) {
+                Text("Focus Test").font(.headline)
+                Text("Counter: \(counter)")
+                Button("Increment (triggers rebuild)") { counter += 1 }
+            }
+        }
+        .padding()
+    }
+}
 
 // MARK: - Static example renderers (no @State)
 

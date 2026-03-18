@@ -36,8 +36,38 @@ public func androidRenderView<V: View>(_ view: V) -> RenderNode {
         return node
     }
 
-    // Composite view — recurse through body
+    // Composite view — restore cached @State before recursing into body.
+    // This enables nested views with @State to persist across rebuilds.
+    // Only check views that might have reactive properties (skip known primitives).
+    if V.Body.self != Never.self {
+        androidRestoreState(view, nodeId: nodeId)
+    }
+
     return androidRenderView(view.body)
+}
+
+/// Restore cached @State values for a view and wire storages to the current host.
+private func androidRestoreState<V: View>(_ view: V, nodeId: Int64) {
+    let mirror = Mirror(reflecting: view)
+    let providers = mirror.children.compactMap { $0.value as? AnyStateStorageProvider }
+    guard !providers.isEmpty else { return }
+
+    // Restore cached values into freshly-created storages
+    if let cached = androidStateCache[nodeId], cached.count == providers.count {
+        for (provider, old) in zip(providers, cached) {
+            provider.anyStorage.restoreValue(from: old)
+        }
+    }
+
+    // Cache the current storages for next render
+    androidStateCache[nodeId] = providers.map { $0.anyStorage }
+
+    // Wire to the current host so setValue triggers rebuild
+    if let host = androidCurrentHost {
+        for provider in providers {
+            provider.anyStorage.host = host
+        }
+    }
 }
 
 /// Render children from a view.

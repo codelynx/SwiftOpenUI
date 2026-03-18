@@ -8,6 +8,8 @@ public protocol AnyStateStorageProvider {
 /// Protocol for type-erased StateStorage, allowing ViewHost connection.
 public protocol AnyStateStorage: AnyObject {
     var host: AnyViewHost? { get set }
+    /// Copy the stored value from another storage of the same concrete type.
+    func restoreValue(from other: AnyStateStorage)
 }
 
 /// A property wrapper that stores mutable state for a view.
@@ -40,7 +42,7 @@ public struct State<Value>: AnyStateStorageProvider {
 /// coalesced re-render scheduling via the owning ViewHost.
 public class StateStorage<Value>: AnyStateStorage {
     private let lock = NSLock()
-    private var _value: Value
+    var _value: Value  // internal for restoreValue cross-storage access
     public weak var host: AnyViewHost?
 
     public init(_ value: Value) {
@@ -58,5 +60,12 @@ public class StateStorage<Value>: AnyStateStorage {
         _value = newValue
         lock.unlock()
         host?.scheduleRebuild()
+    }
+
+    public func restoreValue(from other: AnyStateStorage) {
+        if let typed = other as? StateStorage<Value> {
+            // Direct access without lock — called only during render pass (single-threaded)
+            _value = typed._value
+        }
     }
 }

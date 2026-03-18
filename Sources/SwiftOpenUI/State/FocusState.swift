@@ -97,6 +97,14 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
             callback(newValue)
         }
     }
+
+    public func restoreValue(from other: AnyStateStorage) {
+        if let typed = other as? FocusStateStorage<Value> {
+            lock.lock()
+            _value = typed.value
+            lock.unlock()
+        }
+    }
 }
 
 /// A property wrapper that tracks keyboard focus state, matching SwiftUI's @FocusState.

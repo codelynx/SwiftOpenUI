@@ -366,4 +366,47 @@ final class AndroidRenderTests: XCTestCase {
         XCTAssertEqual(node.children.count, 1)
         XCTAssertEqual(node.children[0].type, "empty")
     }
+
+    // MARK: - Structural state cache
+
+    func testNestedStateRestoredAcrossRenders() {
+        // A child view with its own @State
+        struct ChildCounter: View {
+            @SwiftOpenUI.State var count: Int = 0
+            var body: some View {
+                Text("Count: \(count)")
+            }
+        }
+
+        // Set up a mock host
+        let host = MockViewHost()
+        androidCurrentHost = host
+
+        // First render — state cache is empty, count = 0
+        androidBeginRenderPass()
+        var child = ChildCounter()
+        let node1 = androidRenderView(child)
+        XCTAssertEqual(node1.props["content"], "Count: 0")
+
+        // Simulate state mutation: find the cached storage and set it to 5
+        let cachedEntries = androidStateCache.values.first { $0.count > 0 }
+        XCTAssertNotNil(cachedEntries, "State should be cached after first render")
+        if let storage = cachedEntries?.first as? StateStorage<Int> {
+            storage.setValue(5)
+        }
+
+        // Second render — should restore cached value (5)
+        androidBeginRenderPass()
+        child = ChildCounter()  // fresh instance with count = 0
+        let node2 = androidRenderView(child)
+        XCTAssertEqual(node2.props["content"], "Count: 5")
+
+        androidCurrentHost = nil
+    }
+}
+
+private class MockViewHost: AnyViewHost {
+    var rebuildCount = 0
+    func scheduleRebuild() { rebuildCount += 1 }
+    func suppressNextFocusRestore() {}
 }

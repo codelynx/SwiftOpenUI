@@ -21,14 +21,14 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 | **scaleEffect()** | ✅ | ✅ CSS transform | ⚠️ D2D surface only | ✅ CSS scale | ✅ Modifier.graphicsLayer |
 | **.animation()** | ✅ | ✅ CSS transition | ❌ stub (instant) | ✅ CSS transition | ❌ pass-through |
 | **withAnimation()** | ✅ TLS context | ✅ | ✅ | ✅ | ✅ partial |
-| **TextField binding** | ✅ | ✅ GtkEntry notify::text | ✅ SubclassHandler EN_CHANGE | ✅ addEventListener input | ⚠️ BasicTextField (demo disabled) |
-| **@FocusState binding** | ✅ | ✅ GtkEventControllerFocus | ✅ WM_SETFOCUS/KILLFOCUS | ⚠️ stub | ⚠️ FocusRequester (demo disabled) |
-| **@FocusState programmatic** | ✅ | ✅ gtk_grab_focus | ✅ SetFocus | ❌ | ⚠️ requestFocus (demo disabled) |
+| **TextField binding** | ✅ | ✅ GtkEntry notify::text | ✅ SubclassHandler EN_CHANGE | ✅ addEventListener input | ✅ BasicTextField (verified) |
+| **@FocusState binding** | ✅ | ✅ GtkEventControllerFocus | ✅ WM_SETFOCUS/KILLFOCUS | ⚠️ stub | ✅ FocusRequester + onFocusChanged |
+| **@FocusState programmatic** | ✅ | ✅ gtk_grab_focus | ✅ SetFocus | ❌ | ✅ requestFocus / clearFocus |
 | **@State (flat/root)** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **@State (nested/composed)** | ✅ | ✅ per-view host | ✅ per-view host | ✅ per-view host | ❌ resets on rebuild |
+| **@State (nested/composed)** | ✅ | ✅ per-view host | ✅ per-view host | ✅ per-view host | ✅ structural state cache |
 | **Display cutout** | N/A | N/A | N/A | N/A | ✅ statusBarsPadding |
 | **HStack centering** | ✅ | ✅ | ✅ | ✅ | ✅ (no-Spacer only) |
-| **Cursor/selection restore** | ✅ SwiftUI | ❌ | ❌ | ❌ | ❌ |
+| **Cursor/selection restore** | ✅ SwiftUI | ❌ | ❌ | ❌ | ⚠️ TextFieldValue preserves cursor |
 
 ## Legend
 
@@ -69,7 +69,7 @@ See [running-examples.md](../guides/running-examples.md) for full instructions.
 
 ## Known Limitations
 
-1. **Android nested @State**: Composed child views with their own `@State` reset on each render. Flat root views work. Future fix: structural state store keyed by node ID.
+1. **Android nested @State**: Resolved. Structural state cache keyed by node ID persists `@State` values across rebuilds for nested child views.
 2. **Win32 animation**: Transitions are instant (no smooth animation). `withAnimation()` triggers state change but no interpolation.
 3. **Win32 opacity/scale**: Only works on D2D-rendered content, not native HWND controls.
 4. **Web animation**: Double-rendered text in animation demo due to modifier wrapping bug.

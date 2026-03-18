@@ -31,6 +31,14 @@ public typealias FocusChangeHandler = (Bool) -> Void
 /// Cleared at the start of each render pass, populated during rendering.
 public var androidFocusHandlers: [Int64: FocusChangeHandler] = [:]
 
+/// Structural state cache — persists @State values across renders for nested views.
+/// Maps node ID → array of AnyStateStorage (one per @State property, in Mirror order).
+/// NOT cleared per render pass — this is the persistence mechanism.
+public var androidStateCache: [Int64: [AnyStateStorage]] = [:]
+
+/// The current ViewHost during a render pass, used to wire @State on nested views.
+public weak var androidCurrentHost: AnyViewHost?
+
 /// Counter for generating structural node IDs during a render pass.
 /// Uses FNV-1a-inspired hashing of the path components.
 private var _idPathStack: [Int64] = [0]  // root hash

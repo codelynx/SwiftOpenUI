@@ -36,8 +36,11 @@ public class AndroidViewHost: AnyViewHost {
     func rebuild() {
         let prev = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
+        let prevHost = androidCurrentHost
+        androidCurrentHost = self
         androidBeginRenderPass()
         pendingJSON = buildBody()
+        androidCurrentHost = prevHost
         setCurrentEnvironment(prev)
         suppressFocusRestore = false
     }

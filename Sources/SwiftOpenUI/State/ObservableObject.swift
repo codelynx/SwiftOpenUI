@@ -106,6 +106,10 @@ public class ObservedObjectStorage<ObjectType: ObservableObject>: AnyStateStorag
     private func wirePublishedProperties() {
         wirePublished(object: object, token: ObjectIdentifier(self), host: host)
     }
+
+    public func restoreValue(from other: AnyStateStorage) {
+        // ObservedObject holds a reference — no value to restore
+    }
 }
 
 // MARK: - @StateObject
@@ -150,6 +154,10 @@ public class StateObjectStorage<ObjectType: ObservableObject>: AnyStateStorage {
     private func wirePublishedProperties() {
         wirePublished(object: object, token: ObjectIdentifier(self), host: host)
     }
+
+    public func restoreValue(from other: AnyStateStorage) {
+        // StateObject owns its object — no value to restore
+    }
 }
 
 // MARK: - @EnvironmentObject
@@ -189,6 +197,10 @@ public class EnvironmentObjectStorage<ObjectType: ObservableObject>: AnyStateSto
 
     private func wirePublishedProperties() {
         wirePublished(object: object, token: ObjectIdentifier(self), host: host)
+    }
+
+    public func restoreValue(from other: AnyStateStorage) {
+        // EnvironmentObject is resolved from environment — no value to restore
     }
 }
 
