@@ -22,7 +22,7 @@ Requires Xcode command-line tools. The process launches a native SwiftUI window.
 Open the Xcode workspace and select an example scheme:
 
 ```bash
-open apple/Examples.xcodeproj
+open apple/Examples/Examples.xcodeproj
 ```
 
 Select the target (e.g. HelloWorld-iOS), pick a simulator or device, and press ⌘R.
