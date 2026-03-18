@@ -19,17 +19,14 @@ public class AndroidViewHost: AnyViewHost {
         self.capturedEnvironment = getCurrentEnvironment()
     }
 
-    private var isRebuilding = false
+    /// Set to true when a state change occurs but rebuild hasn't happened yet.
+    public var needsRebuild = false
 
     public func scheduleRebuild() {
-        // Guard against re-entrancy: if a rebuild is already in progress
-        // (e.g. navigation path change triggers setState during render),
-        // just mark that another rebuild is needed. The outer rebuild will
-        // produce JSON with the latest state.
-        if isRebuilding {
-            return
-        }
-        rebuild()
+        // Mark that state changed. The actual rebuild is deferred to the
+        // JNI caller (nativeOnButtonClick/nativeOnTextInput) to avoid
+        // stack overflow from deep JNI→Swift→rebuild→render call chains.
+        needsRebuild = true
     }
 
     public func suppressNextFocusRestore() {
@@ -37,14 +34,11 @@ public class AndroidViewHost: AnyViewHost {
     }
 
     func rebuild() {
-        isRebuilding = true
         let prev = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
         androidBeginRenderPass()
         pendingJSON = buildBody()
         setCurrentEnvironment(prev)
-        isRebuilding = false
-        // Reset flag after each rebuild
         suppressFocusRestore = false
     }
 }

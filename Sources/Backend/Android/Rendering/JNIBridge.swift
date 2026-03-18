@@ -61,16 +61,25 @@ public func jniOnButtonClick(
 ) -> UnsafeMutableRawPointer? {
     guard let env = env, let session = currentSession else { return nil }
 
-    // Clear any pending rebuild
+    // Clear pending state
     session.host.pendingJSON = nil
+    session.host.needsRebuild = false
 
-    // Look up and invoke the button's action closure
+    // Look up and invoke the button's action closure.
+    // The action may mutate @State, which sets needsRebuild = true.
+    // The rebuild is deferred to here (not inside setValue) to avoid
+    // stack overflow from deep JNI call chains.
     if let action = androidButtonActions[nodeId] {
         action()
     }
 
-    // If @State changed, scheduleRebuild() was called synchronously,
-    // which set pendingJSON with the new tree.
+    // If state changed, rebuild now (outside the action's call stack)
+    if session.host.needsRebuild {
+        session.host.needsRebuild = false
+        session.host.rebuild()
+    }
+
+    // Return new JSON if rebuild produced one
     if let json = session.host.pendingJSON {
         session.host.pendingJSON = nil
         return jniNewString(env: env, string: json)
@@ -99,12 +108,19 @@ public func jniOnTextInput(
 
     let newText = jniGetString(env: env, jstring: jText)
 
-    // Clear any pending rebuild
+    // Clear pending state
     session.host.pendingJSON = nil
+    session.host.needsRebuild = false
 
-    // Update the binding — this triggers @State mutation → scheduleRebuild
+    // Update the binding — this triggers @State mutation → needsRebuild = true
     if let binding = androidTextBindings[nodeId] {
         binding.wrappedValue = newText
+    }
+
+    // Deferred rebuild (same pattern as nativeOnButtonClick)
+    if session.host.needsRebuild {
+        session.host.needsRebuild = false
+        session.host.rebuild()
     }
 
     // If @State changed, return the new tree
