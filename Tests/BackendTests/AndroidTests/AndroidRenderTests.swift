@@ -238,7 +238,7 @@ final class AndroidRenderTests: XCTestCase {
         XCTAssertEqual(focus.storage.value, Field.name)
 
         handler(false)
-        XCTAssertNil(focus.storage.value)
+        XCTAssertNil(focus.storage.value as Any?)
     }
 
     func testBeginRenderPassClearsFocusHandlers() {
@@ -293,6 +293,18 @@ final class AndroidRenderTests: XCTestCase {
         XCTAssertEqual(node.type, "hstack")
         XCTAssertEqual(node.children.count, 3)
         XCTAssertEqual(node.children[1].type, "spacer")
+    }
+
+    func testTopLevelTupleViewRendersAsGroup() {
+        let tuple = TupleView2(Text("A"), Text("B"))
+        let node = androidRenderView(tuple)
+
+        XCTAssertEqual(node.type, "group")
+        XCTAssertEqual(node.children.count, 2)
+        XCTAssertEqual(node.children[0].type, "text")
+        XCTAssertEqual(node.children[0].props["content"], "A")
+        XCTAssertEqual(node.children[1].type, "text")
+        XCTAssertEqual(node.children[1].props["content"], "B")
     }
 
     // MARK: - Modifier views

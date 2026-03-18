@@ -48,7 +48,7 @@ object ComposeRenderHost {
     @Composable
     private fun RenderNode(node: JSONObject, onNewJson: (String) -> Unit) {
         val type = node.getString("type")
-        val nodeId = node.optLong("id", 0L)
+        val nodeId = node.optString("id", "0").toLongOrNull() ?: 0L
         val props = if (node.has("props")) node.getJSONObject("props") else JSONObject()
         val children = if (node.has("children")) node.getJSONArray("children") else JSONArray()
         val focusedProp = props.optString("focused", "")
@@ -381,7 +381,7 @@ object ComposeRenderHost {
         val title = props.optString("title", "Home")
         val showBack = props.optString("showBack", "") == "true"
         val destTitle = props.optString("destTitle", "")
-        val backNodeId = props.optLong("backNodeId", 0L)
+        val backNodeId = props.optString("backNodeId", "0").toLongOrNull() ?: 0L
 
         Column(modifier = Modifier.fillMaxWidth()) {
             // Header bar

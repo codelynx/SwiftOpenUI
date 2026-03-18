@@ -18,7 +18,8 @@ public class RenderNode {
     public func toDict() -> [String: Any] {
         var dict: [String: Any] = ["type": type]
         if id != 0 {
-            dict["id"] = id
+            // Serialize as string to avoid JSON double precision loss on Kotlin/Java side
+            dict["id"] = String(id)
         }
         if !props.isEmpty {
             dict["props"] = props

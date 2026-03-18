@@ -27,6 +27,15 @@ public func androidRenderView<V: View>(_ view: V) -> RenderNode {
         return node
     }
 
+    // Primitive multi-child views like TupleView have Body = Never.
+    // Render them as an explicit group node instead of recursing into body.
+    if view is AndroidMultiChildRenderable || view is MultiChildView {
+        let node = RenderNode(type: "group")
+        node.id = nodeId
+        node.children = androidRenderChildren(view)
+        return node
+    }
+
     // Composite view — recurse through body
     return androidRenderView(view.body)
 }
