@@ -1,5 +1,4 @@
 import SwiftOpenUI
-import AndroidExamples
 
 // MARK: - Session state (Application-scoped, survives Activity recreation)
 
@@ -176,8 +175,8 @@ private func createSessionForExample(name: String) -> AndroidViewHost {
     switch name {
     case "StateDemo":
         return createStateDemoSession()
-    case "TextFieldDemo":
-        return createTextFieldDemoSession()
+    // case "TextFieldDemo":
+    //     return createTextFieldDemoSession()
     default:
         // Non-interactive examples: wrap in a host that just re-renders statically
         return AndroidViewHost {
@@ -187,9 +186,10 @@ private func createSessionForExample(name: String) -> AndroidViewHost {
 }
 
 /// Create an interactive StateDemo with real @State.
+/// Uses a flat view with all @State on one struct because Android
+/// doesn't yet persist @State in nested composed child views.
 private func createStateDemoSession() -> AndroidViewHost {
-    // var is required — installState reflects over mutable @State properties
-    var view = StateDemoRootView() // swiftlint:disable:this redundant_var
+    var view = AndroidStateDemoView() // swiftlint:disable:this redundant_var
 
     let host = AndroidViewHost { [view] in
         let rootNode = androidRenderView(view)
@@ -199,10 +199,67 @@ private func createStateDemoSession() -> AndroidViewHost {
         return renderNodeToJSON(wrapper)
     }
 
-    // Wire @State to the host so mutations trigger scheduleRebuild
     installState(view, host: host)
-
     return host
+}
+
+/// Flat state demo — all @State on one struct for Android compatibility.
+private struct AndroidStateDemoView: View {
+    @State var count: Int = 0
+    @State var message: String = "Hello"
+    @State var showDetail: Bool = false
+    @State var shared: Int = 0
+    @State var a: Int = 0
+    @State var b: Int = 0
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("State Management").font(.title)
+            Divider()
+            VStack(spacing: 4) {
+                Text("Counter").font(.headline)
+                Text("Count: \(count)")
+                HStack(spacing: 8) {
+                    Button("−") { count -= 1 }
+                    Button("+") { count += 1 }
+                    Button("Reset") { count = 0 }
+                }
+            }
+            Divider()
+            VStack(spacing: 4) {
+                Text("Text Toggle").font(.headline)
+                Text(message).foregroundColor(.blue)
+                Button("Toggle") { message = message == "Hello" ? "World" : "Hello" }
+            }
+            Divider()
+            VStack(spacing: 4) {
+                Text("Conditional Rendering").font(.headline)
+                Button(showDetail ? "Hide Detail" : "Show Detail") { showDetail = !showDetail }
+                if showDetail {
+                    Text("Here is the detail!").foregroundColor(.green).padding(4)
+                }
+            }
+            Divider()
+            VStack(spacing: 4) {
+                Text("@Binding").font(.headline)
+                Text("Parent value: \(shared)")
+                Button("Parent +1") { shared += 1 }
+                HStack(spacing: 8) {
+                    Text("Child sees: \(shared)")
+                    Button("Child +1") { shared += 1 }
+                }.padding(4)
+            }
+            Divider()
+            VStack(spacing: 4) {
+                Text("Multiple @State").font(.headline)
+                HStack(spacing: 16) {
+                    VStack { Text("A: \(a)"); Button("A+") { a += 1 } }
+                    VStack { Text("B: \(b)"); Button("B+") { b += 1 } }
+                }
+                Text("A + B = \(a + b)")
+            }
+        }.padding()
+    }
 }
 
 // View structs imported from ExamplesShared:
@@ -210,11 +267,11 @@ private func createStateDemoSession() -> AndroidViewHost {
 // - BindingChild
 // - TextFieldDemoView
 
-// MARK: - TextField demo
+// MARK: - TextField demo (disabled — TextFieldDemoView from AndroidExamples not available in root build)
 
-/// Create an interactive TextField demo session.
+/*
 private func createTextFieldDemoSession() -> AndroidViewHost {
-    var view = TextFieldDemoView() // swiftlint:disable:this redundant_var
+    var view = TextFieldDemoView()
 
     let host = AndroidViewHost { [view] in
         let rootNode = androidRenderView(view)
@@ -227,6 +284,7 @@ private func createTextFieldDemoSession() -> AndroidViewHost {
     installState(view, host: host)
     return host
 }
+*/
 
 // MARK: - Static example renderers (no @State)
 

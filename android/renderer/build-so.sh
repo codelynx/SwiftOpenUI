@@ -22,11 +22,10 @@ fi
 
 swift build \
     --swift-sdk swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android \
-    --triple aarch64-unknown-linux-android28 \
     --product BackendAndroid \
     -c release 2>&1 | tail -1
 
-SO_PATH=$(find .build/aarch64-unknown-linux-android28/release -name "libBackendAndroid.so" | head -1)
+SO_PATH=$(find .build -path "*/aarch64*/release/libBackendAndroid.so" | head -1)
 JNILIBS="../app/app/src/main/jniLibs/arm64-v8a"
 mkdir -p "$JNILIBS"
 
