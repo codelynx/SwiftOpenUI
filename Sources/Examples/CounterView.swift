@@ -1,4 +1,8 @@
+#if canImport(SwiftUI) && os(macOS) && !SWIFTOPENUI_BACKEND
+import SwiftUI
+#else
 import SwiftOpenUI
+#endif
 
 public struct CounterView: View {
     @State private var count = 0

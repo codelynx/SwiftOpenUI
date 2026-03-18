@@ -88,23 +88,9 @@ targets += [
 exampleDeps.append("BackendWin32")
 #endif
 
-// Android backend
-// Gated to macOS host — Android cross-compilation happens from macOS.
-// Produces a .so with JNI entry points; no platform-specific system deps.
-#if os(macOS)
-targets += [
-    .target(
-        name: "BackendAndroid",
-        dependencies: ["SwiftOpenUI", "Examples"],
-        path: "Sources/Backend/Android/Rendering"
-    ),
-    .testTarget(
-        name: "AndroidRenderTests",
-        dependencies: ["SwiftOpenUI", "BackendAndroid", "Examples"],
-        path: "Tests/BackendTests/AndroidTests"
-    ),
-]
-#endif
+// Android backend lives in a separate package: android/renderer/swift-lib/Package.swift
+// This avoids the import conflict where shared example views need SwiftUI on macOS
+// but SwiftOpenUI for Android cross-compilation.
 
 // Web backend (WebAssembly)
 // Gated to macOS host — Wasm cross-compilation always happens from macOS.
@@ -188,16 +174,10 @@ let deps: [Package.Dependency] = []
 let package = Package(
     name: "SwiftOpenUI",
     platforms: [.macOS(.v13)],
-    products: {
-        var p: [Product] = [
-            .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
-            .library(name: "Examples", targets: ["Examples"]),
-        ]
-        #if os(macOS)
-        p.append(.library(name: "BackendAndroid", type: .dynamic, targets: ["BackendAndroid"]))
-        #endif
-        return p
-    }(),
+    products: [
+        .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
+        .library(name: "Examples", targets: ["Examples"]),
+    ],
     dependencies: deps,
     targets: targets
 )

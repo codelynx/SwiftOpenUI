@@ -1,4 +1,8 @@
+#if canImport(SwiftUI) && os(macOS) && !SWIFTOPENUI_BACKEND
+import SwiftUI
+#else
 import SwiftOpenUI
+#endif
 
 public struct Showcase1View: View {
     @State private var message = "Hello"

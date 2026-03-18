@@ -1,4 +1,8 @@
+#if canImport(SwiftUI) && os(macOS) && !SWIFTOPENUI_BACKEND
+import SwiftUI
+#else
 import SwiftOpenUI
+#endif
 
 public struct TextFieldDemoView: View {
     @State private var name: String = ""

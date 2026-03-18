@@ -1,4 +1,8 @@
+#if canImport(SwiftUI) && os(macOS) && !SWIFTOPENUI_BACKEND
+import SwiftUI
+#else
 import SwiftOpenUI
+#endif
 
 public struct ButtonsView: View {
     @State private var tapCount = 0

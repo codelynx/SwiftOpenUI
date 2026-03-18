@@ -1,12 +1,13 @@
 #!/usr/bin/env zsh
 # Build the BackendAndroid .so and copy it + Swift runtime to the Android project.
+# Uses the separate Android package at android/renderer/swift-lib/
 set -e
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/swift-lib"
 
 echo "Building BackendAndroid for Android ARM64..."
 source ~/.swiftly/env.sh
 
-# Use the 6.3 snapshot for this build only (does not change the user's global selection)
+# Use the 6.3 snapshot for this build (best effort — fallback may change global selection)
 SWIFT_TOOLCHAIN=$(swiftly list-available 2>/dev/null | grep 6.3-snapshot | head -1 || echo "6.3-snapshot")
 TOOLCHAIN_BIN=~/.swiftly/toolchains/swift-DEVELOPMENT-SNAPSHOT-2026-03-05-a/usr/bin
 
@@ -26,7 +27,7 @@ swift build \
     -c release 2>&1 | tail -1
 
 SO_PATH=$(find .build/aarch64-unknown-linux-android28/release -name "libBackendAndroid.so" | head -1)
-JNILIBS="android/renderer/app/app/src/main/jniLibs/arm64-v8a"
+JNILIBS="../app/app/src/main/jniLibs/arm64-v8a"
 mkdir -p "$JNILIBS"
 
 echo "Copying libBackendAndroid.so..."
