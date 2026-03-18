@@ -72,15 +72,19 @@ class StackLayoutInfo {
     let spacing: Int32
     let children: [HWND]
     let flexibleIndices: Set<Int>
+    /// Cross-axis alignment: 0 = leading, 1 = center, 2 = trailing
+    let crossAlignment: Int
     /// Each child's natural (intrinsic) size, captured at creation time.
     /// Used to avoid stretching leaf controls to fill the cross-axis.
     let naturalSizes: [(width: Int32, height: Int32)]
 
-    init(direction: StackDirection, spacing: Int32, children: [HWND], flexibleIndices: Set<Int>) {
+    init(direction: StackDirection, spacing: Int32, children: [HWND],
+         flexibleIndices: Set<Int>, crossAlignment: Int = 1) {
         self.direction = direction
         self.spacing = spacing
         self.children = children
         self.flexibleIndices = flexibleIndices
+        self.crossAlignment = crossAlignment
         // Capture natural sizes now, before any layout stretches them
         self.naturalSizes = children.map { child in
             var r = RECT()
@@ -165,9 +169,13 @@ func performVerticalLayout(container: HWND, info: StackLayoutInfo) {
             childWidth = totalWidth
             childX = 0
         } else {
-            // Leaf controls keep natural width, left-aligned
+            // Leaf controls keep natural width, positioned by alignment
             childWidth = min(naturalW, totalWidth)
-            childX = 0
+            switch info.crossAlignment {
+            case 0:  childX = 0                                // leading
+            case 2:  childX = totalWidth - childWidth          // trailing
+            default: childX = (totalWidth - childWidth) / 2    // center
+            }
         }
 
         SetWindowPos(child, nil, childX, y, childWidth, childHeight, UINT(SWP_NOZORDER))
@@ -215,7 +223,11 @@ func performHorizontalLayout(container: HWND, info: StackLayoutInfo) {
             childY = 0
         } else {
             childHeight = min(naturalH, totalHeight)
-            childY = 0
+            switch info.crossAlignment {
+            case 0:  childY = 0                                 // top
+            case 2:  childY = totalHeight - childHeight         // bottom
+            default: childY = (totalHeight - childHeight) / 2   // center
+            }
         }
 
         SetWindowPos(child, nil, x, childY, childWidth, childHeight, UINT(SWP_NOZORDER))

@@ -882,11 +882,20 @@ extension VStack: WinRenderable {
             }
         }
 
+        // Map SwiftOpenUI HorizontalAlignment to cross-axis int
+        let crossAlign: Int
+        switch alignment {
+        case .leading:  crossAlign = 0
+        case .center:   crossAlign = 1
+        case .trailing: crossAlign = 2
+        }
+
         let info = StackLayoutInfo(
             direction: .vertical,
             spacing: Int32(spacing),
             children: childHwnds,
-            flexibleIndices: flexibleIndices
+            flexibleIndices: flexibleIndices,
+            crossAlignment: crossAlign
         )
         let infoPtr = Unmanaged.passRetained(info).toOpaque()
         win32_SetWindowLongPtrW(container, GWLP_USERDATA, LONG_PTR(Int(bitPattern: infoPtr)))
@@ -928,11 +937,20 @@ extension HStack: WinRenderable {
             }
         }
 
+        // Map SwiftOpenUI VerticalAlignment to cross-axis int
+        let crossAlign: Int
+        switch alignment {
+        case .top:    crossAlign = 0
+        case .center: crossAlign = 1
+        case .bottom: crossAlign = 2
+        }
+
         let info = StackLayoutInfo(
             direction: .horizontal,
             spacing: Int32(spacing),
             children: childHwnds,
-            flexibleIndices: flexibleIndices
+            flexibleIndices: flexibleIndices,
+            crossAlignment: crossAlign
         )
         let infoPtr = Unmanaged.passRetained(info).toOpaque()
         win32_SetWindowLongPtrW(container, GWLP_USERDATA, LONG_PTR(Int(bitPattern: infoPtr)))
