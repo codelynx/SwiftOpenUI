@@ -6,31 +6,34 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 
 | Feature | Core | GTK4 | Win32 | Web | Android |
 |---------|------|------|-------|-----|---------|
-| **NavigationStack** | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **NavigationLink** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **NavigationStack** | ✅ | ✅ GtkStack | ✅ Win32 | ✅ DOM stack | ✅ Compose (flat only) |
+| **NavigationLink** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **NavigationPath binding** | ✅ | ✅ bidirectional | ✅ bidirectional | ❌ | ❌ |
-| **navigationTitle** | ✅ | ✅ header bar | ✅ header bar | ❌ | ❌ |
-| **onTapGesture** | ✅ | ✅ gtk_gesture_click | ✅ WM_LBUTTONDOWN/UP | ❌ | ❌ |
-| **onTapGesture(count: 2)** | ✅ | ✅ nPress | ✅ GetDoubleClickTime | ❌ | ❌ |
-| **onLongPressGesture** | ✅ | ✅ gtk_gesture_long_press | ✅ SetTimer | ❌ | ❌ |
-| **onDrag** | ✅ | ✅ gtk_gesture_drag | ✅ WM_MOUSEMOVE | ❌ | ❌ |
-| **DragGestureValue** | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **opacity()** | ✅ | ✅ gtk_widget_set_opacity | ⚠️ D2D surface only | ❌ | ❌ |
-| **offset()** | ✅ | ✅ CSS transform | ✅ SetWindowPos | ❌ | ❌ |
-| **scaleEffect()** | ✅ | ✅ CSS transform | ⚠️ D2D surface only | ❌ | ❌ |
-| **.animation()** | ✅ | ✅ CSS transition | ❌ stub (instant) | ❌ | ❌ |
-| **withAnimation()** | ✅ TLS context | ✅ | ✅ | ✅ partial | ✅ partial |
+| **navigationTitle** | ✅ | ✅ header bar | ✅ header bar | ✅ header bar | ✅ header bar |
+| **onTapGesture** | ✅ | ✅ gtk_gesture_click | ✅ WM_LBUTTONDOWN/UP | ✅ click event | ✅ combinedClickable |
+| **onTapGesture(count: 2)** | ✅ | ✅ nPress | ✅ GetDoubleClickTime | ✅ click count + timeout | ✅ onDoubleTap |
+| **onLongPressGesture** | ✅ | ✅ gtk_gesture_long_press | ✅ SetTimer | ✅ pointerdown + setTimeout | ✅ onLongClick |
+| **onDrag** | ✅ | ✅ gtk_gesture_drag | ✅ WM_MOUSEMOVE | ✅ pointer events | ⚠️ props only (no callback) |
+| **opacity()** | ✅ | ✅ gtk_widget_set_opacity | ⚠️ D2D surface only | ✅ CSS opacity | ✅ Modifier.alpha |
+| **offset()** | ✅ | ✅ CSS transform | ✅ SetWindowPos | ✅ CSS translate | ✅ Modifier.offset |
+| **scaleEffect()** | ✅ | ✅ CSS transform | ⚠️ D2D surface only | ✅ CSS scale | ✅ Modifier.graphicsLayer |
+| **.animation()** | ✅ | ✅ CSS transition | ❌ stub (instant) | ✅ CSS transition | ❌ pass-through |
+| **withAnimation()** | ✅ TLS context | ✅ | ✅ | ✅ | ✅ partial |
 | **TextField binding** | ✅ | ✅ GtkEntry notify::text | ✅ SubclassHandler EN_CHANGE | ✅ addEventListener input | ✅ BasicTextField |
-| **@FocusState binding** | ✅ | ✅ GtkEventControllerFocus | ✅ WM_SETFOCUS/KILLFOCUS | ⚠️ stub | ⚠️ stub |
-| **@FocusState programmatic** | ✅ | ✅ gtk_grab_focus | ✅ SetFocus | ❌ | ❌ |
-| **Cursor/selection restore** | — | ❌ | ❌ | ❌ | ❌ |
+| **@FocusState binding** | ✅ | ✅ GtkEventControllerFocus | ✅ WM_SETFOCUS/KILLFOCUS | ⚠️ stub | ✅ FocusRequester |
+| **@FocusState programmatic** | ✅ | ✅ gtk_grab_focus | ✅ SetFocus | ❌ | ✅ requestFocus/clearFocus |
+| **@State (flat/root)** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **@State (nested/composed)** | ✅ | ✅ per-view host | ✅ per-view host | ✅ per-view host | ❌ resets on rebuild |
+| **Display cutout** | N/A | N/A | N/A | N/A | ✅ statusBarsPadding |
+| **HStack centering** | ✅ | ✅ | ✅ | ✅ | ✅ (no-Spacer only) |
+| **Cursor/selection restore** | ✅ SwiftUI | ❌ | ❌ | ❌ | ❌ |
 
 ## Legend
 
 - ✅ Fully implemented
 - ⚠️ Partially implemented (noted limitation)
 - ❌ Missing or stub
-- — Not applicable at this layer
+- N/A Not applicable
 
 ## Platform Notes
 
@@ -41,25 +44,39 @@ Most complete Phase 2 implementation. Navigation uses `GtkStack` with slide tran
 Navigation and gestures fully working. Gesture installation is recursive (root + all children). Animation timing is stub — `withAnimation()` state changes trigger rebuilds but transitions are instant. Opacity and scale only work on D2D-rendered content (custom surface); native HWND controls cannot be alpha-blended or scaled.
 
 ### Web (Wasm)
-Only TextField binding implemented. All Phase 2 views (`NavigationStack`, gesture modifiers, animation modifiers) have `Body = Never` in core and **no Web renderer** — using them will trap. Needs: DOM routing for navigation, DOM event listeners for gestures, CSS transitions for animations, `.focus()` API for focus management.
+Full Phase 2 coverage. Navigation uses a JS-side stack with header bar and back button. Gestures use pointer events (tap, double-tap via click count, long press via setTimeout, drag via pointermove). Animations use CSS transitions with timing curves. Known issue: animation demo shows double-rendered text due to a rendering bug.
 
 ### Android (Compose)
-Only TextField binding + Compose rendering implemented. Same gap as Web — Phase 2 views will trap. Needs: Compose `NavHost` for navigation, Compose gesture modifiers for gestures, Compose `animate*AsState` for animations, `FocusRequester` wiring for focus.
+Phase 2 renderers implemented for navigation, gestures, and animation modifiers. State works for flat root views (`AndroidStateDemoView`). Nested composed views with their own `@State` don't persist across renders — needs structural state store (see [android-package-split-regression.md](../issues/android-package-split-regression.md)). Display cutout and HStack centering fixed.
 
-## Priority
+**Build note:** BackendAndroid must be built from the root `Package.swift`, not a separate package. See [android-package-split-regression.md](../issues/android-package-split-regression.md) for details.
 
-1. **Add stubs for Web + Android** — prevent traps on `Body = Never` views
-2. **Navigation** — highest value, enables multi-screen apps
-3. **Gestures** — required for interactive content beyond buttons
-4. **Animations** — polish, can be incremental
-5. **Input-state preservation** — cross-platform cursor/selection restore during rebuilds
+## Build & Run
+
+| Platform | Command |
+|----------|---------|
+| macOS | `swift run StateDemo` or Xcode (`xcodegen generate`) |
+| Linux | `swift run StateDemo` |
+| Windows | `swift run StateDemo` |
+| Web | `./web/run.sh StateDemo` |
+| Android | `./android/renderer/build-so.sh` + `gradle assembleDebug` + `adb install` |
+
+See [running-examples.md](../guides/running-examples.md) for full instructions.
+
+## Known Limitations
+
+1. **Android nested @State**: Composed child views with their own `@State` reset on each render. Flat root views work. Future fix: structural state store keyed by node ID.
+2. **Win32 animation**: Transitions are instant (no smooth animation). `withAnimation()` triggers state change but no interpolation.
+3. **Win32 opacity/scale**: Only works on D2D-rendered content, not native HWND controls.
+4. **Web animation**: Double-rendered text in animation demo due to modifier wrapping bug.
+5. **Cursor/selection restore**: Lost on rebuild across all platforms except macOS (which uses real SwiftUI).
 
 ## Key Files
 
-| Area | Core | GTK4 | Win32 |
-|------|------|------|-------|
-| Navigation | `Sources/SwiftOpenUI/Navigation/` | `GTKNavigation.swift` (420 lines) | `Win32Navigation.swift` (506 lines) |
-| Gestures | `Modifiers/GestureModifier.swift` (71 lines) | `GTKRenderer.swift:530-703` | `WinRenderer.swift:1906-2207` |
-| Animation | `Modifiers/AnimationModifier.swift` (266 lines) | `GTKRenderer.swift:749-802` | `WinRenderer.swift:1764-1873` |
-| Focus | `State/FocusState.swift` + `Modifiers/FocusModifier.swift` | `GTKRenderer.swift:133-240` | `WinRenderer.swift:219-323` |
-| TextField | `Views/TextField.swift` | `GTKRenderer.swift:91-130` | `WinRenderer.swift:160-206` |
+| Area | Core | GTK4 | Win32 | Web | Android |
+|------|------|------|-------|-----|---------|
+| Navigation | `Navigation/` | `GTKNavigation.swift` | `Win32Navigation.swift` | `WebRenderer.swift` | `AndroidRenderer.swift` + `ComposeRenderHost.kt` |
+| Gestures | `Modifiers/GestureModifier.swift` | `GTKRenderer.swift` | `WinRenderer.swift` | `WebRenderer.swift` | `AndroidRenderer.swift` + `ComposeRenderHost.kt` |
+| Animation | `Modifiers/AnimationModifier.swift` | `GTKRenderer.swift` | `WinRenderer.swift` | `WebRenderer.swift` | `AndroidRenderer.swift` + `ComposeRenderHost.kt` |
+| Focus | `State/FocusState.swift` + `Modifiers/FocusModifier.swift` | `GTKRenderer.swift` | `WinRenderer.swift` | `WebRenderer.swift` | `AndroidRenderer.swift` + `ComposeRenderHost.kt` |
+| TextField | `Views/TextField.swift` | `GTKRenderer.swift` | `WinRenderer.swift` | `WebRenderer.swift` | `AndroidRenderer.swift` + `ComposeRenderHost.kt` |
