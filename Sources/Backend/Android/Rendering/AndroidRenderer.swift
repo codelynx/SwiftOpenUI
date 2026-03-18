@@ -315,6 +315,112 @@ extension FocusedEqualsView: AndroidRenderable {
     }
 }
 
+// MARK: - Navigation views
+
+extension NavigationStack: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "navigationStack")
+        var title = "Home"
+        if let titled = content as? NavigationTitled {
+            title = titled.navigationTitle
+        }
+        node.props["title"] = title
+        // TODO: path binding support — requires JNI bridge for programmatic push/pop
+        node.children = [androidRenderView(content)]
+        return node
+    }
+}
+
+extension NavigationLink: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "navigationLink")
+        node.props["label"] = label
+        node.props["title"] = title
+        return node
+    }
+}
+
+extension TitledView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = androidRenderView(content)
+        node.props["navigationTitle"] = navigationTitle
+        return node
+    }
+}
+
+extension NavigationDestinationModifier: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        // TODO: destination registry for path-based navigation
+        androidRenderView(content)
+    }
+}
+
+// MARK: - Gesture views
+
+extension TapGestureView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = androidRenderView(content)
+        node.props["onTap"] = "true"
+        node.props["tapCount"] = "\(count)"
+        androidButtonActions[node.id] = action
+        return node
+    }
+}
+
+extension LongPressGestureView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = androidRenderView(content)
+        node.props["onLongPress"] = "true"
+        androidButtonActions[node.id] = action
+        return node
+    }
+}
+
+extension DragGestureView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = androidRenderView(content)
+        node.props["onDrag"] = "true"
+        return node
+    }
+}
+
+// MARK: - Animation modifier views
+
+extension OpacityView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "opacity")
+        node.props["value"] = "\(opacity)"
+        node.children = [androidRenderView(content)]
+        return node
+    }
+}
+
+extension OffsetView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "offset")
+        node.props["x"] = "\(x)"
+        node.props["y"] = "\(y)"
+        node.children = [androidRenderView(content)]
+        return node
+    }
+}
+
+extension ScaleEffectView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "scaleEffect")
+        node.props["scaleX"] = "\(scaleX)"
+        node.props["scaleY"] = "\(scaleY)"
+        node.children = [androidRenderView(content)]
+        return node
+    }
+}
+
+extension AnimatedView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        androidRenderView(content)
+    }
+}
+
 // MARK: - Type-erased / conditional views
 
 extension AnyView: AndroidRenderable {
