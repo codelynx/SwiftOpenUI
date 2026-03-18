@@ -390,7 +390,17 @@ extension NavigationLink: WebRenderable {
             guard let ctx = capturedCtx else { return .undefined }
             let prevCtx = _webCurrentNavContext
             _webCurrentNavContext = ctx
+            // Install NavigateAction so pushed destinations can use @Environment(\.navigate)
+            let prevEnv = getCurrentEnvironment()
+            var env = prevEnv
+            env.navigate = NavigateAction(
+                push: { [weak ctx] value in ctx?.pushValue(value) },
+                pop: { [weak ctx] in ctx?.pop() },
+                popToRoot: { [weak ctx] in ctx?.popToRoot() }
+            )
+            setCurrentEnvironment(env)
             let destElement = webRenderView(self.destination())
+            setCurrentEnvironment(prevEnv)
             _webCurrentNavContext = prevCtx
             ctx.push(element: destElement, title: self.title)
             return .undefined
@@ -415,7 +425,17 @@ extension NavigationDestinationModifier: WebRenderable {
             ctx.destinationRegistry.register(for: dataType) { value in
                 let prevCtx = _webCurrentNavContext
                 _webCurrentNavContext = ctx
+                // Install NavigateAction so destinations can use @Environment(\.navigate)
+                let prevEnv = getCurrentEnvironment()
+                var env = prevEnv
+                env.navigate = NavigateAction(
+                    push: { [weak ctx] v in ctx?.pushValue(v) },
+                    pop: { [weak ctx] in ctx?.pop() },
+                    popToRoot: { [weak ctx] in ctx?.popToRoot() }
+                )
+                setCurrentEnvironment(env)
                 let element = webRenderView(self.destination(value))
+                setCurrentEnvironment(prevEnv)
                 _webCurrentNavContext = prevCtx
                 return element
             }

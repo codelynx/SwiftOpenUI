@@ -16,7 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -81,6 +83,11 @@ object ComposeRenderHost {
             "backgroundColor" -> RenderBackgroundColor(props, children, onNewJson)
             "font" -> RenderFont(props, children, onNewJson)
             "border" -> RenderBorder(props, children, onNewJson)
+            "opacity" -> RenderOpacity(props, children, onNewJson)
+            "offset" -> RenderOffset(props, children, onNewJson)
+            "scaleEffect" -> RenderScale(props, children, onNewJson)
+            "navigationStack" -> RenderNavigationStack(props, children, onNewJson)
+            "navigationLink" -> RenderNavigationLink(nodeId, props, onNewJson)
             else -> Text("[$type]")
         }
 
@@ -340,6 +347,82 @@ object ComposeRenderHost {
             if (children.length() > 0) {
                 RenderNode(children.getJSONObject(0), onNewJson)
             }
+        }
+    }
+
+    @Composable
+    private fun RenderOpacity(props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
+        val opacity = props.optDouble("value", 1.0).toFloat()
+        Box(modifier = Modifier.alpha(opacity)) {
+            if (children.length() > 0) RenderNode(children.getJSONObject(0), onNewJson)
+        }
+    }
+
+    @Composable
+    private fun RenderOffset(props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
+        val x = props.optDouble("x", 0.0)
+        val y = props.optDouble("y", 0.0)
+        Box(modifier = Modifier.offset(x.dp, y.dp)) {
+            if (children.length() > 0) RenderNode(children.getJSONObject(0), onNewJson)
+        }
+    }
+
+    @Composable
+    private fun RenderScale(props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
+        val scaleX = props.optDouble("scaleX", 1.0).toFloat()
+        val scaleY = props.optDouble("scaleY", 1.0).toFloat()
+        Box(modifier = Modifier.graphicsLayer(scaleX = scaleX, scaleY = scaleY)) {
+            if (children.length() > 0) RenderNode(children.getJSONObject(0), onNewJson)
+        }
+    }
+
+    @Composable
+    private fun RenderNavigationStack(props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
+        val title = props.optString("title", "Home")
+        var showingDestination by remember { mutableStateOf(false) }
+        var destinationTitle by remember { mutableStateOf("") }
+        var destinationJson by remember { mutableStateOf<JSONObject?>(null) }
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Header bar
+            Row(
+                modifier = Modifier.fillMaxWidth().background(Color(0xFFF0F0F0)).padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (showingDestination) {
+                    Button(onClick = { showingDestination = false; destinationJson = null }) {
+                        Text("← Back")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = if (showingDestination) destinationTitle else title,
+                    style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                )
+            }
+            // Content
+            if (showingDestination && destinationJson != null) {
+                RenderNode(destinationJson!!, onNewJson)
+            } else {
+                for (i in 0 until children.length()) {
+                    RenderNode(children.getJSONObject(i), onNewJson)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun RenderNavigationLink(nodeId: Long, props: JSONObject, onNewJson: (String) -> Unit) {
+        val label = props.optString("label", "Link")
+        Button(onClick = {
+            // Navigation links use static destinations in the current architecture.
+            // Programmatic path-based navigation requires JNI bridge (future work).
+            if (nodeId != 0L) {
+                val newJson = onButtonClick?.invoke(nodeId)
+                if (newJson != null) onNewJson(newJson)
+            }
+        }) {
+            Text(label)
         }
     }
 
