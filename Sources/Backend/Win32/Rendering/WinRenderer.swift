@@ -1745,24 +1745,96 @@ private func extractTextFromView<V: View>(_ view: V) -> String? {
 
 extension OpacityView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Stub: opacity not supported on Win32 HWND controls.
+        // Would require D2D surface rendering for the subtree.
         winRenderView(content, in: context)
     }
 }
 
 extension OffsetView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        winRenderView(content, in: context)
+        guard let child = winRenderView(content, in: context) else { return nil }
+        guard x != 0 || y != 0 else { return child }
+
+        // Wrap in a container that positions the child at an offset.
+        // The container keeps the child's natural size for stack layout,
+        // but shifts the child inside by (x, y).
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        var childRect = RECT()
+        GetWindowRect(child, &childRect)
+        let childW = childRect.right - childRect.left
+        let childH = childRect.bottom - childRect.top
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, childW, childH,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        SetParent(child, container)
+        SetWindowPos(child, nil, Int32(x), Int32(y), childW, childH, UINT(SWP_NOZORDER))
+
+        // Subclass to maintain offset on WM_SIZE
+        let offsetInfo = OffsetLayoutInfo(child: child, offsetX: Int32(x), offsetY: Int32(y))
+        let infoPtr = Unmanaged.passRetained(offsetInfo).toOpaque()
+        SetWindowSubclass(container, offsetLayoutProc, 70, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        return container
+    }
+}
+
+private class OffsetLayoutInfo {
+    let child: HWND
+    let offsetX: Int32
+    let offsetY: Int32
+    init(child: HWND, offsetX: Int32, offsetY: Int32) {
+        self.child = child
+        self.offsetX = offsetX
+        self.offsetY = offsetY
+    }
+}
+
+private let offsetLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_SIZE):
+        if dwRefData != 0 {
+            let info = Unmanaged<OffsetLayoutInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+            var rect = RECT()
+            GetClientRect(hwnd, &rect)
+            SetWindowPos(info.child, nil, info.offsetX, info.offsetY,
+                         rect.right - rect.left, rect.bottom - rect.top, UINT(SWP_NOZORDER))
+        }
+        return 0
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            Unmanaged<OffsetLayoutInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).release()
+            RemoveWindowSubclass(hwnd, offsetLayoutProc, uIdSubclass)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
 extension ScaleEffectView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Stub: scale transforms not supported on Win32 HWND controls.
+        // Would require D2D surface rendering for the subtree.
         winRenderView(content, in: context)
     }
 }
 
 extension AnimatedView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Stub: animation timing not yet implemented on Win32.
+        // withAnimation() state changes work (views rebuild), but
+        // transitions are instant rather than animated.
         winRenderView(content, in: context)
     }
 }
