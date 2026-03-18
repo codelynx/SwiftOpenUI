@@ -112,9 +112,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.example.swiftopenui/.MainActivity --es example "StateDemo"
 ```
 
-Available examples via intent extra: `HelloWorld`, `TextStyles`, `Buttons`, `StateDemo`, `Layout`.
-
-> **Note:** `TextFieldDemo` is currently disabled due to the package split migration. See [android-package-split-regression.md](../issues/android-package-split-regression.md).
+Available examples via intent extra: `HelloWorld`, `TextStyles`, `Buttons`, `StateDemo`, `NavigationDemo`, `TextFieldDemo`, `Layout`.
 
 See [android-setup.md](android-setup.md) for full setup instructions.
 

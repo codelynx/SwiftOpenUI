@@ -22,6 +22,7 @@ fi
 
 swift build \
     --swift-sdk swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android \
+    --triple aarch64-unknown-linux-android28 \
     --product BackendAndroid \
     -c release 2>&1 | tail -1
 

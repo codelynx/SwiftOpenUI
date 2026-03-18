@@ -30,7 +30,7 @@ SwiftOpenUI/TupleView.swift:19: Fatal error: TupleView2 is a primitive view
 
 `swift build --swift-sdk ...android` without `--triple` defaults to armv7 (armeabi-v7a), but the emulator is arm64-v8a. The `.so` loads but functions crash or behave unexpectedly.
 
-**Fix:** Add `--triple aarch64-unknown-linux-android28`.
+**Fix:** Add `--triple aarch64-unknown-linux-android28`. This is now the settled build recipe used by `build-so.sh`.
 
 ### 3. Build environment: Foundation module not found for aarch64
 

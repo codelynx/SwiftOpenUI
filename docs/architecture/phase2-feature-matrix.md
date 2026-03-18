@@ -22,8 +22,8 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 | **.animation()** | ✅ | ✅ CSS transition | ❌ stub (instant) | ✅ CSS transition | ❌ pass-through |
 | **withAnimation()** | ✅ TLS context | ✅ | ✅ | ✅ | ✅ partial |
 | **TextField binding** | ✅ | ✅ GtkEntry notify::text | ✅ SubclassHandler EN_CHANGE | ✅ addEventListener input | ✅ BasicTextField (verified) |
-| **@FocusState binding** | ✅ | ✅ GtkEventControllerFocus | ✅ WM_SETFOCUS/KILLFOCUS | ⚠️ stub | ✅ FocusRequester + onFocusChanged |
-| **@FocusState programmatic** | ✅ | ✅ gtk_grab_focus | ✅ SetFocus | ❌ | ✅ requestFocus / clearFocus |
+| **@FocusState binding** | ✅ | ✅ GtkEventControllerFocus | ✅ WM_SETFOCUS/KILLFOCUS | ⚠️ stub | ⚠️ implemented, no demo coverage |
+| **@FocusState programmatic** | ✅ | ✅ gtk_grab_focus | ✅ SetFocus | ❌ | ⚠️ implemented, no demo coverage |
 | **@State (flat/root)** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **@State (nested/composed)** | ✅ | ✅ per-view host | ✅ per-view host | ✅ per-view host | ✅ structural state cache |
 | **Display cutout** | N/A | N/A | N/A | N/A | ✅ statusBarsPadding |
