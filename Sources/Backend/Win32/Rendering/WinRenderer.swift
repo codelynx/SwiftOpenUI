@@ -1854,9 +1854,12 @@ private let offsetLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
 
 extension ScaleEffectView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Stub: scale transforms not supported on Win32 HWND controls.
-        // Would require D2D surface rendering for the subtree.
-        winRenderView(content, in: context)
+        // If content is D2D-renderable, render onto D2D surface with scaled font.
+        // Otherwise fall through (scale ignored on native HWND controls).
+        if isD2DRenderable(content) && (scaleX != 1.0 || scaleY != 1.0) {
+            return createD2DSurface(view: self, opacity: 1.0, context: context)
+        }
+        return winRenderView(content, in: context)
     }
 }
 

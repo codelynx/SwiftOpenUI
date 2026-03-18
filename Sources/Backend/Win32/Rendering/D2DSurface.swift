@@ -46,6 +46,14 @@ extension PaddedView: _D2DContentAccess {
     var _isContentD2DRenderable: Bool { isD2DRenderable(content) }
 }
 
+extension ScaleEffectView: _D2DContentAccess {
+    var _isContentD2DRenderable: Bool { isD2DRenderable(content) }
+}
+
+extension OpacityView: _D2DContentAccess {
+    var _isContentD2DRenderable: Bool { isD2DRenderable(content) }
+}
+
 /// Measure a D2D-renderable view's size.
 func d2dMeasure<V: View>(_ view: V) -> (width: Float, height: Float) {
     if let text = view as? Text {
@@ -78,7 +86,29 @@ func d2dMeasure<V: View>(_ view: V) -> (width: Float, height: Float) {
         return (inner.width + Float(padded.leading + padded.trailing),
                 inner.height + Float(padded.top + padded.bottom))
     }
+    // Walk through wrapper modifiers that don't change measurement
+    if let v = view as? any _D2DMeasurable {
+        return v._d2dMeasureContent
+    }
     return (0, 0)
+}
+
+/// Internal protocol for measuring through wrapper modifiers.
+protocol _D2DMeasurable {
+    var _d2dMeasureContent: (width: Float, height: Float) { get }
+}
+
+extension ScaleEffectView: _D2DMeasurable {
+    var _d2dMeasureContent: (width: Float, height: Float) {
+        let inner = d2dMeasure(content)
+        return (inner.width * Float(scaleX), inner.height * Float(scaleY))
+    }
+}
+
+extension OpacityView: _D2DMeasurable {
+    var _d2dMeasureContent: (width: Float, height: Float) {
+        d2dMeasure(content)
+    }
 }
 
 /// Draw a D2D-renderable view onto a render target.
@@ -125,6 +155,43 @@ func d2dDraw<V: View>(_ view: V, target: D2DRenderTarget, brush: D2DBrush,
                 width: width - Float(padded.leading + padded.trailing),
                 height: height - Float(padded.top + padded.bottom))
         return
+    }
+    // ScaleEffectView: draw content with scaled font size for text
+    if let v = view as? any _D2DDrawable {
+        v._d2dDrawContent(target: target, brush: brush, x: x, y: y, width: width, height: height)
+        return
+    }
+}
+
+/// Internal protocol for drawing through wrapper modifiers.
+protocol _D2DDrawable {
+    func _d2dDrawContent(target: D2DRenderTarget, brush: D2DBrush,
+                         x: Float, y: Float, width: Float, height: Float)
+}
+
+extension ScaleEffectView: _D2DDrawable {
+    func _d2dDrawContent(target: D2DRenderTarget, brush: D2DBrush,
+                         x: Float, y: Float, width: Float, height: Float) {
+        // For text content, approximate scale via font size
+        if let text = content as? Text {
+            let scale = max(scaleX, scaleY)
+            let (baseFontSize, bold, italic) = fontParametersForD2D(.body)
+            let scaledSize = baseFontSize * Float(scale)
+            guard let fmt = D2DRenderer.shared.textFormat(fontSize: scaledSize, bold: bold, italic: italic) else { return }
+            D2DRenderer.shared.drawText(text.content, target: target, format: fmt,
+                                         brush: brush, x: x, y: y, width: width, height: height)
+        } else {
+            // For non-text, just draw at natural size (scale not fully supported)
+            d2dDraw(content, target: target, brush: brush, x: x, y: y, width: width, height: height)
+        }
+    }
+}
+
+extension OpacityView: _D2DDrawable {
+    func _d2dDrawContent(target: D2DRenderTarget, brush: D2DBrush,
+                         x: Float, y: Float, width: Float, height: Float) {
+        // Opacity is handled by the D2DSurfaceState, just draw content
+        d2dDraw(content, target: target, brush: brush, x: x, y: y, width: width, height: height)
     }
 }
 
@@ -237,29 +304,10 @@ func createD2DSurface<V: View>(
     guard let container = container else { return nil }
 
     let state = D2DSurfaceState(hwnd: container, opacity: opacity) { rt, brush, width, height in
-        // Draw with opacity applied to all colors
+        // Set brush alpha to opacity for all drawing
         d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, opacity)
-
-        if let text = view as? Text {
-            if let fmt = D2DRenderer.shared.textFormat() {
-                D2DRenderer.shared.drawText(text.content, target: rt, format: fmt,
-                                             brush: brush, x: 0, y: 0, width: width, height: height)
-            }
-        } else if let fg = view as? ForegroundColorView<Text> {
-            d2d1_SolidColorBrush_SetColor(brush, Float(fg.color.red), Float(fg.color.green),
-                                           Float(fg.color.blue), opacity)
-            if let fmt = D2DRenderer.shared.textFormat() {
-                D2DRenderer.shared.drawText(fg.content.content, target: rt, format: fmt,
-                                             brush: brush, x: 0, y: 0, width: width, height: height)
-            }
-        } else if let color = view as? Color {
-            d2d1_SolidColorBrush_SetColor(brush, Float(color.red), Float(color.green),
-                                           Float(color.blue), Float(color.alpha) * opacity)
-            d2d1_RenderTarget_FillRectangle(rt, brush, 0, 0, width, height)
-        } else {
-            // Generic D2D draw with opacity
-            d2dDraw(view, target: rt, brush: brush, x: 0, y: 0, width: width, height: height)
-        }
+        // Draw the content tree
+        d2dDraw(view, target: rt, brush: brush, x: 0, y: 0, width: width, height: height)
     }
 
     let ptr = Unmanaged.passRetained(state).toOpaque()

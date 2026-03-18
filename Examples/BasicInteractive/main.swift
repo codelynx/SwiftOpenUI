@@ -112,6 +112,12 @@ struct AnimationDemo: View {
             Text("Animation")
                 .font(.title)
 
+            #if os(Windows)
+            Text("(effects apply instantly — no animation on Windows)")
+                .font(.caption)
+                .foregroundColor(.gray)
+            #endif
+
             Divider()
 
             Text("Hello, Animations!")
