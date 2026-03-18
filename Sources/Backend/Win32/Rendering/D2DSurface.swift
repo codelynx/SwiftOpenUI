@@ -217,19 +217,63 @@ private func fontParametersForD2D(_ font: Font) -> (fontSize: Float, bold: Bool,
 
 // MARK: - D2D Surface Host HWND
 
+private let d2dAnimTimerID: UINT_PTR = 9500
+private let d2dAnimFrameMs: UInt32 = 16  // ~60 fps
+
 /// State for a D2D surface HWND that renders a view with optional transforms.
 class D2DSurfaceState {
     let hwnd: HWND
     var renderTarget: D2DRenderTarget?
     var brush: D2DBrush?
-    let drawContent: (D2DRenderTarget, D2DBrush, Float, Float) -> Void
-    let opacity: Float
+    let drawContent: (D2DRenderTarget, D2DBrush, Float, Float, Float) -> Void
 
-    init(hwnd: HWND, opacity: Float,
-         drawContent: @escaping (D2DRenderTarget, D2DBrush, Float, Float) -> Void) {
+    // Animation state
+    var currentOpacity: Float
+    let targetOpacity: Float
+    let startOpacity: Float
+    var animationProgress: Float = 1.0  // 0→1, 1.0 = done
+    var animationDuration: Float = 0
+    var animationCurve: Animation.Curve = .easeInOut
+    var animationStartTime: UInt32 = 0
+
+    init(hwnd: HWND, opacity: Float, animation: Animation?,
+         drawContent: @escaping (D2DRenderTarget, D2DBrush, Float, Float, Float) -> Void) {
         self.hwnd = hwnd
-        self.opacity = opacity
+        self.targetOpacity = opacity
         self.drawContent = drawContent
+
+        if let anim = animation {
+            // Animate from opposite end
+            self.startOpacity = opacity < 0.5 ? 1.0 : 0.0
+            self.currentOpacity = startOpacity
+            self.animationDuration = Float(anim.duration)
+            self.animationCurve = anim.curve
+            self.animationProgress = 0
+        } else {
+            self.startOpacity = opacity
+            self.currentOpacity = opacity
+        }
+    }
+
+    func startAnimation() {
+        guard animationProgress < 1.0 else { return }
+        animationStartTime = GetTickCount()
+        SetTimer(hwnd, d2dAnimTimerID, d2dAnimFrameMs, nil)
+    }
+
+    func tick() {
+        guard animationDuration > 0 else { return }
+        let elapsed = Float(GetTickCount() - animationStartTime) / 1000.0
+        let rawProgress = min(elapsed / animationDuration, 1.0)
+        animationProgress = applyEasing(rawProgress, curve: animationCurve)
+        currentOpacity = startOpacity + (targetOpacity - startOpacity) * animationProgress
+
+        InvalidateRect(hwnd, nil, false)
+
+        if rawProgress >= 1.0 {
+            KillTimer(hwnd, d2dAnimTimerID)
+            currentOpacity = targetOpacity
+        }
     }
 
     func ensureTarget(width: UInt32, height: UInt32) {
@@ -269,8 +313,8 @@ class D2DSurfaceState {
             Float(win32_GetGValue(bgColor)) / 255.0,
             Float(win32_GetBValue(bgColor)) / 255.0, 1.0)
 
-        // Apply opacity to the brush for all drawing
-        drawContent(rt, brush, w, h)
+        // Draw with current (possibly animated) opacity
+        drawContent(rt, brush, w, h, currentOpacity)
 
         let hr = d2d1_RenderTarget_EndDraw(rt)
         if hr < 0 { cleanup() }
@@ -285,9 +329,12 @@ class D2DSurfaceState {
 }
 
 /// Create a D2D surface HWND for rendering a view with opacity.
+/// If an animation is active (via withAnimation), the surface animates
+/// from the opposite opacity to the target over the animation duration.
 func createD2DSurface<V: View>(
     view: V, opacity: Float, context: RenderContext
 ) -> HWND? {
+    let animation = consumePendingAnimation()
     registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
 
     let measured = d2dMeasure(view)
@@ -303,9 +350,9 @@ func createD2DSurface<V: View>(
 
     guard let container = container else { return nil }
 
-    let state = D2DSurfaceState(hwnd: container, opacity: opacity) { rt, brush, width, height in
-        // Set brush alpha to opacity for all drawing
-        d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, opacity)
+    let state = D2DSurfaceState(hwnd: container, opacity: opacity, animation: animation) { rt, brush, width, height, currentOpacity in
+        // Set brush alpha to current (possibly animated) opacity
+        d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, currentOpacity)
         // Draw the content tree
         d2dDraw(view, target: rt, brush: brush, x: 0, y: 0, width: width, height: height)
     }
@@ -360,10 +407,21 @@ private let d2dSurfaceProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSub
     case UINT(WM_PAINT):
         state.paint()
         _ = ValidateRect(hwnd, nil)
+        // Start animation after first paint if needed
+        if state.animationProgress < 1.0 && state.animationStartTime == 0 {
+            state.startAnimation()
+        }
         return 0
+    case UINT(WM_TIMER):
+        if UINT_PTR(wParam) == d2dAnimTimerID {
+            state.tick()
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     case UINT(WM_ERASEBKGND):
         return 1
     case UINT(WM_NCDESTROY):
+        KillTimer(hwnd, d2dAnimTimerID)
         Unmanaged<D2DSurfaceState>.fromOpaque(
             UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
         ).release()
@@ -371,5 +429,25 @@ private let d2dSurfaceProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSub
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     default:
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+// MARK: - Easing functions
+
+/// Apply an easing curve to a linear progress value (0→1).
+private func applyEasing(_ t: Float, curve: Animation.Curve) -> Float {
+    switch curve {
+    case .linear:
+        return t
+    case .easeIn:
+        return t * t
+    case .easeOut:
+        return 1 - (1 - t) * (1 - t)
+    case .easeInOut:
+        return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) * (-2 * t + 2) / 2
+    case .spring:
+        // Approximation: overshoot then settle
+        let d: Float = 0.8
+        return 1 - expf(-6 * t) * cosf(4 * .pi * t) * d + (1 - d) * (1 - expf(-6 * t))
     }
 }

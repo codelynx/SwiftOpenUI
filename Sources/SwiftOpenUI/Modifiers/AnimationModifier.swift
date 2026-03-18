@@ -173,6 +173,71 @@ private class AnimationBox {
     init(_ animation: Animation) { self.animation = animation }
 }
 
+// MARK: - Pending animation (survives until consumed by rebuild)
+
+#if canImport(Glibc) || canImport(Darwin)
+private let _pendingAnimKey: pthread_key_t = {
+    var key = pthread_key_t()
+    pthread_key_create(&key, nil)
+    return key
+}()
+
+public func setPendingAnimation(_ animation: Animation?) {
+    if let animation = animation {
+        let box = Unmanaged.passRetained(AnimationBox(animation)).toOpaque()
+        if let prev = pthread_getspecific(_pendingAnimKey) {
+            Unmanaged<AnimationBox>.fromOpaque(prev).release()
+        }
+        pthread_setspecific(_pendingAnimKey, box)
+    } else {
+        if let prev = pthread_getspecific(_pendingAnimKey) {
+            Unmanaged<AnimationBox>.fromOpaque(prev).release()
+        }
+        pthread_setspecific(_pendingAnimKey, nil)
+    }
+}
+
+public func getPendingAnimation() -> Animation? {
+    guard let ptr = pthread_getspecific(_pendingAnimKey) else { return nil }
+    return Unmanaged<AnimationBox>.fromOpaque(ptr).takeUnretainedValue().animation
+}
+
+#elseif canImport(WinSDK)
+
+private let _pendingAnimTls: DWORD = TlsAlloc()
+
+public func setPendingAnimation(_ animation: Animation?) {
+    if let animation = animation {
+        let box = Unmanaged.passRetained(AnimationBox(animation)).toOpaque()
+        if let prev = TlsGetValue(_pendingAnimTls) {
+            Unmanaged<AnimationBox>.fromOpaque(prev).release()
+        }
+        TlsSetValue(_pendingAnimTls, box)
+    } else {
+        if let prev = TlsGetValue(_pendingAnimTls) {
+            Unmanaged<AnimationBox>.fromOpaque(prev).release()
+        }
+        TlsSetValue(_pendingAnimTls, nil)
+    }
+}
+
+public func getPendingAnimation() -> Animation? {
+    guard let ptr = TlsGetValue(_pendingAnimTls) else { return nil }
+    return Unmanaged<AnimationBox>.fromOpaque(ptr).takeUnretainedValue().animation
+}
+
+#else
+private var _pendingAnimation: Animation?
+
+public func setPendingAnimation(_ animation: Animation?) {
+    _pendingAnimation = animation
+}
+
+public func getPendingAnimation() -> Animation? {
+    _pendingAnimation
+}
+#endif
+
 /// Perform a state change with animation.
 ///
 /// ```swift
@@ -183,6 +248,18 @@ private class AnimationBox {
 public func withAnimation(_ animation: Animation = .default, _ body: () -> Void) {
     let previous = getCurrentAnimation()
     setCurrentAnimation(animation)
+    setPendingAnimation(animation)
     body()
     setCurrentAnimation(previous)
+    // Note: pendingAnimation is NOT cleared here — it persists until
+    // the next rebuild consumes it, because the rebuild is deferred
+    // via PostMessage/g_idle_add and runs after withAnimation returns.
+}
+
+/// Consume the pending animation (called by backends during rebuild).
+/// Returns the animation if one was set by a recent withAnimation block.
+public func consumePendingAnimation() -> Animation? {
+    let anim = getPendingAnimation()
+    setPendingAnimation(nil)
+    return anim
 }
