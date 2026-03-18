@@ -379,9 +379,9 @@ object ComposeRenderHost {
     @Composable
     private fun RenderNavigationStack(props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
         val title = props.optString("title", "Home")
-        var showingDestination by remember { mutableStateOf(false) }
-        var destinationTitle by remember { mutableStateOf("") }
-        var destinationJson by remember { mutableStateOf<JSONObject?>(null) }
+        val showBack = props.optString("showBack", "") == "true"
+        val destTitle = props.optString("destTitle", "")
+        val backNodeId = props.optLong("backNodeId", 0L)
 
         Column(modifier = Modifier.fillMaxWidth()) {
             // Header bar
@@ -389,24 +389,24 @@ object ComposeRenderHost {
                 modifier = Modifier.fillMaxWidth().background(Color(0xFFF0F0F0)).padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (showingDestination) {
-                    Button(onClick = { showingDestination = false; destinationJson = null }) {
+                if (showBack && backNodeId != 0L) {
+                    Button(onClick = {
+                        // Back button triggers Swift-side path pop via JNI
+                        val newJson = onButtonClick?.invoke(backNodeId)
+                        if (newJson != null) onNewJson(newJson)
+                    }) {
                         Text("← Back")
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Text(
-                    text = if (showingDestination) destinationTitle else title,
+                    text = if (showBack) destTitle else title,
                     style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 17.sp)
                 )
             }
-            // Content
-            if (showingDestination && destinationJson != null) {
-                RenderNode(destinationJson!!, onNewJson)
-            } else {
-                for (i in 0 until children.length()) {
-                    RenderNode(children.getJSONObject(i), onNewJson)
-                }
+            // Content — Swift already resolved which view to show
+            for (i in 0 until children.length()) {
+                RenderNode(children.getJSONObject(i), onNewJson)
             }
         }
     }

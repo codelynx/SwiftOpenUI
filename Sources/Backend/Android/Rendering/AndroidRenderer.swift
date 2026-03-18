@@ -317,16 +317,106 @@ extension FocusedEqualsView: AndroidRenderable {
 
 // MARK: - Navigation views
 
+/// Destination registry for Android type-based path navigation.
+private class AndroidDestinationRegistry {
+    private var factories: [(type: Any.Type, factory: (AnyHashable) -> RenderNode?)] = []
+
+    func register<V: Hashable>(for type: V.Type, factory: @escaping (V) -> RenderNode?) {
+        factories.append((type: V.self, factory: { value in
+            guard let typed = value.base as? V else { return nil }
+            return factory(typed)
+        }))
+    }
+
+    func resolve(_ value: AnyHashable) -> RenderNode? {
+        for entry in factories {
+            if let result = entry.factory(value) {
+                return result
+            }
+        }
+        return nil
+    }
+}
+
+/// Current Android navigation context during rendering.
+private var _androidNavRegistry: AndroidDestinationRegistry?
+/// Navigation push/pop actions stored for button handlers.
+private var _androidNavPushAction: ((AnyHashable) -> Void)?
+private var _androidNavPopAction: (() -> Void)?
+
 extension NavigationStack: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
-        let node = RenderNode(type: "navigationStack")
-        var title = "Home"
+        let registry = AndroidDestinationRegistry()
+        let prevRegistry = _androidNavRegistry
+        _androidNavRegistry = registry
+
+        var rootTitle = "Home"
         if let titled = content as? NavigationTitled {
-            title = titled.navigationTitle
+            rootTitle = titled.navigationTitle
         }
-        node.props["title"] = title
-        // TODO: path binding support — requires JNI bridge for programmatic push/pop
-        node.children = [androidRenderView(content)]
+
+        // Wire NavigateAction into environment
+        let prevEnv = getCurrentEnvironment()
+        var env = prevEnv
+
+        // Path-aware: if pathBinding exists, render resolved destinations
+        var currentPathElements: [AnyHashable] = []
+        if let path = pathBinding?.wrappedValue, !path.isEmpty {
+            currentPathElements = path.elements
+        }
+
+        // Set up push/pop actions that modify the path binding
+        let binding = pathBinding
+        _androidNavPushAction = { value in
+            guard var path = binding?.wrappedValue else { return }
+            path.append(value)
+            binding?.wrappedValue = path
+        }
+        _androidNavPopAction = {
+            guard var path = binding?.wrappedValue, !path.isEmpty else { return }
+            path.removeLast()
+            binding?.wrappedValue = path
+        }
+
+        env.navigate = NavigateAction(
+            push: { value in _androidNavPushAction?(value) },
+            pop: { _androidNavPopAction?() },
+            popToRoot: {
+                guard var path = binding?.wrappedValue else { return }
+                path.removeLast(path.count)
+                binding?.wrappedValue = path
+            }
+        )
+        setCurrentEnvironment(env)
+
+        // Render root content (this also registers destination factories)
+        let rootContent = androidRenderView(content)
+
+        // Build the navigation node
+        let node = RenderNode(type: "navigationStack")
+        node.props["title"] = rootTitle
+
+        if !currentPathElements.isEmpty, let lastValue = currentPathElements.last,
+           let destNode = registry.resolve(lastValue) {
+            // Show resolved destination with back button
+            node.props["showBack"] = "true"
+            node.props["destTitle"] = "\(lastValue)"
+            node.children = [destNode]
+
+            // Register a back action
+            let backNodeId = androidPushChild(typeTag: "navBack")
+            androidPopChild()
+            node.props["backNodeId"] = "\(backNodeId)"
+            androidButtonActions[backNodeId] = {
+                _androidNavPopAction?()
+            }
+        } else {
+            // Show root content
+            node.children = [rootContent]
+        }
+
+        setCurrentEnvironment(prevEnv)
+        _androidNavRegistry = prevRegistry
         return node
     }
 }
@@ -336,6 +426,22 @@ extension NavigationLink: AndroidRenderable {
         let node = RenderNode(type: "navigationLink")
         node.props["label"] = label
         node.props["title"] = title
+
+        // Register action that pushes the destination
+        let nodeId = androidCurrentNodeId()
+        let dest = destination
+        androidButtonActions[nodeId] = {
+            // For static destinations (no path), re-render is handled by
+            // the NavigationStack detecting the path change
+            _androidNavPushAction?(AnyHashable(title))
+        }
+        // Also register the destination in the registry under the title
+        let linkTitle = self.title
+        _androidNavRegistry?.register(for: String.self) { [dest] value -> RenderNode? in
+            guard value == linkTitle else { return nil }
+            return androidRenderView(dest())
+        }
+
         return node
     }
 }
@@ -350,8 +456,13 @@ extension TitledView: AndroidRenderable {
 
 extension NavigationDestinationModifier: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
-        // TODO: destination registry for path-based navigation
-        androidRenderView(content)
+        // Register destination factory in current navigation context
+        if let registry = _androidNavRegistry {
+            registry.register(for: dataType) { value -> RenderNode? in
+                androidRenderView(self.destination(value))
+            }
+        }
+        return androidRenderView(content)
     }
 }
 
