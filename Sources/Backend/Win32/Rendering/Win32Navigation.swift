@@ -59,7 +59,6 @@ class Win32NavigationContext {
             ShowWindow(top.hwnd, SW_HIDE)
         }
 
-        let context = RenderContext(parent: contentArea, hInstance: hInstance)
         setCurrentNavigationContext(self)
         let prevEnv = getCurrentEnvironment()
         var env = prevEnv
@@ -150,7 +149,7 @@ class Win32NavigationContext {
 
     private func updateHeader() {
         let title = entries.last?.title ?? ""
-        title.withCString(encodedAs: UTF16.self) { wstr in
+        _ = title.withCString(encodedAs: UTF16.self) { wstr in
             SetWindowTextW(titleLabel, wstr)
         }
         ShowWindow(backButton, entries.count > 1 ? SW_SHOW : SW_HIDE)
@@ -453,7 +452,7 @@ extension NavigationStack: WinRenderable {
 
         // Set initial title
         let titleText = title.isEmpty ? "Home" : title
-        titleText.withCString(encodedAs: UTF16.self) { wstr in
+        _ = titleText.withCString(encodedAs: UTF16.self) { wstr in
             SetWindowTextW(titleLabel, wstr)
         }
 

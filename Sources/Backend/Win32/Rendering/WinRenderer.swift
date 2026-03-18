@@ -1763,39 +1763,49 @@ private func extractTextFromView<V: View>(_ view: V) -> String? {
 
 extension OpacityView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Stub: opacity not supported on Win32 HWND controls.
-        // Would require D2D surface rendering for the subtree.
-        winRenderView(content, in: context)
+        // If the content is fully D2D-renderable, render onto a D2D surface
+        // with the specified opacity. Otherwise fall through to HWND rendering
+        // (opacity ignored — native controls can't be alpha-blended).
+        if isD2DRenderable(content) {
+            return createD2DSurface(view: content, opacity: Float(opacity), context: context)
+        }
+        return winRenderView(content, in: context)
     }
 }
 
 extension OffsetView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        guard let child = winRenderView(content, in: context) else { return nil }
-        guard x != 0 || y != 0 else { return child }
-
-        // Wrap in a container that positions the child at an offset.
-        // The container keeps the child's natural size for stack layout,
-        // but shifts the child inside by (x, y).
         registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        guard let child = winRenderView(content, in: childContext) else { return container }
+        guard x != 0 || y != 0 else { return child }
 
         var childRect = RECT()
         GetWindowRect(child, &childRect)
         let childW = childRect.right - childRect.left
         let childH = childRect.bottom - childRect.top
 
-        let container = CreateWindowExW(
-            0, stackContainerClassName, nil,
-            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
-            0, 0, childW, childH,
-            context.parent, nil, context.hInstance, nil
-        )!
+        let offsetX = Int32(x.rounded())
+        let offsetY = Int32(y.rounded())
+        SetWindowPos(container, nil, 0, 0, childW, childH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        SetWindowPos(child, nil, offsetX, offsetY, childW, childH, UINT(SWP_NOZORDER))
 
-        SetParent(child, container)
-        SetWindowPos(child, nil, Int32(x), Int32(y), childW, childH, UINT(SWP_NOZORDER))
-
-        // Subclass to maintain offset on WM_SIZE
-        let offsetInfo = OffsetLayoutInfo(child: child, offsetX: Int32(x), offsetY: Int32(y))
+        // Keep the offset stable when the wrapper is resized by parent layout.
+        let offsetInfo = OffsetLayoutInfo(
+            child: child,
+            offsetX: offsetX,
+            offsetY: offsetY,
+            childWidth: childW,
+            childHeight: childH
+        )
         let infoPtr = Unmanaged.passRetained(offsetInfo).toOpaque()
         SetWindowSubclass(container, offsetLayoutProc, 70, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
@@ -1807,10 +1817,14 @@ private class OffsetLayoutInfo {
     let child: HWND
     let offsetX: Int32
     let offsetY: Int32
-    init(child: HWND, offsetX: Int32, offsetY: Int32) {
+    let childWidth: Int32
+    let childHeight: Int32
+    init(child: HWND, offsetX: Int32, offsetY: Int32, childWidth: Int32, childHeight: Int32) {
         self.child = child
         self.offsetX = offsetX
         self.offsetY = offsetY
+        self.childWidth = childWidth
+        self.childHeight = childHeight
     }
 }
 
@@ -1821,10 +1835,8 @@ private let offsetLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
             let info = Unmanaged<OffsetLayoutInfo>.fromOpaque(
                 UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
             ).takeUnretainedValue()
-            var rect = RECT()
-            GetClientRect(hwnd, &rect)
             SetWindowPos(info.child, nil, info.offsetX, info.offsetY,
-                         rect.right - rect.left, rect.bottom - rect.top, UINT(SWP_NOZORDER))
+                         info.childWidth, info.childHeight, UINT(SWP_NOZORDER))
         }
         return 0
     case UINT(WM_NCDESTROY):

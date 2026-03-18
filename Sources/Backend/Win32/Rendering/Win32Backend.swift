@@ -93,13 +93,12 @@ private let mainWindowProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         if userData != 0, let contentHwnd = HWND(bitPattern: Int(userData)) {
             var clientRect = RECT()
             GetClientRect(hwnd, &clientRect)
-            SetWindowPos(
-                contentHwnd, nil,
-                0, 0,
-                clientRect.right - clientRect.left,
-                clientRect.bottom - clientRect.top,
-                UINT(SWP_NOZORDER)
-            )
+            let clientW = clientRect.right - clientRect.left
+            let clientH = clientRect.bottom - clientRect.top
+
+            // Content fills the window — centering happens within stacks
+            // via cross-axis alignment (default .center).
+            SetWindowPos(contentHwnd, nil, 0, 0, clientW, clientH, UINT(SWP_NOZORDER))
         }
         return 0
 

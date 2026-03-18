@@ -72,43 +72,6 @@ final class Win32RenderTests: XCTestCase {
         cleanupChildren()
     }
 
-    // MARK: - WinRenderable conformance
-
-    func testTextConformsToWinRenderable() {
-        XCTAssertTrue(Text("x") is WinRenderable)
-    }
-
-    func testButtonConformsToWinRenderable() {
-        XCTAssertTrue(Button("x", action: {}) is WinRenderable)
-    }
-
-    func testSpacerConformsToWinRenderable() {
-        XCTAssertTrue(Spacer() is WinRenderable)
-    }
-
-    func testDividerConformsToWinRenderable() {
-        XCTAssertTrue(Divider() is WinRenderable)
-    }
-
-    func testEmptyViewConformsToWinRenderable() {
-        XCTAssertTrue(EmptyView() is WinRenderable)
-    }
-
-    func testContainerViewsConformToWinRenderable() {
-        XCTAssertTrue(VStack { Text("a") } is WinRenderable)
-        XCTAssertTrue(HStack { Text("a") } is WinRenderable)
-        XCTAssertTrue(ZStack { Text("a") } is WinRenderable)
-    }
-
-    func testModifierViewsConformToWinRenderable() {
-        XCTAssertTrue(Text("a").padding() is WinRenderable)
-        XCTAssertTrue(Text("a").frame(width: 100) is WinRenderable)
-        XCTAssertTrue(Text("a").foregroundColor(.blue) is WinRenderable)
-        XCTAssertTrue(Text("a").background(.red) is WinRenderable)
-        XCTAssertTrue(Text("a").font(.title) is WinRenderable)
-        XCTAssertTrue(Text("a").border(.black) is WinRenderable)
-    }
-
     // MARK: - HWND creation
 
     func testTextCreatesHWND() {
@@ -217,6 +180,36 @@ final class Win32RenderTests: XCTestCase {
         let h = rect.bottom - rect.top
         XCTAssertEqual(w, 150, "Frame width should be 150")
         XCTAssertEqual(h, 80, "Frame height should be 80")
+    }
+
+    func testOffsetPositionsChildWithinWrapper() {
+        let ctx = testContext()
+        let plain = winRenderView(Text("offset"), in: ctx)!
+        var plainRect = RECT()
+        GetWindowRect(plain, &plainRect)
+        let plainW = plainRect.right - plainRect.left
+        let plainH = plainRect.bottom - plainRect.top
+
+        let hwnd = winRenderView(Text("offset").offset(x: 12, y: 8), in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        guard let wrapper = hwnd else { return }
+        guard let child = GetWindow(wrapper, UINT(GW_CHILD)) else {
+            XCTFail("OffsetView should wrap its content in a container")
+            return
+        }
+
+        var wrapperRect = RECT()
+        var childRect = RECT()
+        GetWindowRect(wrapper, &wrapperRect)
+        GetWindowRect(child, &childRect)
+
+        XCTAssertEqual(wrapperRect.right - wrapperRect.left, plainW,
+                       "Offset wrapper should preserve the original layout width")
+        XCTAssertEqual(wrapperRect.bottom - wrapperRect.top, plainH,
+                       "Offset wrapper should preserve the original layout height")
+        XCTAssertEqual(childRect.left - wrapperRect.left, 12, "Offset child x should be preserved")
+        XCTAssertEqual(childRect.top - wrapperRect.top, 8, "Offset child y should be preserved")
     }
 
     func testForegroundColorWrapsChild() {
@@ -386,8 +379,8 @@ final class Win32RenderTests: XCTestCase {
 
     // MARK: - Win32Backend
 
-    func testWin32BackendConformsToRenderBackend() {
-        XCTAssertTrue(Win32Backend() is RenderBackend)
+    func testWin32BackendInstantiates() {
+        _ = Win32Backend()
     }
 
     // MARK: - Color view
@@ -447,12 +440,11 @@ final class Win32RenderTests: XCTestCase {
 
         // Simulate user typing by setting the edit text and sending EN_CHANGE
         let newText: [WCHAR] = Array("typed".utf16) + [0]
-        newText.withUnsafeBufferPointer { ptr in
+        _ = newText.withUnsafeBufferPointer { ptr in
             SetWindowTextW(hwnd, ptr.baseAddress!)
         }
         // EN_CHANGE is sent to the parent via WM_COMMAND
         // The SubclassHandler on the edit control intercepts this
-        let parent = GetParent(hwnd)!
         let controlID = WPARAM(GetDlgCtrlID(hwnd))
         let enChange = WPARAM(controlID | (WPARAM(EN_CHANGE) << 16))
         SendMessageW(hwnd, UINT(WM_COMMAND), enChange, LPARAM(Int(bitPattern: hwnd)))
@@ -539,7 +531,7 @@ final class Win32RenderTests: XCTestCase {
         let emailHwnd = winRenderView(emailField, in: ctx)!
 
         // Initially no focus
-        XCTAssertNil(focus.storage.value)
+        XCTAssertNil(focus.storage.value as Any?)
 
         // Focus name field
         SendMessageW(nameHwnd, UINT(WM_SETFOCUS), 0, 0)
@@ -552,7 +544,7 @@ final class Win32RenderTests: XCTestCase {
 
         // Lose focus entirely
         SendMessageW(emailHwnd, UINT(WM_KILLFOCUS), 0, 0)
-        XCTAssertNil(focus.storage.value, "Losing focus should clear storage to nil")
+        XCTAssertNil(focus.storage.value as Any?, "Losing focus should clear storage to nil")
     }
 
     func testFocusedEqualsDoesNotClearWhenOtherFieldTakesFocus() {
@@ -675,7 +667,6 @@ final class Win32RenderTests: XCTestCase {
     func testTapGestureViewCreatesHWND() {
         let ctx = testContext()
         let view = Text("Tap me").onTapGesture { }
-        XCTAssertTrue(view is WinRenderable)
         let hwnd = winRenderView(view, in: ctx)
         XCTAssertNotNil(hwnd)
     }
@@ -694,7 +685,6 @@ final class Win32RenderTests: XCTestCase {
     func testLongPressGestureViewCreatesHWND() {
         let ctx = testContext()
         let view = Text("Hold me").onLongPressGesture { }
-        XCTAssertTrue(view is WinRenderable)
         let hwnd = winRenderView(view, in: ctx)
         XCTAssertNotNil(hwnd)
     }
@@ -702,7 +692,6 @@ final class Win32RenderTests: XCTestCase {
     func testDragGestureViewCreatesHWND() {
         let ctx = testContext()
         let view = Text("Drag me").onDrag(onChanged: { _ in }, onEnded: { _ in })
-        XCTAssertTrue(view is WinRenderable)
         let hwnd = winRenderView(view, in: ctx)
         XCTAssertNotNil(hwnd)
     }

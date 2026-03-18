@@ -1,0 +1,327 @@
+import WinSDK
+import CWin32
+import CWin32Bridge
+import SwiftOpenUI
+import Foundation
+
+// MARK: - D2D surface rendering
+//
+// Renders a fully-D2D-renderable view subtree onto a single HWND
+// with a Direct2D render target. Supports opacity and scale transforms.
+//
+// Only works for views that can be measured and drawn without native
+// HWND controls: Text, Color, Divider, and simple modifiers wrapping them.
+
+/// Check if a view can be rendered entirely via D2D (no native HWND controls needed).
+func isD2DRenderable<V: View>(_ view: V) -> Bool {
+    if view is Text { return true }
+    if view is Color { return true }
+    if view is Divider { return true }
+    if view is Spacer { return false } // layout-only, not drawable
+    if view is EmptyView { return true }
+
+    // Modifiers wrapping D2D-renderable content
+    if let v = view as? any _D2DContentAccess {
+        return v._isContentD2DRenderable
+    }
+
+    return false
+}
+
+/// Internal protocol for checking if a modifier's content is D2D-renderable.
+/// Avoids exposing generic content types.
+protocol _D2DContentAccess {
+    var _isContentD2DRenderable: Bool { get }
+}
+
+extension ForegroundColorView: _D2DContentAccess {
+    var _isContentD2DRenderable: Bool { isD2DRenderable(content) }
+}
+
+extension FontModifiedView: _D2DContentAccess {
+    var _isContentD2DRenderable: Bool { isD2DRenderable(content) }
+}
+
+extension PaddedView: _D2DContentAccess {
+    var _isContentD2DRenderable: Bool { isD2DRenderable(content) }
+}
+
+/// Measure a D2D-renderable view's size.
+func d2dMeasure<V: View>(_ view: V) -> (width: Float, height: Float) {
+    if let text = view as? Text {
+        guard let fmt = D2DRenderer.shared.textFormat() else { return (0, 0) }
+        let (w, h) = D2DRenderer.shared.measureText(text.content, format: fmt)
+        return (w + 4, h + 2)
+    }
+    if view is Color {
+        return (20, 20) // natural size, will expand in container
+    }
+    if view is Divider {
+        return (100, 2)
+    }
+    if view is EmptyView {
+        return (0, 0)
+    }
+    if let fg = view as? ForegroundColorView<Text> {
+        return d2dMeasure(fg.content)
+    }
+    if let font = view as? FontModifiedView<Text> {
+        let (fontSize, bold, italic) = fontParametersForD2D(font.font)
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: fontSize, bold: bold, italic: italic) else {
+            return d2dMeasure(font.content)
+        }
+        let (w, h) = D2DRenderer.shared.measureText(font.content.content, format: fmt)
+        return (w + 4, h + 2)
+    }
+    if let padded = view as? PaddedView<Text> {
+        let inner = d2dMeasure(padded.content)
+        return (inner.width + Float(padded.leading + padded.trailing),
+                inner.height + Float(padded.top + padded.bottom))
+    }
+    return (0, 0)
+}
+
+/// Draw a D2D-renderable view onto a render target.
+func d2dDraw<V: View>(_ view: V, target: D2DRenderTarget, brush: D2DBrush,
+                       x: Float, y: Float, width: Float, height: Float) {
+    if let text = view as? Text {
+        guard let fmt = D2DRenderer.shared.textFormat() else { return }
+        d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, 1) // black text
+        D2DRenderer.shared.drawText(text.content, target: target, format: fmt,
+                                     brush: brush, x: x, y: y, width: width, height: height)
+        return
+    }
+    if let color = view as? Color {
+        d2d1_SolidColorBrush_SetColor(brush, Float(color.red), Float(color.green),
+                                       Float(color.blue), Float(color.alpha))
+        d2d1_RenderTarget_FillRectangle(target, brush, x, y, width, height)
+        return
+    }
+    if view is Divider {
+        d2d1_SolidColorBrush_SetColor(brush, 210.0/255, 210.0/255, 215.0/255, 1)
+        let lineY = y + height / 2
+        d2d1_RenderTarget_FillRectangle(target, brush, x, lineY, width, 1)
+        return
+    }
+    if let fg = view as? ForegroundColorView<Text> {
+        d2d1_SolidColorBrush_SetColor(brush, Float(fg.color.red), Float(fg.color.green),
+                                       Float(fg.color.blue), Float(fg.color.alpha))
+        guard let fmt = D2DRenderer.shared.textFormat() else { return }
+        D2DRenderer.shared.drawText(fg.content.content, target: target, format: fmt,
+                                     brush: brush, x: x, y: y, width: width, height: height)
+        return
+    }
+    if let font = view as? FontModifiedView<Text> {
+        let (fontSize, bold, italic) = fontParametersForD2D(font.font)
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: fontSize, bold: bold, italic: italic) else { return }
+        d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, 1)
+        D2DRenderer.shared.drawText(font.content.content, target: target, format: fmt,
+                                     brush: brush, x: x, y: y, width: width, height: height)
+        return
+    }
+    if let padded = view as? PaddedView<Text> {
+        d2dDraw(padded.content, target: target, brush: brush,
+                x: x + Float(padded.leading), y: y + Float(padded.top),
+                width: width - Float(padded.leading + padded.trailing),
+                height: height - Float(padded.top + padded.bottom))
+        return
+    }
+}
+
+/// Extract font parameters for D2D text format.
+private func fontParametersForD2D(_ font: Font) -> (fontSize: Float, bold: Bool, italic: Bool) {
+    switch font {
+    case .largeTitle:  return (28, false, false)
+    case .title:       return (24, false, false)
+    case .title2:      return (20, true, false)
+    case .title3:      return (18, false, false)
+    case .headline:    return (14, true, false)
+    case .subheadline: return (12, true, false)
+    case .body:        return (14, false, false)
+    case .callout:     return (12, false, false)
+    case .footnote:    return (10, false, false)
+    case .caption:     return (12, false, false)
+    case .caption2:    return (10, true, false)
+    case .custom(let size, let w, _):
+        let bold = w == .bold || w == .semibold || w == .heavy || w == .black
+        return (Float(size), bold, false)
+    }
+}
+
+// MARK: - D2D Surface Host HWND
+
+/// State for a D2D surface HWND that renders a view with optional transforms.
+class D2DSurfaceState {
+    let hwnd: HWND
+    var renderTarget: D2DRenderTarget?
+    var brush: D2DBrush?
+    let drawContent: (D2DRenderTarget, D2DBrush, Float, Float) -> Void
+    let opacity: Float
+
+    init(hwnd: HWND, opacity: Float,
+         drawContent: @escaping (D2DRenderTarget, D2DBrush, Float, Float) -> Void) {
+        self.hwnd = hwnd
+        self.opacity = opacity
+        self.drawContent = drawContent
+    }
+
+    func ensureTarget(width: UInt32, height: UInt32) {
+        if renderTarget == nil && width > 0 && height > 0 {
+            renderTarget = D2DRenderer.shared.createRenderTarget(for: hwnd, width: width, height: height)
+            if let rt = renderTarget {
+                brush = D2DRenderer.shared.createBrush(rt, r: 0, g: 0, b: 0)
+            }
+        }
+    }
+
+    func resize(width: UInt32, height: UInt32) {
+        if let rt = renderTarget, width > 0, height > 0 {
+            D2DRenderer.shared.resize(rt, width: width, height: height)
+        }
+    }
+
+    func paint() {
+        if renderTarget == nil {
+            var r = RECT()
+            GetClientRect(hwnd, &r)
+            ensureTarget(width: UInt32(r.right), height: UInt32(r.bottom))
+        }
+        guard let rt = renderTarget, let brush = brush else { return }
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let w = Float(rect.right - rect.left)
+        let h = Float(rect.bottom - rect.top)
+        guard w > 0, h > 0 else { return }
+
+        d2d1_RenderTarget_BeginDraw(rt)
+        // Clear with window background
+        let bgColor = GetSysColor(COLOR_WINDOW)
+        d2d1_RenderTarget_Clear(rt,
+            Float(win32_GetRValue(bgColor)) / 255.0,
+            Float(win32_GetGValue(bgColor)) / 255.0,
+            Float(win32_GetBValue(bgColor)) / 255.0, 1.0)
+
+        // Apply opacity to the brush for all drawing
+        drawContent(rt, brush, w, h)
+
+        let hr = d2d1_RenderTarget_EndDraw(rt)
+        if hr < 0 { cleanup() }
+    }
+
+    func cleanup() {
+        if let b = brush { D2DRenderer.shared.releaseBrush(b); brush = nil }
+        if let rt = renderTarget { D2DRenderer.shared.releaseRenderTarget(rt); renderTarget = nil }
+    }
+
+    deinit { cleanup() }
+}
+
+/// Create a D2D surface HWND for rendering a view with opacity.
+func createD2DSurface<V: View>(
+    view: V, opacity: Float, context: RenderContext
+) -> HWND? {
+    registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
+
+    let measured = d2dMeasure(view)
+    let w = max(Int32(measured.width), 1)
+    let h = max(Int32(measured.height), 1)
+
+    let container = CreateWindowExW(
+        0, d2dSurfaceClassName, nil,
+        DWORD(WS_CHILD | WS_VISIBLE),
+        0, 0, w, h,
+        context.parent, nil, context.hInstance, nil
+    )
+
+    guard let container = container else { return nil }
+
+    let state = D2DSurfaceState(hwnd: container, opacity: opacity) { rt, brush, width, height in
+        // Draw with opacity applied to all colors
+        d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, opacity)
+
+        if let text = view as? Text {
+            if let fmt = D2DRenderer.shared.textFormat() {
+                D2DRenderer.shared.drawText(text.content, target: rt, format: fmt,
+                                             brush: brush, x: 0, y: 0, width: width, height: height)
+            }
+        } else if let fg = view as? ForegroundColorView<Text> {
+            d2d1_SolidColorBrush_SetColor(brush, Float(fg.color.red), Float(fg.color.green),
+                                           Float(fg.color.blue), opacity)
+            if let fmt = D2DRenderer.shared.textFormat() {
+                D2DRenderer.shared.drawText(fg.content.content, target: rt, format: fmt,
+                                             brush: brush, x: 0, y: 0, width: width, height: height)
+            }
+        } else if let color = view as? Color {
+            d2d1_SolidColorBrush_SetColor(brush, Float(color.red), Float(color.green),
+                                           Float(color.blue), Float(color.alpha) * opacity)
+            d2d1_RenderTarget_FillRectangle(rt, brush, 0, 0, width, height)
+        } else {
+            // Generic D2D draw with opacity
+            d2dDraw(view, target: rt, brush: brush, x: 0, y: 0, width: width, height: height)
+        }
+    }
+
+    let ptr = Unmanaged.passRetained(state).toOpaque()
+    SetWindowSubclass(container, d2dSurfaceProc, 80, DWORD_PTR(UInt(bitPattern: ptr)))
+
+    return container
+}
+
+// MARK: - Window class
+
+private let d2dSurfaceClassName: UnsafePointer<WCHAR> = {
+    "SwiftUID2DSurface".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+private var d2dSurfaceClassRegistered = false
+
+private func registerD2DSurfaceClassIfNeeded(hInstance: HINSTANCE) {
+    guard !d2dSurfaceClassRegistered else { return }
+    d2dSurfaceClassRegistered = true
+
+    var wc = WNDCLASSEXW()
+    wc.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
+    wc.style = UINT(CS_HREDRAW | CS_VREDRAW)
+    wc.lpfnWndProc = DefWindowProcW
+    wc.hInstance = hInstance
+    wc.hbrBackground = nil
+    wc.lpszClassName = d2dSurfaceClassName
+    RegisterClassExW(&wc)
+}
+
+private let d2dSurfaceProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let state = Unmanaged<D2DSurfaceState>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_SIZE):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        state.ensureTarget(width: UInt32(rect.right), height: UInt32(rect.bottom))
+        state.resize(width: UInt32(rect.right), height: UInt32(rect.bottom))
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    case UINT(WM_PAINT):
+        state.paint()
+        _ = ValidateRect(hwnd, nil)
+        return 0
+    case UINT(WM_ERASEBKGND):
+        return 1
+    case UINT(WM_NCDESTROY):
+        Unmanaged<D2DSurfaceState>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, d2dSurfaceProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
