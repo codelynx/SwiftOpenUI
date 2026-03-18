@@ -157,7 +157,7 @@ This is the same core that compiles for macOS, Linux, Windows, and WebAssembly.
 
 ## Known Issues
 
-- Android's Swift build uses a separate package at `android/renderer/swift-lib/Package.swift`, not the root `Package.swift`. This avoids the import conflict where shared example views need `SwiftUI` on macOS but `SwiftOpenUI` for Android. The separate package defines `SWIFTOPENUI_BACKEND` to force `import SwiftOpenUI` in shared files. Source files are symlinked — no copies.
+- Android's Swift build uses the **root** `Package.swift` (not the separate `swift-lib` package). Building from a separate package caused a state wiring regression — see `docs/issues/android-package-split-regression.md`. Do not use `--triple` with the Android SDK; let SPM resolve the target automatically.
 - The "multiple Swift SDKs match" warning is harmless — the SDK bundles multiple arch variants.
 - Debug APK is large (~77MB) due to unstripped Swift runtime libraries.
 

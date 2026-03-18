@@ -299,7 +299,12 @@ private class WebNavigationContext {
         _ = contentArea.appendChild(root.element)
         headerTitle.textContent = .string(root.title)
         backButton.style = "display: none; padding: 4px 8px; cursor: pointer;"
-        syncPathAfterPop()
+        // Clear the entire path, not just one element
+        guard !isSyncing, var path = pathBinding?.wrappedValue, !path.isEmpty else { return }
+        isSyncing = true
+        path.removeLast(path.count)
+        pathBinding?.wrappedValue = path
+        isSyncing = false
     }
 
     func setRoot(element: JSValue, title: String) {

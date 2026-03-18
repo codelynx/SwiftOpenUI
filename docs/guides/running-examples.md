@@ -98,10 +98,10 @@ Opens in any modern browser.
 
 ## Android (Compose)
 
-Cross-compiles Swift to a `.so` from macOS using a separate package (`android/renderer/swift-lib/`). Kotlin hosts the UI via Jetpack Compose.
+Cross-compiles Swift to a `.so` from macOS using the root `Package.swift`. Kotlin hosts the UI via Jetpack Compose.
 
 ```bash
-# Build the Swift shared library
+# Build the Swift shared library (from repo root)
 ./android/renderer/build-so.sh
 
 # Build the APK
@@ -109,10 +109,12 @@ cd android/renderer/app && gradle assembleDebug
 
 # Install and run on emulator
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.example.swiftopenui/.MainActivity --es example "HelloWorld"
+adb shell am start -n com.example.swiftopenui/.MainActivity --es example "StateDemo"
 ```
 
-Available examples via intent extra: `HelloWorld`, `TextStyles`, `Buttons`, `StateDemo`, `Layout`, `TextFieldDemo`.
+Available examples via intent extra: `HelloWorld`, `TextStyles`, `Buttons`, `StateDemo`, `Layout`.
+
+> **Note:** `TextFieldDemo` is currently disabled due to the package split migration. See [android-package-split-regression.md](../issues/android-package-split-regression.md).
 
 See [android-setup.md](android-setup.md) for full setup instructions.
 

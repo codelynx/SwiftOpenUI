@@ -21,9 +21,9 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 | **scaleEffect()** | ✅ | ✅ CSS transform | ⚠️ D2D surface only | ✅ CSS scale | ✅ Modifier.graphicsLayer |
 | **.animation()** | ✅ | ✅ CSS transition | ❌ stub (instant) | ✅ CSS transition | ❌ pass-through |
 | **withAnimation()** | ✅ TLS context | ✅ | ✅ | ✅ | ✅ partial |
-| **TextField binding** | ✅ | ✅ GtkEntry notify::text | ✅ SubclassHandler EN_CHANGE | ✅ addEventListener input | ✅ BasicTextField |
-| **@FocusState binding** | ✅ | ✅ GtkEventControllerFocus | ✅ WM_SETFOCUS/KILLFOCUS | ⚠️ stub | ✅ FocusRequester |
-| **@FocusState programmatic** | ✅ | ✅ gtk_grab_focus | ✅ SetFocus | ❌ | ✅ requestFocus/clearFocus |
+| **TextField binding** | ✅ | ✅ GtkEntry notify::text | ✅ SubclassHandler EN_CHANGE | ✅ addEventListener input | ⚠️ BasicTextField (demo disabled) |
+| **@FocusState binding** | ✅ | ✅ GtkEventControllerFocus | ✅ WM_SETFOCUS/KILLFOCUS | ⚠️ stub | ⚠️ FocusRequester (demo disabled) |
+| **@FocusState programmatic** | ✅ | ✅ gtk_grab_focus | ✅ SetFocus | ❌ | ⚠️ requestFocus (demo disabled) |
 | **@State (flat/root)** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **@State (nested/composed)** | ✅ | ✅ per-view host | ✅ per-view host | ✅ per-view host | ❌ resets on rebuild |
 | **Display cutout** | N/A | N/A | N/A | N/A | ✅ statusBarsPadding |
