@@ -8,9 +8,9 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 |---------|------|------|-------|-----|---------|
 | **NavigationStack** | ✅ | ✅ GtkStack | ✅ Win32 | ✅ DOM stack | ✅ Compose (flat only) |
 | **NavigationLink** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **NavigationPath binding** | ✅ | ✅ bidirectional | ✅ bidirectional | ✅ bidirectional | ❌ (needs JNI bridge) |
-| **NavigateAction (@Environment)** | ✅ | ✅ | ✅ | ✅ push/pop/popToRoot | ❌ |
-| **Destination registry (.navigationDestination)** | ✅ | ✅ | ✅ | ✅ type-based | ❌ |
+| **NavigationPath binding** | ✅ | ✅ bidirectional | ✅ bidirectional | ✅ bidirectional | ⚠️ Swift-driven (no platform back-stack) |
+| **NavigateAction (@Environment)** | ✅ | ✅ | ✅ | ✅ push/pop/popToRoot | ⚠️ path-only (no demo wired) |
+| **Destination registry (.navigationDestination)** | ✅ | ✅ | ✅ | ✅ type-based | ⚠️ type-based (no demo wired) |
 | **navigationTitle** | ✅ | ✅ header bar | ✅ header bar | ✅ header bar | ✅ header bar |
 | **onTapGesture** | ✅ | ✅ gtk_gesture_click | ✅ WM_LBUTTONDOWN/UP | ✅ click event | ✅ combinedClickable |
 | **onTapGesture(count: 2)** | ✅ | ✅ nPress | ✅ GetDoubleClickTime | ✅ click count + timeout | ✅ onDoubleTap |
@@ -49,7 +49,7 @@ Navigation and gestures fully working. Gesture installation is recursive (root +
 Full Phase 2 coverage. Navigation uses a JS-side stack with header bar and back button. NavigationPath binding is bidirectional with re-entrancy guard (matching GTK4/Win32 pattern). Destination registry supports type-based path navigation via `.navigationDestination(for:)`. `NavigateAction` is wired into the environment for programmatic push/pop/popToRoot — including inside pushed destinations. Gestures use pointer events (tap, double-tap via click count, long press via setTimeout, drag via pointermove). Animations use CSS transitions with timing curves. Known issue: animation demo shows double-rendered text due to a rendering bug.
 
 ### Android (Compose)
-Phase 2 renderers implemented for navigation, gestures, and animation modifiers. Compose handlers (`ComposeRenderHost.kt`) dispatch all Phase 2 node types: `opacity` → `Modifier.alpha`, `offset` → `Modifier.offset`, `scaleEffect` → `Modifier.graphicsLayer`, `navigationStack` → header bar + content Column, `navigationLink` → Button. State works for flat root views (`AndroidStateDemoView`). Nested composed views with their own `@State` don't persist across renders — needs structural state store. NavigationPath binding not yet implemented (requires JNI bridge for programmatic push/pop). Display cutout and HStack centering fixed.
+Phase 2 renderers implemented for navigation, gestures, and animation modifiers. Compose handlers (`ComposeRenderHost.kt`) dispatch all Phase 2 node types: `opacity` → `Modifier.alpha`, `offset` → `Modifier.offset`, `scaleEffect` → `Modifier.graphicsLayer`, `navigationStack` → header bar + content Column, `navigationLink` → Button. NavigationPath binding is Swift-driven: path changes trigger full re-render, Swift resolves destinations via registry, Kotlin renders the JSON. This is one-way rebuild navigation, not bidirectional UI/path sync like GTK4/Win32/Web. No platform back-stack integration (system back button not wired). Destination titles fall back to path value description, not `.navigationTitle`. Backend capabilities exist but no interactive navigation demo is wired in the Android host routing yet. State works for flat root views (`AndroidStateDemoView`). Nested composed views with their own `@State` don't persist across renders — needs structural state store. Display cutout and HStack centering fixed.
 
 **Build note:** BackendAndroid must be built from the root `Package.swift`, not a separate package. See [android-package-split-regression.md](../issues/android-package-split-regression.md) for details.
 
