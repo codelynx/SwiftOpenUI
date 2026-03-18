@@ -142,6 +142,182 @@ extension FocusedEqualsView: WebRenderable {
     }
 }
 
+// MARK: - Gesture views
+
+extension TapGestureView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let element = webRenderView(content)
+
+        if count <= 1 {
+            // Single tap — use click event
+            let handler = JSClosure { _ in
+                self.action()
+                return .undefined
+            }
+            webRetainClosure(handler)
+            _ = element.addEventListener("click", handler)
+        } else {
+            // Multi-tap (e.g. double-click) — track click count with timeout
+            var clickCount = 0
+            var timer: JSValue = .undefined
+            let requiredCount = count
+
+            let handler = JSClosure { _ in
+                clickCount += 1
+                // Clear previous timeout
+                if timer != .undefined {
+                    _ = JSObject.global.clearTimeout!(timer)
+                }
+                if clickCount >= requiredCount {
+                    clickCount = 0
+                    self.action()
+                } else {
+                    // Reset after 400ms (double-click window)
+                    let resetClosure = JSClosure { _ in
+                        clickCount = 0
+                        return .undefined
+                    }
+                    webRetainClosure(resetClosure)
+                    timer = JSObject.global.setTimeout!(resetClosure, 400)
+                }
+                return .undefined
+            }
+            webRetainClosure(handler)
+            _ = element.addEventListener("click", handler)
+        }
+
+        return element
+    }
+}
+
+extension LongPressGestureView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let element = webRenderView(content)
+        let durationMs = Int(minimumDuration * 1000)
+
+        var timer: JSValue = .undefined
+        var fired = false
+
+        // Start timer on pointerdown
+        let downHandler = JSClosure { _ in
+            fired = false
+            let fireClosure = JSClosure { _ in
+                fired = true
+                self.action()
+                return .undefined
+            }
+            webRetainClosure(fireClosure)
+            timer = JSObject.global.setTimeout!(fireClosure, durationMs)
+            return .undefined
+        }
+        webRetainClosure(downHandler)
+        _ = element.addEventListener("pointerdown", downHandler)
+
+        // Cancel on pointerup / pointerleave
+        let cancelHandler = JSClosure { _ in
+            if timer != .undefined {
+                _ = JSObject.global.clearTimeout!(timer)
+                timer = .undefined
+            }
+            return .undefined
+        }
+        webRetainClosure(cancelHandler)
+        _ = element.addEventListener("pointerup", cancelHandler)
+        _ = element.addEventListener("pointerleave", cancelHandler)
+
+        // Prevent context menu if long press fired
+        let contextHandler = JSClosure { event in
+            if fired {
+                _ = event[0].preventDefault()
+            }
+            return .undefined
+        }
+        webRetainClosure(contextHandler)
+        _ = element.addEventListener("contextmenu", contextHandler)
+
+        // Make element interactive
+        element.style.setProperty("touch-action", "none")
+        element.style.setProperty("user-select", "none")
+        element.style.setProperty("-webkit-user-select", "none")
+
+        return element
+    }
+}
+
+extension DragGestureView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let element = webRenderView(content)
+        let minDist = minimumDistance
+
+        var startX: Double = 0
+        var startY: Double = 0
+        var dragging = false
+
+        let moveHandler = JSClosure { event in
+            let e = event[0]
+            let clientX = e.clientX.number!
+            let clientY = e.clientY.number!
+            let dx = clientX - startX
+            let dy = clientY - startY
+
+            if !dragging {
+                let dist = (dx * dx + dy * dy).squareRoot()
+                if dist < minDist { return .undefined }
+                dragging = true
+            }
+
+            let value = DragGestureValue(
+                startLocation: (x: startX, y: startY),
+                location: (x: clientX, y: clientY),
+                translation: (width: dx, height: dy)
+            )
+            self.onChanged?(value)
+            return .undefined
+        }
+        webRetainClosure(moveHandler)
+
+        let upHandler = JSClosure { event in
+            guard dragging else {
+                _ = JSObject.global.document.removeEventListener("pointermove", moveHandler)
+                _ = JSObject.global.document.removeEventListener("pointerup", event[0])
+                return .undefined
+            }
+            dragging = false
+            let e = event[0]
+            let clientX = e.clientX.number!
+            let clientY = e.clientY.number!
+            let value = DragGestureValue(
+                startLocation: (x: startX, y: startY),
+                location: (x: clientX, y: clientY),
+                translation: (width: clientX - startX, height: clientY - startY)
+            )
+            self.onEnded?(value)
+            _ = JSObject.global.document.removeEventListener("pointermove", moveHandler)
+            return .undefined
+        }
+        webRetainClosure(upHandler)
+
+        let downHandler = JSClosure { event in
+            let e = event[0]
+            startX = e.clientX.number!
+            startY = e.clientY.number!
+            dragging = false
+            _ = JSObject.global.document.addEventListener("pointermove", moveHandler)
+            _ = JSObject.global.document.addEventListener("pointerup", upHandler)
+            return .undefined
+        }
+        webRetainClosure(downHandler)
+        _ = element.addEventListener("pointerdown", downHandler)
+
+        // Prevent default drag behavior
+        element.style.setProperty("touch-action", "none")
+        element.style.setProperty("user-select", "none")
+        element.style.setProperty("-webkit-user-select", "none")
+
+        return element
+    }
+}
+
 extension SwiftOpenUI.Button: WebRenderable {
     public func webCreateElement() -> JSValue {
         let button = document.createElement("button")
