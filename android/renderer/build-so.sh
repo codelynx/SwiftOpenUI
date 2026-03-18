@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 # Build the BackendAndroid .so and copy it + Swift runtime to the Android project.
-# Uses the separate Android package at android/renderer/swift-lib/
+# Builds from the root Package.swift (not swift-lib — see docs/issues/android-package-split-regression.md)
 set -e
-cd "$(dirname "$0")/swift-lib"
+cd "$(dirname "$0")/../.."
 
 echo "Building BackendAndroid for Android ARM64..."
 source ~/.swiftly/env.sh
@@ -26,7 +26,7 @@ swift build \
     -c release 2>&1 | tail -1
 
 SO_PATH=$(find .build -path "*/aarch64*/release/libBackendAndroid.so" | head -1)
-JNILIBS="../app/app/src/main/jniLibs/arm64-v8a"
+JNILIBS="android/renderer/app/app/src/main/jniLibs/arm64-v8a"
 mkdir -p "$JNILIBS"
 
 echo "Copying libBackendAndroid.so..."

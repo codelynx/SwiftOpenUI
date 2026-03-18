@@ -175,6 +175,8 @@ private func createSessionForExample(name: String) -> AndroidViewHost {
     switch name {
     case "StateDemo":
         return createStateDemoSession()
+    case "NavigationDemo":
+        return createNavigationDemoSession()
     // case "TextFieldDemo":
     //     return createTextFieldDemoSession()
     default:
@@ -259,6 +261,75 @@ private struct AndroidStateDemoView: View {
                 Text("A + B = \(a + b)")
             }
         }.padding()
+    }
+}
+
+// MARK: - Navigation demo
+
+private func createNavigationDemoSession() -> AndroidViewHost {
+    var view = AndroidNavigationDemo() // swiftlint:disable:this redundant_var
+
+    let host = AndroidViewHost { [view] in
+        androidBeginRenderPass()
+        let rootNode = androidRenderView(view)
+        let wrapper = RenderNode(type: "window")
+        wrapper.props["title"] = "SwiftOpenUI"
+        wrapper.children = [rootNode]
+        return renderNodeToJSON(wrapper)
+    }
+
+    installState(view, host: host)
+    return host
+}
+
+/// Flat navigation demo — all @State on one struct for Android.
+/// Demonstrates NavigationPath binding with programmatic push/pop.
+private struct AndroidNavigationDemo: View {
+    @State var path: NavigationPath = NavigationPath()
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            VStack(spacing: 12) {
+                Text("Navigation Path Demo").font(.title)
+                Divider()
+                Text("Path depth: \(path.count)")
+                NavigationLink("Go to Page A", title: "Page A") {
+                    VStack(spacing: 8) {
+                        Text("Detail: Page A").font(.title)
+                        Text("You navigated here via NavigationLink.")
+                    }
+                    .padding()
+                }
+                NavigationLink("Go to Page B", title: "Page B") {
+                    VStack(spacing: 8) {
+                        Text("Detail: Page B").font(.title)
+                        Text("You navigated here via NavigationLink.")
+                    }
+                    .padding()
+                }
+                Divider()
+                Text("Programmatic Navigation").font(.headline)
+                Button("Push 'Settings'") { path.append("Settings") }
+                Button("Push 'Profile'") { path.append("Profile") }
+                if !path.isEmpty {
+                    Button("Pop") { path.removeLast() }
+                    Button("Pop to Root") { path.removeLast(path.count) }
+                }
+            }
+            .padding()
+            .navigationTitle("Home")
+        }
+        .navigationDestination(for: String.self) { value in
+            VStack(spacing: 8) {
+                Text("Detail: \(value)").font(.title)
+                Text("Pushed via NavigationPath")
+                Text("Path depth: \(path.count)")
+                Button("Push 'Sub-page'") { path.append("Sub-\(value)") }
+                Button("Pop") { path.removeLast() }
+                Button("Pop to Root") { path.removeLast(path.count) }
+            }
+            .padding()
+        }
     }
 }
 
