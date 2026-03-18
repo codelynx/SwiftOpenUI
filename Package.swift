@@ -27,10 +27,9 @@ var targets: [Target] = [
 ]
 
 // Example runner dependencies:
-// - ExamplesShared for view definitions
+// - SwiftOpenUI for the core framework
 // - Backend libraries on their native platforms
-// - NO BackendWeb here — Web builds use --swift-sdk wasm separately
-var exampleDeps: [Target.Dependency] = ["ExamplesShared"]
+var exampleDeps: [Target.Dependency] = ["SwiftOpenUI"]
 
 // GTK4 backend (Linux)
 #if os(Linux)
@@ -109,8 +108,7 @@ targets += [
 
 // Web backend (WebAssembly)
 // Gated to macOS host — Wasm cross-compilation always happens from macOS.
-// NOT added to exampleDeps — examples import BackendWeb via #if canImport,
-// but the dependency is not forced. Web builds use --swift-sdk wasm.
+// On Linux, this avoids pulling JavaScriptKit into native GTK builds.
 #if os(macOS)
 targets += [
     .target(
@@ -122,6 +120,7 @@ targets += [
         path: "Sources/Backend/Web/Rendering"
     ),
 ]
+exampleDeps.append("BackendWeb")
 #endif
 
 // Examples — thin runners that wire ExamplesShared views to platform entry points
