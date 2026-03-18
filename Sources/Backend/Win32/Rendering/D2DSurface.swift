@@ -225,33 +225,41 @@ class D2DSurfaceState {
     let hwnd: HWND
     var renderTarget: D2DRenderTarget?
     var brush: D2DBrush?
-    let drawContent: (D2DRenderTarget, D2DBrush, Float, Float, Float) -> Void
+    /// (target, brush, width, height, opacity, scale)
+    let drawContent: (D2DRenderTarget, D2DBrush, Float, Float, Float, Float) -> Void
 
     // Animation state
     var currentOpacity: Float
     let targetOpacity: Float
     let startOpacity: Float
+    var currentScale: Float
+    let targetScale: Float
+    let startScale: Float
     var animationProgress: Float = 1.0  // 0→1, 1.0 = done
     var animationDuration: Float = 0
     var animationCurve: Animation.Curve = .easeInOut
     var animationStartTime: UInt32 = 0
 
-    init(hwnd: HWND, opacity: Float, animation: Animation?,
-         drawContent: @escaping (D2DRenderTarget, D2DBrush, Float, Float, Float) -> Void) {
+    init(hwnd: HWND, opacity: Float, scale: Float = 1.0, animation: Animation?,
+         drawContent: @escaping (D2DRenderTarget, D2DBrush, Float, Float, Float, Float) -> Void) {
         self.hwnd = hwnd
         self.targetOpacity = opacity
+        self.targetScale = scale
         self.drawContent = drawContent
 
         if let anim = animation {
-            // Animate from opposite end
             self.startOpacity = opacity < 0.5 ? 1.0 : 0.0
             self.currentOpacity = startOpacity
+            self.startScale = scale != 1.0 ? 1.0 : scale
+            self.currentScale = startScale
             self.animationDuration = Float(anim.duration)
             self.animationCurve = anim.curve
             self.animationProgress = 0
         } else {
             self.startOpacity = opacity
             self.currentOpacity = opacity
+            self.startScale = scale
+            self.currentScale = scale
         }
     }
 
@@ -267,12 +275,14 @@ class D2DSurfaceState {
         let rawProgress = min(elapsed / animationDuration, 1.0)
         animationProgress = applyEasing(rawProgress, curve: animationCurve)
         currentOpacity = startOpacity + (targetOpacity - startOpacity) * animationProgress
+        currentScale = startScale + (targetScale - startScale) * animationProgress
 
         InvalidateRect(hwnd, nil, false)
 
         if rawProgress >= 1.0 {
             KillTimer(hwnd, d2dAnimTimerID)
             currentOpacity = targetOpacity
+            currentScale = targetScale
         }
     }
 
@@ -313,8 +323,20 @@ class D2DSurfaceState {
             Float(win32_GetGValue(bgColor)) / 255.0,
             Float(win32_GetBValue(bgColor)) / 255.0, 1.0)
 
-        // Draw with current (possibly animated) opacity
-        drawContent(rt, brush, w, h, currentOpacity)
+        // Draw with current (possibly animated) opacity and scale
+        // For scale: adjust the drawing area so content renders larger/smaller
+        if currentScale != 1.0 {
+            // Center the scaled content in the surface
+            let scaledW = w / currentScale
+            let scaledH = h / currentScale
+            let offsetX = (w - scaledW) / 2
+            let offsetY = (h - scaledH) / 2
+            // We can't truly scale the render target, but we can use
+            // a different font size for text. The drawContent callback
+            // handles this via the captured scale value.
+            _ = (offsetX, offsetY) // available for future transform use
+        }
+        drawContent(rt, brush, w, h, currentOpacity, currentScale)
 
         let hr = d2d1_RenderTarget_EndDraw(rt)
         if hr < 0 { cleanup() }
@@ -328,18 +350,18 @@ class D2DSurfaceState {
     deinit { cleanup() }
 }
 
-/// Create a D2D surface HWND for rendering a view with opacity.
+/// Create a D2D surface HWND for rendering a view with opacity and/or scale.
 /// If an animation is active (via withAnimation), the surface animates
-/// from the opposite opacity to the target over the animation duration.
+/// from the previous value to the target over the animation duration.
 func createD2DSurface<V: View>(
-    view: V, opacity: Float, context: RenderContext
+    view: V, opacity: Float = 1.0, scale: Float = 1.0, context: RenderContext
 ) -> HWND? {
     let animation = consumePendingAnimation()
     registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
 
     let measured = d2dMeasure(view)
-    let w = max(Int32(measured.width), 1)
-    let h = max(Int32(measured.height), 1)
+    let w = max(Int32(measured.width * scale), 1)
+    let h = max(Int32(measured.height * scale), 1)
 
     let container = CreateWindowExW(
         0, d2dSurfaceClassName, nil,
@@ -350,11 +372,19 @@ func createD2DSurface<V: View>(
 
     guard let container = container else { return nil }
 
-    let state = D2DSurfaceState(hwnd: container, opacity: opacity, animation: animation) { rt, brush, width, height, currentOpacity in
-        // Set brush alpha to current (possibly animated) opacity
+    let state = D2DSurfaceState(hwnd: container, opacity: opacity, scale: scale, animation: animation) { rt, brush, width, height, currentOpacity, currentScale in
         d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, currentOpacity)
-        // Draw the content tree
-        d2dDraw(view, target: rt, brush: brush, x: 0, y: 0, width: width, height: height)
+        // For text, use scaled font size for smooth scale animation
+        if let text = view as? Text {
+            let (baseFontSize, bold, italic) = fontParametersForD2D(.body)
+            let scaledSize = baseFontSize * currentScale
+            if let fmt = D2DRenderer.shared.textFormat(fontSize: scaledSize, bold: bold, italic: italic) {
+                D2DRenderer.shared.drawText(text.content, target: rt, format: fmt,
+                                             brush: brush, x: 0, y: 0, width: width, height: height)
+            }
+        } else {
+            d2dDraw(view, target: rt, brush: brush, x: 0, y: 0, width: width, height: height)
+        }
     }
 
     let ptr = Unmanaged.passRetained(state).toOpaque()

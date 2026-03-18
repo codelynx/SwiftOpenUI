@@ -1854,10 +1854,11 @@ private let offsetLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
 
 extension ScaleEffectView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // If content is D2D-renderable, render onto D2D surface with scaled font.
+        // If content is D2D-renderable, render onto D2D surface with animated scale.
         // Otherwise fall through (scale ignored on native HWND controls).
-        if isD2DRenderable(content) && (scaleX != 1.0 || scaleY != 1.0) {
-            return createD2DSurface(view: self, opacity: 1.0, context: context)
+        if isD2DRenderable(content) {
+            let scale = Float(max(scaleX, scaleY))
+            return createD2DSurface(view: content, opacity: 1.0, scale: scale, context: context)
         }
         return winRenderView(content, in: context)
     }
