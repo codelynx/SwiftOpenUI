@@ -195,14 +195,38 @@ extension AnimatedView: WebRenderable {
 
 // MARK: - Navigation views
 
+/// Destination registry for type-based path navigation.
+private class WebDestinationRegistry {
+    private var factories: [(type: Any.Type, factory: (AnyHashable) -> JSValue?)] = []
+
+    func register<V: Hashable>(for type: V.Type, factory: @escaping (V) -> JSValue) {
+        factories.append((type: V.self, factory: { value in
+            guard let typed = value.base as? V else { return nil }
+            return factory(typed)
+        }))
+    }
+
+    func resolve(_ value: AnyHashable) -> JSValue? {
+        for entry in factories {
+            if let result = entry.factory(value) {
+                return result
+            }
+        }
+        return nil
+    }
+}
+
 /// Thread-local navigation context for the Web backend.
-/// Manages a stack of DOM elements with push/pop transitions.
+/// Manages a stack of DOM elements with push/pop transitions and path binding sync.
 private class WebNavigationContext {
     let container: JSValue         // outer div
     let headerTitle: JSValue       // <span> for title text
     let backButton: JSValue        // <button> Back
     let contentArea: JSValue       // div holding current page
     var stack: [(element: JSValue, title: String)] = []
+    var pathBinding: Binding<NavigationPath>?
+    let destinationRegistry = WebDestinationRegistry()
+    private var isSyncing = false
 
     init() {
         let doc = JSObject.global.document
@@ -246,6 +270,14 @@ private class WebNavigationContext {
         backButton.style = "display: inline-block; padding: 4px 8px; cursor: pointer;"
     }
 
+    /// Push a value from NavigationPath — resolves via destination registry.
+    func pushValue(_ value: AnyHashable) {
+        guard let element = destinationRegistry.resolve(value) else { return }
+        let title = "\(value)"
+        push(element: element, title: title)
+        syncPathAfterPush(value)
+    }
+
     func pop() {
         guard stack.count > 1 else { return }
         stack.removeLast()
@@ -256,6 +288,18 @@ private class WebNavigationContext {
         if stack.count <= 1 {
             backButton.style = "display: none; padding: 4px 8px; cursor: pointer;"
         }
+        syncPathAfterPop()
+    }
+
+    func popToRoot() {
+        guard stack.count > 1 else { return }
+        let root = stack[0]
+        stack = [root]
+        contentArea.innerHTML = ""
+        _ = contentArea.appendChild(root.element)
+        headerTitle.textContent = .string(root.title)
+        backButton.style = "display: none; padding: 4px 8px; cursor: pointer;"
+        syncPathAfterPop()
     }
 
     func setRoot(element: JSValue, title: String) {
@@ -265,6 +309,27 @@ private class WebNavigationContext {
         headerTitle.textContent = .string(title)
         backButton.style = "display: none; padding: 4px 8px; cursor: pointer;"
     }
+
+    // MARK: - Path binding sync (bidirectional with re-entrancy guard)
+
+    func beginSync() { isSyncing = true }
+    func endSync() { isSyncing = false }
+
+    private func syncPathAfterPush(_ value: AnyHashable) {
+        guard !isSyncing, var path = pathBinding?.wrappedValue else { return }
+        isSyncing = true
+        path.append(value)
+        pathBinding?.wrappedValue = path
+        isSyncing = false
+    }
+
+    private func syncPathAfterPop() {
+        guard !isSyncing, var path = pathBinding?.wrappedValue, !path.isEmpty else { return }
+        isSyncing = true
+        path.removeLast()
+        pathBinding?.wrappedValue = path
+        isSyncing = false
+    }
 }
 
 /// Current navigation context — set during NavigationStack rendering.
@@ -273,6 +338,7 @@ private var _webCurrentNavContext: WebNavigationContext?
 extension NavigationStack: WebRenderable {
     public func webCreateElement() -> JSValue {
         let ctx = WebNavigationContext()
+        ctx.pathBinding = pathBinding
         let previousCtx = _webCurrentNavContext
         _webCurrentNavContext = ctx
 
@@ -282,10 +348,30 @@ extension NavigationStack: WebRenderable {
             title = titled.navigationTitle
         }
 
+        // Wire NavigateAction into the environment
+        let prevEnv = getCurrentEnvironment()
+        var env = prevEnv
+        env.navigate = NavigateAction(
+            push: { [weak ctx] value in ctx?.pushValue(value) },
+            pop: { [weak ctx] in ctx?.pop() },
+            popToRoot: { [weak ctx] in ctx?.popToRoot() }
+        )
+        setCurrentEnvironment(env)
+
         // Render root content
         let rootElement = webRenderView(content)
         ctx.setRoot(element: rootElement, title: title)
 
+        // Consume initial path if present
+        if let path = pathBinding?.wrappedValue, !path.isEmpty {
+            ctx.beginSync()
+            for element in path.elements {
+                ctx.pushValue(element)
+            }
+            ctx.endSync()
+        }
+
+        setCurrentEnvironment(prevEnv)
         _webCurrentNavContext = previousCtx
         return ctx.container
     }
@@ -318,15 +404,23 @@ extension NavigationLink: WebRenderable {
 
 extension TitledView: WebRenderable {
     public func webCreateElement() -> JSValue {
-        // Pass through — title is read by NavigationStack during rendering
         webRenderView(content)
     }
 }
 
 extension NavigationDestinationModifier: WebRenderable {
     public func webCreateElement() -> JSValue {
-        // Pass through — path-based navigation not yet implemented on Web
-        webRenderView(content)
+        // Register destination factory in current navigation context
+        if let ctx = _webCurrentNavContext {
+            ctx.destinationRegistry.register(for: dataType) { value in
+                let prevCtx = _webCurrentNavContext
+                _webCurrentNavContext = ctx
+                let element = webRenderView(self.destination(value))
+                _webCurrentNavContext = prevCtx
+                return element
+            }
+        }
+        return webRenderView(content)
     }
 }
 
