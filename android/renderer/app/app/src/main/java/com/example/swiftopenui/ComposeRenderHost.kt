@@ -199,9 +199,18 @@ object ComposeRenderHost {
             else -> Alignment.CenterVertically
         }
 
+        // Center if no Spacer children (SwiftUI HStack centers content by default).
+        // If Spacers are present, they handle distribution via Modifier.weight.
+        val hasSpacer = (0 until children.length()).any { children.getJSONObject(it).getString("type") == "spacer" }
+        val arrangement = if (hasSpacer) {
+            Arrangement.spacedBy(spacing.dp)
+        } else {
+            Arrangement.spacedBy(spacing.dp, Alignment.CenterHorizontally)
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.dp),
+            horizontalArrangement = arrangement,
             verticalAlignment = vAlign
         ) {
             RenderChildren(children, onNewJson)
