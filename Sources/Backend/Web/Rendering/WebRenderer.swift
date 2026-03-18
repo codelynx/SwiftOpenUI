@@ -148,7 +148,7 @@ extension OpacityView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let wrapper = document.createElement("div")
-        wrapper.style = "display: inline-block; opacity: \(opacity);"
+        wrapper.style = .string("display: inline-block; opacity: \(opacity);")
         _ = wrapper.appendChild(child)
         return wrapper
     }
@@ -158,7 +158,7 @@ extension OffsetView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let wrapper = document.createElement("div")
-        wrapper.style = "display: inline-block; transform: translate(\(x)px, \(y)px);"
+        wrapper.style = .string("display: inline-block; transform: translate(\(x)px, \(y)px);")
         _ = wrapper.appendChild(child)
         return wrapper
     }
@@ -297,9 +297,11 @@ extension NavigationLink: WebRenderable {
         button.textContent = .string(label)
         button.style = "padding: 6px 12px; cursor: pointer;"
 
+        // Capture the nav context NOW (during render), not at click time
+        let capturedCtx = _webCurrentNavContext
+
         let handler = JSClosure { _ in
-            guard let ctx = _webCurrentNavContext else { return .undefined }
-            // Re-capture context for the push
+            guard let ctx = capturedCtx else { return .undefined }
             let prevCtx = _webCurrentNavContext
             _webCurrentNavContext = ctx
             let destElement = webRenderView(self.destination())
