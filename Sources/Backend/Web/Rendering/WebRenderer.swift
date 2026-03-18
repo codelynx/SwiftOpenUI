@@ -142,6 +142,192 @@ extension FocusedEqualsView: WebRenderable {
     }
 }
 
+// MARK: - Animation modifier views
+
+extension OpacityView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = "display: inline-block; opacity: \(opacity);"
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension OffsetView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = "display: inline-block; transform: translate(\(x)px, \(y)px);"
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension ScaleEffectView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        let scale = scaleX == scaleY ? "scale(\(scaleX))" : "scale(\(scaleX), \(scaleY))"
+        wrapper.style = .string("display: inline-block; transform: \(scale); transform-origin: center;")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension AnimatedView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let element = webRenderView(content)
+        if let anim = animation ?? getCurrentAnimation() {
+            let timing: String
+            switch anim.curve {
+            case .linear: timing = "linear"
+            case .easeIn: timing = "ease-in"
+            case .easeOut: timing = "ease-out"
+            case .easeInOut: timing = "ease-in-out"
+            case .spring: timing = "cubic-bezier(0.5, 1.8, 0.3, 0.8)"
+            }
+            element.style.setProperty("transition", "all \(anim.duration)s \(timing)")
+        }
+        return element
+    }
+}
+
+// MARK: - Navigation views
+
+/// Thread-local navigation context for the Web backend.
+/// Manages a stack of DOM elements with push/pop transitions.
+private class WebNavigationContext {
+    let container: JSValue         // outer div
+    let headerTitle: JSValue       // <span> for title text
+    let backButton: JSValue        // <button> Back
+    let contentArea: JSValue       // div holding current page
+    var stack: [(element: JSValue, title: String)] = []
+
+    init() {
+        let doc = JSObject.global.document
+        container = doc.createElement("div")
+        container.style = "display: flex; flex-direction: column; width: 100%;"
+
+        // Header bar
+        let header = doc.createElement("div")
+        header.style = "display: flex; align-items: center; padding: 8px 12px; background: #f0f0f0; border-bottom: 1px solid #ccc; gap: 8px;"
+
+        backButton = doc.createElement("button")
+        backButton.textContent = "← Back"
+        backButton.style = "display: none; padding: 4px 8px; cursor: pointer;"
+        _ = header.appendChild(backButton)
+
+        headerTitle = doc.createElement("span")
+        headerTitle.style = "font-weight: bold; font-size: 17px;"
+        _ = header.appendChild(headerTitle)
+
+        _ = container.appendChild(header)
+
+        // Content area
+        contentArea = doc.createElement("div")
+        contentArea.style = "flex: 1;"
+        _ = container.appendChild(contentArea)
+
+        // Wire back button
+        let backHandler = JSClosure { [weak self] _ in
+            self?.pop()
+            return .undefined
+        }
+        webRetainClosure(backHandler)
+        backButton.onclick = .object(backHandler)
+    }
+
+    func push(element: JSValue, title: String) {
+        stack.append((element: element, title: title))
+        contentArea.innerHTML = ""
+        _ = contentArea.appendChild(element)
+        headerTitle.textContent = .string(title)
+        backButton.style = "display: inline-block; padding: 4px 8px; cursor: pointer;"
+    }
+
+    func pop() {
+        guard stack.count > 1 else { return }
+        stack.removeLast()
+        let current = stack.last!
+        contentArea.innerHTML = ""
+        _ = contentArea.appendChild(current.element)
+        headerTitle.textContent = .string(current.title)
+        if stack.count <= 1 {
+            backButton.style = "display: none; padding: 4px 8px; cursor: pointer;"
+        }
+    }
+
+    func setRoot(element: JSValue, title: String) {
+        stack = [(element: element, title: title)]
+        contentArea.innerHTML = ""
+        _ = contentArea.appendChild(element)
+        headerTitle.textContent = .string(title)
+        backButton.style = "display: none; padding: 4px 8px; cursor: pointer;"
+    }
+}
+
+/// Current navigation context — set during NavigationStack rendering.
+private var _webCurrentNavContext: WebNavigationContext?
+
+extension NavigationStack: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let ctx = WebNavigationContext()
+        let previousCtx = _webCurrentNavContext
+        _webCurrentNavContext = ctx
+
+        // Extract title from content if it has .navigationTitle
+        var title = "Home"
+        if let titled = content as? NavigationTitled {
+            title = titled.navigationTitle
+        }
+
+        // Render root content
+        let rootElement = webRenderView(content)
+        ctx.setRoot(element: rootElement, title: title)
+
+        _webCurrentNavContext = previousCtx
+        return ctx.container
+    }
+}
+
+extension NavigationLink: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let button = document.createElement("button")
+        button.textContent = .string(label)
+        button.style = "padding: 6px 12px; cursor: pointer;"
+
+        let handler = JSClosure { _ in
+            guard let ctx = _webCurrentNavContext else { return .undefined }
+            // Re-capture context for the push
+            let prevCtx = _webCurrentNavContext
+            _webCurrentNavContext = ctx
+            let destElement = webRenderView(self.destination())
+            _webCurrentNavContext = prevCtx
+            ctx.push(element: destElement, title: self.title)
+            return .undefined
+        }
+        webRetainClosure(handler)
+        button.onclick = .object(handler)
+
+        return button
+    }
+}
+
+extension TitledView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        // Pass through — title is read by NavigationStack during rendering
+        webRenderView(content)
+    }
+}
+
+extension NavigationDestinationModifier: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        // Pass through — path-based navigation not yet implemented on Web
+        webRenderView(content)
+    }
+}
+
 // MARK: - Gesture views
 
 extension TapGestureView: WebRenderable {
