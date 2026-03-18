@@ -19,9 +19,16 @@ public class AndroidViewHost: AnyViewHost {
         self.capturedEnvironment = getCurrentEnvironment()
     }
 
+    private var isRebuilding = false
+
     public func scheduleRebuild() {
-        // Synchronous rebuild — we're on the Kotlin callback thread.
-        // No coalescing needed for Phase 2 (full-tree re-render).
+        // Guard against re-entrancy: if a rebuild is already in progress
+        // (e.g. navigation path change triggers setState during render),
+        // just mark that another rebuild is needed. The outer rebuild will
+        // produce JSON with the latest state.
+        if isRebuilding {
+            return
+        }
         rebuild()
     }
 
@@ -30,11 +37,13 @@ public class AndroidViewHost: AnyViewHost {
     }
 
     func rebuild() {
+        isRebuilding = true
         let prev = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
         androidBeginRenderPass()
         pendingJSON = buildBody()
         setCurrentEnvironment(prev)
+        isRebuilding = false
         // Reset flag after each rebuild
         suppressFocusRestore = false
     }
