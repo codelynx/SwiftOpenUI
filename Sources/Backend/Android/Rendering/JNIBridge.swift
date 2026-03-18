@@ -1,4 +1,5 @@
 import SwiftOpenUI
+import ExamplesShared
 
 // MARK: - Session state (Application-scoped, survives Activity recreation)
 
@@ -188,10 +189,10 @@ private func createSessionForExample(name: String) -> AndroidViewHost {
 /// Create an interactive StateDemo with real @State.
 private func createStateDemoSession() -> AndroidViewHost {
     // var is required — installState reflects over mutable @State properties
-    var view = StateDemoView() // swiftlint:disable:this redundant_var
+    var view = StateDemoRootView() // swiftlint:disable:this redundant_var
 
     let host = AndroidViewHost { [view] in
-        let rootNode = androidRenderView(view.body)
+        let rootNode = androidRenderView(view)
         let wrapper = RenderNode(type: "window")
         wrapper.props["title"] = "SwiftOpenUI"
         wrapper.children = [rootNode]
@@ -204,110 +205,10 @@ private func createStateDemoSession() -> AndroidViewHost {
     return host
 }
 
-/// Full interactive state demo matching macOS parity.
-/// All state lives in one root struct (single-host full-tree re-render).
-private struct StateDemoView: View {
-    // Counter
-    @State var count: Int = 0
-    // Text toggle
-    @State var message: String = "Hello"
-    // Conditional rendering
-    @State var showDetail: Bool = false
-    // @Binding demo (parent owns state, child reads/writes via binding)
-    @State var shared: Int = 0
-    // Multiple @State
-    @State var a: Int = 0
-    @State var b: Int = 0
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("State Management").font(.title)
-
-            Divider()
-
-            // Counter section
-            VStack(spacing: 4) {
-                Text("Counter").font(.headline)
-                Text("Count: \(count)")
-                HStack(spacing: 8) {
-                    Button("−") { count -= 1 }
-                    Button("+") { count += 1 }
-                    Button("Reset") { count = 0 }
-                }
-            }
-
-            Divider()
-
-            // Text toggle section
-            VStack(spacing: 4) {
-                Text("Text Toggle").font(.headline)
-                Text(message).foregroundColor(.blue)
-                Button("Toggle") {
-                    message = message == "Hello" ? "World" : "Hello"
-                }
-            }
-
-            Divider()
-
-            // Conditional rendering section
-            VStack(spacing: 4) {
-                Text("Conditional Rendering").font(.headline)
-                Button(showDetail ? "Hide Detail" : "Show Detail") {
-                    showDetail = !showDetail
-                }
-                if showDetail {
-                    Text("Here is the detail!")
-                        .foregroundColor(.green)
-                        .padding(4)
-                }
-            }
-
-            Divider()
-
-            // @Binding section — parent owns state, child mutates via Binding
-            VStack(spacing: 4) {
-                Text("@Binding").font(.headline)
-                Text("Parent value: \(shared)")
-                Button("Parent +1") { shared += 1 }
-                BindingChildView(value: $shared)
-                    .padding(4)
-            }
-
-            Divider()
-
-            // Multiple @State section
-            VStack(spacing: 4) {
-                Text("Multiple @State").font(.headline)
-                HStack(spacing: 16) {
-                    VStack {
-                        Text("A: \(a)")
-                        Button("A+") { a += 1 }
-                    }
-                    VStack {
-                        Text("B: \(b)")
-                        Button("B+") { b += 1 }
-                    }
-                }
-                Text("A + B = \(a + b)")
-            }
-        }
-        .padding()
-    }
-}
-
-/// Child view that receives a @Binding from the parent.
-/// Demonstrates true parent↔child state sharing — mutations here
-/// update the parent's @State and trigger a full re-render.
-private struct BindingChildView: View {
-    @Binding var value: Int
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text("Child sees: \(value)")
-            Button("Child +1") { value += 1 }
-        }
-    }
-}
+// View structs imported from ExamplesShared:
+// - StateDemoRootView (CounterSection, TextToggleSection, etc.)
+// - BindingChild
+// - TextFieldDemoView
 
 // MARK: - TextField demo
 
@@ -316,7 +217,7 @@ private func createTextFieldDemoSession() -> AndroidViewHost {
     var view = TextFieldDemoView() // swiftlint:disable:this redundant_var
 
     let host = AndroidViewHost { [view] in
-        let rootNode = androidRenderView(view.body)
+        let rootNode = androidRenderView(view)
         let wrapper = RenderNode(type: "window")
         wrapper.props["title"] = "SwiftOpenUI"
         wrapper.children = [rootNode]
@@ -325,52 +226,6 @@ private func createTextFieldDemoSession() -> AndroidViewHost {
 
     installState(view, host: host)
     return host
-}
-
-/// Interactive text field demo with live binding.
-private struct TextFieldDemoView: View {
-    @State var name: String = ""
-    @State var email: String = ""
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("TextField Demo").font(.title)
-
-            Divider()
-
-            VStack(spacing: 4) {
-                Text("Name").font(.headline)
-                TextField("Enter your name", text: $name)
-                Text("Hello, \(name.isEmpty ? "stranger" : name)!")
-                    .foregroundColor(.blue)
-            }
-
-            Divider()
-
-            VStack(spacing: 4) {
-                Text("Email").font(.headline)
-                TextField("Enter your email", text: $email)
-                if !email.isEmpty {
-                    Text("Email: \(email)")
-                        .foregroundColor(.green)
-                }
-            }
-
-            Divider()
-
-            VStack(spacing: 4) {
-                Text("Combined").font(.headline)
-                if !name.isEmpty && !email.isEmpty {
-                    Text("\(name) <\(email)>")
-                }
-                Button("Clear All") {
-                    name = ""
-                    email = ""
-                }
-            }
-        }
-        .padding()
-    }
 }
 
 // MARK: - Static example renderers (no @State)

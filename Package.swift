@@ -9,6 +9,15 @@ var targets: [Target] = [
         path: "Sources/SwiftOpenUI"
     ),
 
+    // Shared example views (imported by all runners and Android JNI)
+    // On macOS: #if canImport(SwiftUI) selects real SwiftUI
+    // On other platforms: imports SwiftOpenUI
+    .target(
+        name: "ExamplesShared",
+        dependencies: ["SwiftOpenUI"],
+        path: "Sources/ExamplesShared"
+    ),
+
     // Core tests
     .testTarget(
         name: "SwiftOpenUITests",
@@ -17,10 +26,11 @@ var targets: [Target] = [
     ),
 ]
 
-// Always include SwiftOpenUI — examples use #if os(macOS) in source
-// to select SwiftUI vs SwiftOpenUI. Manifest #if os() checks the HOST
-// platform, not the cross-compilation target, so we can't gate here.
-var exampleDeps: [Target.Dependency] = ["SwiftOpenUI"]
+// Example runner dependencies:
+// - ExamplesShared for view definitions
+// - Backend libraries on their native platforms
+// - NO BackendWeb here — Web builds use --swift-sdk wasm separately
+var exampleDeps: [Target.Dependency] = ["ExamplesShared"]
 
 // GTK4 backend (Linux)
 #if os(Linux)
@@ -86,12 +96,12 @@ exampleDeps.append("BackendWin32")
 targets += [
     .target(
         name: "BackendAndroid",
-        dependencies: ["SwiftOpenUI"],
+        dependencies: ["SwiftOpenUI", "ExamplesShared"],
         path: "Sources/Backend/Android/Rendering"
     ),
     .testTarget(
         name: "AndroidRenderTests",
-        dependencies: ["SwiftOpenUI", "BackendAndroid"],
+        dependencies: ["SwiftOpenUI", "BackendAndroid", "ExamplesShared"],
         path: "Tests/BackendTests/AndroidTests"
     ),
 ]
@@ -99,7 +109,7 @@ targets += [
 
 // Web backend (WebAssembly)
 // Gated to macOS host — Wasm cross-compilation always happens from macOS.
-// On Linux, this avoids pulling JavaScriptKit into native GTK builds.
+// NOT added to exampleDeps — Web builds use --swift-sdk wasm separately.
 #if os(macOS)
 targets += [
     .target(
@@ -111,10 +121,9 @@ targets += [
         path: "Sources/Backend/Web/Rendering"
     ),
 ]
-exampleDeps.append("BackendWeb")
 #endif
 
-// Examples
+// Examples — thin runners that wire ExamplesShared views to platform entry points
 targets += [
     .executableTarget(
         name: "HelloWorld",
@@ -182,6 +191,7 @@ let package = Package(
     products: {
         var p: [Product] = [
             .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
+            .library(name: "ExamplesShared", targets: ["ExamplesShared"]),
         ]
         #if os(macOS)
         p.append(.library(name: "BackendAndroid", type: .dynamic, targets: ["BackendAndroid"]))

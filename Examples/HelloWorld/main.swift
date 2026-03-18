@@ -1,16 +1,9 @@
-#if os(macOS)
-import SwiftUI
-#else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
 import BackendGTK4
 #endif
 #if canImport(BackendWin32)
 import BackendWin32
-#endif
-#if canImport(BackendWeb)
-import BackendWeb
-#endif
 #endif
 
 struct HelloWorldApp: App {
@@ -22,14 +15,14 @@ struct HelloWorldApp: App {
     }
 }
 
-#if os(macOS)
-HelloWorldApp.main()
-#elseif canImport(BackendGTK4)
+#if canImport(BackendGTK4)
 GTK4Backend().run(HelloWorldApp.self)
 #elseif canImport(BackendWin32)
 Win32Backend().run(HelloWorldApp.self)
-#elseif canImport(BackendWeb)
-WebBackend().run(HelloWorldApp.self)
+#elseif os(macOS)
+// On macOS, use the Xcode project in apple/ for real SwiftUI examples.
+// SPM runners are for Linux/Windows backends.
+print("HelloWorld: Use apple/Examples.xcodeproj on macOS, or run on Linux/Windows.")
 #else
-print("HelloWorld app defined. No backend available on this platform.")
+print("HelloWorld: No backend available on this platform.")
 #endif
