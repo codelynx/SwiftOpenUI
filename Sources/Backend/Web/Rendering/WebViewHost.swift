@@ -67,6 +67,11 @@ public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
     }
     installState(mutableView, host: host)
 
+    // Retain the host so it survives beyond this function.
+    // Without this, the host is deallocated and scheduleRebuild
+    // (via requestAnimationFrame) finds a nil weak self.
+    _webRetainedHosts.append(host)
+
     // Initial render
     let previousEnv = getCurrentEnvironment()
     host.capturedEnvironment = previousEnv

@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import AppKit
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -151,6 +152,8 @@ struct StateApp: App {
 }
 
 #if os(macOS)
+NSApplication.shared.setActivationPolicy(.regular)
+NSApplication.shared.activate(ignoringOtherApps: true)
 StateApp.main()
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(StateApp.self)

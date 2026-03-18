@@ -13,6 +13,11 @@ func webRetainClosure(_ closure: JSClosure) {
     _webRetainedClosures.append(closure)
 }
 
+/// Retains WebViewHost instances so they survive for the lifetime of the app.
+/// Without this, WebViewHost is deallocated after webRenderStatefulView returns,
+/// and scheduleRebuild's requestAnimationFrame callback finds a nil weak self.
+var _webRetainedHosts: [WebViewHost] = []
+
 // MARK: - Web rendering protocol
 
 /// Protocol that views implement (via extensions) to provide DOM element creation.

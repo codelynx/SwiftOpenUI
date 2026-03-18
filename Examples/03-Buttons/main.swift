@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import AppKit
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -77,6 +78,8 @@ struct ButtonsApp: App {
 }
 
 #if os(macOS)
+NSApplication.shared.setActivationPolicy(.regular)
+NSApplication.shared.activate(ignoringOtherApps: true)
 ButtonsApp.main()
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(ButtonsApp.self)
