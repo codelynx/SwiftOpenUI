@@ -196,6 +196,79 @@ gtk_swift_stack_switcher_set_stack(GtkWidget *switcher, GtkWidget *stack) {
     gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(switcher), GTK_STACK(stack));
 }
 
+// --- GtkListView / GtkListItem / GtkStringObject shims ---
+
+static inline gpointer
+gtk_swift_signal_list_item_factory_new(void) {
+    return (gpointer)gtk_signal_list_item_factory_new();
+}
+
+static inline gpointer
+gtk_swift_string_list_new(void) {
+    return (gpointer)gtk_string_list_new(NULL);
+}
+
+static inline void
+gtk_swift_string_list_append(gpointer list, const char *string) {
+    gtk_string_list_append(GTK_STRING_LIST(list), string);
+}
+
+static inline gpointer
+gtk_swift_no_selection_new(gpointer model) {
+    return (gpointer)gtk_no_selection_new(G_LIST_MODEL(model));
+}
+
+static inline GtkWidget *
+gtk_swift_list_view_new(gpointer model, gpointer factory) {
+    return gtk_list_view_new(GTK_SELECTION_MODEL(model),
+                             GTK_LIST_ITEM_FACTORY(factory));
+}
+
+static inline void
+gtk_swift_list_item_set_child(gpointer list_item, GtkWidget *child) {
+    gtk_list_item_set_child(GTK_LIST_ITEM(list_item), child);
+}
+
+static inline GtkWidget *
+gtk_swift_list_item_get_child(gpointer list_item) {
+    return gtk_list_item_get_child(GTK_LIST_ITEM(list_item));
+}
+
+static inline gpointer
+gtk_swift_list_item_get_item(gpointer list_item) {
+    return gtk_list_item_get_item(GTK_LIST_ITEM(list_item));
+}
+
+static inline const char *
+gtk_swift_string_object_get_string(gpointer string_object) {
+    return gtk_string_object_get_string(GTK_STRING_OBJECT(string_object));
+}
+
+// --- GtkGridView shims ---
+
+static inline GtkWidget *
+gtk_swift_grid_view_new(gpointer model, gpointer factory) {
+    return gtk_grid_view_new(GTK_SELECTION_MODEL(model),
+                             GTK_LIST_ITEM_FACTORY(factory));
+}
+
+static inline void
+gtk_swift_grid_view_set_min_columns(GtkWidget *view, guint min_columns) {
+    gtk_grid_view_set_min_columns(GTK_GRID_VIEW(view), min_columns);
+}
+
+static inline void
+gtk_swift_grid_view_set_max_columns(GtkWidget *view, guint max_columns) {
+    gtk_grid_view_set_max_columns(GTK_GRID_VIEW(view), max_columns);
+}
+
+// --- GtkOrientable ---
+
+static inline void
+gtk_swift_orientable_set_orientation(GtkWidget *widget, GtkOrientation orientation) {
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(widget), orientation);
+}
+
 // --- Window titlebar helpers ---
 
 /// Set or clear the window titlebar. Pass NULL to remove a custom titlebar.

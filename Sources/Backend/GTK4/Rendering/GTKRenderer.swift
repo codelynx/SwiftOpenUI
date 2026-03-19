@@ -1991,6 +1991,317 @@ extension Section: GTKRenderable {
     }
 }
 
+// MARK: - LazyVStack / LazyHStack GTK extensions
+
+/// Context holding item count and render closure for factory callbacks.
+private class LazyListContext {
+    let itemCount: Int
+    let renderItem: (Int) -> UnsafeMutablePointer<GtkWidget>
+
+    init<Data, Content: View>(items: [Data], contentBuilder: @escaping (Data) -> Content) {
+        self.itemCount = items.count
+        self.renderItem = { index in
+            widgetFromOpaque(gtkRenderView(contentBuilder(items[index])))
+        }
+    }
+}
+
+/// Create a GtkListView-based lazy list widget.
+private func gtkCreateLazyListWidget<Data, Content: View>(
+    items: [Data],
+    contentBuilder: @escaping (Data) -> Content,
+    orientation: GtkOrientation
+) -> OpaquePointer {
+    let stringList = gtk_swift_string_list_new()!
+    for i in 0..<items.count {
+        gtk_swift_string_list_append(stringList, "\(i)")
+    }
+
+    let noSelection = gtk_swift_no_selection_new(stringList)
+    let factory = gtk_swift_signal_list_item_factory_new()!
+
+    let context = LazyListContext(items: items, contentBuilder: contentBuilder)
+    let contextPtr = Unmanaged.passRetained(context).toOpaque()
+    g_object_set_data_full(
+        factory.assumingMemoryBound(to: GObject.self),
+        "gtk-swift-lazy-context",
+        contextPtr,
+        { userData in Unmanaged<LazyListContext>.fromOpaque(userData!).release() }
+    )
+
+    g_signal_connect_data(factory, "setup",
+        unsafeBitCast(lazyListSetupCallback, to: GCallback.self),
+        nil, nil, GConnectFlags(rawValue: 0))
+    g_signal_connect_data(factory, "bind",
+        unsafeBitCast(lazyListBindCallback, to: GCallback.self),
+        nil, nil, GConnectFlags(rawValue: 0))
+    g_signal_connect_data(factory, "unbind",
+        unsafeBitCast(lazyListUnbindCallback, to: GCallback.self),
+        nil, nil, GConnectFlags(rawValue: 0))
+
+    let listView = gtk_swift_list_view_new(noSelection, factory)!
+    gtk_swift_orientable_set_orientation(listView, orientation)
+
+    // Transparent background so parent shows through
+    applyCSSToWidget(listView, properties: "background-color: transparent;")
+    let rowCSS = "listview.gtk-swift-lazy-transparent row { background-color: transparent; }"
+    let rowProvider = gtk_css_provider_new()!
+    gtk_css_provider_load_from_string(rowProvider, rowCSS)
+    gtk_swift_add_css_provider_to_display(
+        gtk_widget_get_display(listView),
+        rowProvider,
+        UInt32(GTK_STYLE_PROVIDER_PRIORITY_USER)
+    )
+    g_object_unref(gpointer(rowProvider))
+    gtk_widget_add_css_class(listView, "gtk-swift-lazy-transparent")
+
+    // Wrap in scrolled window
+    let scrolled = gtk_scrolled_window_new()!
+    gtk_scrolled_window_set_policy(OpaquePointer(scrolled),
+        GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC)
+    gtk_scrolled_window_set_child(OpaquePointer(scrolled), listView)
+    gtk_widget_set_vexpand(scrolled, 1)
+    gtk_widget_set_hexpand(scrolled, 1)
+    applyCSSToWidget(scrolled, properties: "background-color: transparent;")
+
+    return opaqueFromWidget(scrolled)
+}
+
+// Factory callbacks for lazy lists
+
+private let lazyListSetupCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { factory, listItem, userData in
+    guard let listItem = listItem else { return }
+    let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+    gtk_widget_set_hexpand(box, 1)
+    gtk_swift_list_item_set_child(listItem, box)
+}
+
+private let lazyListBindCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { factoryPtr, listItem, userData in
+    guard let factoryPtr = factoryPtr, let listItem = listItem else { return }
+
+    guard let gobject = gtk_swift_list_item_get_item(listItem) else { return }
+    guard let cStr = gtk_swift_string_object_get_string(gobject) else { return }
+    guard let index = Int(String(cString: cStr)) else {
+        lazyListClearChild(listItem)
+        return
+    }
+
+    guard let contextPtr = g_object_get_data(
+        factoryPtr.assumingMemoryBound(to: GObject.self),
+        "gtk-swift-lazy-context"
+    ) else { return }
+    let context = Unmanaged<LazyListContext>.fromOpaque(contextPtr).takeUnretainedValue()
+
+    guard index >= 0 && index < context.itemCount else {
+        lazyListClearChild(listItem)
+        return
+    }
+
+    guard let box = gtk_swift_list_item_get_child(listItem) else { return }
+    while let child = gtk_widget_get_first_child(box) {
+        gtk_box_remove(boxPointer(box), child)
+    }
+    gtk_box_append(boxPointer(box), context.renderItem(index))
+}
+
+private let lazyListUnbindCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { factory, listItem, userData in
+    guard let listItem = listItem else { return }
+    lazyListClearChild(listItem)
+}
+
+private func lazyListClearChild(_ listItem: gpointer) {
+    guard let box = gtk_swift_list_item_get_child(listItem) else { return }
+    while let child = gtk_widget_get_first_child(box) {
+        gtk_box_remove(boxPointer(box), child)
+    }
+}
+
+extension LazyVStack: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkCreateLazyListWidget(items: items, contentBuilder: contentBuilder,
+                                orientation: GTK_ORIENTATION_VERTICAL)
+    }
+}
+
+extension LazyHStack: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkCreateLazyListWidget(items: items, contentBuilder: contentBuilder,
+                                orientation: GTK_ORIENTATION_HORIZONTAL)
+    }
+}
+
+// MARK: - LazyVGrid / LazyHGrid GTK extensions
+
+/// Context for lazy grid factory callbacks.
+private class LazyGridContext {
+    let itemCount: Int
+    let renderItem: (Int) -> UnsafeMutablePointer<GtkWidget>
+    let cellMinWidth: Int
+
+    init<Data, Content: View>(items: [Data], contentBuilder: @escaping (Data) -> Content,
+                              cellMinWidth: Int) {
+        self.itemCount = items.count
+        self.cellMinWidth = cellMinWidth
+        self.renderItem = { index in
+            widgetFromOpaque(gtkRenderView(contentBuilder(items[index])))
+        }
+    }
+}
+
+/// Derive min/max column counts from the GridItem array.
+private func deriveColumnBounds(from gridItems: [GridItem]) -> (min: Int, max: Int) {
+    guard !gridItems.isEmpty else { return (1, 7) }
+    for item in gridItems {
+        if case .adaptive = item.size { return (1, 100) }
+    }
+    return (gridItems.count, gridItems.count)
+}
+
+/// Extract the adaptive minimum width from GridItem array.
+private func extractAdaptiveMinimum(from gridItems: [GridItem]) -> Int {
+    for item in gridItems {
+        if case .adaptive(let minimum) = item.size, minimum > 0 {
+            return Int(minimum)
+        }
+    }
+    return 0
+}
+
+/// Create a GtkGridView-based lazy grid widget.
+private func gtkCreateLazyGridWidget<Data, Content: View>(
+    items: [Data],
+    contentBuilder: @escaping (Data) -> Content,
+    gridItems: [GridItem],
+    orientation: GtkOrientation
+) -> OpaquePointer {
+    let stringList = gtk_swift_string_list_new()!
+    for i in 0..<items.count {
+        gtk_swift_string_list_append(stringList, "\(i)")
+    }
+
+    let noSelection = gtk_swift_no_selection_new(stringList)
+    let factory = gtk_swift_signal_list_item_factory_new()!
+
+    let cellMinWidth = extractAdaptiveMinimum(from: gridItems)
+    let context = LazyGridContext(items: items, contentBuilder: contentBuilder,
+                                  cellMinWidth: cellMinWidth)
+    let contextPtr = Unmanaged.passRetained(context).toOpaque()
+    g_object_set_data_full(
+        factory.assumingMemoryBound(to: GObject.self),
+        "gtk-swift-lazy-grid-context",
+        contextPtr,
+        { userData in Unmanaged<LazyGridContext>.fromOpaque(userData!).release() }
+    )
+
+    g_signal_connect_data(factory, "setup",
+        unsafeBitCast(lazyGridSetupCallback, to: GCallback.self),
+        nil, nil, GConnectFlags(rawValue: 0))
+    g_signal_connect_data(factory, "bind",
+        unsafeBitCast(lazyGridBindCallback, to: GCallback.self),
+        nil, nil, GConnectFlags(rawValue: 0))
+    g_signal_connect_data(factory, "unbind",
+        unsafeBitCast(lazyGridUnbindCallback, to: GCallback.self),
+        nil, nil, GConnectFlags(rawValue: 0))
+
+    let gridView = gtk_swift_grid_view_new(noSelection, factory)!
+    gtk_swift_orientable_set_orientation(gridView, orientation)
+
+    let (minCols, maxCols) = deriveColumnBounds(from: gridItems)
+    gtk_swift_grid_view_set_min_columns(gridView, guint(minCols))
+    gtk_swift_grid_view_set_max_columns(gridView, guint(maxCols))
+
+    gtk_widget_set_vexpand(gridView, 1)
+    gtk_widget_set_hexpand(gridView, 1)
+
+    return opaqueFromWidget(gridView)
+}
+
+// Factory callbacks for lazy grids
+
+private let lazyGridSetupCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { factoryPtr, listItem, userData in
+    guard let listItem = listItem else { return }
+    let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+    gtk_widget_set_hexpand(box, 1)
+
+    if let factoryPtr = factoryPtr,
+       let contextPtr = g_object_get_data(
+           factoryPtr.assumingMemoryBound(to: GObject.self),
+           "gtk-swift-lazy-grid-context") {
+        let context = Unmanaged<LazyGridContext>.fromOpaque(contextPtr).takeUnretainedValue()
+        if context.cellMinWidth > 0 {
+            gtk_widget_set_size_request(box, gint(context.cellMinWidth), -1)
+        }
+    }
+
+    gtk_swift_list_item_set_child(listItem, box)
+}
+
+private let lazyGridBindCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { factoryPtr, listItem, userData in
+    guard let factoryPtr = factoryPtr, let listItem = listItem else { return }
+
+    guard let gobject = gtk_swift_list_item_get_item(listItem) else { return }
+    guard let cStr = gtk_swift_string_object_get_string(gobject) else { return }
+    guard let index = Int(String(cString: cStr)) else {
+        lazyGridClearChild(listItem)
+        return
+    }
+
+    guard let contextPtr = g_object_get_data(
+        factoryPtr.assumingMemoryBound(to: GObject.self),
+        "gtk-swift-lazy-grid-context"
+    ) else { return }
+    let context = Unmanaged<LazyGridContext>.fromOpaque(contextPtr).takeUnretainedValue()
+
+    guard index >= 0 && index < context.itemCount else {
+        lazyGridClearChild(listItem)
+        return
+    }
+
+    guard let box = gtk_swift_list_item_get_child(listItem) else { return }
+    while let child = gtk_widget_get_first_child(box) {
+        gtk_box_remove(boxPointer(box), child)
+    }
+    gtk_box_append(boxPointer(box), context.renderItem(index))
+}
+
+private let lazyGridUnbindCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { factory, listItem, userData in
+    guard let listItem = listItem else { return }
+    lazyGridClearChild(listItem)
+}
+
+private func lazyGridClearChild(_ listItem: gpointer) {
+    guard let box = gtk_swift_list_item_get_child(listItem) else { return }
+    while let child = gtk_widget_get_first_child(box) {
+        gtk_box_remove(boxPointer(box), child)
+    }
+}
+
+extension LazyVGrid: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkCreateLazyGridWidget(items: items, contentBuilder: contentBuilder,
+                                gridItems: gridItems, orientation: GTK_ORIENTATION_VERTICAL)
+    }
+}
+
+extension LazyHGrid: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkCreateLazyGridWidget(items: items, contentBuilder: contentBuilder,
+                                gridItems: gridItems, orientation: GTK_ORIENTATION_HORIZONTAL)
+    }
+}
+
 // MARK: - Stateful view rendering
 
 private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {
