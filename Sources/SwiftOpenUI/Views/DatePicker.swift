@@ -1,10 +1,4 @@
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Musl)
-import Musl
-#elseif canImport(Darwin)
-import Darwin
-#endif
+import Foundation
 
 /// A simple date value type for DatePicker (no Foundation dependency).
 public struct DateComponents: Equatable {
@@ -20,16 +14,10 @@ public struct DateComponents: Equatable {
 
     /// Creates DateComponents for today's date.
     public init() {
-        var t = time(nil)
-        var tm = tm()
-        #if os(Windows)
-        _ = localtime_s(&tm, &t)
-        #else
-        localtime_r(&t, &tm)
-        #endif
-        self.year = Int(tm.tm_year) + 1900
-        self.month = Int(tm.tm_mon) + 1
-        self.day = Int(tm.tm_mday)
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        self.year = components.year ?? 1970
+        self.month = components.month ?? 1
+        self.day = components.day ?? 1
     }
 }
 

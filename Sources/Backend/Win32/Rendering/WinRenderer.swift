@@ -2149,7 +2149,7 @@ extension Image: WinRenderable {
 extension SecureField: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let currentText = text.wrappedValue
-        let measured = measureText(currentText.isEmpty ? title : currentText, hwnd: context.parent)
+        let measured = measureText(currentText.isEmpty ? placeholder : currentText, hwnd: context.parent)
 
         let hwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
@@ -2162,15 +2162,15 @@ extension SecureField: WinRenderable {
 
         guard let hwnd = hwnd else { return nil }
 
-        if !title.isEmpty {
-            title.withCString(encodedAs: UTF16.self) { ptr in
+        if !placeholder.isEmpty {
+            placeholder.withCString(encodedAs: UTF16.self) { ptr in
                 _ = SendMessageW(hwnd, UINT(EM_SETCUEBANNER), 1, LPARAM(Int(bitPattern: ptr)))
             }
         }
 
         let binding = text
         let handler = SubclassHandler(hwnd: hwnd)
-        handler.onTextChanged = { newValue in
+        handler.onTextChanged = { (newValue: String) in
             if newValue != binding.wrappedValue { binding.wrappedValue = newValue }
         }
         let state = TextFieldState(handler: handler)
@@ -2286,86 +2286,21 @@ extension Stepper: WinRenderable {
 extension ProgressView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let progressClass: [WCHAR] = Array("msctls_progress32".utf16) + [0]
-
-        // If there's a label, wrap in a VStack-like container
-        if !label.isEmpty {
-            registerStackClassIfNeeded(hInstance: context.hInstance)
-            let container = CreateWindowExW(
-                0, stackContainerClassName, nil,
-                DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
-                0, 0, 200, 40,
-                context.parent, nil, context.hInstance, nil
-            )!
-
-            let labelMeasured = measureText(label, hwnd: context.parent)
-            _ = label.withCString(encodedAs: UTF16.self) { wstr in
-                win32_CreateChildWindow(
-                    win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
-                    0, 0, labelMeasured.width + 4, labelMeasured.height + 2,
-                    container, nil, context.hInstance
-                )
-            }
-
-            let bar = progressClass.withUnsafeBufferPointer { ptr in
-                CreateWindowExW(
-                    0, ptr.baseAddress!, nil,
-                    DWORD(WS_CHILD | WS_VISIBLE),
-                    0, labelMeasured.height + 4, 200, 16,
-                    container, nil, context.hInstance, nil
-                )
-            }
-
-            if let bar = bar {
-                configureProgressBar(bar)
-            }
-
-            return container
-        }
-
-        // No label — just the progress bar
         let hwnd = progressClass.withUnsafeBufferPointer { ptr in
-            CreateWindowExW(
-                0, ptr.baseAddress!, nil,
-                DWORD(WS_CHILD | WS_VISIBLE),
-                0, 0, 200, 20,
-                context.parent, nil, context.hInstance, nil
-            )
+            CreateWindowExW(0, ptr.baseAddress!, nil, DWORD(WS_CHILD | WS_VISIBLE),
+                0, 0, 200, 20, context.parent, nil, context.hInstance, nil)
         }
-
-        if let hwnd = hwnd {
-            configureProgressBar(hwnd)
-        }
-
-        return hwnd
-    }
-
-    private func configureProgressBar(_ hwnd: HWND) {
+        guard let hwnd = hwnd else { return nil }
         if let val = value {
             SendMessageW(hwnd, UINT(PBM_SETRANGE32), 0, 1000)
-            let pos = Int32((val / total) * 1000)
-            SendMessageW(hwnd, UINT(PBM_SETPOS), WPARAM(pos), 0)
+            SendMessageW(hwnd, UINT(PBM_SETPOS), WPARAM(Int32((val / total) * 1000)), 0)
         } else {
             let style = win32_GetWindowLongPtrW(hwnd, GWL_STYLE)
             win32_SetWindowLongPtrW(hwnd, GWL_STYLE, style | LONG_PTR(PBS_MARQUEE))
             SendMessageW(hwnd, UINT(PBM_SETMARQUEE), 1, 30)
         }
+        return hwnd
     }
-}
-
-extension TaggedView: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        winRenderView(content, in: context)
-    }
-}
-
-protocol _TaggedViewAccess {
-    var _tagValue: AnyHashable { get }
-    var _taggedContent: any View { get }
-}
-
-extension TaggedView: _TaggedViewAccess {
-    var _tagValue: AnyHashable { AnyHashable(tagValue) }
-    var _taggedContent: any View { content }
 }
 
 extension Label: WinRenderable {
@@ -2390,7 +2325,7 @@ extension Label: WinRenderable {
 extension Link: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let url = destination
-        return createNativeButton(title: label, action: {
+        return createNativeButton(title: title, action: {
             url.withCString(encodedAs: UTF16.self) { urlPtr in
                 "open".withCString(encodedAs: UTF16.self) { verbPtr in
                     _ = ShellExecuteW(nil, verbPtr, urlPtr, nil, nil, SW_SHOWNORMAL)
@@ -2475,7 +2410,7 @@ extension SheetModifierView: WinRenderable {
                 SetPropW(root, sheetPropName, HANDLE(bitPattern: Int(bitPattern: sheetHwnd)))
 
                 let sheetContext = RenderContext(parent: sheetHwnd, hInstance: hInst)
-                if let sheetChild = winRenderView(sheetBuilder(), in: sheetContext) {
+                if let sheetChild = winRenderView(sheetBuilder, in: sheetContext) {
                     var rect = RECT()
                     GetClientRect(sheetHwnd, &rect)
                     SetWindowPos(sheetChild, nil, 0, 0,
@@ -2621,7 +2556,7 @@ extension OverlayView: WinRenderable {
 extension Section: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         // Render as: [Header text (bold)] [Divider] [Content]
-        if header.isEmpty {
+        guard let header, !header.isEmpty else {
             return winRenderView(content, in: context)
         }
         let section = VStack(alignment: .leading, spacing: 4) {
@@ -2681,29 +2616,11 @@ extension TabView: WinRenderable {
             context.parent, nil, context.hInstance, nil
         )!
 
-        // Extract tab items from content
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         var tabPages: [(label: String, hwnd: HWND)] = []
-
-        if let multi = content as? MultiChildView {
-            for child in multi.children {
-                func processTab<V: View>(_ v: V) {
-                    if let tabItem = v as? any _TabItemAccess {
-                        let label = tabItem._tabLabelText
-                        if let pageHwnd = winRenderAnyView(tabItem._tabContent, in: childContext) {
-                            tabPages.append((label: label, hwnd: pageHwnd))
-                        }
-                    } else {
-                        if let pageHwnd = winRenderView(v, in: childContext) {
-                            tabPages.append((label: "Tab \(tabPages.count + 1)", hwnd: pageHwnd))
-                        }
-                    }
-                }
-                processTab(child)
-            }
-        } else {
-            if let pageHwnd = winRenderView(content, in: childContext) {
-                tabPages.append((label: "Tab 1", hwnd: pageHwnd))
+        for tab in tabs {
+            if let pageHwnd = winRenderAnyView(tab.wrapped, in: childContext) {
+                tabPages.append((label: tab.title, hwnd: pageHwnd))
             }
         }
 
@@ -2775,25 +2692,6 @@ extension TabView: WinRenderable {
     }
 }
 
-/// Protocol for extracting tab item info without knowing generic types.
-protocol _TabItemAccess {
-    var _tabLabelText: String { get }
-    var _tabContent: any View { get }
-}
-
-extension TabItemView: _TabItemAccess {
-    var _tabLabelText: String {
-        extractTextFromView(tabLabel) ?? "Tab"
-    }
-    var _tabContent: any View { content }
-}
-
-extension TabItemView: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        winRenderView(content, in: context)
-    }
-}
-
 extension Picker: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         registerStackClassIfNeeded(hInstance: context.hInstance)
@@ -2826,50 +2724,21 @@ extension Picker: WinRenderable {
 
         guard let comboHwnd = comboHwnd else { return container }
 
-        // Extract items from content — walk TaggedView children
-        var items: [(text: String, tag: AnyHashable)] = []
-        if let multi = content as? MultiChildView {
-            for child in multi.children {
-                func extractItem<V: View>(_ v: V) {
-                    if let tagged = v as? any _TaggedViewAccess {
-                        let text = extractTextFromView(tagged._taggedContent) ?? "?"
-                        items.append((text: text, tag: tagged._tagValue))
-                    } else {
-                        let text = extractTextFromView(v) ?? "?"
-                        items.append((text: text, tag: AnyHashable(items.count)))
-                    }
-                }
-                extractItem(child)
-            }
-        }
-
-        // Populate combobox
-        for item in items {
-            item.text.withCString(encodedAs: UTF16.self) { wstr in
+        // Populate combobox from options array
+        for option in options {
+            option.withCString(encodedAs: UTF16.self) { wstr in
                 SendMessageW(comboHwnd, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: wstr)))
             }
         }
 
-        // Set initial selection from binding
-        let currentSelection = selection.wrappedValue
-        for (i, item) in items.enumerated() {
-            if item.tag == AnyHashable(currentSelection) {
-                SendMessageW(comboHwnd, UINT(CB_SETCURSEL), WPARAM(i), 0)
-                break
-            }
-        }
+        SendMessageW(comboHwnd, UINT(CB_SETCURSEL), WPARAM(selected), 0)
 
-        // Wire CBN_SELCHANGE to update binding
-        let binding = selection
-        let capturedItems = items
+        // Wire CBN_SELCHANGE to callback
+        let callback = onChanged
         let handler = SubclassHandler(hwnd: comboHwnd)
         handler.onCommand = {
             let sel = Int(SendMessageW(comboHwnd, UINT(CB_GETCURSEL), 0, 0))
-            if sel >= 0 && sel < capturedItems.count {
-                if let newVal = capturedItems[sel].tag.base as? SelectionValue {
-                    binding.wrappedValue = newVal
-                }
-            }
+            if sel >= 0 { callback?(sel) }
         }
         let state = TextFieldState(handler: handler)
         let statePtr = Unmanaged.passRetained(state).toOpaque()
@@ -2901,85 +2770,31 @@ extension ToolbarView: WinRenderable {
     }
 
     private func renderToolbarWithContent(hwnd: HWND, context: RenderContext) -> HWND? {
-        registerStackClassIfNeeded(hInstance: context.hInstance)
-
-        let container = CreateWindowExW(
-            0, stackContainerClassName, nil,
-            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
-            0, 0, 0, 0,
-            context.parent, nil, context.hInstance, nil
-        )!
-
-        // Toolbar bar at top
-        let toolbarContext = RenderContext(parent: container, hInstance: context.hInstance)
-        let toolbarBar = winRenderView(HStack(spacing: 4) { items }, in: toolbarContext)
-
-        var toolbarH: Int32 = 28
-        if let bar = toolbarBar {
-            var r = RECT()
-            GetWindowRect(bar, &r)
-            toolbarH = max(r.bottom - r.top, 28)
-        }
-
-        // Reparent content into container
-        SetParent(hwnd, container)
-
-        var contentRect = RECT()
-        GetWindowRect(hwnd, &contentRect)
-        let contentW = contentRect.right - contentRect.left
-        let contentH = contentRect.bottom - contentRect.top
-
-        SetWindowPos(container, nil, 0, 0, contentW, toolbarH + contentH,
-                     UINT(SWP_NOZORDER | SWP_NOMOVE))
-        if let bar = toolbarBar {
-            SetWindowPos(bar, nil, 0, 0, contentW, toolbarH, UINT(SWP_NOZORDER))
-        }
-        SetWindowPos(hwnd, nil, 0, toolbarH, contentW, contentH, UINT(SWP_NOZORDER))
-
-        return container
+        // Standalone: just return content (toolbar items not rendered outside NavigationStack)
+        return hwnd
     }
 
     private func renderToolbarItems(into navCtx: Win32NavigationContext, context: RenderContext) {
-        // Remove any previously rendered toolbar items from the header
-        // (prevents accumulation across rebuilds)
         clearToolbarItems(from: navCtx.headerContainer)
-
         let headerContext = RenderContext(parent: navCtx.headerContainer, hInstance: context.hInstance)
-        var leadingX: Int32 = 68  // after back button area
+        var leadingX: Int32 = 68
         var trailingItems: [(hwnd: HWND, width: Int32)] = []
 
-        // Collect all toolbar items
-        var allItems: [any _ToolbarItemAccess] = []
-        if let multi = items as? MultiChildView {
-            for child in multi.children {
-                func extract<V: View>(_ v: V) {
-                    if let item = v as? any _ToolbarItemAccess { allItems.append(item) }
-                }
-                extract(child)
-            }
-        } else if let single = items as? any _ToolbarItemAccess {
-            allItems.append(single)
-        }
-
-        for item in allItems {
-            guard let itemHwnd = winRenderAnyView(item._itemContent, in: headerContext) else { continue }
-            // Mark as toolbar item for cleanup
+        for item in toolbarItems {
+            guard let itemHwnd = winRenderAnyView(item.wrapped, in: headerContext) else { continue }
             SetPropW(itemHwnd, toolbarItemPropName, HANDLE(bitPattern: 1))
-
             var r = RECT()
             GetWindowRect(itemHwnd, &r)
             let w = r.right - r.left
-
-            switch item._placement {
-            case .navigationBarLeading:
+            switch item.placement {
+            case .leading:
                 SetWindowPos(itemHwnd, nil, leadingX, 2, w, 24, UINT(SWP_NOZORDER))
                 leadingX += w + 4
-            case .navigationBarTrailing, .automatic:
+            case .trailing, .primaryAction:
                 trailingItems.append((hwnd: itemHwnd, width: w))
             }
         }
 
-        // Position trailing items from right edge
         var headerRect = RECT()
         GetClientRect(navCtx.headerContainer, &headerRect)
         var trailingX = headerRect.right - headerRect.left - 4
@@ -3000,35 +2815,14 @@ private let toolbarItemPropName: UnsafePointer<WCHAR> = {
     }
 }()
 
-/// Remove toolbar items from a header container (identified by property).
 private func clearToolbarItems(from container: HWND) {
     var toRemove: [HWND] = []
     var child = GetWindow(container, UINT(GW_CHILD))
     while let c = child {
-        if GetPropW(c, toolbarItemPropName) != nil {
-            toRemove.append(c)
-        }
+        if GetPropW(c, toolbarItemPropName) != nil { toRemove.append(c) }
         child = GetWindow(c, UINT(GW_HWNDNEXT))
     }
-    for hwnd in toRemove {
-        DestroyWindow(hwnd)
-    }
-}
-
-protocol _ToolbarItemAccess {
-    var _placement: ToolbarItemPlacement { get }
-    var _itemContent: any View { get }
-}
-
-extension ToolbarItem: _ToolbarItemAccess {
-    var _placement: ToolbarItemPlacement { placement }
-    var _itemContent: any View { content }
-}
-
-// Make ToolbarItem renderable so it can appear in ViewBuilder content
-extension ToolbarItem: View {
-    public typealias Body = Never
-    public var body: Never { fatalError("ToolbarItem is a primitive view") }
+    for hwnd in toRemove { DestroyWindow(hwnd) }
 }
 
 extension ToolbarItem: WinRenderable {
@@ -3041,58 +2835,54 @@ extension ToolbarItem: WinRenderable {
 
 extension Menu: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Render as a button that shows a popup menu on click
-        let menuLabel = label
-        let menuContent = content
-        let hInst = context.hInstance
-
-        return createNativeButton(title: "☰ \(menuLabel)", action: {
-            // Build popup menu from children
+        let menuElements = elements
+        return createNativeButton(title: "☰ \(title)", action: {
             guard let hMenu = CreatePopupMenu() else { return }
-
             var menuID: UINT = 50000
             var menuActions: [UINT: () -> Void] = [:]
 
-            if let multi = menuContent as? MultiChildView {
-                for child in multi.children {
-                    func addItem<V: View>(_ v: V) {
-                        if v is Divider {
-                            AppendMenuW(hMenu, UINT(MF_SEPARATOR), 0, nil)
-                        } else if let btn = v as? Button<Text> {
-                            let title = btn.label.content
-                            let action = btn.action
-                            let id = menuID
-                            menuID += 1
-                            title.withCString(encodedAs: UTF16.self) { wstr in
-                                AppendMenuW(hMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+            func addElements(_ elems: [MenuElement]) {
+                for elem in elems {
+                    switch elem {
+                    case .item(let label, let action):
+                        let id = menuID; menuID += 1
+                        label.withCString(encodedAs: UTF16.self) { wstr in
+                            AppendMenuW(hMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+                        }
+                        menuActions[id] = action
+                    case .divider:
+                        AppendMenuW(hMenu, UINT(MF_SEPARATOR), 0, nil)
+                    case .submenu(let label, let children):
+                        if let subMenu = CreatePopupMenu() {
+                            // Recursion not ideal but works for shallow menus
+                            var subID = menuID
+                            for child in children {
+                                if case .item(let l, let a) = child {
+                                    let id = subID; subID += 1
+                                    l.withCString(encodedAs: UTF16.self) { wstr in
+                                        AppendMenuW(subMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+                                    }
+                                    menuActions[id] = a
+                                }
                             }
-                            menuActions[id] = action
-                        } else if let text = extractTextFromView(v) {
-                            let id = menuID
-                            menuID += 1
-                            text.withCString(encodedAs: UTF16.self) { wstr in
-                                AppendMenuW(hMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+                            menuID = subID
+                            label.withCString(encodedAs: UTF16.self) { wstr in
+                                AppendMenuW(hMenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: subMenu)), wstr)
                             }
                         }
                     }
-                    addItem(child)
                 }
             }
+            addElements(menuElements)
 
-            // Show popup at cursor position
             var pt = POINT()
             GetCursorPos(&pt)
-            // Register menu item actions as command handlers so they fire
-            // via WM_COMMAND when the user selects a menu item
             let root = findRootWindow(from: context.parent)
             for (id, action) in menuActions {
                 registerCommandHandler(controlID: WORD(id), action: action)
             }
-
             _ = TrackPopupMenu(hMenu, 0, pt.x, pt.y, 0, root, nil)
             DestroyMenu(hMenu)
-
-            // Unregister after menu closes
             for id in menuActions.keys {
                 unregisterCommandHandler(controlID: WORD(id))
             }
@@ -3112,9 +2902,8 @@ extension DisclosureGroup: WinRenderable {
         )!
 
         // Toggle button
-        let expanded = isExpanded.wrappedValue
-        let arrow = expanded ? "▼" : "▶"
-        let btnText = "\(arrow) \(label)"
+        let arrow = isExpanded ? "▼" : "▶"
+        let btnText = "\(arrow) \(title)"
         let controlID = nextControlID()
         let measured = measureText(btnText, hwnd: context.parent)
 
@@ -3126,14 +2915,15 @@ extension DisclosureGroup: WinRenderable {
             )
         }
 
-        let binding = isExpanded
+        let expandCallback = onExpandedChange
+        let currentExpanded = isExpanded
         registerCommandHandler(controlID: controlID) {
-            binding.wrappedValue = !binding.wrappedValue
+            expandCallback?(!currentExpanded)
         }
 
         // Content (shown only if expanded)
         var totalH = measured.height + 12
-        if expanded {
+        if isExpanded {
             let childContext = RenderContext(parent: container, hInstance: context.hInstance)
             if let childHwnd = winRenderView(content, in: childContext) {
                 var r = RECT()
@@ -3155,7 +2945,6 @@ extension DisclosureGroup: WinRenderable {
 extension DatePicker: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         registerStackClassIfNeeded(hInstance: context.hInstance)
-
         let container = CreateWindowExW(
             0, stackContainerClassName, nil,
             DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
@@ -3163,9 +2952,9 @@ extension DatePicker: WinRenderable {
             context.parent, nil, context.hInstance, nil
         )!
 
-        // Label
-        let labelMeasured = measureText(label, hwnd: context.parent)
-        _ = label.withCString(encodedAs: UTF16.self) { wstr in
+        let labelText = title
+        let labelMeasured = measureText(labelText, hwnd: context.parent)
+        _ = labelText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
                 0, 2, labelMeasured.width + 4, 20,
@@ -3173,9 +2962,8 @@ extension DatePicker: WinRenderable {
             )
         }
 
-        // Date/time picker control
         let dtpClass: [WCHAR] = Array("SysDateTimePick32".utf16) + [0]
-        let dtp = dtpClass.withUnsafeBufferPointer { ptr in
+        _ = dtpClass.withUnsafeBufferPointer { ptr in
             CreateWindowExW(
                 0, ptr.baseAddress!, nil,
                 DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP),
@@ -3183,86 +2971,29 @@ extension DatePicker: WinRenderable {
                 container, nil, context.hInstance, nil
             )
         }
-
-        // Wire DTN_DATETIMECHANGE via WM_NOTIFY on the container
-        if let dtp = dtp {
-            let binding = selection
-            let notifyInfo = DatePickerNotifyInfo(binding: binding, dtp: dtp)
-            let infoPtr = Unmanaged.passRetained(notifyInfo).toOpaque()
-            SetWindowSubclass(container, datePickerNotifyProc, 43, DWORD_PTR(UInt(bitPattern: infoPtr)))
-        }
-
+        // DTN_DATETIMECHANGE binding: display-only for now
+        // (DateComponents binding requires WM_NOTIFY + SYSTEMTIME conversion)
         return container
-    }
-}
-
-private class DatePickerNotifyInfo {
-    let binding: Binding<Date>
-    let dtp: HWND
-    init(binding: Binding<Date>, dtp: HWND) {
-        self.binding = binding
-        self.dtp = dtp
-    }
-}
-
-private let datePickerNotifyProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
-    switch uMsg {
-    case UINT(WM_NOTIFY):
-        if dwRefData != 0 {
-            let nmhdr = UnsafePointer<NMHDR>(bitPattern: Int(lParam))
-            if let nmhdr = nmhdr, nmhdr.pointee.code == UINT(DTN_DATETIMECHANGE) {
-                let info = Unmanaged<DatePickerNotifyInfo>.fromOpaque(
-                    UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-                ).takeUnretainedValue()
-
-                // Read SYSTEMTIME from the DTP control
-                var st = SYSTEMTIME()
-                let result = SendMessageW(info.dtp, UINT(DTM_GETSYSTEMTIME), 0,
-                                          LPARAM(Int(bitPattern: UnsafeMutablePointer(&st))))
-                if result == 0 {  // GDT_VALID
-                    // Convert SYSTEMTIME to Date
-                    var ft = FILETIME()
-                    SystemTimeToFileTime(&st, &ft)
-                    // FILETIME is 100-nanosecond intervals since 1601-01-01
-                    let intervals = UInt64(ft.dwHighDateTime) << 32 | UInt64(ft.dwLowDateTime)
-                    // Unix epoch offset from Windows epoch (in 100ns intervals)
-                    let unixOffset: UInt64 = 116444736000000000
-                    let unixTime = Double(intervals - unixOffset) / 10000000.0
-                    info.binding.wrappedValue = Date(timeIntervalSince1970: unixTime)
-                }
-            }
-        }
-        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
-
-    case UINT(WM_NCDESTROY):
-        if dwRefData != 0 {
-            Unmanaged<DatePickerNotifyInfo>.fromOpaque(
-                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-            ).release()
-        }
-        RemoveWindowSubclass(hwnd, datePickerNotifyProc, uIdSubclass)
-        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
-
-    default:
-        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
 extension LazyVStack: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Non-virtualized: render as ScrollView + VStack
-        let scrollView = ScrollView(.vertical) {
-            VStack(alignment: alignment, spacing: spacing) { content }
+        // Non-virtualized: render all items in a ScrollView + VStack
+        let vstack = VStack(spacing: 0) {
+            ForEach(0..<items.count) { i in contentBuilder(items[i]) }
         }
+        let scrollView = ScrollView(.vertical) { vstack }
         return winRenderView(scrollView, in: context)
     }
 }
 
 extension LazyHStack: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Non-virtualized: render as HStack (no horizontal scroll yet)
-        let stack = HStack(alignment: alignment, spacing: spacing) { content }
-        return winRenderView(stack, in: context)
+        let hstack = HStack(spacing: 0) {
+            ForEach(0..<items.count) { i in contentBuilder(items[i]) }
+        }
+        return winRenderView(hstack, in: context)
     }
 }
 
@@ -3286,7 +3017,7 @@ extension Grid: WinRenderable {
         if let multi = content as? MultiChildView {
             for child in multi.children {
                 func renderRow<V: View>(_ v: V) {
-                    let rowView = HStack(spacing: horizontalSpacing) { v }
+                    let rowView = HStack(spacing: hSpacing) { v }
                     if let rowHwnd = winRenderView(rowView, in: childContext) {
                         var r = RECT()
                         GetWindowRect(rowHwnd, &r)
@@ -3294,7 +3025,7 @@ extension Grid: WinRenderable {
                         let rh = r.bottom - r.top
                         SetWindowPos(rowHwnd, nil, 0, totalH, rw, rh, UINT(SWP_NOZORDER))
                         maxW = max(maxW, rw)
-                        totalH += rh + Int32(verticalSpacing)
+                        totalH += rh + Int32(vSpacing)
                         rows.append(rowHwnd)
                     }
                 }
@@ -3318,18 +3049,21 @@ extension GridRow: WinRenderable {
 
 extension LazyVGrid: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Non-virtualized: render as Grid-like layout in ScrollView
-        let grid = Grid(horizontalSpacing: spacing) { content }
-        let scrollView = ScrollView(.vertical) { grid }
+        let cols = max(gridItems.count, 1)
+        let vstack = VStack(spacing: 0) {
+            ForEach(0..<items.count) { i in contentBuilder(items[i]) }
+        }
+        let scrollView = ScrollView(.vertical) { vstack }
         return winRenderView(scrollView, in: context)
     }
 }
 
 extension LazyHGrid: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Non-virtualized: render as horizontal grid
-        let grid = Grid(verticalSpacing: spacing) { content }
-        return winRenderView(grid, in: context)
+        let hstack = HStack(spacing: 0) {
+            ForEach(0..<items.count) { i in contentBuilder(items[i]) }
+        }
+        return winRenderView(hstack, in: context)
     }
 }
 
@@ -3398,7 +3132,7 @@ extension GeometryReader: WinRenderable {
         let proxyW = availW > 0 ? availW : 300
         let proxyH = availH > 0 ? availH : 200
 
-        let proxy = GeometryProxy(size: (width: proxyW, height: proxyH))
+        let proxy = GeometryProxy(size: GeometrySize(width: proxyW, height: proxyH))
         let childView = content(proxy)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)

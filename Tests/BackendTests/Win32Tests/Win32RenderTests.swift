@@ -898,7 +898,7 @@ final class Win32RenderTests: XCTestCase {
 
     func testStepperCreatesContainer() {
         let ctx = testContext()
-        let binding = Binding<Int>(get: { 5 }, set: { _ in })
+        let binding = Binding<Double>(get: { 5 }, set: { _ in })
         let hwnd = winRenderView(Stepper("Count", value: binding), in: ctx)
         XCTAssertNotNil(hwnd)
         // Should have children: label, value, -, +
@@ -913,7 +913,7 @@ final class Win32RenderTests: XCTestCase {
 
     func testProgressViewCreatesBar() {
         let ctx = testContext()
-        let hwnd = winRenderView(ProgressView("Loading", value: 0.5), in: ctx)
+        let hwnd = winRenderView(ProgressView(value: 0.5), in: ctx)
         XCTAssertNotNil(hwnd)
     }
 
@@ -954,7 +954,7 @@ final class Win32RenderTests: XCTestCase {
     func testOverlayRendersContentAndOverlay() {
         let ctx = testContext()
         let hwnd = winRenderView(
-            Text("base").overlay(Text("top"), alignment: .center),
+            Text("base").overlay(alignment: .center) { Text("top") },
             in: ctx
         )
         XCTAssertNotNil(hwnd)
@@ -982,8 +982,8 @@ final class Win32RenderTests: XCTestCase {
     func testTabViewCreatesButtonBar() {
         let ctx = testContext()
         let hwnd = winRenderView(TabView {
-            Text("Page 1").tabItem { Text("Tab 1") }
-            Text("Page 2").tabItem { Text("Tab 2") }
+            Tab("Tab 1") { Text("Page 1") }
+            Tab("Tab 2") { Text("Page 2") }
         }, in: ctx)
         XCTAssertNotNil(hwnd)
         var count = 0
@@ -998,8 +998,8 @@ final class Win32RenderTests: XCTestCase {
     func testTabViewSwitchesPages() {
         let ctx = testContext()
         let hwnd = winRenderView(TabView {
-            Text("Page 1").tabItem { Text("Tab 1") }
-            Text("Page 2").tabItem { Text("Tab 2") }
+            Tab("Tab 1") { Text("Page 1") }
+            Tab("Tab 2") { Text("Page 2") }
         }, in: ctx)!
 
         // Find tab buttons (Button class) and get second tab's control ID
