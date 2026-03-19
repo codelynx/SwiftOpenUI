@@ -27,6 +27,16 @@ public func gtkApplicationPointer(_ ptr: OpaquePointer) -> UnsafeMutablePointer<
 }
 
 @inlinable
+public func checkButtonPointer(_ ptr: UnsafeMutablePointer<GtkWidget>) -> UnsafeMutablePointer<GtkCheckButton> {
+    UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: GtkCheckButton.self)
+}
+
+@inlinable
+public func rangePointer(_ ptr: UnsafeMutablePointer<GtkWidget>) -> UnsafeMutablePointer<GtkRange> {
+    UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: GtkRange.self)
+}
+
+@inlinable
 public func widgetFromOpaque(_ ptr: OpaquePointer) -> UnsafeMutablePointer<GtkWidget> {
     UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: GtkWidget.self)
 }

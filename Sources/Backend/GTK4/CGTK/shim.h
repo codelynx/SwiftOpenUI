@@ -88,6 +88,13 @@ gtk_swift_widget_is_scale(GtkWidget *widget) {
     return GTK_IS_RANGE(widget) ? TRUE : FALSE;
 }
 
+// --- Image pixel size ---
+
+static inline void
+gtk_swift_image_set_pixel_size(GtkWidget *image, int size) {
+    gtk_image_set_pixel_size(GTK_IMAGE(image), size);
+}
+
 // --- Window titlebar helpers ---
 
 /// Set or clear the window titlebar. Pass NULL to remove a custom titlebar.

@@ -801,6 +801,235 @@ extension AnimatedView: GTKRenderable {
     }
 }
 
+// MARK: - Toggle GTK extension
+
+extension Toggle: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let check = label.isEmpty
+            ? gtk_check_button_new()!
+            : gtk_check_button_new_with_label(label)!
+        let checkPtr = checkButtonPointer(check)
+
+        gtk_check_button_set_active(checkPtr, isOn.wrappedValue ? 1 : 0)
+
+        let binding = isOn
+        let box = Unmanaged.passRetained(BoolClosureBox { newValue in
+            if newValue != binding.wrappedValue {
+                binding.wrappedValue = newValue
+            }
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(check),
+            "toggled",
+            unsafeBitCast({ (widget: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<BoolClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                let ptr = UnsafeMutableRawPointer(widget!).assumingMemoryBound(to: GtkCheckButton.self)
+                let active = gtk_check_button_get_active(ptr) != 0
+                box.closure(active)
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<BoolClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        return opaqueFromWidget(check)
+    }
+}
+
+// MARK: - Slider GTK extension
+
+/// Debounced slider state. Accumulates value changes and commits after
+/// a short delay so dragging doesn't trigger constant rebuilds.
+private class SliderState {
+    let closure: (Double) -> Void
+    var pendingValue: Double = 0
+    var timerSource: guint = 0
+
+    init(closure: @escaping (Double) -> Void) {
+        self.closure = closure
+    }
+
+    func scheduleCommit(_ value: Double) {
+        pendingValue = value
+        if timerSource != 0 {
+            g_source_remove(timerSource)
+            timerSource = 0
+        }
+        let ptr = Unmanaged.passRetained(self).toOpaque()
+        timerSource = g_timeout_add_full(
+            G_PRIORITY_DEFAULT_IDLE,
+            150,
+            { userData -> gboolean in
+                let state = Unmanaged<SliderState>.fromOpaque(userData!).takeUnretainedValue()
+                state.timerSource = 0
+                state.closure(state.pendingValue)
+                return 0 // G_SOURCE_REMOVE
+            },
+            ptr,
+            { userData in
+                Unmanaged<SliderState>.fromOpaque(userData!).release()
+            }
+        )
+    }
+}
+
+extension Slider: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let scale = gtk_scale_new_with_range(
+            GTK_ORIENTATION_HORIZONTAL,
+            range.lowerBound,
+            range.upperBound,
+            step
+        )!
+
+        gtk_widget_set_hexpand(scale, 1)
+        gtk_range_set_value(rangePointer(scale), value.wrappedValue)
+
+        let binding = value
+        let stepVal = step
+        let state = SliderState { newValue in
+            if abs(newValue - binding.wrappedValue) > stepVal * 0.01 {
+                binding.wrappedValue = newValue
+            }
+        }
+        let statePtr = Unmanaged.passRetained(state).toOpaque()
+
+        g_signal_connect_data(
+            gpointer(scale),
+            "value-changed",
+            unsafeBitCast({ (widget: gpointer?, userData: gpointer?) in
+                let state = Unmanaged<SliderState>.fromOpaque(userData!).takeUnretainedValue()
+                let rng = UnsafeMutableRawPointer(widget!).assumingMemoryBound(to: GtkRange.self)
+                state.scheduleCommit(gtk_range_get_value(rng))
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            statePtr,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<SliderState>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        return opaqueFromWidget(scale)
+    }
+}
+
+// MARK: - ScrollView GTK extension
+
+extension ScrollView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let scrolled = gtk_scrolled_window_new()!
+        let scrolledOp = OpaquePointer(scrolled)
+
+        let hPolicy: GtkPolicyType = axes.contains(.horizontal) ? GTK_POLICY_AUTOMATIC : GTK_POLICY_NEVER
+        let vPolicy: GtkPolicyType = axes.contains(.vertical) ? GTK_POLICY_AUTOMATIC : GTK_POLICY_NEVER
+        gtk_scrolled_window_set_policy(scrolledOp, hPolicy, vPolicy)
+
+        // Prevent GTK from allocating the child's full natural size
+        // in the scroll direction — otherwise scrolling never activates.
+        if axes.contains(.horizontal) {
+            gtk_scrolled_window_set_propagate_natural_width(scrolledOp, 0)
+        }
+        if axes.contains(.vertical) {
+            gtk_scrolled_window_set_propagate_natural_height(scrolledOp, 0)
+        }
+
+        let child = widgetFromOpaque(gtkRenderView(content))
+        if axes.contains(.vertical) {
+            gtk_widget_set_vexpand(child, 0)
+        }
+        if axes.contains(.horizontal) {
+            gtk_widget_set_hexpand(child, 0)
+        }
+        gtk_scrolled_window_set_child(scrolledOp, child)
+
+        gtk_widget_set_vexpand(scrolled, 1)
+        gtk_widget_set_hexpand(scrolled, 1)
+
+        return opaqueFromWidget(scrolled)
+    }
+}
+
+// MARK: - Image GTK extension
+
+extension Image: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let image: UnsafeMutablePointer<GtkWidget>
+        switch source {
+        case .systemName(let name):
+            image = gtk_image_new_from_icon_name(name)!
+            gtk_swift_image_set_pixel_size(image, gint(scale.pointSize))
+        case .filePath(let path):
+            image = gtk_image_new_from_file(path)!
+            let size = gint(scale.pointSize)
+            gtk_widget_set_size_request(image, size, size)
+        }
+        return opaqueFromWidget(image)
+    }
+}
+
+// MARK: - List GTK extension
+
+/// Track which GdkDisplays have had list CSS installed.
+private var listCSSDisplays: Set<ObjectIdentifier> = []
+
+private func ensureListCSS(_ widget: UnsafeMutablePointer<GtkWidget>) {
+    let display = gtk_widget_get_display(widget)!
+    let displayId = ObjectIdentifier(display as AnyObject)
+    guard !listCSSDisplays.contains(displayId) else { return }
+    listCSSDisplays.insert(displayId)
+
+    let provider = gtk_css_provider_new()!
+    let css = """
+        .swiftopenui-list { background: @view_bg_color; border-radius: 10px; padding: 0; }
+        .swiftopenui-list row { border-bottom: 1px solid alpha(currentColor, 0.18); padding: 8px 16px; }
+        .swiftopenui-list row:last-child { border-bottom: none; }
+        """
+    gtk_css_provider_load_from_string(provider, css)
+    gtk_swift_add_css_provider_to_display(
+        display,
+        provider,
+        UInt32(GTK_STYLE_PROVIDER_PRIORITY_USER)
+    )
+    g_object_unref(gpointer(provider))
+}
+
+extension List: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let listBox = gtk_list_box_new()!
+        let listBoxOp = OpaquePointer(listBox)
+        gtk_widget_set_hexpand(listBox, 1)
+        gtk_list_box_set_selection_mode(listBoxOp, GTK_SELECTION_NONE)
+
+        ensureListCSS(listBox)
+        gtk_widget_add_css_class(listBox, "swiftopenui-list")
+
+        for child in gtkRenderChildren(content) {
+            let widget = widgetFromOpaque(child)
+            gtk_widget_set_hexpand(widget, 1)
+            gtk_widget_set_halign(widget, GTK_ALIGN_FILL)
+            let row = gtk_list_box_row_new()!
+            gtk_list_box_row_set_child(
+                UnsafeMutableRawPointer(row).assumingMemoryBound(to: GtkListBoxRow.self),
+                widget
+            )
+            gtk_list_box_append(listBoxOp, row)
+        }
+
+        // Wrap in scrolled window
+        let scrolled = gtk_scrolled_window_new()!
+        let scrolledOp = OpaquePointer(scrolled)
+        gtk_scrolled_window_set_policy(scrolledOp, GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC)
+        gtk_scrolled_window_set_propagate_natural_width(scrolledOp, 1)
+        gtk_scrolled_window_set_child(scrolledOp, listBox)
+        gtk_widget_set_vexpand(scrolled, 1)
+        gtk_widget_set_hexpand(scrolled, 1)
+
+        return opaqueFromWidget(scrolled)
+    }
+}
+
 extension EnvironmentObjectModifierView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         var env = getCurrentEnvironment()

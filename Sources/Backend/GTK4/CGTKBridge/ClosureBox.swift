@@ -12,6 +12,12 @@ public class StringClosureBox {
     public init(_ closure: @escaping (String) -> Void) { self.closure = closure }
 }
 
+/// A box for closures that take a Bool parameter (e.g., toggle signals).
+public class BoolClosureBox {
+    public let closure: (Bool) -> Void
+    public init(_ closure: @escaping (Bool) -> Void) { self.closure = closure }
+}
+
 /// A box for closures that take two Double parameters (e.g., drag offsets).
 public class DoubleDoubleClosureBox {
     public let closure: (Double, Double) -> Void
