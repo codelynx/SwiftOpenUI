@@ -134,6 +134,52 @@ public func jniOnTextInput(
     return nil
 }
 
+/// Handle a drag gesture event from Kotlin.
+/// Called continuously during drag (onChanged) and once at end (onEnded).
+/// Drag events do NOT trigger rebuilds — the callback updates @State which does.
+///
+/// Called from Kotlin: `RenderBridge.nativeOnDragEvent(nodeId, phase, startX, startY, currentX, currentY)`
+@_cdecl("Java_com_example_swiftopenui_RenderBridge_nativeOnDragEvent")
+public func jniOnDragEvent(
+    env: UnsafeMutableRawPointer?,
+    thisObj: UnsafeMutableRawPointer?,
+    nodeId: Int64,
+    phase: Int32,  // 0 = changed, 1 = ended
+    startX: Double, startY: Double,
+    currentX: Double, currentY: Double
+) -> UnsafeMutableRawPointer? {
+    guard let env = env, let session = currentSession else { return nil }
+
+    session.host.pendingJSON = nil
+    session.host.needsRebuild = false
+
+    if let handler = androidDragHandlers[nodeId] {
+        let value = DragGestureValue(
+            startLocation: (x: startX, y: startY),
+            location: (x: currentX, y: currentY),
+            translation: (width: currentX - startX, height: currentY - startY)
+        )
+        if phase == 0 {
+            handler.onChanged?(value)
+        } else {
+            handler.onEnded?(value)
+        }
+    }
+
+    // If the callback mutated @State, rebuild
+    if session.host.needsRebuild {
+        session.host.needsRebuild = false
+        session.host.rebuild()
+    }
+
+    if let json = session.host.pendingJSON {
+        session.host.pendingJSON = nil
+        return jniNewString(env: env, string: json)
+    }
+
+    return nil
+}
+
 /// Handle a focus change event from Kotlin.
 /// Updates @FocusState via the registered handler.
 /// Focus changes use setValue (not setProgrammatic), so they do NOT

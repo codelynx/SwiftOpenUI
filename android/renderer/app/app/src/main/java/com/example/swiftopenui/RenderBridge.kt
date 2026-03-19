@@ -15,6 +15,10 @@ class RenderBridge {
     /// Handle a text input change. Returns new JSON if @State changed, or null if not.
     external fun nativeOnTextInput(nodeId: Long, text: String): String?
 
+    /// Handle a drag gesture event. Returns new JSON if @State changed.
+    /// phase: 0 = changed (continuous), 1 = ended
+    external fun nativeOnDragEvent(nodeId: Long, phase: Int, startX: Double, startY: Double, currentX: Double, currentY: Double): String?
+
     /// Notify Swift of a focus change. Does not return JSON — focus changes
     /// update @FocusState without triggering a rebuild.
     external fun nativeOnFocusChange(nodeId: Long, hasFocus: Boolean)

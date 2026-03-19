@@ -15,7 +15,7 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 | **onTapGesture** | ✅ | ✅ gtk_gesture_click | ✅ WM_LBUTTONDOWN/UP | ✅ click event | ✅ combinedClickable |
 | **onTapGesture(count: 2)** | ✅ | ✅ nPress | ✅ GetDoubleClickTime | ✅ click count + timeout | ✅ onDoubleTap |
 | **onLongPressGesture** | ✅ | ✅ gtk_gesture_long_press | ✅ SetTimer | ✅ pointerdown + setTimeout | ✅ onLongClick |
-| **onDrag** | ✅ | ✅ gtk_gesture_drag | ✅ WM_MOUSEMOVE | ✅ pointer events | ⚠️ props only (no callback) |
+| **onDrag** | ✅ | ✅ gtk_gesture_drag | ✅ WM_MOUSEMOVE | ✅ pointer events | ✅ detectDragGestures + JNI |
 | **opacity()** | ✅ | ✅ gtk_widget_set_opacity | ⚠️ D2D surface only | ✅ CSS opacity | ✅ Modifier.alpha |
 | **offset()** | ✅ | ✅ CSS transform | ✅ SetWindowPos | ✅ CSS translate | ✅ Modifier.offset |
 | **scaleEffect()** | ✅ | ✅ CSS transform | ⚠️ D2D surface only | ✅ CSS scale | ✅ Modifier.graphicsLayer |

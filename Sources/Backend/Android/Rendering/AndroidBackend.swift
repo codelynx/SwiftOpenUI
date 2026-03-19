@@ -23,6 +23,17 @@ public var androidButtonActions: [Int64: () -> Void] = [:]
 /// Cleared at the start of each render pass, populated during rendering.
 public var androidTextBindings: [Int64: Binding<String>] = [:]
 
+/// Maps stable node IDs (Int64) to drag gesture handlers.
+/// Cleared at the start of each render pass, populated during rendering.
+public var androidDragHandlers: [Int64: AndroidDragHandler] = [:]
+
+/// Drag gesture handler with onChanged and onEnded callbacks.
+public struct AndroidDragHandler {
+    public let minimumDistance: Double
+    public let onChanged: ((DragGestureValue) -> Void)?
+    public let onEnded: ((DragGestureValue) -> Void)?
+}
+
 /// Closure that updates a FocusState when the platform reports a focus change.
 /// The Bool parameter is true for focus gained, false for focus lost.
 public typealias FocusChangeHandler = (Bool) -> Void
@@ -52,6 +63,7 @@ private var _idChildCounters: [Int] = [0]
 public func androidBeginRenderPass() {
     androidButtonActions.removeAll()
     androidTextBindings.removeAll()
+    androidDragHandlers.removeAll()
     androidFocusHandlers.removeAll()
     _idPathStack = [0]
     _idChildCounters = [0]

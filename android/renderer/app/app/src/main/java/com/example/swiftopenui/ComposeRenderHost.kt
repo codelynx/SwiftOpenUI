@@ -17,6 +17,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
@@ -38,6 +40,16 @@ object ComposeRenderHost {
 
     /// Callback invoked when focus changes. Set by MainActivity.
     var onFocusChange: ((Long, Boolean) -> Unit)? = null
+
+    /// Callback invoked on drag events (phase 0=changed, 1=ended).
+    var onDragEvent: ((Long, Int, Double, Double, Double, Double) -> String?)? = null
+
+    /// The back button nodeId from the current NavigationStack, or 0 if at root.
+    /// Updated each time a navigationStack node is rendered.
+    var currentBackNodeId: Long = 0
+
+    /// Callback to update the root JSON (used by system back button).
+    var onJsonUpdate: ((String) -> Unit)? = null
 
     @Composable
     fun RenderFromJSON(json: String, onNewJson: (String) -> Unit) {
@@ -64,40 +76,64 @@ object ComposeRenderHost {
                 }
         }
 
-        when (type) {
-            "window" -> {
-                RenderContainer(children, onNewJson)
-                // Clear all focus when Swift signals programmatic focus was cleared to nil
-                if (props.optString("clearFocus", "") == "true") {
-                    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-                    androidx.compose.runtime.LaunchedEffect(Unit) {
-                        focusManager.clearFocus()
+        // Drag gesture: wrap in pointer input handler
+        val hasDrag = props.optString("onDrag", "") == "true" && nodeId != 0L
+        val dragModifier = if (hasDrag) {
+            Modifier.pointerInput(nodeId) {
+                var startX = 0f; var startY = 0f
+                detectDragGestures(
+                    onDragStart = { offset -> startX = offset.x; startY = offset.y },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val d = density
+                        val nj = onDragEvent?.invoke(nodeId, 0,
+                            (startX / d).toDouble(), (startY / d).toDouble(),
+                            (change.position.x / d).toDouble(), (change.position.y / d).toDouble())
+                        if (nj != null) onNewJson(nj)
+                    },
+                    onDragEnd = {
+                        // onEnded with last known position (approximate)
+                        onDragEvent?.invoke(nodeId, 1,
+                            (startX / density).toDouble(), (startY / density).toDouble(),
+                            (startX / density).toDouble(), (startY / density).toDouble())
+                    }
+                )
+            }
+        } else Modifier
+
+        Box(modifier = dragModifier) {
+            when (type) {
+                "window" -> {
+                    RenderContainer(children, onNewJson)
+                    if (props.optString("clearFocus", "") == "true") {
+                        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+                        LaunchedEffect(Unit) { focusManager.clearFocus() }
                     }
                 }
+                "text" -> RenderText(props)
+                "button" -> RenderButton(nodeId, props, children, onNewJson)
+                "textfield" -> RenderTextField(nodeId, props, focusModifier, onNewJson)
+                "vstack" -> RenderVStack(props, children, onNewJson)
+                "hstack" -> RenderHStack(props, children, onNewJson)
+                "zstack" -> RenderZStack(children, onNewJson)
+                "spacer" -> Spacer(modifier = Modifier.height(0.dp))
+                "divider" -> Divider(color = Color(0xFFCCCCCC), thickness = 1.dp)
+                "color" -> RenderColor(props)
+                "empty" -> {}
+                "group" -> RenderContainer(children, onNewJson)
+                "padding" -> RenderPadding(props, children, onNewJson)
+                "frame" -> RenderFrame(props, children, onNewJson)
+                "foregroundColor" -> RenderForegroundColor(props, children, onNewJson)
+                "backgroundColor" -> RenderBackgroundColor(props, children, onNewJson)
+                "font" -> RenderFont(props, children, onNewJson)
+                "border" -> RenderBorder(props, children, onNewJson)
+                "opacity" -> RenderOpacity(props, children, onNewJson)
+                "offset" -> RenderOffset(props, children, onNewJson)
+                "scaleEffect" -> RenderScale(props, children, onNewJson)
+                "navigationStack" -> RenderNavigationStack(props, children, onNewJson)
+                "navigationLink" -> RenderNavigationLink(nodeId, props, onNewJson)
+                else -> Text("[$type]")
             }
-            "text" -> RenderText(props)
-            "button" -> RenderButton(nodeId, props, children, onNewJson)
-            "textfield" -> RenderTextField(nodeId, props, focusModifier, onNewJson)
-            "vstack" -> RenderVStack(props, children, onNewJson)
-            "hstack" -> RenderHStack(props, children, onNewJson)
-            "zstack" -> RenderZStack(children, onNewJson)
-            "spacer" -> Spacer(modifier = Modifier.height(0.dp)) // weight applied in Row/Column scope
-            "divider" -> Divider(color = Color(0xFFCCCCCC), thickness = 1.dp)
-            "color" -> RenderColor(props)
-            "empty" -> {}
-            "group" -> RenderContainer(children, onNewJson)
-            "padding" -> RenderPadding(props, children, onNewJson)
-            "frame" -> RenderFrame(props, children, onNewJson)
-            "foregroundColor" -> RenderForegroundColor(props, children, onNewJson)
-            "backgroundColor" -> RenderBackgroundColor(props, children, onNewJson)
-            "font" -> RenderFont(props, children, onNewJson)
-            "border" -> RenderBorder(props, children, onNewJson)
-            "opacity" -> RenderOpacity(props, children, onNewJson)
-            "offset" -> RenderOffset(props, children, onNewJson)
-            "scaleEffect" -> RenderScale(props, children, onNewJson)
-            "navigationStack" -> RenderNavigationStack(props, children, onNewJson)
-            "navigationLink" -> RenderNavigationLink(nodeId, props, onNewJson)
-            else -> Text("[$type]")
         }
 
         // Apply programmatic focus after composition.
@@ -388,6 +424,9 @@ object ComposeRenderHost {
         val showBack = props.optString("showBack", "") == "true"
         val destTitle = props.optString("destTitle", "")
         val backNodeId = props.optString("backNodeId", "0").toLongOrNull() ?: 0L
+
+        // Expose back node ID for system back button handling
+        currentBackNodeId = if (showBack) backNodeId else 0
 
         Column(modifier = Modifier.fillMaxWidth()) {
             // Header bar

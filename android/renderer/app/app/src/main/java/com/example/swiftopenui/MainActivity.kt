@@ -3,6 +3,7 @@ package com.example.swiftopenui
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +48,29 @@ class MainActivity : ComponentActivity() {
             bridge?.nativeOnFocusChange(nodeId, hasFocus)
         }
 
+        ComposeRenderHost.onDragEvent = { nodeId, phase, startX, startY, currentX, currentY ->
+            bridge?.nativeOnDragEvent(nodeId, phase, startX, startY, currentX, currentY)
+        }
+
+        // System back button → NavigationStack pop
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val backId = ComposeRenderHost.currentBackNodeId
+                if (backId != 0L) {
+                    // Pop navigation via the same path as the "← Back" button
+                    val newJson = ComposeRenderHost.onButtonClick?.invoke(backId)
+                    if (newJson != null) {
+                        ComposeRenderHost.onJsonUpdate?.invoke(newJson)
+                    }
+                } else {
+                    // No navigation to pop — let the system handle it (finish Activity)
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
+
         val initialJson = try {
             if (bridge == null) {
                 throw UnsatisfiedLinkError(RenderBridge.loadError ?: "Unknown load error")
@@ -68,6 +92,12 @@ class MainActivity : ComponentActivity() {
                 ) {
                     if (initialJson != null) {
                         var currentJson by remember { mutableStateOf(initialJson) }
+
+                        // Wire system back button JSON updates
+                        ComposeRenderHost.onJsonUpdate = { newJson ->
+                            Log.d(TAG, "State changed, re-rendering (${newJson.length} chars)")
+                            currentJson = newJson
+                        }
 
                         androidx.compose.foundation.layout.Box(
                             modifier = Modifier

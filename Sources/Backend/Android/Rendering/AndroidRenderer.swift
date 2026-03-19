@@ -530,6 +530,12 @@ extension DragGestureView: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let node = androidRenderView(content)
         node.props["onDrag"] = "true"
+        node.props["dragMinDist"] = "\(minimumDistance)"
+        androidDragHandlers[node.id] = AndroidDragHandler(
+            minimumDistance: minimumDistance,
+            onChanged: onChanged,
+            onEnded: onEnded
+        )
         return node
     }
 }
