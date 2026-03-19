@@ -2408,6 +2408,118 @@ extension Link: WinRenderable {
     }
 }
 
+// MARK: - Phase 4B: Lifecycle & container modifiers
+
+extension OnAppearView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        // Fire onAppear after the view is rendered (deferred to next message loop cycle)
+        let appearAction = action
+        let root = findRootWindow(from: context.parent)
+        runOnMainThread(hwnd: root) { appearAction() }
+        return hwnd
+    }
+}
+
+extension OnDisappearView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        // Install cleanup subclass that fires onDisappear on WM_NCDESTROY
+        let disappearAction = action
+        let box = Unmanaged.passRetained(ClosureBox(disappearAction)).toOpaque()
+        SetWindowSubclass(hwnd, onDisappearProc, 90, DWORD_PTR(UInt(bitPattern: box)))
+        return hwnd
+    }
+}
+
+private let onDisappearProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    if uMsg == UINT(WM_NCDESTROY), dwRefData != 0 {
+        let box = Unmanaged<ClosureBox>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).takeRetainedValue()
+        box.closure()
+        RemoveWindowSubclass(hwnd, onDisappearProc, uIdSubclass)
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
+extension SheetView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        // Sheet is presented as a modal child window when isPresented is true.
+        // For now, render the content and check if sheet should show.
+        if isPresented.wrappedValue {
+            // Create a modal-like overlay window
+            let root = findRootWindow(from: context.parent)
+            let sheetHwnd = CreateWindowExW(
+                DWORD(WS_EX_TOOLWINDOW),
+                stackContainerClassName, nil,
+                DWORD(WS_POPUP) | DWORD(WS_VISIBLE) | DWORD(WS_CAPTION) | DWORD(WS_SYSMENU),
+                Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT), 400, 300,
+                root, nil, context.hInstance, nil
+            )
+            if let sheetHwnd = sheetHwnd {
+                let sheetContext = RenderContext(parent: sheetHwnd, hInstance: context.hInstance)
+                if let sheetChild = winRenderView(sheetContent(), in: sheetContext) {
+                    var rect = RECT()
+                    GetClientRect(sheetHwnd, &rect)
+                    SetWindowPos(sheetChild, nil, 0, 0,
+                                 rect.right, rect.bottom, UINT(SWP_NOZORDER))
+                }
+            }
+        }
+        return hwnd
+    }
+}
+
+extension AlertView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        if isPresented.wrappedValue {
+            let binding = isPresented
+            let alertTitle = title
+            let alertMsg = message.isEmpty ? title : message
+            let root = findRootWindow(from: context.parent)
+            // Defer alert to after rendering completes
+            runOnMainThread(hwnd: root) {
+                alertTitle.withCString(encodedAs: UTF16.self) { titlePtr in
+                    alertMsg.withCString(encodedAs: UTF16.self) { msgPtr in
+                        MessageBoxW(root, msgPtr, titlePtr, UINT(MB_OK))
+                    }
+                }
+                binding.wrappedValue = false
+            }
+        }
+        return hwnd
+    }
+}
+
+extension OverlayView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Render as ZStack: content behind, overlay on top
+        let zstack = ZStack(alignment: alignment) {
+            content
+            overlay
+        }
+        return winRenderView(zstack, in: context)
+    }
+}
+
+extension Section: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Render as: [Header text (bold)] [Divider] [Content]
+        if header.isEmpty {
+            return winRenderView(content, in: context)
+        }
+        let section = VStack(alignment: .leading, spacing: 4) {
+            Text(header).font(.headline)
+            Divider()
+            content
+        }
+        return winRenderView(section, in: context)
+    }
+}
+
 // MARK: - Animation/effect stubs (render content, ignore effects for now)
 
 extension OpacityView: WinRenderable {
