@@ -2960,6 +2960,81 @@ extension ToolbarItem: WinRenderable {
     }
 }
 
+// MARK: - Searchable
+
+extension SearchableView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Search field at top — initialized with current binding value
+        let searchHeight: Int32 = 24
+        let currentText = text.wrappedValue
+        let searchHwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_EDIT(), wstr,
+                DWORD(ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP),
+                0, 0, 0, searchHeight,
+                container, nil, context.hInstance
+            )
+        }
+
+        if let searchHwnd = searchHwnd {
+            // Placeholder
+            prompt.withCString(encodedAs: UTF16.self) { ptr in
+                _ = SendMessageW(searchHwnd, UINT(EM_SETCUEBANNER), 1,
+                                 LPARAM(Int(bitPattern: ptr)))
+            }
+
+            // Wire binding
+            let binding = text
+            let handler = SubclassHandler(hwnd: searchHwnd)
+            handler.onTextChanged = { newValue in
+                if newValue != binding.wrappedValue {
+                    binding.wrappedValue = newValue
+                }
+            }
+            let state = TextFieldState(handler: handler)
+            let statePtr = Unmanaged.passRetained(state).toOpaque()
+            SetWindowSubclass(searchHwnd, textFieldCleanupProc, 41,
+                              DWORD_PTR(UInt(bitPattern: statePtr)))
+        }
+
+        // Content below search field
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        let contentHwnd = winRenderView(content, in: childContext)
+
+        // Size container
+        var contentW: Int32 = 200
+        var contentH: Int32 = 100
+        if let ch = contentHwnd {
+            var r = RECT()
+            GetWindowRect(ch, &r)
+            contentW = max(r.right - r.left, 200)
+            contentH = r.bottom - r.top
+        }
+
+        SetWindowPos(container, nil, 0, 0, contentW, searchHeight + 4 + contentH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        // Position children
+        if let sh = searchHwnd {
+            SetWindowPos(sh, nil, 0, 0, contentW, searchHeight, UINT(SWP_NOZORDER))
+        }
+        if let ch = contentHwnd {
+            SetWindowPos(ch, nil, 0, searchHeight + 4, contentW, contentH, UINT(SWP_NOZORDER))
+        }
+
+        return container
+    }
+}
+
 // MARK: - Phase 4C: Shape modifiers
 
 extension CornerRadiusView: WinRenderable {
