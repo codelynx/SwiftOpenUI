@@ -169,6 +169,11 @@ targets += [
         path: "Examples/BasicInteractive"
     ),
     .executableTarget(
+        name: "Phase3Test",
+        dependencies: exampleDeps,
+        path: "Examples/Phase3Test"
+    ),
+    .executableTarget(
         name: "Layout",
         dependencies: exampleDeps,
         path: "Examples/05-Layout"
