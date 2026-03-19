@@ -498,45 +498,169 @@ extension TitledView: GTKRenderable {
 
 // MARK: - NavigationSplitView GTK extension
 
+/// Extract column ideal width from a view with .navigationSplitViewColumnWidth applied.
+private func gtkExtractColumnWidth<V: View>(from view: V) -> Double? {
+    if let provider = view as? NavigationSplitViewColumnWidthProvider {
+        return provider.columnIdealWidth
+    }
+    // Check via Mirror for nested modifiers
+    let mirror = Mirror(reflecting: view)
+    for child in mirror.children {
+        if let provider = child.value as? NavigationSplitViewColumnWidthProvider {
+            return provider.columnIdealWidth
+        }
+    }
+    return nil
+}
+
+/// Install toolbar items from a view tree into a GtkHeaderBar, attaching
+/// it to the given widget via "gtk-swift-window-titlebar" for Window pickup.
+private func gtkInstallToolbar<V: View>(from view: V, on widget: UnsafeMutablePointer<GtkWidget>) {
+    let toolbarItems = gtkExtractToolbarItems(from: view)
+    guard !toolbarItems.isEmpty else { return }
+
+    let headerBar = gtk_header_bar_new()!
+    let headerBarOp = OpaquePointer(headerBar)
+    gtk_header_bar_set_title_widget(headerBarOp, gtk_label_new(""))
+    for item in toolbarItems {
+        let itemWidget = widgetFromOpaque(gtkRenderAnyView(item.wrapped))
+        switch item.placement {
+        case .leading:
+            gtk_header_bar_pack_start(headerBarOp, itemWidget)
+        case .primaryAction, .trailing:
+            gtk_header_bar_pack_end(headerBarOp, itemWidget)
+        }
+    }
+
+    g_object_ref(gpointer(headerBar))
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    g_object_set_data_full(gobject, "gtk-swift-window-titlebar", headerBar,
+        { userData in g_object_unref(userData) })
+}
+
+/// Apply visibility state to NavigationSplitView columns.
+private func gtkApplyVisibility(
+    _ visibility: NavigationSplitViewVisibility,
+    sidebar: UnsafeMutablePointer<GtkWidget>,
+    content: UnsafeMutablePointer<GtkWidget>?,
+    paned: UnsafeMutablePointer<GtkWidget>
+) {
+    switch visibility {
+    case .automatic, .all:
+        gtk_widget_set_visible(sidebar, 1)
+        if let content = content { gtk_widget_set_visible(content, 1) }
+    case .doubleColumn:
+        gtk_widget_set_visible(sidebar, 1)
+        if let content = content { gtk_widget_set_visible(content, 0) }
+    case .detailOnly:
+        gtk_widget_set_visible(sidebar, 0)
+        if let content = content { gtk_widget_set_visible(content, 0) }
+        gtk_swift_paned_set_position(paned, 0)
+    }
+}
+
 extension NavigationSplitView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
+        if hasContentColumn {
+            return gtkCreateThreeColumnWidget()
+        } else {
+            return gtkCreateTwoColumnWidget()
+        }
+    }
+
+    private func gtkCreateTwoColumnWidget() -> OpaquePointer {
         let paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL)!
+
+        let sidebarW = gtkExtractColumnWidth(from: sidebar) ?? Double(sidebarWidth)
 
         let sidebarWidget = widgetFromOpaque(gtkRenderView(sidebar))
         let detailWidget = widgetFromOpaque(gtkRenderView(detail))
 
-        // Extract toolbar items from the detail view tree and expose
-        // a header bar for Window to install as the native titlebar.
-        let toolbarItems = gtkExtractToolbarItems(from: detail)
-        if !toolbarItems.isEmpty {
-            let headerBar = gtk_header_bar_new()!
-            let headerBarOp = OpaquePointer(headerBar)
-            gtk_header_bar_set_title_widget(headerBarOp, gtk_label_new(""))
-            for item in toolbarItems {
-                let itemWidget = widgetFromOpaque(gtkRenderAnyView(item.wrapped))
-                switch item.placement {
-                case .leading:
-                    gtk_header_bar_pack_start(headerBarOp, itemWidget)
-                case .primaryAction, .trailing:
-                    gtk_header_bar_pack_end(headerBarOp, itemWidget)
-                }
-            }
-
-            g_object_ref(gpointer(headerBar))
-            let panedObject = UnsafeMutableRawPointer(paned).assumingMemoryBound(to: GObject.self)
-            g_object_set_data_full(panedObject, "gtk-swift-window-titlebar", headerBar,
-                { userData in g_object_unref(userData) })
+        // Apply min width from column width modifier
+        if let provider = sidebar as? NavigationSplitViewColumnWidthProvider,
+           let minW = provider.columnMinWidth {
+            gtk_widget_set_size_request(sidebarWidget, gint(minW), -1)
         }
+
+        gtkInstallToolbar(from: detail, on: paned)
 
         gtk_swift_paned_set_start_child(paned, sidebarWidget)
         gtk_swift_paned_set_end_child(paned, detailWidget)
-        gtk_swift_paned_set_position(paned, gint(sidebarWidth))
+        gtk_swift_paned_set_position(paned, gint(sidebarW))
         gtk_swift_paned_set_shrink_start_child(paned, 0)
         gtk_swift_paned_set_shrink_end_child(paned, 0)
 
         gtk_widget_set_hexpand(paned, 1)
         gtk_widget_set_vexpand(paned, 1)
 
+        if let visibility = columnVisibility {
+            gtkApplyVisibility(visibility.wrappedValue,
+                               sidebar: sidebarWidget, content: nil, paned: paned)
+        }
+
         return opaqueFromWidget(paned)
+    }
+
+    private func gtkCreateThreeColumnWidget() -> OpaquePointer {
+        // Outer paned: [innerPaned | detail]
+        let outerPaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL)!
+        // Inner paned: [sidebar | content]
+        let innerPaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL)!
+
+        let sidebarWidget = widgetFromOpaque(gtkRenderView(sidebar))
+        let contentWidget = widgetFromOpaque(gtkRenderView(content))
+        let detailWidget = widgetFromOpaque(gtkRenderView(detail))
+
+        let sidebarW = gtkExtractColumnWidth(from: sidebar) ?? Double(sidebarWidth)
+        let contentW = gtkExtractColumnWidth(from: content) ?? 250.0
+
+        // Apply min widths from column width modifiers
+        if let provider = sidebar as? NavigationSplitViewColumnWidthProvider,
+           let minW = provider.columnMinWidth {
+            gtk_widget_set_size_request(sidebarWidget, gint(minW), -1)
+        }
+        if let provider = content as? NavigationSplitViewColumnWidthProvider,
+           let minW = provider.columnMinWidth {
+            gtk_widget_set_size_request(contentWidget, gint(minW), -1)
+        }
+
+        // Inner paned: sidebar + content
+        gtk_swift_paned_set_start_child(innerPaned, sidebarWidget)
+        gtk_swift_paned_set_end_child(innerPaned, contentWidget)
+        gtk_swift_paned_set_position(innerPaned, gint(sidebarW))
+        gtk_swift_paned_set_shrink_start_child(innerPaned, 0)
+        gtk_swift_paned_set_shrink_end_child(innerPaned, 0)
+
+        // Outer paned: inner + detail
+        gtk_swift_paned_set_start_child(outerPaned, innerPaned)
+        gtk_swift_paned_set_end_child(outerPaned, detailWidget)
+        gtk_swift_paned_set_position(outerPaned, gint(sidebarW + contentW))
+        gtk_swift_paned_set_shrink_start_child(outerPaned, 0)
+        gtk_swift_paned_set_shrink_end_child(outerPaned, 0)
+
+        gtkInstallToolbar(from: detail, on: outerPaned)
+
+        gtk_widget_set_hexpand(outerPaned, 1)
+        gtk_widget_set_vexpand(outerPaned, 1)
+        gtk_widget_set_hexpand(innerPaned, 1)
+        gtk_widget_set_vexpand(innerPaned, 1)
+
+        if let visibility = columnVisibility {
+            gtkApplyVisibility(visibility.wrappedValue,
+                               sidebar: sidebarWidget, content: contentWidget,
+                               paned: outerPaned)
+        }
+
+        return opaqueFromWidget(outerPaned)
+    }
+}
+
+extension NavigationSplitViewColumnWidthView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        if let minW = columnMinWidth {
+            gtk_widget_set_size_request(widget, gint(minW), -1)
+        }
+        return opaqueFromWidget(widget)
     }
 }

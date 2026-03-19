@@ -406,6 +406,11 @@ gtk_swift_paned_set_shrink_end_child(GtkWidget *paned, gboolean shrink) {
     gtk_paned_set_shrink_end_child(GTK_PANED(paned), shrink);
 }
 
+static inline int
+gtk_swift_paned_get_position(GtkWidget *paned) {
+    return gtk_paned_get_position(GTK_PANED(paned));
+}
+
 // --- GtkDrawingArea shims ---
 
 static inline void
