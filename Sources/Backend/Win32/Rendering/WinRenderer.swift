@@ -2358,6 +2358,16 @@ extension TaggedView: WinRenderable {
     }
 }
 
+protocol _TaggedViewAccess {
+    var _tagValue: AnyHashable { get }
+    var _taggedContent: any View { get }
+}
+
+extension TaggedView: _TaggedViewAccess {
+    var _tagValue: AnyHashable { AnyHashable(tagValue) }
+    var _taggedContent: any View { content }
+}
+
 extension Label: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let displayText: String
@@ -2789,18 +2799,88 @@ extension TabItemView: WinRenderable {
 
 extension Picker: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Picker stub — text placeholder. Full ComboBox implementation
-        // needs item extraction from generic ViewBuilder content which
-        // requires walking TaggedView children.
-        let text = "[\(label) picker]"
-        let measured = measureText(text, hwnd: context.parent)
-        return text.withCString(encodedAs: UTF16.self) { wstr in
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 250, 24,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Label
+        let labelMeasured = measureText(label, hwnd: context.parent)
+        _ = label.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
-                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP),
-                0, 0, measured.width + 4, measured.height + 2,
-                context.parent, nil, context.hInstance
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                0, 2, labelMeasured.width + 4, 20,
+                container, nil, context.hInstance
             )
         }
+
+        // ComboBox
+        let comboX = labelMeasured.width + 8
+        let comboHwnd = win32_CreateChildWindow(
+            win32_WC_COMBOBOX(), nil,
+            DWORD(CBS_DROPDOWNLIST | WS_TABSTOP),
+            comboX, 0, 150, 200,  // height 200 = dropdown list height
+            container, nil, context.hInstance
+        )
+
+        guard let comboHwnd = comboHwnd else { return container }
+
+        // Extract items from content — walk TaggedView children
+        var items: [(text: String, tag: AnyHashable)] = []
+        if let multi = content as? MultiChildView {
+            for child in multi.children {
+                func extractItem<V: View>(_ v: V) {
+                    if let tagged = v as? any _TaggedViewAccess {
+                        let text = extractTextFromView(tagged._taggedContent) ?? "?"
+                        items.append((text: text, tag: tagged._tagValue))
+                    } else {
+                        let text = extractTextFromView(v) ?? "?"
+                        items.append((text: text, tag: AnyHashable(items.count)))
+                    }
+                }
+                extractItem(child)
+            }
+        }
+
+        // Populate combobox
+        for item in items {
+            item.text.withCString(encodedAs: UTF16.self) { wstr in
+                SendMessageW(comboHwnd, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: wstr)))
+            }
+        }
+
+        // Set initial selection from binding
+        let currentSelection = selection.wrappedValue
+        for (i, item) in items.enumerated() {
+            if item.tag == AnyHashable(currentSelection) {
+                SendMessageW(comboHwnd, UINT(CB_SETCURSEL), WPARAM(i), 0)
+                break
+            }
+        }
+
+        // Wire CBN_SELCHANGE to update binding
+        let binding = selection
+        let capturedItems = items
+        let handler = SubclassHandler(hwnd: comboHwnd)
+        handler.onCommand = {
+            let sel = Int(SendMessageW(comboHwnd, UINT(CB_GETCURSEL), 0, 0))
+            if sel >= 0 && sel < capturedItems.count {
+                if let newVal = capturedItems[sel].tag.base as? SelectionValue {
+                    binding.wrappedValue = newVal
+                }
+            }
+        }
+        let state = TextFieldState(handler: handler)
+        let statePtr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(comboHwnd, textFieldCleanupProc, 41, DWORD_PTR(UInt(bitPattern: statePtr)))
+
+        SetWindowPos(container, nil, 0, 0, comboX + 150, 24, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
     }
 }
 
@@ -3107,11 +3187,67 @@ extension DatePicker: WinRenderable {
             )
         }
 
-        // Note: binding to Date requires DTN_DATETIMECHANGE notification
-        // which needs WM_NOTIFY handling — left as display-only for now
-        _ = dtp
+        // Wire DTN_DATETIMECHANGE via WM_NOTIFY on the container
+        if let dtp = dtp {
+            let binding = selection
+            let notifyInfo = DatePickerNotifyInfo(binding: binding, dtp: dtp)
+            let infoPtr = Unmanaged.passRetained(notifyInfo).toOpaque()
+            SetWindowSubclass(container, datePickerNotifyProc, 43, DWORD_PTR(UInt(bitPattern: infoPtr)))
+        }
 
         return container
+    }
+}
+
+private class DatePickerNotifyInfo {
+    let binding: Binding<Date>
+    let dtp: HWND
+    init(binding: Binding<Date>, dtp: HWND) {
+        self.binding = binding
+        self.dtp = dtp
+    }
+}
+
+private let datePickerNotifyProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_NOTIFY):
+        if dwRefData != 0 {
+            let nmhdr = UnsafePointer<NMHDR>(bitPattern: Int(lParam))
+            if let nmhdr = nmhdr, nmhdr.pointee.code == UINT(DTN_DATETIMECHANGE) {
+                let info = Unmanaged<DatePickerNotifyInfo>.fromOpaque(
+                    UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+                ).takeUnretainedValue()
+
+                // Read SYSTEMTIME from the DTP control
+                var st = SYSTEMTIME()
+                let result = SendMessageW(info.dtp, UINT(DTM_GETSYSTEMTIME), 0,
+                                          LPARAM(Int(bitPattern: UnsafeMutablePointer(&st))))
+                if result == 0 {  // GDT_VALID
+                    // Convert SYSTEMTIME to Date
+                    var ft = FILETIME()
+                    SystemTimeToFileTime(&st, &ft)
+                    // FILETIME is 100-nanosecond intervals since 1601-01-01
+                    let intervals = UInt64(ft.dwHighDateTime) << 32 | UInt64(ft.dwLowDateTime)
+                    // Unix epoch offset from Windows epoch (in 100ns intervals)
+                    let unixOffset: UInt64 = 116444736000000000
+                    let unixTime = Double(intervals - unixOffset) / 10000000.0
+                    info.binding.wrappedValue = Date(timeIntervalSince1970: unixTime)
+                }
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            Unmanaged<DatePickerNotifyInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).release()
+        }
+        RemoveWindowSubclass(hwnd, datePickerNotifyProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
@@ -3235,6 +3371,45 @@ extension NavigationSplitView: WinRenderable {
         }
 
         SetWindowPos(container, nil, 0, 0, totalW, totalH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+// MARK: - GeometryReader
+
+extension GeometryReader: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        // Create container that fills available space
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Measure the parent to get available size
+        var parentRect = RECT()
+        GetClientRect(context.parent, &parentRect)
+        let availW = Double(parentRect.right - parentRect.left)
+        let availH = Double(parentRect.bottom - parentRect.top)
+
+        // Use parent size or a default if parent hasn't been sized yet
+        let proxyW = availW > 0 ? availW : 300
+        let proxyH = availH > 0 ? availH : 200
+
+        let proxy = GeometryProxy(size: (width: proxyW, height: proxyH))
+        let childView = content(proxy)
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        if let childHwnd = winRenderView(childView, in: childContext) {
+            SetWindowPos(childHwnd, nil, 0, 0, Int32(proxyW), Int32(proxyH), UINT(SWP_NOZORDER))
+        }
+
+        SetWindowPos(container, nil, 0, 0, Int32(proxyW), Int32(proxyH),
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         return container

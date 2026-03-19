@@ -74,6 +74,10 @@ static inline LPCWSTR win32_WC_EDIT(void) {
     return WC_EDITW;
 }
 
+static inline LPCWSTR win32_WC_COMBOBOX(void) {
+    return WC_COMBOBOXW;
+}
+
 // --- Standard cursor IDs ---
 
 static inline LPCWSTR win32_IDC_ARROW(void) {
