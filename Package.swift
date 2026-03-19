@@ -209,6 +209,11 @@ targets += [
         dependencies: exampleDeps,
         path: "Examples/Parity/Gestures"
     ),
+    .executableTarget(
+        name: "ParityEnvironment",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/Environment"
+    ),
 ]
 
 #if os(macOS)
