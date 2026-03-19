@@ -7,7 +7,7 @@ import Foundation
 /// (e.g., GTK widget focus, Win32 SetFocus).
 open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
     private let lock = NSLock()
-    private var _value: Value?
+    var _value: Value?  // internal for restoreValue cross-storage access
     public let defaultValue: Value
     public weak var host: AnyViewHost?
 
@@ -44,7 +44,10 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
         // Platform focus events should NOT trigger rebuilds —
         // rebuilding destroys and recreates widgets, losing focus.
         if programmatic {
-            if newValue == nil {
+            // Suppress focus restore when clearing to default (nil or false).
+            // For @FocusState<Field?>, newValue is .some(nil) not .none,
+            // so also check against the default value.
+            if newValue == nil || newValue == .some(defaultValue) {
                 host?.suppressNextFocusRestore()
             }
             host?.scheduleRebuild()
@@ -100,9 +103,8 @@ open class FocusStateStorage<Value: Hashable>: AnyStateStorage {
 
     public func restoreValue(from other: AnyStateStorage) {
         if let typed = other as? FocusStateStorage<Value> {
-            lock.lock()
-            _value = typed.value
-            lock.unlock()
+            // Direct access without lock — called only during render pass (single-threaded)
+            _value = typed._value
         }
     }
 }

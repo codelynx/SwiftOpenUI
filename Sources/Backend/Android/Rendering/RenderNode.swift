@@ -33,6 +33,10 @@ public class RenderNode {
 
 /// Minimal JSON serializer (no Foundation JSONSerialization dependency).
 public func renderNodeToJSON(_ node: RenderNode) -> String {
+    // Emit clearFocus on the root window node when programmatic focus was cleared
+    if node.type == "window" && androidShouldClearFocus {
+        node.props["clearFocus"] = "true"
+    }
     return dictToJSON(node.toDict())
 }
 

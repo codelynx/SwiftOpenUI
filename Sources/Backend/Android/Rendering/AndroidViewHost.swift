@@ -38,6 +38,7 @@ public class AndroidViewHost: AnyViewHost {
         setCurrentEnvironment(capturedEnvironment)
         let prevHost = androidCurrentHost
         androidCurrentHost = self
+        androidShouldClearFocus = suppressFocusRestore
         androidBeginRenderPass()
         pendingJSON = buildBody()
         androidCurrentHost = prevHost

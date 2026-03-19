@@ -65,7 +65,16 @@ object ComposeRenderHost {
         }
 
         when (type) {
-            "window" -> RenderContainer(children, onNewJson)
+            "window" -> {
+                RenderContainer(children, onNewJson)
+                // Clear all focus when Swift signals programmatic focus was cleared to nil
+                if (props.optString("clearFocus", "") == "true") {
+                    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        focusManager.clearFocus()
+                    }
+                }
+            }
             "text" -> RenderText(props)
             "button" -> RenderButton(nodeId, props, children, onNewJson)
             "textfield" -> RenderTextField(nodeId, props, focusModifier, onNewJson)
@@ -91,15 +100,12 @@ object ComposeRenderHost {
             else -> Text("[$type]")
         }
 
-        // Apply programmatic focus after composition
+        // Apply programmatic focus after composition.
+        // Only requestFocus for the focused node — do NOT clearFocus for others,
+        // as clearFocus() clears ALL focus globally and would undo the requestFocus.
         if (focusedProp == "true") {
             LaunchedEffect(Unit) {
                 focusRequester.requestFocus()
-            }
-        } else if (focusedProp == "false") {
-            val focusManager = LocalFocusManager.current
-            LaunchedEffect(Unit) {
-                focusManager.clearFocus()
             }
         }
     }

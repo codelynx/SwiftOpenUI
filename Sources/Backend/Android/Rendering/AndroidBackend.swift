@@ -39,6 +39,10 @@ public var androidStateCache: [Int64: [AnyStateStorage]] = [:]
 /// The current ViewHost during a render pass, used to wire @State on nested views.
 public weak var androidCurrentHost: AnyViewHost?
 
+/// Set to true during rebuild when programmatic focus was cleared to nil.
+/// The root window node emits a clearFocus prop so Compose dismisses focus.
+public var androidShouldClearFocus: Bool = false
+
 /// Counter for generating structural node IDs during a render pass.
 /// Uses FNV-1a-inspired hashing of the path components.
 private var _idPathStack: [Int64] = [0]  // root hash

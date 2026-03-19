@@ -389,19 +389,23 @@ private func createTextFieldDemoSession() -> AndroidViewHost {
     return host
 }
 
-/// Flat TextField demo — all @State on one struct for Android compatibility.
+/// TextField + FocusState demo — demonstrates TextField binding and @FocusState on Android.
 private struct AndroidTextFieldDemo: View {
+    enum Field { case name, email }
+
     @State var name: String = ""
     @State var email: String = ""
     @State var counter: Int = 0
+    @FocusState var focusedField: Field?
 
     var body: some View {
         VStack(spacing: 12) {
-            Text("TextField Demo").font(.title)
+            Text("TextField + Focus Demo").font(.title)
             Divider()
             VStack(spacing: 4) {
                 Text("Name").font(.headline)
                 TextField("Enter your name", text: $name)
+                    .focused($focusedField, equals: .name)
                 Text("Hello, \(name.isEmpty ? "stranger" : name)!")
                     .foregroundColor(.blue)
             }
@@ -409,9 +413,19 @@ private struct AndroidTextFieldDemo: View {
             VStack(spacing: 4) {
                 Text("Email").font(.headline)
                 TextField("Enter your email", text: $email)
+                    .focused($focusedField, equals: .email)
                 if !email.isEmpty {
                     Text("Email: \(email)")
                         .foregroundColor(.green)
+                }
+            }
+            Divider()
+            VStack(spacing: 4) {
+                Text("Programmatic Focus").font(.headline)
+                HStack(spacing: 8) {
+                    Button("Focus Name") { focusedField = .name }
+                    Button("Focus Email") { focusedField = .email }
+                    Button("Clear Focus") { focusedField = nil }
                 }
             }
             Divider()
@@ -427,7 +441,7 @@ private struct AndroidTextFieldDemo: View {
             }
             Divider()
             VStack(spacing: 4) {
-                Text("Focus Test").font(.headline)
+                Text("Rebuild Test").font(.headline)
                 Text("Counter: \(counter)")
                 Button("Increment (triggers rebuild)") { counter += 1 }
             }
