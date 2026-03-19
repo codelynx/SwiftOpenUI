@@ -28,6 +28,18 @@ public func gtkRenderView<V: View>(_ view: V) -> OpaquePointer {
         return renderable.gtkCreateWidget()
     }
 
+    // MultiChildView (TupleView4-12, Group, ForEach, etc.) — render children
+    // into a vertical box.  This must come before the reactive/body checks
+    // because these types have Body = Never.
+    if let multi = view as? MultiChildView {
+        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        for child in multi.children {
+            let widget = widgetFromOpaque(gtkRenderAnyView(child))
+            gtk_box_append(boxPointer(box), widget)
+        }
+        return opaqueFromWidget(box)
+    }
+
     // Composite view with reactive state — wrap in GTKViewHost
     if hasReactiveProperties(view) {
         return gtkRenderStatefulView(view)
@@ -1792,23 +1804,33 @@ private struct GTKGridCell {
     let columnSpan: Int
 }
 
+/// Flatten a view into its top-level child views using the MultiChildView
+/// contract.  This handles TupleView2-12, Group, ForEach, and any other
+/// MultiChildView correctly — Mirror reflection on stored properties is
+/// intentionally avoided because it exposes implementation details (e.g.
+/// ForEach's `data`/`id`/`content` fields) instead of actual child views.
+private func gtkFlattenChildren(_ view: any View) -> [any View] {
+    if let multi = view as? MultiChildView {
+        return multi.children.flatMap { gtkFlattenChildren($0) }
+    }
+    return [view]
+}
+
 /// Walk the content view tree and extract GridRow children with their cell spans.
 private func gtkCollectGridRows<V: View>(_ view: V) -> [[GTKGridCell]] {
+    let topLevel = gtkFlattenChildren(view)
     var rows: [[GTKGridCell]] = []
-    let mirror = Mirror(reflecting: view)
-    let children = mirror.children.map { $0.value }
 
-    if children.count > 1 || (children.count == 1 && children[0] is MultiChildView) {
-        for child in children {
-            if let rowCells = gtkExtractRowCells(child) {
-                rows.append(rowCells)
-            } else if let anyView = child as? any View {
-                rows.append([GTKGridCell(widget: gtkRenderAnyView(anyView), columnSpan: 1)])
-            }
+    for child in topLevel {
+        if let rowCells = gtkExtractRowCells(child) {
+            rows.append(rowCells)
+        } else {
+            func render<C: View>(_ c: C) -> OpaquePointer { gtkRenderView(c) }
+            rows.append([GTKGridCell(widget: render(child), columnSpan: 1)])
         }
-    } else if let rowCells = gtkExtractRowCells(view) {
-        rows.append(rowCells)
-    } else {
+    }
+
+    if rows.isEmpty {
         rows.append([GTKGridCell(widget: gtkRenderView(view), columnSpan: 1)])
     }
 
@@ -1816,48 +1838,26 @@ private func gtkCollectGridRows<V: View>(_ view: V) -> [[GTKGridCell]] {
 }
 
 /// Try to extract cells from a GridRow view.
-private func gtkExtractRowCells(_ view: Any) -> [GTKGridCell]? {
+private func gtkExtractRowCells(_ view: any View) -> [GTKGridCell]? {
     let typeName = String(describing: type(of: view))
     guard typeName.contains("GridRow") else { return nil }
 
-    let mirror = Mirror(reflecting: view)
-    guard let contentChild = mirror.children.first(where: { $0.label == "content" }) else {
-        if let anyView = view as? any View {
-            return [GTKGridCell(widget: gtkRenderAnyView(anyView), columnSpan: 1)]
+    // GridRow conforms to MultiChildView — use its children for cell extraction
+    if let multi = view as? MultiChildView {
+        return multi.children.map { child in
+            gtkMakeCell(from: child)
         }
-        return nil
     }
 
-    return gtkExtractCellsFromContent(contentChild.value)
-}
-
-/// Extract cells from a GridRow's inner content, checking for GridCellSpanProvider.
-private func gtkExtractCellsFromContent(_ content: Any) -> [GTKGridCell] {
-    var cells: [GTKGridCell] = []
-    let typeName = String(describing: type(of: content))
-
-    if typeName.contains("TupleView") || content is MultiChildView {
-        let contentMirror = Mirror(reflecting: content)
-        for child in contentMirror.children {
-            cells.append(gtkMakeCell(from: child.value))
-        }
-    } else {
-        cells.append(gtkMakeCell(from: content))
-    }
-
-    return cells
+    // Fallback: render as single cell
+    func render<V: View>(_ v: V) -> OpaquePointer { gtkRenderView(v) }
+    return [GTKGridCell(widget: render(view), columnSpan: 1)]
 }
 
 /// Create a GTKGridCell from a view, checking for GridCellSpanProvider.
-private func gtkMakeCell(from view: Any) -> GTKGridCell {
+private func gtkMakeCell(from view: any View) -> GTKGridCell {
     let span = gtkFindColumnSpan(in: view)
-
-    if let anyView = view as? any View {
-        return GTKGridCell(widget: gtkRenderAnyView(anyView), columnSpan: span)
-    }
-
-    let placeholder = gtk_label_new("?")!
-    return GTKGridCell(widget: opaqueFromWidget(placeholder), columnSpan: span)
+    return GTKGridCell(widget: gtkRenderAnyView(view), columnSpan: span)
 }
 
 /// Recursively walk through modifier wrappers to find a GridCellSpanProvider.

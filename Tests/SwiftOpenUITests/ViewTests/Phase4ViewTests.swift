@@ -141,4 +141,70 @@ final class Phase4ViewTests: XCTestCase {
         XCTAssertNil(section.header)
         XCTAssertNil(section.footer)
     }
+
+    // MARK: - TabBuilder conditional content
+
+    func testTabBuilderConditional() {
+        let showAdvanced = true
+        let tabView = TabView {
+            Tab("General") { Text("General") }
+            if showAdvanced {
+                Tab("Advanced") { Text("Advanced") }
+            }
+        }
+        XCTAssertEqual(tabView.tabs.count, 2)
+    }
+
+    func testTabBuilderConditionalFalse() {
+        let showAdvanced = false
+        let tabView = TabView {
+            Tab("General") { Text("General") }
+            if showAdvanced {
+                Tab("Advanced") { Text("Advanced") }
+            }
+        }
+        XCTAssertEqual(tabView.tabs.count, 1)
+        XCTAssertEqual(tabView.tabs[0].title, "General")
+    }
+
+    // MARK: - GridRow with ForEach
+
+    func testGridRowChildrenViaMultiChildView() {
+        let row = GridRow {
+            Text("A")
+            Text("B")
+        }
+        // MultiChildView.children must produce actual child views, not stored properties
+        let children = row.children
+        XCTAssertEqual(children.count, 2)
+        XCTAssertTrue(children[0] is Text)
+        XCTAssertTrue(children[1] is Text)
+    }
+
+    // MARK: - Form with many children (TupleView4+)
+
+    func testFormManyChildren() {
+        let form = Form {
+            Text("A")
+            Text("B")
+            Text("C")
+            Text("D")
+        }
+        // Form's MultiChildView.children should enumerate all 4 children
+        // via TupleView4, not hit fatalError
+        XCTAssertEqual(form.children.count, 4)
+    }
+
+    func testSectionManyChildren() {
+        // Section content can have 4+ views via TupleView4
+        // This should compile and construct without issues
+        let section = Section("Many") {
+            Text("A")
+            Text("B")
+            Text("C")
+            Text("D")
+            Text("E")
+        }
+        XCTAssertEqual(section.header, "Many")
+    }
 }

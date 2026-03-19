@@ -46,11 +46,27 @@ public struct TabView: View {
 /// Result builder for composing tabs.
 @resultBuilder
 public struct TabBuilder {
-    public static func buildBlock(_ tabs: AnyTab...) -> [AnyTab] {
+    public static func buildBlock(_ tabs: [AnyTab]...) -> [AnyTab] {
+        tabs.flatMap { $0 }
+    }
+
+    public static func buildExpression<Content: View>(_ tab: Tab<Content>) -> [AnyTab] {
+        [AnyTab(tab)]
+    }
+
+    public static func buildOptional(_ tabs: [AnyTab]?) -> [AnyTab] {
+        tabs ?? []
+    }
+
+    public static func buildEither(first tabs: [AnyTab]) -> [AnyTab] {
         tabs
     }
 
-    public static func buildExpression<Content: View>(_ tab: Tab<Content>) -> AnyTab {
-        AnyTab(tab)
+    public static func buildEither(second tabs: [AnyTab]) -> [AnyTab] {
+        tabs
+    }
+
+    public static func buildArray(_ tabs: [[AnyTab]]) -> [AnyTab] {
+        tabs.flatMap { $0 }
     }
 }
