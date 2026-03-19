@@ -803,6 +803,222 @@ final class Win32RenderTests: XCTestCase {
         SendMessageW(staticHwnd, UINT(WM_LBUTTONUP), 0, 0)
         XCTAssertTrue(tapped, "Tap gesture should fire on deeply nested descendant via recursive subclassing")
     }
+    // MARK: - Phase 3 views
+
+    func testToggleCreatesCheckbox() {
+        let ctx = testContext()
+        let binding = Binding<Bool>(get: { false }, set: { _ in })
+        let hwnd = winRenderView(Toggle("Dark Mode", isOn: binding), in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertEqual(className(of: hwnd!), "Button", "Toggle should create a Button control")
+    }
+
+    func testToggleInitialState() {
+        let ctx = testContext()
+        let binding = Binding<Bool>(get: { true }, set: { _ in })
+        let hwnd = winRenderView(Toggle("On", isOn: binding), in: ctx)!
+        let checked = SendMessageW(hwnd, UINT(BM_GETCHECK), 0, 0)
+        XCTAssertEqual(checked, LRESULT(BST_CHECKED), "Toggle with true binding should be checked")
+    }
+
+    func testToggleClickUpdatesBinding() {
+        let ctx = testContext()
+        var value = false
+        let binding = Binding<Bool>(get: { value }, set: { value = $0 })
+        let hwnd = winRenderView(Toggle("Test", isOn: binding), in: ctx)!
+
+        // Simulate click: set check state then send BN_CLICKED via WM_COMMAND
+        SendMessageW(hwnd, UINT(BM_SETCHECK), WPARAM(BST_CHECKED), 0)
+        let controlID = WPARAM(GetDlgCtrlID(hwnd))
+        let handled = dispatchCommand(wParam: controlID)
+        XCTAssertTrue(handled)
+        XCTAssertTrue(value, "Toggle click should set binding to true")
+    }
+
+    func testSliderCreatesTrackbar() {
+        let ctx = testContext()
+        let binding = Binding<Double>(get: { 0.5 }, set: { _ in })
+        let hwnd = winRenderView(Slider(value: binding), in: ctx)
+        XCTAssertNotNil(hwnd)
+        // Slider wraps in a container — find the trackbar child
+        let child = GetWindow(hwnd!, UINT(GW_CHILD))
+        XCTAssertNotNil(child)
+        if let child = child {
+            XCTAssertEqual(className(of: child), "msctls_trackbar32")
+        }
+    }
+
+    func testScrollViewCreatesContainer() {
+        let ctx = testContext()
+        let hwnd = winRenderView(ScrollView { Text("scrollable") }, in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertEqual(className(of: hwnd!), "SwiftUIScrollView")
+    }
+
+    func testListCreatesScrollView() {
+        let ctx = testContext()
+        let hwnd = winRenderView(List {
+            ForEach(0..<3) { i in Text("Item \(i)") }
+        }, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testImageCreatesStaticFallback() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Image(systemName: "gear"), in: ctx)
+        XCTAssertNotNil(hwnd)
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
+        defer { buf.deallocate() }
+        GetWindowTextW(hwnd!, buf, 64)
+        let text = String(decodingCString: buf, as: UTF16.self)
+        XCTAssertEqual(text, "[gear]")
+    }
+
+    // MARK: - Phase 4A views
+
+    func testSecureFieldCreatesPasswordEdit() {
+        let ctx = testContext()
+        let binding = Binding<String>(get: { "" }, set: { _ in })
+        let hwnd = winRenderView(SecureField("Password", text: binding), in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertEqual(className(of: hwnd!), "Edit")
+        let style = win32_GetWindowLongPtrW(hwnd!, GWL_STYLE)
+        XCTAssertNotEqual(style & LONG_PTR(ES_PASSWORD), 0, "SecureField should have ES_PASSWORD")
+    }
+
+    func testTextEditorCreatesMultilineEdit() {
+        let ctx = testContext()
+        let binding = Binding<String>(get: { "hello\nworld" }, set: { _ in })
+        let hwnd = winRenderView(TextEditor(text: binding), in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertEqual(className(of: hwnd!), "Edit")
+        let style = win32_GetWindowLongPtrW(hwnd!, GWL_STYLE)
+        XCTAssertNotEqual(style & LONG_PTR(ES_MULTILINE), 0, "TextEditor should have ES_MULTILINE")
+    }
+
+    func testStepperCreatesContainer() {
+        let ctx = testContext()
+        let binding = Binding<Int>(get: { 5 }, set: { _ in })
+        let hwnd = winRenderView(Stepper("Count", value: binding), in: ctx)
+        XCTAssertNotNil(hwnd)
+        // Should have children: label, value, -, +
+        var count = 0
+        var child = GetWindow(hwnd!, UINT(GW_CHILD))
+        while child != nil {
+            count += 1
+            child = GetWindow(child!, UINT(GW_HWNDNEXT))
+        }
+        XCTAssertGreaterThanOrEqual(count, 3, "Stepper should have label + value + buttons")
+    }
+
+    func testProgressViewCreatesBar() {
+        let ctx = testContext()
+        let hwnd = winRenderView(ProgressView("Loading", value: 0.5), in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testLabelCreatesStatic() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Label("Settings", systemImage: "gear"), in: ctx)
+        XCTAssertNotNil(hwnd)
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
+        defer { buf.deallocate() }
+        GetWindowTextW(hwnd!, buf, 64)
+        let text = String(decodingCString: buf, as: UTF16.self)
+        XCTAssertEqual(text, "[gear] Settings")
+    }
+
+    func testLinkCreatesButton() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Link("Visit", destination: "https://example.com"), in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertEqual(className(of: hwnd!), "Button")
+    }
+
+    // MARK: - Phase 4B modifiers
+
+    func testOnAppearFiresAction() {
+        let ctx = testContext()
+        // onAppear defers via runOnMainThread — in tests without a message
+        // loop, just verify it renders without crash
+        let hwnd = winRenderView(Text("appear").onAppear { }, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testOnDisappearRendersContent() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Text("disappear").onDisappear { }, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testOverlayRendersContentAndOverlay() {
+        let ctx = testContext()
+        let hwnd = winRenderView(
+            Text("base").overlay(Text("top"), alignment: .center),
+            in: ctx
+        )
+        XCTAssertNotNil(hwnd)
+        var count = 0
+        var child = GetWindow(hwnd!, UINT(GW_CHILD))
+        while child != nil {
+            count += 1
+            child = GetWindow(child!, UINT(GW_HWNDNEXT))
+        }
+        XCTAssertEqual(count, 2, "Overlay should have base content + overlay child")
+    }
+
+    func testSectionRendersWithHeader() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Section("Settings") { Text("Content") }, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testFormRendersContent() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Form { Text("Field") }, in: ctx)
+        XCTAssertNotNil(hwnd)
+    }
+
+    func testTabViewCreatesButtonBar() {
+        let ctx = testContext()
+        let hwnd = winRenderView(TabView {
+            Text("Page 1").tabItem { Text("Tab 1") }
+            Text("Page 2").tabItem { Text("Tab 2") }
+        }, in: ctx)
+        XCTAssertNotNil(hwnd)
+        var count = 0
+        var child = GetWindow(hwnd!, UINT(GW_CHILD))
+        while child != nil {
+            count += 1
+            child = GetWindow(child!, UINT(GW_HWNDNEXT))
+        }
+        XCTAssertGreaterThanOrEqual(count, 4, "TabView with 2 tabs should have buttons + pages")
+    }
+
+    func testTabViewSwitchesPages() {
+        let ctx = testContext()
+        let hwnd = winRenderView(TabView {
+            Text("Page 1").tabItem { Text("Tab 1") }
+            Text("Page 2").tabItem { Text("Tab 2") }
+        }, in: ctx)!
+
+        // Find tab buttons (Button class) and get second tab's control ID
+        var buttons: [HWND] = []
+        var child = GetWindow(hwnd, UINT(GW_CHILD))
+        while let c = child {
+            if className(of: c) == "Button" {
+                buttons.append(c)
+            }
+            child = GetWindow(c, UINT(GW_HWNDNEXT))
+        }
+        XCTAssertEqual(buttons.count, 2, "Should have 2 tab buttons")
+        guard buttons.count == 2 else { return }
+
+        // Click tab 2 — should not crash and should dispatch
+        let tab2ID = WPARAM(GetDlgCtrlID(buttons[1]))
+        let handled = dispatchCommand(wParam: tab2ID)
+        XCTAssertTrue(handled, "Tab 2 button should have a registered command handler")
+    }
 }
 
 // MARK: - Test helpers
