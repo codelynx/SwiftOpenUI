@@ -339,8 +339,8 @@ screenshots/
 └── android/                     ← Captured screenshots (6 examples)
 ```
 
-## Open Questions
+## Resolved Design Questions
 
-1. **swift-java generated bindings** — should we use `jextract` for the JNI surface, or hand-write the small API? Given Phase 1 is ~10 JNI functions, hand-writing may be simpler.
-2. **Testing** — the Swift diff/batch layer can be unit-tested on macOS without Android, since it produces serialized `[RenderOp]` with no platform dependency.
-3. **Compose (Phase 2)** — Compose expects declarative recomposition, not imperative view manipulation. The host API would need to become a "virtual DOM" that Compose reads, rather than a command stream. This is a different contract and should be designed separately.
+1. **JNI bindings** — hand-written `@_cdecl` functions. The JNI surface is ~8 entry points (`nativeCreateSession`, `nativeOnButtonClick`, `nativeOnTextInput`, `nativeOnFocusChange`, `nativeOnDragEvent`, `nativeRenderApp`). `swift-java`/`jextract` are not needed at this scale.
+2. **Testing** — Android render logic is unit-tested on macOS (93 tests) via `@testable import BackendAndroid`. No Android emulator needed for Swift-side tests.
+3. **Compose integration** — Resolved as JSON render tree model. Swift produces a full JSON tree each render; Kotlin's `ComposeRenderHost` maps it to `@Composable` calls. This is effectively a virtual DOM that Compose reads declaratively.

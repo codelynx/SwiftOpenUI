@@ -108,7 +108,7 @@ ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/29.0.14206865 \
 
 2. **Package dependency graphs affect module identity** in Swift cross-compilation. A separate package depending on the root package can produce different protocol witnesses than building from the root directly.
 
-3. **Don't use `--triple` with the Android SDK** — let the SDK resolve the target automatically. The `--triple` flag causes incorrect module search paths after cache clears.
+3. **Use `--triple aarch64-unknown-linux-android28`** — without it the SDK defaults to armv7. The earlier Foundation module resolution failure was caused by misconfigured `swiftResourcesPath`, not by `--triple` itself. Fix with `swift sdk configure --swift-resources-path .../swift-aarch64`.
 
 4. **Avoid `rm -rf .build`** during Android development. Use targeted cache clears instead.
 
