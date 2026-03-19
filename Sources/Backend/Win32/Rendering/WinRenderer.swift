@@ -1805,19 +1805,29 @@ extension Toggle: WinRenderable {
 
 extension Slider: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        // Wrap trackbar in a container so we receive WM_HSCROLL directly
+        // (Win32 sends WM_HSCROLL to the trackbar's parent, not the trackbar)
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 200, 30,
+            context.parent, nil, context.hInstance, nil
+        )!
+
         let trackbarClass: [WCHAR] = Array("msctls_trackbar32".utf16) + [0]
         let trackbar = trackbarClass.withUnsafeBufferPointer { ptr in
             CreateWindowExW(
                 0, ptr.baseAddress!, nil,
                 DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_HORZ | TBS_AUTOTICKS),
                 0, 0, 200, 30,
-                context.parent, nil, context.hInstance, nil
+                container, nil, context.hInstance, nil
             )
         }
 
-        guard let trackbar = trackbar else { return nil }
+        guard let trackbar = trackbar else { return container }
 
-        // Convert range to integer trackbar positions via precision factor
         let precision = 1.0 / step
         let rangeMin = Int32(range.lowerBound * precision)
         let rangeMax = Int32(range.upperBound * precision)
@@ -1832,50 +1842,63 @@ extension Slider: WinRenderable {
         SendMessageW(trackbar, UINT(TBM_SETLINESIZE), 0, 1)
         SendMessageW(trackbar, UINT(TBM_SETPAGESIZE), 0, LPARAM(Int32(precision)))
 
-        // Dedicated subclass — fires onChanged on TB_ENDTRACK only
-        // (not during TB_THUMBTRACK which would rebuild and kill the drag)
+        // Subclass the CONTAINER (not trackbar) to receive WM_HSCROLL
         let binding = value
-        let sliderInfo = SliderInfo(binding: binding, precision: precision, hwnd: trackbar)
+        let sliderInfo = SliderInfo(binding: binding, precision: precision, trackbar: trackbar)
         let infoPtr = Unmanaged.passRetained(sliderInfo).toOpaque()
-        SetWindowSubclass(trackbar, sliderSubclassProc, 42, DWORD_PTR(UInt(bitPattern: infoPtr)))
+        SetWindowSubclass(container, sliderContainerProc, 42, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
-        return trackbar
+        return container
     }
 }
 
 private class SliderInfo {
     let binding: Binding<Double>
     let precision: Double
-    let hwnd: HWND
+    let trackbar: HWND
 
-    init(binding: Binding<Double>, precision: Double, hwnd: HWND) {
+    init(binding: Binding<Double>, precision: Double, trackbar: HWND) {
         self.binding = binding
         self.precision = precision
-        self.hwnd = hwnd
+        self.trackbar = trackbar
     }
 }
 
-private let sliderSubclassProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+/// Subclass on the slider's CONTAINER — receives WM_HSCROLL from the trackbar child.
+private let sliderContainerProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
     switch uMsg {
-    case UINT(WM_HSCROLL), UINT(WM_VSCROLL):
+    case UINT(WM_HSCROLL):
         if dwRefData != 0 {
             let scrollCode = win32_LOWORD(DWORD_PTR(wParam))
             let info = Unmanaged<SliderInfo>.fromOpaque(
                 UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
             ).takeUnretainedValue()
 
-            // Only update binding when drag ends or on discrete steps.
-            // TB_THUMBTRACK fires during continuous drag — updating @State
-            // would trigger a rebuild that destroys the trackbar mid-drag.
+            // Only update binding on TB_ENDTRACK or discrete steps.
+            // TB_THUMBTRACK fires during drag — updating @State would
+            // rebuild and destroy the trackbar mid-drag.
             if scrollCode != WORD(TB_THUMBTRACK) {
-                let pos = SendMessageW(hwnd, UINT(TBM_GETPOS), 0, 0)
+                let pos = SendMessageW(info.trackbar, UINT(TBM_GETPOS), 0, 0)
                 let newValue = Double(pos) / info.precision
                 if abs(newValue - info.binding.wrappedValue) > (1.0 / info.precision) * 0.01 {
                     info.binding.wrappedValue = newValue
                 }
             }
         }
-        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+        return 0
+
+    case UINT(WM_SIZE):
+        // Size trackbar to fill container
+        if dwRefData != 0 {
+            let info = Unmanaged<SliderInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+            var rect = RECT()
+            GetClientRect(hwnd, &rect)
+            SetWindowPos(info.trackbar, nil, 0, 0,
+                         rect.right - rect.left, rect.bottom - rect.top, UINT(SWP_NOZORDER))
+        }
+        return 0
 
     case UINT(WM_NCDESTROY):
         if dwRefData != 0 {
@@ -1883,7 +1906,7 @@ private let sliderSubclassProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uI
                 UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
             ).release()
         }
-        RemoveWindowSubclass(hwnd, sliderSubclassProc, uIdSubclass)
+        RemoveWindowSubclass(hwnd, sliderContainerProc, uIdSubclass)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     default:
@@ -1895,9 +1918,9 @@ extension ScrollView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         registerScrollViewClassIfNeeded(hInstance: context.hInstance)
 
+        // Vertical scrolling only — horizontal scroll is not yet implemented.
         var style = DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN)
         if axes.contains(.vertical) { style |= DWORD(WS_VSCROLL) }
-        if axes.contains(.horizontal) { style |= DWORD(WS_HSCROLL) }
 
         let container = CreateWindowExW(
             0, scrollViewClassName, nil,
@@ -2118,6 +2141,1385 @@ extension Image: WinRenderable {
         }
 
         return hwnd
+    }
+}
+
+// MARK: - Phase 4A views
+
+extension SecureField: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let currentText = text.wrappedValue
+        let measured = measureText(currentText.isEmpty ? title : currentText, hwnd: context.parent)
+
+        let hwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_EDIT(), wstr,
+                DWORD(ES_PASSWORD | ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP),
+                0, 0, max(measured.width + 16, 150), measured.height + 8,
+                context.parent, nil, context.hInstance
+            )
+        }
+
+        guard let hwnd = hwnd else { return nil }
+
+        if !title.isEmpty {
+            title.withCString(encodedAs: UTF16.self) { ptr in
+                _ = SendMessageW(hwnd, UINT(EM_SETCUEBANNER), 1, LPARAM(Int(bitPattern: ptr)))
+            }
+        }
+
+        let binding = text
+        let handler = SubclassHandler(hwnd: hwnd)
+        handler.onTextChanged = { newValue in
+            if newValue != binding.wrappedValue { binding.wrappedValue = newValue }
+        }
+        let state = TextFieldState(handler: handler)
+        let statePtr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(hwnd, textFieldCleanupProc, 41, DWORD_PTR(UInt(bitPattern: statePtr)))
+
+        return hwnd
+    }
+}
+
+extension TextEditor: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let currentText = text.wrappedValue
+
+        let hwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_EDIT(), wstr,
+                DWORD(ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL | WS_BORDER | WS_VSCROLL | WS_TABSTOP),
+                0, 0, 200, 100,
+                context.parent, nil, context.hInstance
+            )
+        }
+
+        guard let hwnd = hwnd else { return nil }
+
+        let binding = text
+        let handler = SubclassHandler(hwnd: hwnd)
+        handler.onTextChanged = { newValue in
+            if newValue != binding.wrappedValue { binding.wrappedValue = newValue }
+        }
+        let state = TextFieldState(handler: handler)
+        let statePtr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(hwnd, textFieldCleanupProc, 41, DWORD_PTR(UInt(bitPattern: statePtr)))
+
+        return hwnd
+    }
+}
+
+extension Stepper: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        // Container: [label] [value] [▲▼]
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 200, 24,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Label
+        let labelMeasured = measureText(label, hwnd: context.parent)
+        let labelHwnd = label.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                0, 0, labelMeasured.width + 4, 24,
+                container, nil, context.hInstance
+            )
+        }
+
+        // Value display
+        let valText = "\(value.wrappedValue)"
+        let valHwnd = valText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(), wstr, DWORD(SS_CENTER | SS_CENTERIMAGE),
+                labelMeasured.width + 8, 0, 40, 24,
+                container, nil, context.hInstance
+            )
+        }
+
+        // Minus button
+        let minusID = nextControlID()
+        let minusHwnd = "-".withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
+                labelMeasured.width + 52, 0, 24, 24,
+                container, HMENU(bitPattern: UInt(minusID)), context.hInstance
+            )
+        }
+
+        // Plus button
+        let plusID = nextControlID()
+        let plusHwnd = "+".withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
+                labelMeasured.width + 78, 0, 24, 24,
+                container, HMENU(bitPattern: UInt(plusID)), context.hInstance
+            )
+        }
+
+        let binding = value
+        let stepVal = step
+        let lo = range.lowerBound
+        let hi = range.upperBound
+        registerCommandHandler(controlID: minusID) {
+            let newVal = max(binding.wrappedValue - stepVal, lo)
+            if newVal != binding.wrappedValue { binding.wrappedValue = newVal }
+        }
+        registerCommandHandler(controlID: plusID) {
+            let newVal = min(binding.wrappedValue + stepVal, hi)
+            if newVal != binding.wrappedValue { binding.wrappedValue = newVal }
+        }
+        if let m = minusHwnd { SetWindowSubclass(m, buttonCleanupProc, 0, DWORD_PTR(minusID)) }
+        if let p = plusHwnd { SetWindowSubclass(p, buttonCleanupProc, 0, DWORD_PTR(plusID)) }
+
+        let totalW = labelMeasured.width + 106
+        SetWindowPos(container, nil, 0, 0, totalW, 24, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+extension ProgressView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let progressClass: [WCHAR] = Array("msctls_progress32".utf16) + [0]
+
+        // If there's a label, wrap in a VStack-like container
+        if !label.isEmpty {
+            registerStackClassIfNeeded(hInstance: context.hInstance)
+            let container = CreateWindowExW(
+                0, stackContainerClassName, nil,
+                DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+                0, 0, 200, 40,
+                context.parent, nil, context.hInstance, nil
+            )!
+
+            let labelMeasured = measureText(label, hwnd: context.parent)
+            _ = label.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                    0, 0, labelMeasured.width + 4, labelMeasured.height + 2,
+                    container, nil, context.hInstance
+                )
+            }
+
+            let bar = progressClass.withUnsafeBufferPointer { ptr in
+                CreateWindowExW(
+                    0, ptr.baseAddress!, nil,
+                    DWORD(WS_CHILD | WS_VISIBLE),
+                    0, labelMeasured.height + 4, 200, 16,
+                    container, nil, context.hInstance, nil
+                )
+            }
+
+            if let bar = bar {
+                configureProgressBar(bar)
+            }
+
+            return container
+        }
+
+        // No label — just the progress bar
+        let hwnd = progressClass.withUnsafeBufferPointer { ptr in
+            CreateWindowExW(
+                0, ptr.baseAddress!, nil,
+                DWORD(WS_CHILD | WS_VISIBLE),
+                0, 0, 200, 20,
+                context.parent, nil, context.hInstance, nil
+            )
+        }
+
+        if let hwnd = hwnd {
+            configureProgressBar(hwnd)
+        }
+
+        return hwnd
+    }
+
+    private func configureProgressBar(_ hwnd: HWND) {
+        if let val = value {
+            SendMessageW(hwnd, UINT(PBM_SETRANGE32), 0, 1000)
+            let pos = Int32((val / total) * 1000)
+            SendMessageW(hwnd, UINT(PBM_SETPOS), WPARAM(pos), 0)
+        } else {
+            let style = win32_GetWindowLongPtrW(hwnd, GWL_STYLE)
+            win32_SetWindowLongPtrW(hwnd, GWL_STYLE, style | LONG_PTR(PBS_MARQUEE))
+            SendMessageW(hwnd, UINT(PBM_SETMARQUEE), 1, 30)
+        }
+    }
+}
+
+extension TaggedView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+protocol _TaggedViewAccess {
+    var _tagValue: AnyHashable { get }
+    var _taggedContent: any View { get }
+}
+
+extension TaggedView: _TaggedViewAccess {
+    var _tagValue: AnyHashable { AnyHashable(tagValue) }
+    var _taggedContent: any View { content }
+}
+
+extension Label: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let displayText: String
+        if let icon = systemImage {
+            displayText = "[\(icon)] \(title)"
+        } else {
+            displayText = title
+        }
+        let measured = measureText(displayText, hwnd: context.parent)
+        return displayText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                0, 0, measured.width + 4, measured.height + 2,
+                context.parent, nil, context.hInstance
+            )
+        }
+    }
+}
+
+extension Link: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let url = destination
+        return createNativeButton(title: label, action: {
+            url.withCString(encodedAs: UTF16.self) { urlPtr in
+                "open".withCString(encodedAs: UTF16.self) { verbPtr in
+                    _ = ShellExecuteW(nil, verbPtr, urlPtr, nil, nil, SW_SHOWNORMAL)
+                }
+            }
+        }, context: context)
+    }
+}
+
+// MARK: - Phase 4B: Lifecycle & container modifiers
+
+extension OnAppearView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        // Fire onAppear after the view is rendered (deferred to next message loop cycle)
+        let appearAction = action
+        let root = findRootWindow(from: context.parent)
+        runOnMainThread(hwnd: root) { appearAction() }
+        return hwnd
+    }
+}
+
+extension OnDisappearView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        // Fires onDisappear when the root HWND is destroyed.
+        // Known limitation: for stateful content, this fires when the
+        // ViewHost container is destroyed, not on individual rebuilds.
+        // Full SwiftUI disappearance semantics would require tracking
+        // view identity across rebuilds, which our architecture doesn't support yet.
+        let disappearAction = action
+        let box = Unmanaged.passRetained(ClosureBox(disappearAction)).toOpaque()
+        SetWindowSubclass(hwnd, onDisappearProc, 90, DWORD_PTR(UInt(bitPattern: box)))
+        return hwnd
+    }
+}
+
+private let onDisappearProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    if uMsg == UINT(WM_NCDESTROY), dwRefData != 0 {
+        let box = Unmanaged<ClosureBox>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).takeRetainedValue()
+        box.closure()
+        RemoveWindowSubclass(hwnd, onDisappearProc, uIdSubclass)
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
+/// Sheet HWND stored on the root window (stable across rebuilds).
+private let sheetPropName: UnsafePointer<WCHAR> = {
+    "SwiftUISheet".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+extension SheetModifierView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        let root = findRootWindow(from: context.parent)
+        let existingSheet = GetPropW(root, sheetPropName)
+
+        if isPresented.wrappedValue && existingSheet == nil {
+            let binding = isPresented
+            let sheetBuilder = sheetContent
+            let hInst = context.hInstance
+
+            registerStackClassIfNeeded(hInstance: hInst)
+            let sheetHwnd = CreateWindowExW(
+                DWORD(WS_EX_TOOLWINDOW),
+                stackContainerClassName, nil,
+                DWORD(WS_POPUP) | DWORD(WS_VISIBLE) | DWORD(WS_CAPTION) | DWORD(WS_SYSMENU),
+                Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT), 400, 300,
+                root, nil, hInst, nil
+            )
+
+            if let sheetHwnd = sheetHwnd {
+                // Track on root window (stable, survives presenter rebuilds)
+                SetPropW(root, sheetPropName, HANDLE(bitPattern: Int(bitPattern: sheetHwnd)))
+
+                let sheetContext = RenderContext(parent: sheetHwnd, hInstance: hInst)
+                if let sheetChild = winRenderView(sheetBuilder(), in: sheetContext) {
+                    var rect = RECT()
+                    GetClientRect(sheetHwnd, &rect)
+                    SetWindowPos(sheetChild, nil, 0, 0,
+                                 rect.right, rect.bottom, UINT(SWP_NOZORDER))
+                }
+
+                // Dismiss subclass: WM_CLOSE sets binding=false + destroys
+                let info = SheetDismissInfo(dismiss: { binding.wrappedValue = false }, root: root)
+                let infoPtr = Unmanaged.passRetained(info).toOpaque()
+                SetWindowSubclass(sheetHwnd, sheetDismissProc, 91,
+                                  DWORD_PTR(UInt(bitPattern: infoPtr)))
+            }
+        } else if !isPresented.wrappedValue, let existing = existingSheet {
+            // Programmatic dismiss: isPresented set to false while sheet is open
+            if let sheetHwnd = HWND(bitPattern: Int(bitPattern: existing)) {
+                DestroyWindow(sheetHwnd)
+            }
+        }
+
+        return hwnd
+    }
+}
+
+private class SheetDismissInfo {
+    let dismiss: () -> Void
+    let root: HWND
+    var dismissed = false
+    init(dismiss: @escaping () -> Void, root: HWND) {
+        self.dismiss = dismiss
+        self.root = root
+    }
+}
+
+private let sheetDismissProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_CLOSE):
+        if dwRefData != 0 {
+            let info = Unmanaged<SheetDismissInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+            if !info.dismissed {
+                info.dismissed = true
+                info.dismiss()
+            }
+        }
+        DestroyWindow(hwnd)
+        return 0
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            let info = Unmanaged<SheetDismissInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            )
+            let val = info.takeUnretainedValue()
+            RemovePropW(val.root, sheetPropName)
+            if !val.dismissed {
+                val.dismissed = true
+                val.dismiss()
+            }
+            info.release()
+        }
+        RemoveWindowSubclass(hwnd, sheetDismissProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+extension AlertModifierView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        if isPresented.wrappedValue {
+            let binding = isPresented
+            let alertTitle = title
+            let alertMsg = message.isEmpty ? title : message
+            let root = findRootWindow(from: context.parent)
+            // Defer alert to after rendering completes
+            runOnMainThread(hwnd: root) {
+                guard binding.wrappedValue else { return }
+                binding.wrappedValue = false
+                alertTitle.withCString(encodedAs: UTF16.self) { titlePtr in
+                    alertMsg.withCString(encodedAs: UTF16.self) { msgPtr in
+                        MessageBoxW(root, msgPtr, titlePtr, UINT(MB_OK))
+                    }
+                }
+            }
+        }
+        return hwnd
+    }
+}
+
+extension OverlayView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        // Container sized to content (overlay does NOT affect size)
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        guard let contentHwnd = winRenderView(content, in: childContext) else { return container }
+
+        // Size container from content's natural size (not overlay)
+        var contentRect = RECT()
+        GetWindowRect(contentHwnd, &contentRect)
+        let w = contentRect.right - contentRect.left
+        let h = contentRect.bottom - contentRect.top
+        SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        SetWindowPos(contentHwnd, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+
+        // Render overlay on top, positioned by alignment
+        if let overlayHwnd = winRenderView(overlay, in: childContext) {
+            var overlayRect = RECT()
+            GetWindowRect(overlayHwnd, &overlayRect)
+            let ow = overlayRect.right - overlayRect.left
+            let oh = overlayRect.bottom - overlayRect.top
+
+            let ox: Int32
+            let oy: Int32
+            switch alignment {
+            case .topLeading:     ox = 0;           oy = 0
+            case .top:            ox = (w - ow) / 2; oy = 0
+            case .topTrailing:    ox = w - ow;       oy = 0
+            case .leading:        ox = 0;           oy = (h - oh) / 2
+            case .center:         ox = (w - ow) / 2; oy = (h - oh) / 2
+            case .trailing:       ox = w - ow;       oy = (h - oh) / 2
+            case .bottomLeading:  ox = 0;           oy = h - oh
+            case .bottom:         ox = (w - ow) / 2; oy = h - oh
+            case .bottomTrailing: ox = w - ow;       oy = h - oh
+            }
+            SetWindowPos(overlayHwnd, nil, ox, oy, ow, oh, UINT(SWP_NOZORDER))
+        }
+
+        return container
+    }
+}
+
+extension Section: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Render as: [Header text (bold)] [Divider] [Content]
+        if header.isEmpty {
+            return winRenderView(content, in: context)
+        }
+        let section = VStack(alignment: .leading, spacing: 4) {
+            Text(header).font(.headline)
+            Divider()
+            content
+        }
+        return winRenderView(section, in: context)
+    }
+}
+
+// MARK: - Phase 4A/4B remaining
+
+extension ConfirmationDialogView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        if isPresented.wrappedValue {
+            let binding = isPresented
+            let dlgTitle = title
+            let dlgButtons = buttons
+            let root = findRootWindow(from: context.parent)
+            runOnMainThread(hwnd: root) {
+                guard binding.wrappedValue else { return }
+                binding.wrappedValue = false
+                let result = dlgTitle.withCString(encodedAs: UTF16.self) { titlePtr in
+                    dlgTitle.withCString(encodedAs: UTF16.self) { msgPtr in
+                        MessageBoxW(root, msgPtr, titlePtr, UINT(MB_YESNO | MB_ICONQUESTION))
+                    }
+                }
+                if result == IDYES {
+                    dlgButtons.first?.action()
+                } else {
+                    dlgButtons.first(where: { $0.role == .cancel })?.action()
+                }
+            }
+        }
+        return hwnd
+    }
+}
+
+extension Form: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Form renders as a VStack with padding — visual grouping for controls
+        let formView = VStack(alignment: .leading, spacing: 8) { content }.padding()
+        return winRenderView(formView, in: context)
+    }
+}
+
+extension TabView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Extract tab items from content
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        var tabPages: [(label: String, hwnd: HWND)] = []
+
+        if let multi = content as? MultiChildView {
+            for child in multi.children {
+                func processTab<V: View>(_ v: V) {
+                    if let tabItem = v as? any _TabItemAccess {
+                        let label = tabItem._tabLabelText
+                        if let pageHwnd = winRenderAnyView(tabItem._tabContent, in: childContext) {
+                            tabPages.append((label: label, hwnd: pageHwnd))
+                        }
+                    } else {
+                        if let pageHwnd = winRenderView(v, in: childContext) {
+                            tabPages.append((label: "Tab \(tabPages.count + 1)", hwnd: pageHwnd))
+                        }
+                    }
+                }
+                processTab(child)
+            }
+        } else {
+            if let pageHwnd = winRenderView(content, in: childContext) {
+                tabPages.append((label: "Tab 1", hwnd: pageHwnd))
+            }
+        }
+
+        guard !tabPages.isEmpty else { return container }
+
+        // Create tab buttons at the top
+        let tabBarHeight: Int32 = 28
+        var buttonX: Int32 = 0
+        var tabButtonIDs: [(id: WORD, index: Int)] = []
+
+        for (i, tab) in tabPages.enumerated() {
+            let measured = measureText(tab.label, hwnd: context.parent)
+            let btnW = measured.width + 16
+            let controlID = nextControlID()
+
+            let btn = tab.label.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
+                    buttonX, 0, btnW, tabBarHeight,
+                    container, HMENU(bitPattern: UInt(controlID)), context.hInstance
+                )
+            }
+            // Cleanup handler on WM_NCDESTROY to prevent command handler leak
+            if let btn = btn {
+                SetWindowSubclass(btn, buttonCleanupProc, 0, DWORD_PTR(controlID))
+            }
+            tabButtonIDs.append((id: controlID, index: i))
+            buttonX += btnW + 2
+        }
+
+        // Position tab pages below buttons, show only first
+        // Size all pages to the max dimensions for consistent switching
+        var maxW: Int32 = buttonX
+        var maxH: Int32 = 0
+        for tab in tabPages {
+            var r = RECT()
+            GetWindowRect(tab.hwnd, &r)
+            maxW = max(maxW, r.right - r.left)
+            maxH = max(maxH, r.bottom - r.top)
+        }
+        for (i, tab) in tabPages.enumerated() {
+            SetWindowPos(tab.hwnd, nil, 0, tabBarHeight + 2, maxW, maxH, UINT(SWP_NOZORDER))
+            ShowWindow(tab.hwnd, i == 0 ? SW_SHOW : SW_HIDE)
+        }
+
+        SetWindowPos(container, nil, 0, 0, maxW, tabBarHeight + 2 + maxH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        // Wire tab buttons to show/hide pages + resize selected page
+        let pageAreaW = maxW
+        let pageAreaH = maxH
+        for entry in tabButtonIDs {
+            let pages = tabPages
+            let selectedIndex = entry.index
+            let barH = tabBarHeight
+            registerCommandHandler(controlID: entry.id) {
+                for (i, page) in pages.enumerated() {
+                    if i == selectedIndex {
+                        SetWindowPos(page.hwnd, nil, 0, barH + 2, pageAreaW, pageAreaH, UINT(SWP_NOZORDER))
+                        ShowWindow(page.hwnd, SW_SHOW)
+                    } else {
+                        ShowWindow(page.hwnd, SW_HIDE)
+                    }
+                }
+            }
+        }
+
+        return container
+    }
+}
+
+/// Protocol for extracting tab item info without knowing generic types.
+protocol _TabItemAccess {
+    var _tabLabelText: String { get }
+    var _tabContent: any View { get }
+}
+
+extension TabItemView: _TabItemAccess {
+    var _tabLabelText: String {
+        extractTextFromView(tabLabel) ?? "Tab"
+    }
+    var _tabContent: any View { content }
+}
+
+extension TabItemView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+extension Picker: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 250, 24,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Label
+        let labelMeasured = measureText(label, hwnd: context.parent)
+        _ = label.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                0, 2, labelMeasured.width + 4, 20,
+                container, nil, context.hInstance
+            )
+        }
+
+        // ComboBox
+        let comboX = labelMeasured.width + 8
+        let comboHwnd = win32_CreateChildWindow(
+            win32_WC_COMBOBOX(), nil,
+            DWORD(CBS_DROPDOWNLIST | WS_TABSTOP),
+            comboX, 0, 150, 200,  // height 200 = dropdown list height
+            container, nil, context.hInstance
+        )
+
+        guard let comboHwnd = comboHwnd else { return container }
+
+        // Extract items from content — walk TaggedView children
+        var items: [(text: String, tag: AnyHashable)] = []
+        if let multi = content as? MultiChildView {
+            for child in multi.children {
+                func extractItem<V: View>(_ v: V) {
+                    if let tagged = v as? any _TaggedViewAccess {
+                        let text = extractTextFromView(tagged._taggedContent) ?? "?"
+                        items.append((text: text, tag: tagged._tagValue))
+                    } else {
+                        let text = extractTextFromView(v) ?? "?"
+                        items.append((text: text, tag: AnyHashable(items.count)))
+                    }
+                }
+                extractItem(child)
+            }
+        }
+
+        // Populate combobox
+        for item in items {
+            item.text.withCString(encodedAs: UTF16.self) { wstr in
+                SendMessageW(comboHwnd, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: wstr)))
+            }
+        }
+
+        // Set initial selection from binding
+        let currentSelection = selection.wrappedValue
+        for (i, item) in items.enumerated() {
+            if item.tag == AnyHashable(currentSelection) {
+                SendMessageW(comboHwnd, UINT(CB_SETCURSEL), WPARAM(i), 0)
+                break
+            }
+        }
+
+        // Wire CBN_SELCHANGE to update binding
+        let binding = selection
+        let capturedItems = items
+        let handler = SubclassHandler(hwnd: comboHwnd)
+        handler.onCommand = {
+            let sel = Int(SendMessageW(comboHwnd, UINT(CB_GETCURSEL), 0, 0))
+            if sel >= 0 && sel < capturedItems.count {
+                if let newVal = capturedItems[sel].tag.base as? SelectionValue {
+                    binding.wrappedValue = newVal
+                }
+            }
+        }
+        let state = TextFieldState(handler: handler)
+        let statePtr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(comboHwnd, textFieldCleanupProc, 41, DWORD_PTR(UInt(bitPattern: statePtr)))
+
+        SetWindowPos(container, nil, 0, 0, comboX + 150, 24, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+// MARK: - Toolbar
+
+extension ToolbarView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        // Extract toolbar items and render them into the navigation header.
+        // If we're inside a NavigationStack, add buttons to the header bar.
+        // Otherwise, create a toolbar bar above the content.
+        guard let navCtx = getCurrentNavigationContext() else {
+            // Not inside NavigationStack — render toolbar items as an HStack above content
+            return renderToolbarWithContent(hwnd: hwnd, context: context)
+        }
+
+        // Inside NavigationStack — add items to the header bar
+        renderToolbarItems(into: navCtx, context: context)
+        return hwnd
+    }
+
+    private func renderToolbarWithContent(hwnd: HWND, context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Toolbar bar at top
+        let toolbarContext = RenderContext(parent: container, hInstance: context.hInstance)
+        let toolbarBar = winRenderView(HStack(spacing: 4) { items }, in: toolbarContext)
+
+        var toolbarH: Int32 = 28
+        if let bar = toolbarBar {
+            var r = RECT()
+            GetWindowRect(bar, &r)
+            toolbarH = max(r.bottom - r.top, 28)
+        }
+
+        // Reparent content into container
+        SetParent(hwnd, container)
+
+        var contentRect = RECT()
+        GetWindowRect(hwnd, &contentRect)
+        let contentW = contentRect.right - contentRect.left
+        let contentH = contentRect.bottom - contentRect.top
+
+        SetWindowPos(container, nil, 0, 0, contentW, toolbarH + contentH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+        if let bar = toolbarBar {
+            SetWindowPos(bar, nil, 0, 0, contentW, toolbarH, UINT(SWP_NOZORDER))
+        }
+        SetWindowPos(hwnd, nil, 0, toolbarH, contentW, contentH, UINT(SWP_NOZORDER))
+
+        return container
+    }
+
+    private func renderToolbarItems(into navCtx: Win32NavigationContext, context: RenderContext) {
+        // Remove any previously rendered toolbar items from the header
+        // (prevents accumulation across rebuilds)
+        clearToolbarItems(from: navCtx.headerContainer)
+
+        let headerContext = RenderContext(parent: navCtx.headerContainer, hInstance: context.hInstance)
+        var leadingX: Int32 = 68  // after back button area
+        var trailingItems: [(hwnd: HWND, width: Int32)] = []
+
+        // Collect all toolbar items
+        var allItems: [any _ToolbarItemAccess] = []
+        if let multi = items as? MultiChildView {
+            for child in multi.children {
+                func extract<V: View>(_ v: V) {
+                    if let item = v as? any _ToolbarItemAccess { allItems.append(item) }
+                }
+                extract(child)
+            }
+        } else if let single = items as? any _ToolbarItemAccess {
+            allItems.append(single)
+        }
+
+        for item in allItems {
+            guard let itemHwnd = winRenderAnyView(item._itemContent, in: headerContext) else { continue }
+            // Mark as toolbar item for cleanup
+            SetPropW(itemHwnd, toolbarItemPropName, HANDLE(bitPattern: 1))
+
+            var r = RECT()
+            GetWindowRect(itemHwnd, &r)
+            let w = r.right - r.left
+
+            switch item._placement {
+            case .navigationBarLeading:
+                SetWindowPos(itemHwnd, nil, leadingX, 2, w, 24, UINT(SWP_NOZORDER))
+                leadingX += w + 4
+            case .navigationBarTrailing, .automatic:
+                trailingItems.append((hwnd: itemHwnd, width: w))
+            }
+        }
+
+        // Position trailing items from right edge
+        var headerRect = RECT()
+        GetClientRect(navCtx.headerContainer, &headerRect)
+        var trailingX = headerRect.right - headerRect.left - 4
+        for item in trailingItems.reversed() {
+            trailingX -= item.width
+            SetWindowPos(item.hwnd, nil, trailingX, 2, item.width, 24, UINT(SWP_NOZORDER))
+            trailingX -= 4
+        }
+    }
+}
+
+private let toolbarItemPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIToolbarItem".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+/// Remove toolbar items from a header container (identified by property).
+private func clearToolbarItems(from container: HWND) {
+    var toRemove: [HWND] = []
+    var child = GetWindow(container, UINT(GW_CHILD))
+    while let c = child {
+        if GetPropW(c, toolbarItemPropName) != nil {
+            toRemove.append(c)
+        }
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+    for hwnd in toRemove {
+        DestroyWindow(hwnd)
+    }
+}
+
+protocol _ToolbarItemAccess {
+    var _placement: ToolbarItemPlacement { get }
+    var _itemContent: any View { get }
+}
+
+extension ToolbarItem: _ToolbarItemAccess {
+    var _placement: ToolbarItemPlacement { placement }
+    var _itemContent: any View { content }
+}
+
+// Make ToolbarItem renderable so it can appear in ViewBuilder content
+extension ToolbarItem: View {
+    public typealias Body = Never
+    public var body: Never { fatalError("ToolbarItem is a primitive view") }
+}
+
+extension ToolbarItem: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+// MARK: - Phase 4D views
+
+extension Menu: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Render as a button that shows a popup menu on click
+        let menuLabel = label
+        let menuContent = content
+        let hInst = context.hInstance
+
+        return createNativeButton(title: "☰ \(menuLabel)", action: {
+            // Build popup menu from children
+            guard let hMenu = CreatePopupMenu() else { return }
+
+            var menuID: UINT = 50000
+            var menuActions: [UINT: () -> Void] = [:]
+
+            if let multi = menuContent as? MultiChildView {
+                for child in multi.children {
+                    func addItem<V: View>(_ v: V) {
+                        if v is Divider {
+                            AppendMenuW(hMenu, UINT(MF_SEPARATOR), 0, nil)
+                        } else if let btn = v as? Button<Text> {
+                            let title = btn.label.content
+                            let action = btn.action
+                            let id = menuID
+                            menuID += 1
+                            title.withCString(encodedAs: UTF16.self) { wstr in
+                                AppendMenuW(hMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+                            }
+                            menuActions[id] = action
+                        } else if let text = extractTextFromView(v) {
+                            let id = menuID
+                            menuID += 1
+                            text.withCString(encodedAs: UTF16.self) { wstr in
+                                AppendMenuW(hMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+                            }
+                        }
+                    }
+                    addItem(child)
+                }
+            }
+
+            // Show popup at cursor position
+            var pt = POINT()
+            GetCursorPos(&pt)
+            // Register menu item actions as command handlers so they fire
+            // via WM_COMMAND when the user selects a menu item
+            let root = findRootWindow(from: context.parent)
+            for (id, action) in menuActions {
+                registerCommandHandler(controlID: WORD(id), action: action)
+            }
+
+            _ = TrackPopupMenu(hMenu, 0, pt.x, pt.y, 0, root, nil)
+            DestroyMenu(hMenu)
+
+            // Unregister after menu closes
+            for id in menuActions.keys {
+                unregisterCommandHandler(controlID: WORD(id))
+            }
+        }, context: context)
+    }
+}
+
+extension DisclosureGroup: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Toggle button
+        let expanded = isExpanded.wrappedValue
+        let arrow = expanded ? "▼" : "▶"
+        let btnText = "\(arrow) \(label)"
+        let controlID = nextControlID()
+        let measured = measureText(btnText, hwnd: context.parent)
+
+        _ = btnText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
+                0, 0, measured.width + 16, measured.height + 8,
+                container, HMENU(bitPattern: UInt(controlID)), context.hInstance
+            )
+        }
+
+        let binding = isExpanded
+        registerCommandHandler(controlID: controlID) {
+            binding.wrappedValue = !binding.wrappedValue
+        }
+
+        // Content (shown only if expanded)
+        var totalH = measured.height + 12
+        if expanded {
+            let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+            if let childHwnd = winRenderView(content, in: childContext) {
+                var r = RECT()
+                GetWindowRect(childHwnd, &r)
+                let ch = r.bottom - r.top
+                let cw = r.right - r.left
+                SetWindowPos(childHwnd, nil, 8, totalH, cw, ch, UINT(SWP_NOZORDER))
+                totalH += ch
+            }
+        }
+
+        SetWindowPos(container, nil, 0, 0, max(measured.width + 20, 200), totalH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+extension DatePicker: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 250, 24,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Label
+        let labelMeasured = measureText(label, hwnd: context.parent)
+        _ = label.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                0, 2, labelMeasured.width + 4, 20,
+                container, nil, context.hInstance
+            )
+        }
+
+        // Date/time picker control
+        let dtpClass: [WCHAR] = Array("SysDateTimePick32".utf16) + [0]
+        let dtp = dtpClass.withUnsafeBufferPointer { ptr in
+            CreateWindowExW(
+                0, ptr.baseAddress!, nil,
+                DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP),
+                labelMeasured.width + 8, 0, 150, 24,
+                container, nil, context.hInstance, nil
+            )
+        }
+
+        // Wire DTN_DATETIMECHANGE via WM_NOTIFY on the container
+        if let dtp = dtp {
+            let binding = selection
+            let notifyInfo = DatePickerNotifyInfo(binding: binding, dtp: dtp)
+            let infoPtr = Unmanaged.passRetained(notifyInfo).toOpaque()
+            SetWindowSubclass(container, datePickerNotifyProc, 43, DWORD_PTR(UInt(bitPattern: infoPtr)))
+        }
+
+        return container
+    }
+}
+
+private class DatePickerNotifyInfo {
+    let binding: Binding<Date>
+    let dtp: HWND
+    init(binding: Binding<Date>, dtp: HWND) {
+        self.binding = binding
+        self.dtp = dtp
+    }
+}
+
+private let datePickerNotifyProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_NOTIFY):
+        if dwRefData != 0 {
+            let nmhdr = UnsafePointer<NMHDR>(bitPattern: Int(lParam))
+            if let nmhdr = nmhdr, nmhdr.pointee.code == UINT(DTN_DATETIMECHANGE) {
+                let info = Unmanaged<DatePickerNotifyInfo>.fromOpaque(
+                    UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+                ).takeUnretainedValue()
+
+                // Read SYSTEMTIME from the DTP control
+                var st = SYSTEMTIME()
+                let result = SendMessageW(info.dtp, UINT(DTM_GETSYSTEMTIME), 0,
+                                          LPARAM(Int(bitPattern: UnsafeMutablePointer(&st))))
+                if result == 0 {  // GDT_VALID
+                    // Convert SYSTEMTIME to Date
+                    var ft = FILETIME()
+                    SystemTimeToFileTime(&st, &ft)
+                    // FILETIME is 100-nanosecond intervals since 1601-01-01
+                    let intervals = UInt64(ft.dwHighDateTime) << 32 | UInt64(ft.dwLowDateTime)
+                    // Unix epoch offset from Windows epoch (in 100ns intervals)
+                    let unixOffset: UInt64 = 116444736000000000
+                    let unixTime = Double(intervals - unixOffset) / 10000000.0
+                    info.binding.wrappedValue = Date(timeIntervalSince1970: unixTime)
+                }
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            Unmanaged<DatePickerNotifyInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).release()
+        }
+        RemoveWindowSubclass(hwnd, datePickerNotifyProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+extension LazyVStack: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Non-virtualized: render as ScrollView + VStack
+        let scrollView = ScrollView(.vertical) {
+            VStack(alignment: alignment, spacing: spacing) { content }
+        }
+        return winRenderView(scrollView, in: context)
+    }
+}
+
+extension LazyHStack: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Non-virtualized: render as HStack (no horizontal scroll yet)
+        let stack = HStack(alignment: alignment, spacing: spacing) { content }
+        return winRenderView(stack, in: context)
+    }
+}
+
+extension Grid: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Render each GridRow as an HStack
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        var rows: [HWND] = []
+        var maxW: Int32 = 0
+        var totalH: Int32 = 0
+
+        if let multi = content as? MultiChildView {
+            for child in multi.children {
+                func renderRow<V: View>(_ v: V) {
+                    let rowView = HStack(spacing: horizontalSpacing) { v }
+                    if let rowHwnd = winRenderView(rowView, in: childContext) {
+                        var r = RECT()
+                        GetWindowRect(rowHwnd, &r)
+                        let rw = r.right - r.left
+                        let rh = r.bottom - r.top
+                        SetWindowPos(rowHwnd, nil, 0, totalH, rw, rh, UINT(SWP_NOZORDER))
+                        maxW = max(maxW, rw)
+                        totalH += rh + Int32(verticalSpacing)
+                        rows.append(rowHwnd)
+                    }
+                }
+                renderRow(child)
+            }
+        }
+
+        SetWindowPos(container, nil, 0, 0, maxW, totalH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+extension GridRow: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let hstack = HStack(spacing: 4) { content }
+        return winRenderView(hstack, in: context)
+    }
+}
+
+extension LazyVGrid: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Non-virtualized: render as Grid-like layout in ScrollView
+        let grid = Grid(horizontalSpacing: spacing) { content }
+        let scrollView = ScrollView(.vertical) { grid }
+        return winRenderView(scrollView, in: context)
+    }
+}
+
+extension LazyHGrid: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Non-virtualized: render as horizontal grid
+        let grid = Grid(verticalSpacing: spacing) { content }
+        return winRenderView(grid, in: context)
+    }
+}
+
+extension NavigationSplitView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        let sidebarHwnd = winRenderView(sidebar, in: childContext)
+        let detailHwnd = winRenderView(detail, in: childContext)
+
+        // Side-by-side layout: sidebar 200px, detail fills rest
+        let sidebarWidth: Int32 = 200
+        var totalW: Int32 = 400
+        var totalH: Int32 = 300
+
+        if let sh = sidebarHwnd {
+            var r = RECT()
+            GetWindowRect(sh, &r)
+            totalH = max(totalH, r.bottom - r.top)
+            SetWindowPos(sh, nil, 0, 0, sidebarWidth, totalH, UINT(SWP_NOZORDER))
+        }
+        if let dh = detailHwnd {
+            var r = RECT()
+            GetWindowRect(dh, &r)
+            totalH = max(totalH, r.bottom - r.top)
+            totalW = sidebarWidth + max(r.right - r.left, 200)
+            SetWindowPos(dh, nil, sidebarWidth, 0, totalW - sidebarWidth, totalH, UINT(SWP_NOZORDER))
+        }
+
+        SetWindowPos(container, nil, 0, 0, totalW, totalH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+// MARK: - GeometryReader
+
+extension GeometryReader: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        // Create container that fills available space
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Measure the parent to get available size
+        var parentRect = RECT()
+        GetClientRect(context.parent, &parentRect)
+        let availW = Double(parentRect.right - parentRect.left)
+        let availH = Double(parentRect.bottom - parentRect.top)
+
+        // Use parent size or a default if parent hasn't been sized yet
+        let proxyW = availW > 0 ? availW : 300
+        let proxyH = availH > 0 ? availH : 200
+
+        let proxy = GeometryProxy(size: (width: proxyW, height: proxyH))
+        let childView = content(proxy)
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        if let childHwnd = winRenderView(childView, in: childContext) {
+            SetWindowPos(childHwnd, nil, 0, 0, Int32(proxyW), Int32(proxyH), UINT(SWP_NOZORDER))
+        }
+
+        SetWindowPos(container, nil, 0, 0, Int32(proxyW), Int32(proxyH),
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+// MARK: - Searchable
+
+extension SearchableView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Search field at top — initialized with current binding value
+        let searchHeight: Int32 = 24
+        let currentText = text.wrappedValue
+        let searchHwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_EDIT(), wstr,
+                DWORD(ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP),
+                0, 0, 0, searchHeight,
+                container, nil, context.hInstance
+            )
+        }
+
+        if let searchHwnd = searchHwnd {
+            // Placeholder
+            prompt.withCString(encodedAs: UTF16.self) { ptr in
+                _ = SendMessageW(searchHwnd, UINT(EM_SETCUEBANNER), 1,
+                                 LPARAM(Int(bitPattern: ptr)))
+            }
+
+            // Wire binding
+            let binding = text
+            let handler = SubclassHandler(hwnd: searchHwnd)
+            handler.onTextChanged = { newValue in
+                if newValue != binding.wrappedValue {
+                    binding.wrappedValue = newValue
+                }
+            }
+            let state = TextFieldState(handler: handler)
+            let statePtr = Unmanaged.passRetained(state).toOpaque()
+            SetWindowSubclass(searchHwnd, textFieldCleanupProc, 41,
+                              DWORD_PTR(UInt(bitPattern: statePtr)))
+        }
+
+        // Content below search field
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        let contentHwnd = winRenderView(content, in: childContext)
+
+        // Size container
+        var contentW: Int32 = 200
+        var contentH: Int32 = 100
+        if let ch = contentHwnd {
+            var r = RECT()
+            GetWindowRect(ch, &r)
+            contentW = max(r.right - r.left, 200)
+            contentH = r.bottom - r.top
+        }
+
+        SetWindowPos(container, nil, 0, 0, contentW, searchHeight + 4 + contentH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        // Position children
+        if let sh = searchHwnd {
+            SetWindowPos(sh, nil, 0, 0, contentW, searchHeight, UINT(SWP_NOZORDER))
+        }
+        if let ch = contentHwnd {
+            SetWindowPos(ch, nil, 0, searchHeight + 4, contentW, contentH, UINT(SWP_NOZORDER))
+        }
+
+        return container
+    }
+}
+
+// MARK: - Phase 4C: Shape modifiers
+
+extension CornerRadiusView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Corner radius requires D2D surface for proper clipping.
+        // For HWND controls, apply WS_EX_CLIENTEDGE as visual approximation.
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        if radius > 0 {
+            // Win32 doesn't support per-corner radius on native controls.
+            // For D2D-renderable content, this could use FillRoundedRectangle.
+            // For now, pass through (content renders normally).
+        }
+        return hwnd
+    }
+}
+
+extension ShadowView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Shadow on HWND controls is not natively supported.
+        // Pass through — content renders normally without shadow.
+        // D2D shadow would require rendering content to a bitmap
+        // and drawing a blurred offset copy underneath.
+        winRenderView(content, in: context)
+    }
+}
+
+extension RotationView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Rotation requires D2D SetTransform with rotation matrix.
+        // Not implemented — would need d2d1_shim.h addition.
+        // Pass through for now.
+        winRenderView(content, in: context)
     }
 }
 

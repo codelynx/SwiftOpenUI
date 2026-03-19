@@ -19,7 +19,7 @@ Last updated: 2026-03-19
 | Button | Y | Y | Y | Y | Y | Y | Generic Label view supported |
 | TextField | Y | Y | Y | Y | Y | Y | Single-line; Binding<String> |
 | Toggle | Y | Y | Y | Y | - | - | GtkCheckButton / Win32 checkbox |
-| Slider | Y | Y | Y | Y | - | - | Debounced commit on GTK4 (150ms) |
+| Slider | Y | Y | Y | Y | - | - | Debounced on GTK4; container subclass on Win32 |
 | Image | Y | Y | Y | ~ | - | - | GTK icon theme + file; Win32: text fallback |
 | Color | Y | Y | Y | Y | Y | Y | RGBA, hex, HSB constructors |
 | Spacer | Y | Y | Y | Y | Y | Y | |
@@ -35,29 +35,29 @@ Last updated: 2026-03-19
 | EmptyView | Y | Y | Y | Y | Y | Y | |
 | NavigationStack | Y | Y | Y | Y | Y | Y | GtkStack / Win32 HWND stack / DOM stack |
 | NavigationLink | Y | Y | Y | Y | Y | Y | String label only |
-| SecureField | Y | Y | Y | - | - | - | GtkPasswordEntry with peek icon |
-| TextEditor | Y | Y | Y | - | - | - | GtkTextView in ScrolledWindow |
-| ProgressView | Y | Y | Y | - | - | - | Determinate; indeterminate pulse TODO |
-| Stepper | Y | Y | Y | - | - | - | GtkSpinButton with label, range/step |
-| Label | Y | Y | Y | - | - | - | systemImage or filePath + title |
-| Link | Y | Y | Y | - | - | - | GtkLinkButton |
-| TabView | Y | Y | Y | - | - | - | GtkStack + GtkStackSwitcher, TabBuilder |
-| Grid | Y | Y | Y | - | - | - | Auto-wrap and explicit GridRow modes |
+| SecureField | Y | Y | Y | Y | - | - | GTK: PasswordEntry; Win32: EDIT+ES_PASSWORD |
+| TextEditor | Y | Y | Y | Y | - | - | GTK: TextView+ScrolledWindow; Win32: EDIT+ES_MULTILINE |
+| ProgressView | Y | Y | Y | Y | - | - | GTK: GtkProgressBar; Win32: msctls_progress32 |
+| Stepper | Y | Y | Y | Y | - | - | GTK: SpinButton; Win32: label+buttons |
+| Label | Y | Y | Y | Y | - | - | GTK: icon+text; Win32: text with [icon] prefix |
+| Link | Y | Y | Y | Y | - | - | GTK: LinkButton; Win32: ShellExecuteW |
+| TabView | Y | Y | Y | Y | - | - | GTK: Stack+Switcher; Win32: button bar |
+| Grid | Y | Y | Y | Y | - | - | GTK: GtkGrid auto-wrap+rows; Win32: VStack of HStacks |
 | GridRow | Y | Y | Y | - | - | - | MultiChildView, .gridCellColumns() span |
-| DisclosureGroup | Y | Y | Y | - | - | - | GtkExpander, Binding<Bool> |
-| Form | Y | Y | Y | - | - | - | Styled GtkBox with padding/spacing |
-| Section | Y | Y | Y | - | - | - | Header (Pango markup), footer, separator |
-| LazyVStack | Y | Y | Y | - | - | - | GtkListView factory pattern |
-| LazyHStack | Y | Y | Y | - | - | - | GtkListView horizontal |
-| LazyVGrid | Y | Y | Y | - | - | - | GtkGridView, GridItem adaptive/fixed |
-| LazyHGrid | Y | Y | Y | - | - | - | GtkGridView horizontal |
-| Picker | Y | Y | Y | - | - | - | GtkDropDown or segmented toggle group |
-| DatePicker | Y | Y | Y | - | - | - | GtkCalendar, DateComponents type |
-| GeometryReader | Y | Y | Y | - | - | - | Deferred map + tick resize tracking |
-| Menu | Y | Y | Y | - | - | - | GMenu + GSimpleActionGroup + PopoverMenu |
-| ConfirmationDialog | Y | Y | Y | - | - | - | Vertical buttons, Binding<Bool>, deferred |
+| DisclosureGroup | Y | Y | Y | Y | - | - | GTK: GtkExpander; Win32: toggle+show/hide |
+| Form | Y | Y | Y | Y | - | - | GTK: styled GtkBox; Win32: VStack+padding |
+| Section | Y | Y | Y | Y | - | - | GTK: Pango header; Win32: header+divider |
+| LazyVStack | Y | Y | Y | Y | - | - | GTK: virtualized GtkListView; Win32: non-virtualized |
+| LazyHStack | Y | Y | Y | Y | - | - | GTK: GtkListView horizontal; Win32: HStack |
+| LazyVGrid | Y | Y | Y | Y | - | - | GTK: GtkGridView adaptive; Win32: non-virtualized |
+| LazyHGrid | Y | Y | Y | Y | - | - | GTK: GtkGridView horizontal; Win32: Grid |
+| Picker | Y | Y | Y | ~ | - | - | GTK: dropdown/segmented; Win32: stub |
+| DatePicker | Y | Y | Y | ~ | - | - | GTK: GtkCalendar; Win32: SysDateTimePick32 (display) |
+| GeometryReader | Y | Y | Y | Y | - | - | GTK: map+tick; Win32: parent rect |
+| Menu | Y | Y | Y | Y | - | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu |
+| ConfirmationDialog | Y | Y | Y | Y | - | - | GTK: vertical modal; Win32: MessageBoxW |
+| Canvas | Y | Y | Y | - | - | - | GtkDrawingArea + Cairo |
 | Map | Y | - | - | - | - | - | Needs external map library |
-| Canvas | Y | Y | Y | - | - | - | GtkDrawingArea + Cairo, DrawingContext API |
 
 ## Modifiers
 
@@ -85,16 +85,17 @@ Last updated: 2026-03-19
 | .focused() | Y | Y | Y | Y | - | Y | Web: no-op (pass-through) |
 | .modifier() | Y | Y | Y | Y | Y | Y | Custom ViewModifier |
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
-| .cornerRadius() | Y | Y | Y | - | - | - | CSS border-radius |
-| .shadow() | Y | Y | Y | - | - | - | CSS box-shadow + margin |
-| .rotationEffect() | Y | Y | Y | - | - | - | CSS transform rotate, Angle type |
-| .overlay() | Y | Y | Y | - | - | - | GtkOverlay with alignment |
-| .sheet() | Y | Y | Y | - | - | - | Modal GtkWindow, DismissAction env |
-| .alert() | Y | Y | Y | - | - | - | Modal dialog with AlertButton array |
-| .onAppear() | Y | Y | Y | - | - | - | "map" signal, rebuild-suppressed |
-| .onDisappear() | Y | Y | Y | - | - | - | "unmap" signal, rebuild vs real |
-| .searchable() | Y | Y | Y | - | - | - | GtkSearchEntry + binding |
-| .toolbar() | Y | Y | Y | - | - | - | ToolbarProvider, header bar integration |
+| .cornerRadius() | Y | Y | Y | ~ | - | - | GTK: CSS; Win32: stub (needs D2D) |
+| .shadow() | Y | Y | Y | ~ | - | - | GTK: CSS; Win32: stub (needs D2D) |
+| .rotationEffect() | Y | Y | Y | ~ | - | - | GTK: CSS transform; Win32: stub |
+| .overlay() | Y | Y | Y | Y | - | - | GTK: GtkOverlay; Win32: container |
+| .sheet() | Y | Y | Y | Y | - | - | GTK: modal window; Win32: popup |
+| .alert() | Y | Y | Y | Y | - | - | GTK: modal dialog; Win32: MessageBoxW |
+| .confirmationDialog() | Y | Y | Y | Y | - | - | GTK: vertical modal; Win32: MessageBoxW |
+| .onAppear() | Y | Y | Y | Y | - | - | GTK: map signal; Win32: deferred |
+| .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
+| .searchable() | Y | Y | Y | Y | - | - | GTK: SearchEntry; Win32: EDIT |
+| .toolbar() | Y | Y | Y | Y | - | - | GTK: header bar; Win32: nav header |
 | .gridCellColumns() | Y | Y | Y | - | - | - | Column span in Grid/GridRow |
 | .pickerStyle() | Y | Y | Y | - | - | - | .automatic, .segmented, .palette |
 | .clipShape() | Y | - | - | - | - | - | |
@@ -161,11 +162,11 @@ Last updated: 2026-03-19
 
 ## Summary
 
-| Category | SwiftUI Total | SwiftOpenUI Implemented | Coverage |
-|----------|--------------|------------------------|----------|
-| Views | 43 | 42 | ~98% |
-| Modifiers | 36 | 34 | ~94% |
-| State & Data | 13 | 10 | ~77% |
-| Navigation | 8 | 6 | 75% |
-| App structure | 9 | 5 | ~56% |
-| Layout system | 9 | 7 | ~78% |
+| Category | SwiftUI Total | Core Implemented | GTK4 | Win32 | Coverage |
+|----------|--------------|-----------------|------|-------|----------|
+| Views | 44 | 43 | 43 | 40 | ~98% |
+| Modifiers | 37 | 35 | 35 | 31 | ~95% |
+| State & Data | 13 | 10 | 10 | 10 | ~77% |
+| Navigation | 8 | 6 | 6 | 6 | 75% |
+| App structure | 9 | 5 | 5 | 5 | ~56% |
+| Layout system | 9 | 7 | 7 | 7 | ~78% |
