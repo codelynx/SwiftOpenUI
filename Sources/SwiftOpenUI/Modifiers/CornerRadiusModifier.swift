@@ -9,7 +9,8 @@ public struct CornerRadiusView<Content: View>: View {
 }
 
 extension View {
-    /// Clips this view to a rounded rectangle with the given corner radius.
+    /// Rounds the corners of this view. Note: on GTK4 this applies CSS
+    /// border-radius which styles the background but does not clip descendant content.
     public func cornerRadius(_ radius: Double) -> CornerRadiusView<Self> {
         CornerRadiusView(content: self, radius: max(0, radius))
     }
