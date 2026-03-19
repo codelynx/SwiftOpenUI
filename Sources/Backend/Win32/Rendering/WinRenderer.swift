@@ -2352,24 +2352,6 @@ extension ProgressView: WinRenderable {
     }
 }
 
-extension Picker: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Render as label + combobox
-        // For now, extract text items from content and populate combobox
-        let hwnd = win32_CreateChildWindow(
-            win32_WC_STATIC(), nil, DWORD(SS_LEFTNOWORDWRAP),
-            0, 0, 200, 24,
-            context.parent, nil, context.hInstance
-        )
-        // Picker requires more complex item extraction — stub for now
-        let text = "[\(label) picker]"
-        text.withCString(encodedAs: UTF16.self) { wstr in
-            SetWindowTextW(hwnd, wstr)
-        }
-        return hwnd
-    }
-}
-
 extension TaggedView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         winRenderView(content, in: context)
@@ -2563,12 +2545,13 @@ extension AlertView: WinRenderable {
             let root = findRootWindow(from: context.parent)
             // Defer alert to after rendering completes
             runOnMainThread(hwnd: root) {
+                guard binding.wrappedValue else { return }
+                binding.wrappedValue = false
                 alertTitle.withCString(encodedAs: UTF16.self) { titlePtr in
                     alertMsg.withCString(encodedAs: UTF16.self) { msgPtr in
                         MessageBoxW(root, msgPtr, titlePtr, UINT(MB_OK))
                     }
                 }
-                binding.wrappedValue = false
             }
         }
         return hwnd
@@ -2637,6 +2620,187 @@ extension Section: WinRenderable {
             content
         }
         return winRenderView(section, in: context)
+    }
+}
+
+// MARK: - Phase 4A/4B remaining
+
+extension ConfirmationDialogView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        if isPresented.wrappedValue {
+            let binding = isPresented
+            let confirmAction = onConfirm
+            let cancelAction = onCancel
+            let dlgTitle = title
+            let dlgMsg = message.isEmpty ? title : message
+            let root = findRootWindow(from: context.parent)
+            runOnMainThread(hwnd: root) {
+                // Guard: if binding was cleared before this deferred call runs, skip
+                guard binding.wrappedValue else { return }
+                binding.wrappedValue = false
+                let result = dlgTitle.withCString(encodedAs: UTF16.self) { titlePtr in
+                    dlgMsg.withCString(encodedAs: UTF16.self) { msgPtr in
+                        MessageBoxW(root, msgPtr, titlePtr, UINT(MB_YESNO | MB_ICONQUESTION))
+                    }
+                }
+                if result == IDYES {
+                    confirmAction()
+                } else {
+                    cancelAction?()
+                }
+            }
+        }
+        return hwnd
+    }
+}
+
+extension Form: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Form renders as a VStack with padding — visual grouping for controls
+        let formView = VStack(alignment: .leading, spacing: 8) { content }.padding()
+        return winRenderView(formView, in: context)
+    }
+}
+
+extension TabView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Extract tab items from content
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        var tabPages: [(label: String, hwnd: HWND)] = []
+
+        if let multi = content as? MultiChildView {
+            for child in multi.children {
+                func processTab<V: View>(_ v: V) {
+                    if let tabItem = v as? any _TabItemAccess {
+                        let label = tabItem._tabLabelText
+                        if let pageHwnd = winRenderAnyView(tabItem._tabContent, in: childContext) {
+                            tabPages.append((label: label, hwnd: pageHwnd))
+                        }
+                    } else {
+                        if let pageHwnd = winRenderView(v, in: childContext) {
+                            tabPages.append((label: "Tab \(tabPages.count + 1)", hwnd: pageHwnd))
+                        }
+                    }
+                }
+                processTab(child)
+            }
+        } else {
+            if let pageHwnd = winRenderView(content, in: childContext) {
+                tabPages.append((label: "Tab 1", hwnd: pageHwnd))
+            }
+        }
+
+        guard !tabPages.isEmpty else { return container }
+
+        // Create tab buttons at the top
+        let tabBarHeight: Int32 = 28
+        var buttonX: Int32 = 0
+        var tabButtonIDs: [(id: WORD, index: Int)] = []
+
+        for (i, tab) in tabPages.enumerated() {
+            let measured = measureText(tab.label, hwnd: context.parent)
+            let btnW = measured.width + 16
+            let controlID = nextControlID()
+
+            let btn = tab.label.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
+                    buttonX, 0, btnW, tabBarHeight,
+                    container, HMENU(bitPattern: UInt(controlID)), context.hInstance
+                )
+            }
+            // Cleanup handler on WM_NCDESTROY to prevent command handler leak
+            if let btn = btn {
+                SetWindowSubclass(btn, buttonCleanupProc, 0, DWORD_PTR(controlID))
+            }
+            tabButtonIDs.append((id: controlID, index: i))
+            buttonX += btnW + 2
+        }
+
+        // Position tab pages below buttons, show only first
+        // Size all pages to the max dimensions for consistent switching
+        var maxW: Int32 = buttonX
+        var maxH: Int32 = 0
+        for tab in tabPages {
+            var r = RECT()
+            GetWindowRect(tab.hwnd, &r)
+            maxW = max(maxW, r.right - r.left)
+            maxH = max(maxH, r.bottom - r.top)
+        }
+        for (i, tab) in tabPages.enumerated() {
+            SetWindowPos(tab.hwnd, nil, 0, tabBarHeight + 2, maxW, maxH, UINT(SWP_NOZORDER))
+            ShowWindow(tab.hwnd, i == 0 ? SW_SHOW : SW_HIDE)
+        }
+
+        SetWindowPos(container, nil, 0, 0, maxW, tabBarHeight + 2 + maxH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        // Wire tab buttons to show/hide pages + resize selected page
+        let pageAreaW = maxW
+        let pageAreaH = maxH
+        for entry in tabButtonIDs {
+            let pages = tabPages
+            let selectedIndex = entry.index
+            let barH = tabBarHeight
+            registerCommandHandler(controlID: entry.id) {
+                for (i, page) in pages.enumerated() {
+                    if i == selectedIndex {
+                        SetWindowPos(page.hwnd, nil, 0, barH + 2, pageAreaW, pageAreaH, UINT(SWP_NOZORDER))
+                        ShowWindow(page.hwnd, SW_SHOW)
+                    } else {
+                        ShowWindow(page.hwnd, SW_HIDE)
+                    }
+                }
+            }
+        }
+
+        return container
+    }
+}
+
+/// Protocol for extracting tab item info without knowing generic types.
+protocol _TabItemAccess {
+    var _tabLabelText: String { get }
+    var _tabContent: any View { get }
+}
+
+extension TabItemView: _TabItemAccess {
+    var _tabLabelText: String {
+        extractTextFromView(tabLabel) ?? "Tab"
+    }
+    var _tabContent: any View { content }
+}
+
+extension TabItemView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
+extension Picker: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Picker stub — text placeholder. Full ComboBox implementation
+        // needs item extraction from generic ViewBuilder content which
+        // requires walking TaggedView children.
+        let text = "[\(label) picker]"
+        let measured = measureText(text, hwnd: context.parent)
+        return text.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP),
+                0, 0, measured.width + 4, measured.height + 2,
+                context.parent, nil, context.hInstance
+            )
+        }
     }
 }
 
