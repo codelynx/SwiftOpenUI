@@ -129,9 +129,9 @@ targets += [
         path: "Examples/Showcase/HelloWorld"
     ),
     .executableTarget(
-        name: "Counter",
+        name: "Stopwatch",
         dependencies: exampleDeps,
-        path: "Examples/Showcase/Counter"
+        path: "Examples/Showcase/Stopwatch"
     ),
     .executableTarget(
         name: "Showcase1",

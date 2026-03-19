@@ -20,13 +20,13 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.HelloWorld
       GENERATE_INFOPLIST_FILE: YES
 
-  Counter:
+  Stopwatch:
     type: application
     platform: macOS
     sources:
-      - path: ../../Examples/Showcase/Counter
+      - path: ../../Examples/Showcase/Stopwatch
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.Counter
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.Stopwatch
       GENERATE_INFOPLIST_FILE: YES
 
   TextStyles:
