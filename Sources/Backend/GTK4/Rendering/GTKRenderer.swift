@@ -2582,6 +2582,24 @@ private let geometryMapCallback: @convention(c) (
     }, widgetPtr)
 }
 
+/// Resize callback via "notify::default-width" on GtkWidget.
+/// Catches size changes on the root window and re-renders content.
+private let geometryResizeNotifyCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { widgetPtr, _, _ in
+    guard let widgetPtr = widgetPtr else { return }
+    let widget = UnsafeMutableRawPointer(widgetPtr).assumingMemoryBound(to: GtkWidget.self)
+    let gobject = UnsafeMutableRawPointer(widgetPtr).assumingMemoryBound(to: GObject.self)
+    guard let contextPtr = g_object_get_data(gobject, "gtk-swift-geometry-context") else { return }
+    let context = Unmanaged<GeometryReaderContext>.fromOpaque(contextPtr).takeUnretainedValue()
+
+    let w = Double(gtk_widget_get_width(widget))
+    let h = Double(gtk_widget_get_height(widget))
+    if w > 1, h > 1 {
+        geometryRenderContent(context, widget: widget, width: w, height: h)
+    }
+}
+
 extension GeometryReader: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
@@ -2594,9 +2612,16 @@ extension GeometryReader: GTKRenderable {
         g_object_set_data_full(gobject, "gtk-swift-geometry-context", contextPtr,
             { userData in Unmanaged<GeometryReaderContext>.fromOpaque(userData!).release() })
 
+        // Initial render on first display
         g_signal_connect_data(
             gpointer(box), "map",
             unsafeBitCast(geometryMapCallback, to: GCallback.self),
+            nil, nil, GConnectFlags(rawValue: 0))
+
+        // Re-render when allocation changes (fires on window resize)
+        g_signal_connect_data(
+            gpointer(box), "notify::width-request",
+            unsafeBitCast(geometryResizeNotifyCallback, to: GCallback.self),
             nil, nil, GConnectFlags(rawValue: 0))
 
         return opaqueFromWidget(box)
@@ -2701,42 +2726,73 @@ private func gtkBuildMenuModel(elements: [MenuElement], menu: gpointer,
                                 actionGroup: UnsafeMutablePointer<GSimpleActionGroup>,
                                 actionBox: MenuActionBox,
                                 actionIndex: inout Int) {
+    // Split elements by dividers into sections for visual separation.
+    var sections: [[MenuElement]] = [[]]
     for element in elements {
-        switch element {
-        case .item(let label, let action):
-            let actionName = "action\(actionIndex)"
-            actionIndex += 1
-
-            let gAction = g_simple_action_new(actionName, nil)!
-
-            let box = ClosureBox(action)
-            actionBox.actions.append(box)
-            let boxPtr = Unmanaged.passUnretained(box).toOpaque()
-
-            g_signal_connect_data(
-                gpointer(gAction),
-                "activate",
-                unsafeBitCast({ (_: gpointer?, _: gpointer?, userData: gpointer?) in
-                    let box = Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue()
-                    box.closure()
-                } as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
-                boxPtr, nil,
-                GConnectFlags(rawValue: 0)
-            )
-
-            gtk_swift_action_map_add_action(gpointer(actionGroup), gpointer(gAction))
-            gtk_swift_menu_append(menu, label, "menu.\(actionName)")
-
-        case .divider:
-            break // GMenu separates sections visually; skip standalone dividers
-
-        case .submenu(let label, let children):
-            let submenu = gtk_swift_menu_new()!
-            gtkBuildMenuModel(elements: children, menu: submenu,
-                              actionGroup: actionGroup, actionBox: actionBox,
-                              actionIndex: &actionIndex)
-            gtk_swift_menu_append_submenu(menu, label, submenu)
+        if case .divider = element {
+            sections.append([])
+        } else {
+            sections[sections.count - 1].append(element)
         }
+    }
+
+    if sections.count <= 1 {
+        // No dividers — add items directly
+        for element in elements {
+            gtkAddMenuElement(element, to: menu, actionGroup: actionGroup,
+                              actionBox: actionBox, actionIndex: &actionIndex)
+        }
+    } else {
+        // Multiple sections — wrap each group in a GMenu section
+        for section in sections where !section.isEmpty {
+            let sectionMenu = gtk_swift_menu_new()!
+            for element in section {
+                gtkAddMenuElement(element, to: sectionMenu, actionGroup: actionGroup,
+                                  actionBox: actionBox, actionIndex: &actionIndex)
+            }
+            gtk_swift_menu_append_section(menu, nil, sectionMenu)
+        }
+    }
+}
+
+private func gtkAddMenuElement(_ element: MenuElement, to menu: gpointer,
+                                actionGroup: UnsafeMutablePointer<GSimpleActionGroup>,
+                                actionBox: MenuActionBox,
+                                actionIndex: inout Int) {
+    switch element {
+    case .item(let label, let action):
+        let actionName = "action\(actionIndex)"
+        actionIndex += 1
+
+        let gAction = g_simple_action_new(actionName, nil)!
+
+        let box = ClosureBox(action)
+        actionBox.actions.append(box)
+        let boxPtr = Unmanaged.passUnretained(box).toOpaque()
+
+        g_signal_connect_data(
+            gpointer(gAction),
+            "activate",
+            unsafeBitCast({ (_: gpointer?, _: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                box.closure()
+            } as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
+            boxPtr, nil,
+            GConnectFlags(rawValue: 0)
+        )
+
+        gtk_swift_action_map_add_action(gpointer(actionGroup), gpointer(gAction))
+        gtk_swift_menu_append(menu, label, "menu.\(actionName)")
+
+    case .submenu(let label, let children):
+        let submenu = gtk_swift_menu_new()!
+        gtkBuildMenuModel(elements: children, menu: submenu,
+                          actionGroup: actionGroup, actionBox: actionBox,
+                          actionIndex: &actionIndex)
+        gtk_swift_menu_append_submenu(menu, label, submenu)
+
+    case .divider:
+        break // handled at section level
     }
 }
 

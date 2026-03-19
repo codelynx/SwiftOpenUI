@@ -271,6 +271,11 @@ gtk_swift_menu_append(gpointer menu, const char *label, const char *action) {
 }
 
 static inline void
+gtk_swift_menu_append_section(gpointer menu, const char *label, gpointer section) {
+    g_menu_append_section(G_MENU(menu), label, G_MENU_MODEL(section));
+}
+
+static inline void
 gtk_swift_menu_append_submenu(gpointer menu, const char *label, gpointer submenu) {
     g_menu_append_submenu(G_MENU(menu), label, G_MENU_MODEL(submenu));
 }

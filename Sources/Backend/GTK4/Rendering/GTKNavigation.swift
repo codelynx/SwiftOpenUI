@@ -18,6 +18,7 @@ struct GTKNavigationEntry {
     let title: String
     let name: String
     let widget: UnsafeMutablePointer<GtkWidget>
+    var toolbarWidgets: [(widget: UnsafeMutablePointer<GtkWidget>, placement: ToolbarItemPlacement)] = []
 }
 
 /// Manages the navigation stack state for GTK4.
@@ -45,14 +46,31 @@ class GTKNavigationContext {
     }
 
     /// Push a new view onto the navigation stack.
-    func push(title: String, content: @escaping () -> OpaquePointer) {
+    func push(title: String, toolbarItems: [AnyToolbarItem] = [], content: @escaping () -> OpaquePointer) {
         let name = "nav-\(nameCounter)"
         nameCounter += 1
+
+        // Remove current entry's toolbar widgets
+        removeCurrentToolbarWidgets()
 
         let widget = widgetFromOpaque(content())
         gtk_stack_add_named(stack, widget, name)
 
-        let entry = GTKNavigationEntry(title: title, name: name, widget: widget)
+        var entry = GTKNavigationEntry(title: title, name: name, widget: widget)
+
+        // Install new toolbar items into header bar
+        for item in toolbarItems {
+            let itemWidget = widgetFromOpaque(gtkRenderAnyView(item.wrapped))
+            switch item.placement {
+            case .leading:
+                gtk_header_bar_pack_start(headerBar, itemWidget)
+            case .primaryAction, .trailing:
+                gtk_header_bar_pack_end(headerBar, itemWidget)
+            }
+            g_object_ref(gpointer(itemWidget))
+            entry.toolbarWidgets.append((widget: itemWidget, placement: item.placement))
+        }
+
         entries.append(entry)
 
         // Slide left for push
@@ -65,19 +83,10 @@ class GTKNavigationContext {
     func pushValue(_ value: AnyHashable) {
         guard let resolved = destinationRegistry.resolve(value) else { return }
 
-        let name = "nav-\(nameCounter)"
-        nameCounter += 1
-
-        let w = widgetFromOpaque(resolved.widget)
-        gtk_stack_add_named(stack, w, name)
-
         let title = resolved.title.isEmpty ? String(describing: value.base) : resolved.title
-        let entry = GTKNavigationEntry(title: title, name: name, widget: w)
-        entries.append(entry)
-
-        gtk_stack_set_transition_type(stack, GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT)
-        gtk_stack_set_visible_child_name(stack, name)
-        updateHeaderBar()
+        push(title: title, toolbarItems: resolved.toolbarItems) {
+            resolved.widget
+        }
         syncPathAfterPush(value)
     }
 
@@ -85,8 +94,19 @@ class GTKNavigationContext {
     func pop() {
         guard entries.count > 1 else { return }
 
+        removeCurrentToolbarWidgets()
         let removed = entries.removeLast()
         let previous = entries.last!
+
+        // Restore previous entry's toolbar widgets
+        for item in previous.toolbarWidgets {
+            switch item.placement {
+            case .leading:
+                gtk_header_bar_pack_start(headerBar, item.widget)
+            case .primaryAction, .trailing:
+                gtk_header_bar_pack_end(headerBar, item.widget)
+            }
+        }
 
         // Slide right for pop
         gtk_stack_set_transition_type(stack, GTK_STACK_TRANSITION_TYPE_SLIDE_RIGHT)
@@ -148,6 +168,14 @@ class GTKNavigationContext {
         isSyncing = false
     }
 
+    /// Remove current entry's toolbar widgets from the header bar.
+    private func removeCurrentToolbarWidgets() {
+        guard let current = entries.last else { return }
+        for item in current.toolbarWidgets {
+            gtk_header_bar_remove(headerBar, item.widget)
+        }
+    }
+
     private func updateHeaderBar() {
         let title = entries.last?.title ?? ""
         gtk_header_bar_set_title_widget(headerBar, gtk_label_new(title))
@@ -161,6 +189,7 @@ class GTKNavigationContext {
 struct GTKResolvedDestination {
     let widget: OpaquePointer
     let title: String
+    let toolbarItems: [AnyToolbarItem]
 }
 
 /// Registry of type-to-view factories for path-based navigation.
@@ -229,6 +258,39 @@ func gtkExtractTitle<V: View>(from view: V) -> String {
     return ""
 }
 
+// MARK: - Toolbar extraction
+
+/// Extract toolbar items from a view tree via ToolbarProvider protocol.
+/// Walks Mirror children recursively (depth-limited) to find ToolbarProvider
+/// regardless of modifier ordering.
+func gtkExtractToolbarItems<V: View>(from view: V) -> [AnyToolbarItem] {
+    return gtkExtractToolbarItemsAny(from: view)
+}
+
+private func gtkExtractToolbarItemsAny(from view: Any, depth: Int = 0) -> [AnyToolbarItem] {
+    guard depth < 20 else { return [] }
+
+    if let provider = view as? ToolbarProvider {
+        return provider.toolbarItems
+    }
+
+    let mirror = Mirror(reflecting: view)
+    for child in mirror.children {
+        if let provider = child.value as? ToolbarProvider {
+            return provider.toolbarItems
+        }
+    }
+
+    for child in mirror.children {
+        if child.value is any View {
+            let result = gtkExtractToolbarItemsAny(from: child.value, depth: depth + 1)
+            if !result.isEmpty { return result }
+        }
+    }
+
+    return []
+}
+
 // MARK: - GTK rendering extensions
 
 extension NavigationStack: GTKRenderable {
@@ -295,11 +357,25 @@ extension NavigationStack: GTKRenderable {
         setCurrentEnvironment(prevEnv)
         setCurrentNavigationContext(nil)
 
+        // Extract and install root toolbar items
+        let toolbarItems = gtkExtractToolbarItems(from: content)
+        var rootEntry = GTKNavigationEntry(title: title, name: "nav-root", widget: rootWidget)
+        for item in toolbarItems {
+            let itemWidget = widgetFromOpaque(gtkRenderAnyView(item.wrapped))
+            switch item.placement {
+            case .leading:
+                gtk_header_bar_pack_start(headerBarOp, itemWidget)
+            case .primaryAction, .trailing:
+                gtk_header_bar_pack_end(headerBarOp, itemWidget)
+            }
+            g_object_ref(gpointer(itemWidget))
+            rootEntry.toolbarWidgets.append((widget: itemWidget, placement: item.placement))
+        }
+
         // Add root as first stack entry
-        let rootName = "nav-root"
-        gtk_stack_add_named(stackOp, rootWidget, rootName)
-        gtk_stack_set_visible_child_name(stackOp, rootName)
-        context.entries.append(GTKNavigationEntry(title: title, name: rootName, widget: rootWidget))
+        gtk_stack_add_named(stackOp, rootWidget, "nav-root")
+        gtk_stack_set_visible_child_name(stackOp, "nav-root")
+        context.entries.append(rootEntry)
 
         // Set initial title
         gtk_header_bar_set_title_widget(headerBarOp, gtk_label_new(title))
@@ -358,7 +434,8 @@ extension NavigationLink: GTKRenderable {
             let destView = dest()
             let extracted = gtkExtractTitle(from: destView)
             let finalTitle = extracted.isEmpty ? destTitle : extracted
-            context.push(title: finalTitle) {
+            let toolbarItems = gtkExtractToolbarItems(from: destView)
+            context.push(title: finalTitle, toolbarItems: toolbarItems) {
                 gtkRenderView(destView)
             }
             setCurrentEnvironment(prevEnv)
@@ -400,10 +477,11 @@ extension NavigationDestinationModifier: GTKRenderable {
                 setCurrentEnvironment(env)
                 let destView = destinationBuilder(value)
                 let title = gtkExtractTitle(from: destView)
+                let toolbarItems = gtkExtractToolbarItems(from: destView)
                 let widget = gtkRenderView(destView)
                 setCurrentEnvironment(prevEnv)
                 setCurrentNavigationContext(nil)
-                return GTKResolvedDestination(widget: widget, title: title)
+                return GTKResolvedDestination(widget: widget, title: title, toolbarItems: toolbarItems)
             }
         }
 
