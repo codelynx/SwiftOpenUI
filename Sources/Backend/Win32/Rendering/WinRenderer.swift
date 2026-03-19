@@ -2804,6 +2804,162 @@ extension Picker: WinRenderable {
     }
 }
 
+// MARK: - Toolbar
+
+extension ToolbarView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        // Extract toolbar items and render them into the navigation header.
+        // If we're inside a NavigationStack, add buttons to the header bar.
+        // Otherwise, create a toolbar bar above the content.
+        guard let navCtx = getCurrentNavigationContext() else {
+            // Not inside NavigationStack — render toolbar items as an HStack above content
+            return renderToolbarWithContent(hwnd: hwnd, context: context)
+        }
+
+        // Inside NavigationStack — add items to the header bar
+        renderToolbarItems(into: navCtx, context: context)
+        return hwnd
+    }
+
+    private func renderToolbarWithContent(hwnd: HWND, context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Toolbar bar at top
+        let toolbarContext = RenderContext(parent: container, hInstance: context.hInstance)
+        let toolbarBar = winRenderView(HStack(spacing: 4) { items }, in: toolbarContext)
+
+        var toolbarH: Int32 = 28
+        if let bar = toolbarBar {
+            var r = RECT()
+            GetWindowRect(bar, &r)
+            toolbarH = max(r.bottom - r.top, 28)
+        }
+
+        // Reparent content into container
+        SetParent(hwnd, container)
+
+        var contentRect = RECT()
+        GetWindowRect(hwnd, &contentRect)
+        let contentW = contentRect.right - contentRect.left
+        let contentH = contentRect.bottom - contentRect.top
+
+        SetWindowPos(container, nil, 0, 0, contentW, toolbarH + contentH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+        if let bar = toolbarBar {
+            SetWindowPos(bar, nil, 0, 0, contentW, toolbarH, UINT(SWP_NOZORDER))
+        }
+        SetWindowPos(hwnd, nil, 0, toolbarH, contentW, contentH, UINT(SWP_NOZORDER))
+
+        return container
+    }
+
+    private func renderToolbarItems(into navCtx: Win32NavigationContext, context: RenderContext) {
+        // Remove any previously rendered toolbar items from the header
+        // (prevents accumulation across rebuilds)
+        clearToolbarItems(from: navCtx.headerContainer)
+
+        let headerContext = RenderContext(parent: navCtx.headerContainer, hInstance: context.hInstance)
+        var leadingX: Int32 = 68  // after back button area
+        var trailingItems: [(hwnd: HWND, width: Int32)] = []
+
+        // Collect all toolbar items
+        var allItems: [any _ToolbarItemAccess] = []
+        if let multi = items as? MultiChildView {
+            for child in multi.children {
+                func extract<V: View>(_ v: V) {
+                    if let item = v as? any _ToolbarItemAccess { allItems.append(item) }
+                }
+                extract(child)
+            }
+        } else if let single = items as? any _ToolbarItemAccess {
+            allItems.append(single)
+        }
+
+        for item in allItems {
+            guard let itemHwnd = winRenderAnyView(item._itemContent, in: headerContext) else { continue }
+            // Mark as toolbar item for cleanup
+            SetPropW(itemHwnd, toolbarItemPropName, HANDLE(bitPattern: 1))
+
+            var r = RECT()
+            GetWindowRect(itemHwnd, &r)
+            let w = r.right - r.left
+
+            switch item._placement {
+            case .navigationBarLeading:
+                SetWindowPos(itemHwnd, nil, leadingX, 2, w, 24, UINT(SWP_NOZORDER))
+                leadingX += w + 4
+            case .navigationBarTrailing, .automatic:
+                trailingItems.append((hwnd: itemHwnd, width: w))
+            }
+        }
+
+        // Position trailing items from right edge
+        var headerRect = RECT()
+        GetClientRect(navCtx.headerContainer, &headerRect)
+        var trailingX = headerRect.right - headerRect.left - 4
+        for item in trailingItems.reversed() {
+            trailingX -= item.width
+            SetWindowPos(item.hwnd, nil, trailingX, 2, item.width, 24, UINT(SWP_NOZORDER))
+            trailingX -= 4
+        }
+    }
+}
+
+private let toolbarItemPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIToolbarItem".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+/// Remove toolbar items from a header container (identified by property).
+private func clearToolbarItems(from container: HWND) {
+    var toRemove: [HWND] = []
+    var child = GetWindow(container, UINT(GW_CHILD))
+    while let c = child {
+        if GetPropW(c, toolbarItemPropName) != nil {
+            toRemove.append(c)
+        }
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+    for hwnd in toRemove {
+        DestroyWindow(hwnd)
+    }
+}
+
+protocol _ToolbarItemAccess {
+    var _placement: ToolbarItemPlacement { get }
+    var _itemContent: any View { get }
+}
+
+extension ToolbarItem: _ToolbarItemAccess {
+    var _placement: ToolbarItemPlacement { placement }
+    var _itemContent: any View { content }
+}
+
+// Make ToolbarItem renderable so it can appear in ViewBuilder content
+extension ToolbarItem: View {
+    public typealias Body = Never
+    public var body: Never { fatalError("ToolbarItem is a primitive view") }
+}
+
+extension ToolbarItem: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
 // MARK: - Phase 4C: Shape modifiers
 
 extension CornerRadiusView: WinRenderable {
