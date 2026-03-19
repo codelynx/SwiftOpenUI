@@ -149,8 +149,8 @@ struct ParityViewsLayoutView: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    Button("+") { if forEachCount < 6 { forEachCount += 1 } }
                     Button("-") { if forEachCount > 0 { forEachCount -= 1 } }
+                    Button("+") { if forEachCount < 6 { forEachCount += 1 } }
                     Text("\(forEachCount) items")
                         .foregroundColor(.gray)
                 }

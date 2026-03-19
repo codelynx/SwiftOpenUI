@@ -127,8 +127,8 @@ struct ParityViewsContainersView: View {
                     .font(.subheadline)
                     .foregroundColor(.gray)
                 HStack(spacing: 8) {
-                    Button("+") { if itemCount < 8 { itemCount += 1 } }
                     Button("-") { if itemCount > 0 { itemCount -= 1 } }
+                    Button("+") { if itemCount < 8 { itemCount += 1 } }
                     Text("\(itemCount) items")
                         .foregroundColor(.gray)
                 }

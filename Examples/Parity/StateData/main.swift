@@ -94,8 +94,8 @@ struct ParityStateDataView: View {
                 // Int
                 HStack {
                     Text("Counter: \(counter)")
-                    Button("+") { counter += 1 }
                     Button("-") { counter -= 1 }
+                    Button("+") { counter += 1 }
                 }
 
                 // String
