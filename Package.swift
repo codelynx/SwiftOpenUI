@@ -219,6 +219,11 @@ targets += [
         dependencies: exampleDeps,
         path: "Examples/Parity/Animation"
     ),
+    .executableTarget(
+        name: "ParityViewsContainers",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/ViewsContainers"
+    ),
 ]
 
 #if os(macOS)
