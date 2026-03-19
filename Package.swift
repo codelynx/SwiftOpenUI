@@ -189,6 +189,11 @@ targets += [
         dependencies: exampleDeps,
         path: "Examples/Parity/ViewsLayout"
     ),
+    .executableTarget(
+        name: "ParityModifiers",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/Modifiers"
+    ),
 ]
 
 #if os(macOS)
