@@ -2832,7 +2832,7 @@ private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {
 
     let previousHost = GTKViewHost.getCurrentRebuilding()
     GTKViewHost.setCurrentRebuilding(host)
-    let widget = host.buildBody()
+    let widget = host.buildBodyWithTracking()
     GTKViewHost.setCurrentRebuilding(previousHost)
 
     let child = widgetFromOpaque(widget)

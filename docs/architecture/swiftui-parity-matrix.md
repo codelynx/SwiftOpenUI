@@ -114,7 +114,7 @@ Last updated: 2026-03-19
 | @SceneStorage | Y | - | |
 | @FetchRequest | Y | - | Core Data specific |
 | ObservableObject | Y | Y | Protocol marker |
-| Observable (@Observable) | Y | - | Swift 5.9 macro-based |
+| Observable (@Observable) | Y | Y | Swift Observation framework, withObservationTracking |
 
 ## Navigation
 
@@ -163,7 +163,7 @@ Last updated: 2026-03-19
 |----------|--------------|------------------------|----------|
 | Views | 43 | 39 | ~91% |
 | Modifiers | 35 | 33 | ~94% |
-| State & Data | 13 | 9 | ~69% |
+| State & Data | 13 | 10 | ~77% |
 | Navigation | 8 | 6 | 75% |
 | App structure | 9 | 5 | ~56% |
 | Layout system | 9 | 7 | ~78% |

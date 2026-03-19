@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Observation)
+import Observation
+#endif
 
 /// Protocol for the reactive view container that manages rebuild scheduling.
 /// Platform backends provide concrete implementations (GTK ViewHost, Win32 ViewHost, etc.).
@@ -21,8 +24,15 @@ public func installState<V>(_ view: V, host: AnyViewHost) {
     }
 }
 
-/// Check if a view has any reactive properties (@State or @ObservedObject) via reflection.
+/// Check if a view has any reactive properties (@State, @ObservedObject,
+/// or @Observable stored properties) via reflection.
 public func hasReactiveProperties<V>(_ view: V) -> Bool {
     let mirror = Mirror(reflecting: view)
-    return mirror.children.contains { $0.value is AnyStateStorageProvider }
+    return mirror.children.contains { child in
+        if child.value is AnyStateStorageProvider { return true }
+        #if canImport(Observation)
+        if child.value is Observable { return true }
+        #endif
+        return false
+    }
 }

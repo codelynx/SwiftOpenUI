@@ -123,7 +123,7 @@ All use GtkSignalListItemFactory + GtkStringList index model with setup/bind/unb
 - `.task()` — needs async runtime integration
 - `.clipShape()` — needs Shape protocol system
 - @AppStorage — needs GSettings or file persistence
-- @Observable — needs Swift macro support
+- @Observable — **DONE** (Swift Observation framework, withObservationTracking)
 
 ## Verification
 

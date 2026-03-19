@@ -2,6 +2,9 @@ import CGTK
 import CGTKBridge
 import SwiftOpenUI
 import Foundation
+#if canImport(Observation)
+import Observation
+#endif
 
 /// Thread-local key for the ViewHost currently performing a rebuild.
 private var rebuildingViewHostKey: pthread_key_t = {
@@ -77,6 +80,23 @@ public class GTKViewHost: AnyViewHost {
         lock.unlock()
     }
 
+    /// Build the body with observation tracking.  Any @Observable properties
+    /// accessed during rendering are automatically tracked; when they change,
+    /// scheduleRebuild() fires and the next rebuild re-registers tracking.
+    func buildBodyWithTracking() -> OpaquePointer {
+        #if canImport(Observation)
+        var result: OpaquePointer!
+        withObservationTracking {
+            result = buildBody()
+        } onChange: { [weak self] in
+            self?.scheduleRebuild()
+        }
+        return result
+        #else
+        return buildBody()
+        #endif
+    }
+
     func rebuild() {
         lock.lock()
         scheduled = false
@@ -122,7 +142,7 @@ public class GTKViewHost: AnyViewHost {
         // Restore environment for the rebuild pass
         let previousEnv = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
-        let widget = buildBody()
+        let widget = buildBodyWithTracking()
         setCurrentEnvironment(previousEnv)
 
         GTKViewHost.setCurrentRebuilding(previousHost)
