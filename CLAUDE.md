@@ -108,7 +108,7 @@ NavigationStack, NavigationLink, NavigationPath, .navigationTitle(), .navigation
 - Parity: ParityViewsBasic, ParityViewsLayout, ParityViewsContainers, ParityModifiers, ParityStateData, ParityNavigation, ParityEnvironment, ParityGestures, ParityAnimation, ParityFocus, ParityAppStructure (in `Examples/Parity/`)
 - Legacy (to be absorbed): Showcase1, Showcase2, BasicInteractive, FocusTest, TextStyles, Buttons, StateDemo, Layout
 - Plan: `docs/guides/examples-plan.md` — two-track Showcase + Parity design
-- **Rules**: single `main.swift` per example, compiles and runs on all platforms, platform limitations labeled inline with fallback text (never build errors)
+- **Rules**: single `main.swift` per example, compiles and runs on all platforms (Android exception: uses flat views in JNIBridge.swift due to import conflict — see `docs/guides/examples-plan.md`), platform limitations labeled inline with fallback text (never build errors)
 - Import boilerplate: `#if os(macOS) import SwiftUI #else import SwiftOpenUI + backend imports #endif`
 - Entry point: `#if os(macOS) App.main() #elseif canImport(BackendGTK4) GTK4Backend().run() ...`
 

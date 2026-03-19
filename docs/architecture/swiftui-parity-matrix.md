@@ -153,6 +153,7 @@ Last updated: 2026-03-19
 | Commands / menus | Y | - | |
 
 ## Layout System
+<!-- Parity: Examples/Parity/ViewsLayout (Alignment, Edge, EdgeInsets, ProposedViewSize) -->
 
 | Feature | SwiftUI | SwiftOpenUI | Notes |
 |---------|---------|-------------|-------|
