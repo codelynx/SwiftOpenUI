@@ -325,8 +325,7 @@ Sources/Backend/Android/
 
 android/
 ├── hello/                       ← Minimal PoC: Swift .so + Kotlin JNI "Hello from Swift"
-│   ├── app/                     ← Kotlin Android project
-│   └── swift-lib/               ← Swift shared library (Package.swift)
+│   └── app/                     ← Kotlin Android project
 └── renderer/                    ← Full renderer: Swift view tree → JSON → Compose
     ├── app/
     │   └── app/src/main/java/com/example/swiftopenui/

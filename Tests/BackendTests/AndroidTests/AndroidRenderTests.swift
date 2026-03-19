@@ -448,36 +448,60 @@ final class AndroidRenderTests: XCTestCase {
 
     // MARK: - Navigation back button
 
-    func testNavigationStackRendersWithTitle() {
+    func testNavigationStackBackNodeIdWiredOnPush() {
         let host = MockViewHost()
         androidCurrentHost = host
 
-        let view = NavigationStack {
-            Text("Home").navigationTitle("My App")
+        // View with NavigationStack + NavigationLink (registers destination in registry)
+        struct NavDemo: View {
+            @SwiftOpenUI.State var path = NavigationPath()
+            var body: some View {
+                NavigationStack(path: $path) {
+                    NavigationLink("Go to Detail", title: "Detail") {
+                        Text("Detail Page")
+                    }
+                }
+            }
         }
 
+        let view = NavDemo()
+        installState(view, host: host)
+
+        // First render — root view, no back button
         androidBeginRenderPass()
-        let node = androidRenderView(view)
-        let navNode = findNode(node, type: "navigationStack")
-        XCTAssertNotNil(navNode)
-        // Root view — no back button
-        XCTAssertNil(navNode?.props["showBack"])
+        let node1 = androidRenderView(view)
+        let navNode1 = findNode(node1, type: "navigationStack")
+        XCTAssertNotNil(navNode1, "Should render a navigationStack")
+        XCTAssertNil(navNode1?.props["showBack"], "Root should not show back")
+
+        // Push "Detail" via Mirror to access the StateStorage
+        let mirror = Mirror(reflecting: view)
+        let pathProvider = mirror.children.first { $0.value is AnyStateStorageProvider }!.value as! AnyStateStorageProvider
+        let pathStorage = pathProvider.anyStorage as! StateStorage<NavigationPath>
+        var updatedPath = pathStorage.value
+        updatedPath.append("Detail")
+        pathStorage.setValue(updatedPath)
+
+        // Second render — destination resolved via NavigationLink registry
+        androidBeginRenderPass()
+        let node2 = androidRenderView(view)
+        let navNode2 = findNode(node2, type: "navigationStack")
+        XCTAssertEqual(navNode2?.props["showBack"], "true", "Pushed state should show back")
+        XCTAssertNotNil(navNode2?.props["backNodeId"], "Should have backNodeId")
+
+        // Verify the back action is in androidButtonActions
+        if let backIdStr = navNode2?.props["backNodeId"],
+           let backId = Int64(backIdStr) {
+            XCTAssertNotNil(androidButtonActions[backId], "Back action should be registered in androidButtonActions")
+
+            // Invoke it — should pop the path
+            androidButtonActions[backId]!()
+            XCTAssertTrue(pathStorage.value.isEmpty, "Path should be empty after back action")
+        } else {
+            XCTFail("backNodeId should be a valid Int64")
+        }
 
         androidCurrentHost = nil
-    }
-
-    func testBackButtonActionRegisteredInButtonActions() {
-        // Verify the backNodeId mechanism: when a back action is registered,
-        // it appears in androidButtonActions and can be invoked
-        let backId: Int64 = 12345
-        var popCalled = false
-        androidButtonActions[backId] = { popCalled = true }
-
-        // Simulate what jniOnButtonClick does
-        if let action = androidButtonActions[backId] {
-            action()
-        }
-        XCTAssertTrue(popCalled, "Back action should be callable via androidButtonActions")
     }
 
     /// Helper to find a node by type in the render tree.
