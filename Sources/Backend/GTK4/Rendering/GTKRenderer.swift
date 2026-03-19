@@ -807,6 +807,353 @@ extension AnimatedView: GTKRenderable {
     }
 }
 
+// MARK: - OnAppear / OnDisappear GTK extensions
+
+extension OnAppearView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+
+        // During a rebuild, the ViewHost container is already mapped.
+        // Skip attaching the signal since the appear already happened.
+        let isRebuild: Bool
+        if let host = GTKViewHost.getCurrentRebuilding() {
+            isRebuild = gtk_widget_get_mapped(host.container) != 0
+        } else {
+            isRebuild = false
+        }
+
+        if !isRebuild {
+            let box = Unmanaged.passRetained(ClosureBox(action)).toOpaque()
+            g_signal_connect_data(
+                gpointer(widget),
+                "map",
+                unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                    let box = Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                    box.closure()
+                } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                box,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+        }
+
+        return opaqueFromWidget(widget)
+    }
+}
+
+/// Holds the disappear callback and a reference to the host container
+/// for distinguishing rebuild unmaps from real disappears.
+private class DisappearBox {
+    let action: () -> Void
+    let hostContainer: UnsafeMutablePointer<GtkWidget>?
+    init(action: @escaping () -> Void, hostContainer: UnsafeMutablePointer<GtkWidget>?) {
+        self.action = action
+        self.hostContainer = hostContainer
+    }
+}
+
+extension OnDisappearView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+
+        let hostContainer: UnsafeMutablePointer<GtkWidget>?
+        if let host = GTKViewHost.getCurrentRebuilding() {
+            hostContainer = host.container
+        } else {
+            hostContainer = nil
+        }
+
+        let box = Unmanaged.passRetained(
+            DisappearBox(action: action, hostContainer: hostContainer)
+        ).toOpaque()
+        g_signal_connect_data(
+            gpointer(widget),
+            "unmap",
+            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<DisappearBox>.fromOpaque(userData!).takeUnretainedValue()
+                // If the host container is still mapped, this is a rebuild — suppress.
+                if let container = box.hostContainer,
+                   gtk_widget_get_mapped(container) != 0 {
+                    return
+                }
+                box.action()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<DisappearBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        return opaqueFromWidget(widget)
+    }
+}
+
+// MARK: - Sheet GTK extension
+
+/// Holds sheet configuration for deferred presentation.
+private class SheetInfo {
+    let anchor: UnsafeMutablePointer<GtkWidget>
+    let render: () -> OpaquePointer
+    let onDismiss: () -> Void
+
+    init(anchor: UnsafeMutablePointer<GtkWidget>, render: @escaping () -> OpaquePointer, onDismiss: @escaping () -> Void) {
+        self.anchor = anchor
+        self.render = render
+        self.onDismiss = onDismiss
+    }
+}
+
+extension SheetModifierView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+
+        let anchor: UnsafeMutablePointer<GtkWidget>
+        if let host = GTKViewHost.getCurrentRebuilding() {
+            anchor = host.container
+        } else {
+            anchor = widget
+        }
+        let gobject = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+
+        if !isPresented.wrappedValue {
+            // Dismiss active sheet if binding turned false
+            if let dialogPtr = g_object_get_data(gobject, "swift-sheet-window") {
+                let dialog = dialogPtr.assumingMemoryBound(to: GtkWindow.self)
+                g_object_set_data(gobject, "swift-sheet-window", nil)
+                gtk_window_destroy(dialog)
+            }
+            return opaqueFromWidget(widget)
+        }
+
+        // Guard against duplicate presentation on rebuild
+        guard g_object_get_data(gobject, "swift-sheet-active") == nil else {
+            return opaqueFromWidget(widget)
+        }
+        g_object_set_data(gobject, "swift-sheet-active", gpointer(bitPattern: 1))
+        g_object_ref(gpointer(anchor))
+
+        let sheetView = sheetContent
+        let binding = isPresented
+        let info = Unmanaged.passRetained(SheetInfo(
+            anchor: anchor,
+            render: { gtkRenderView(sheetView) },
+            onDismiss: {
+                let obj = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+                g_object_set_data(obj, "swift-sheet-active", nil)
+                g_object_set_data(obj, "swift-sheet-window", nil)
+                binding.wrappedValue = false
+            }
+        )).toOpaque()
+
+        g_idle_add({ userData -> gboolean in
+            let info = Unmanaged<SheetInfo>.fromOpaque(userData!).takeRetainedValue()
+            guard let root = gtk_widget_get_root(info.anchor) else {
+                info.onDismiss()
+                g_object_unref(gpointer(info.anchor))
+                return 0
+            }
+
+            let dialog = gtk_window_new()!
+            let dialogWin = windowPointer(dialog)
+            gtk_window_set_modal(dialogWin, 1)
+            gtk_window_set_title(dialogWin, "")
+            gtk_window_set_default_size(dialogWin, 400, 300)
+            gtk_window_set_transient_for(
+                dialogWin,
+                UnsafeMutableRawPointer(root).assumingMemoryBound(to: GtkWindow.self)
+            )
+
+            // Inject dismiss action into environment
+            let previous = getCurrentEnvironment()
+            var env = previous
+            env.dismiss = DismissAction { gtk_window_destroy(dialogWin) }
+            setCurrentEnvironment(env)
+            let sheetWidget = widgetFromOpaque(info.render())
+            setCurrentEnvironment(previous)
+            gtk_window_set_child(dialogWin, sheetWidget)
+
+            let anchorObj = UnsafeMutableRawPointer(info.anchor).assumingMemoryBound(to: GObject.self)
+            g_object_set_data(anchorObj, "swift-sheet-window", gpointer(dialogWin))
+
+            let dismissBox = Unmanaged.passRetained(ClosureBox(info.onDismiss)).toOpaque()
+            g_signal_connect_data(
+                gpointer(dialog),
+                "close-request",
+                unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
+                    return 0
+                } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
+                dismissBox,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+
+            gtk_window_present(dialogWin)
+            g_object_unref(gpointer(info.anchor))
+            return 0
+        }, info)
+
+        return opaqueFromWidget(widget)
+    }
+}
+
+// MARK: - Alert GTK extension
+
+/// Holds alert button action + dialog reference for cleanup.
+private class AlertActionBox {
+    let action: () -> Void
+    let dialog: UnsafeMutablePointer<GtkWidget>
+    init(action: @escaping () -> Void, dialog: UnsafeMutablePointer<GtkWidget>) {
+        self.action = action
+        self.dialog = dialog
+    }
+}
+
+extension AlertModifierView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+
+        let anchor: UnsafeMutablePointer<GtkWidget>
+        if let host = GTKViewHost.getCurrentRebuilding() {
+            anchor = host.container
+        } else {
+            anchor = widget
+        }
+        let gobject = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+
+        if !isPresented.wrappedValue {
+            if let dialogPtr = g_object_get_data(gobject, "swift-alert-window") {
+                let dialog = dialogPtr.assumingMemoryBound(to: GtkWindow.self)
+                g_object_set_data(gobject, "swift-alert-window", nil)
+                gtk_window_destroy(dialog)
+            }
+            return opaqueFromWidget(widget)
+        }
+
+        guard g_object_get_data(gobject, "swift-alert-active") == nil else {
+            return opaqueFromWidget(widget)
+        }
+        g_object_set_data(gobject, "swift-alert-active", gpointer(bitPattern: 1))
+        g_object_ref(gpointer(anchor))
+
+        let alertTitle = title
+        let alertMessage = message
+        let alertButtons = buttons
+        let binding = isPresented
+
+        let onDismiss: () -> Void = {
+            let obj = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+            g_object_set_data(obj, "swift-alert-active", nil)
+            g_object_set_data(obj, "swift-alert-window", nil)
+            binding.wrappedValue = false
+        }
+
+        g_idle_add({ userData -> gboolean in
+            let box = Unmanaged<ClosureBox>.fromOpaque(userData!).takeRetainedValue()
+            // Re-read captured values from the enclosing scope via the closure
+            box.closure()
+            return 0
+        }, Unmanaged.passRetained(ClosureBox { [anchor, alertTitle, alertMessage, alertButtons, onDismiss] in
+            guard let root = gtk_widget_get_root(anchor) else {
+                onDismiss()
+                g_object_unref(gpointer(anchor))
+                return
+            }
+
+            let dialog = gtk_window_new()!
+            let dialogWin = windowPointer(dialog)
+            gtk_window_set_modal(dialogWin, 1)
+            gtk_window_set_title(dialogWin, alertTitle)
+            gtk_window_set_default_size(dialogWin, 350, -1)
+            gtk_window_set_resizable(dialogWin, 0)
+            gtk_window_set_transient_for(
+                dialogWin,
+                UnsafeMutableRawPointer(root).assumingMemoryBound(to: GtkWindow.self)
+            )
+
+            let vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12)!
+            gtk_widget_set_margin_top(vbox, 20)
+            gtk_widget_set_margin_bottom(vbox, 20)
+            gtk_widget_set_margin_start(vbox, 20)
+            gtk_widget_set_margin_end(vbox, 20)
+
+            if !alertMessage.isEmpty {
+                let msgLabel = gtk_label_new(alertMessage)!
+                gtk_label_set_wrap(OpaquePointer(msgLabel), 1)
+                gtk_box_append(boxPointer(vbox), msgLabel)
+            }
+
+            let buttonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)!
+            gtk_widget_set_halign(buttonBox, GTK_ALIGN_END)
+
+            for alertButton in alertButtons {
+                let btn = gtk_button_new_with_label(alertButton.label)!
+                if alertButton.role == .destructive {
+                    gtk_widget_add_css_class(btn, "destructive-action")
+                }
+                let actionBox = Unmanaged.passRetained(AlertActionBox(
+                    action: alertButton.action, dialog: dialog
+                )).toOpaque()
+                g_signal_connect_data(
+                    gpointer(btn),
+                    "clicked",
+                    unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                        let box = Unmanaged<AlertActionBox>.fromOpaque(userData!).takeUnretainedValue()
+                        box.action()
+                        gtk_window_destroy(windowPointer(box.dialog))
+                    } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                    actionBox,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<AlertActionBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+                gtk_box_append(boxPointer(buttonBox), btn)
+            }
+
+            gtk_box_append(boxPointer(vbox), buttonBox)
+            gtk_window_set_child(dialogWin, vbox)
+
+            let anchorObj = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+            g_object_set_data(anchorObj, "swift-alert-window", gpointer(dialogWin))
+
+            let closeDismiss = Unmanaged.passRetained(ClosureBox(onDismiss)).toOpaque()
+            g_signal_connect_data(
+                gpointer(dialog),
+                "close-request",
+                unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
+                    return 0
+                } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
+                closeDismiss,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+
+            gtk_window_present(dialogWin)
+            g_object_unref(gpointer(anchor))
+        }).toOpaque())
+
+        return opaqueFromWidget(widget)
+    }
+}
+
+// MARK: - Link GTK extension
+
+extension Link: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let button = gtk_link_button_new_with_label(destination, title)!
+        return opaqueFromWidget(button)
+    }
+}
+
 // MARK: - SecureField GTK extension
 
 extension SecureField: GTKRenderable {
