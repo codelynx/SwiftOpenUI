@@ -118,3 +118,93 @@ targets:
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityViewsBasic
       GENERATE_INFOPLIST_FILE: YES
+
+  ParityViewsLayout:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/ViewsLayout
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityViewsLayout
+      GENERATE_INFOPLIST_FILE: YES
+
+  ParityViewsContainers:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/ViewsContainers
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityViewsContainers
+      GENERATE_INFOPLIST_FILE: YES
+
+  ParityModifiers:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/Modifiers
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityModifiers
+      GENERATE_INFOPLIST_FILE: YES
+
+  ParityStateData:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/StateData
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityStateData
+      GENERATE_INFOPLIST_FILE: YES
+
+  ParityNavigation:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/Navigation
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityNavigation
+      GENERATE_INFOPLIST_FILE: YES
+
+  ParityEnvironment:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/Environment
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityEnvironment
+      GENERATE_INFOPLIST_FILE: YES
+
+  ParityGestures:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/Gestures
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityGestures
+      GENERATE_INFOPLIST_FILE: YES
+
+  ParityAnimation:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/Animation
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityAnimation
+      GENERATE_INFOPLIST_FILE: YES
+
+  ParityFocus:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/Focus
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityFocus
+      GENERATE_INFOPLIST_FILE: YES
+
+  ParityAppStructure:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/AppStructure
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityAppStructure
+      GENERATE_INFOPLIST_FILE: YES
