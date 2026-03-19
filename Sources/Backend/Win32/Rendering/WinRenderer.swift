@@ -2424,7 +2424,11 @@ extension OnAppearView: WinRenderable {
 extension OnDisappearView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
-        // Install cleanup subclass that fires onDisappear on WM_NCDESTROY
+        // Fires onDisappear when the root HWND is destroyed.
+        // Known limitation: for stateful content, this fires when the
+        // ViewHost container is destroyed, not on individual rebuilds.
+        // Full SwiftUI disappearance semantics would require tracking
+        // view identity across rebuilds, which our architecture doesn't support yet.
         let disappearAction = action
         let box = Unmanaged.passRetained(ClosureBox(disappearAction)).toOpaque()
         SetWindowSubclass(hwnd, onDisappearProc, 90, DWORD_PTR(UInt(bitPattern: box)))
@@ -2443,32 +2447,109 @@ private let onDisappearProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
     return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 }
 
+/// Sheet HWND stored on the root window (stable across rebuilds).
+private let sheetPropName: UnsafePointer<WCHAR> = {
+    "SwiftUISheet".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
 extension SheetView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
-        // Sheet is presented as a modal child window when isPresented is true.
-        // For now, render the content and check if sheet should show.
-        if isPresented.wrappedValue {
-            // Create a modal-like overlay window
-            let root = findRootWindow(from: context.parent)
+
+        let root = findRootWindow(from: context.parent)
+        let existingSheet = GetPropW(root, sheetPropName)
+
+        if isPresented.wrappedValue && existingSheet == nil {
+            let binding = isPresented
+            let sheetBuilder = sheetContent
+            let hInst = context.hInstance
+
+            registerStackClassIfNeeded(hInstance: hInst)
             let sheetHwnd = CreateWindowExW(
                 DWORD(WS_EX_TOOLWINDOW),
                 stackContainerClassName, nil,
                 DWORD(WS_POPUP) | DWORD(WS_VISIBLE) | DWORD(WS_CAPTION) | DWORD(WS_SYSMENU),
                 Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT), 400, 300,
-                root, nil, context.hInstance, nil
+                root, nil, hInst, nil
             )
+
             if let sheetHwnd = sheetHwnd {
-                let sheetContext = RenderContext(parent: sheetHwnd, hInstance: context.hInstance)
-                if let sheetChild = winRenderView(sheetContent(), in: sheetContext) {
+                // Track on root window (stable, survives presenter rebuilds)
+                SetPropW(root, sheetPropName, HANDLE(bitPattern: Int(bitPattern: sheetHwnd)))
+
+                let sheetContext = RenderContext(parent: sheetHwnd, hInstance: hInst)
+                if let sheetChild = winRenderView(sheetBuilder(), in: sheetContext) {
                     var rect = RECT()
                     GetClientRect(sheetHwnd, &rect)
                     SetWindowPos(sheetChild, nil, 0, 0,
                                  rect.right, rect.bottom, UINT(SWP_NOZORDER))
                 }
+
+                // Dismiss subclass: WM_CLOSE sets binding=false + destroys
+                let info = SheetDismissInfo(dismiss: { binding.wrappedValue = false }, root: root)
+                let infoPtr = Unmanaged.passRetained(info).toOpaque()
+                SetWindowSubclass(sheetHwnd, sheetDismissProc, 91,
+                                  DWORD_PTR(UInt(bitPattern: infoPtr)))
+            }
+        } else if !isPresented.wrappedValue, let existing = existingSheet {
+            // Programmatic dismiss: isPresented set to false while sheet is open
+            if let sheetHwnd = HWND(bitPattern: Int(bitPattern: existing)) {
+                DestroyWindow(sheetHwnd)
             }
         }
+
         return hwnd
+    }
+}
+
+private class SheetDismissInfo {
+    let dismiss: () -> Void
+    let root: HWND
+    var dismissed = false
+    init(dismiss: @escaping () -> Void, root: HWND) {
+        self.dismiss = dismiss
+        self.root = root
+    }
+}
+
+private let sheetDismissProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_CLOSE):
+        if dwRefData != 0 {
+            let info = Unmanaged<SheetDismissInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+            if !info.dismissed {
+                info.dismissed = true
+                info.dismiss()
+            }
+        }
+        DestroyWindow(hwnd)
+        return 0
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            let info = Unmanaged<SheetDismissInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            )
+            let val = info.takeUnretainedValue()
+            RemovePropW(val.root, sheetPropName)
+            if !val.dismissed {
+                val.dismissed = true
+                val.dismiss()
+            }
+            info.release()
+        }
+        RemoveWindowSubclass(hwnd, sheetDismissProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
@@ -2496,12 +2577,51 @@ extension AlertView: WinRenderable {
 
 extension OverlayView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Render as ZStack: content behind, overlay on top
-        let zstack = ZStack(alignment: alignment) {
-            content
-            overlay
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        // Container sized to content (overlay does NOT affect size)
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        guard let contentHwnd = winRenderView(content, in: childContext) else { return container }
+
+        // Size container from content's natural size (not overlay)
+        var contentRect = RECT()
+        GetWindowRect(contentHwnd, &contentRect)
+        let w = contentRect.right - contentRect.left
+        let h = contentRect.bottom - contentRect.top
+        SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        SetWindowPos(contentHwnd, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+
+        // Render overlay on top, positioned by alignment
+        if let overlayHwnd = winRenderView(overlay, in: childContext) {
+            var overlayRect = RECT()
+            GetWindowRect(overlayHwnd, &overlayRect)
+            let ow = overlayRect.right - overlayRect.left
+            let oh = overlayRect.bottom - overlayRect.top
+
+            let ox: Int32
+            let oy: Int32
+            switch alignment {
+            case .topLeading:     ox = 0;           oy = 0
+            case .top:            ox = (w - ow) / 2; oy = 0
+            case .topTrailing:    ox = w - ow;       oy = 0
+            case .leading:        ox = 0;           oy = (h - oh) / 2
+            case .center:         ox = (w - ow) / 2; oy = (h - oh) / 2
+            case .trailing:       ox = w - ow;       oy = (h - oh) / 2
+            case .bottomLeading:  ox = 0;           oy = h - oh
+            case .bottom:         ox = (w - ow) / 2; oy = h - oh
+            case .bottomTrailing: ox = w - ow;       oy = h - oh
+            }
+            SetWindowPos(overlayHwnd, nil, ox, oy, ow, oh, UINT(SWP_NOZORDER))
         }
-        return winRenderView(zstack, in: context)
+
+        return container
     }
 }
 
