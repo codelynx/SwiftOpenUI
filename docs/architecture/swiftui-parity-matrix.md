@@ -51,8 +51,8 @@ Last updated: 2026-03-19
 | LazyHStack | Y | Y | Y | Y | - | - | GTK: GtkListView horizontal; Win32: HStack |
 | LazyVGrid | Y | Y | Y | Y | - | - | GTK: GtkGridView adaptive; Win32: non-virtualized |
 | LazyHGrid | Y | Y | Y | Y | - | - | GTK: GtkGridView horizontal; Win32: Grid |
-| Picker | Y | Y | Y | ~ | - | - | GTK: dropdown/segmented; Win32: stub |
-| DatePicker | Y | Y | Y | ~ | - | - | GTK: GtkCalendar; Win32: SysDateTimePick32 (display) |
+| Picker | Y | Y | Y | Y | - | - | GTK: dropdown/segmented; Win32: ComboBox |
+| DatePicker | Y | Y | Y | Y | - | - | GTK: GtkCalendar; Win32: SysDateTimePick32 + binding |
 | GeometryReader | Y | Y | Y | Y | - | - | GTK: map+tick; Win32: parent rect |
 | Menu | Y | Y | Y | Y | - | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu |
 | ConfirmationDialog | Y | Y | Y | Y | - | - | GTK: vertical modal; Win32: MessageBoxW |
@@ -164,7 +164,7 @@ Last updated: 2026-03-19
 
 | Category | SwiftUI Total | Core Implemented | GTK4 | Win32 | Coverage |
 |----------|--------------|-----------------|------|-------|----------|
-| Views | 44 | 43 | 43 | 40 | ~98% |
+| Views | 44 | 43 | 43 | 42 | ~98% |
 | Modifiers | 37 | 35 | 35 | 31 | ~95% |
 | State & Data | 13 | 10 | 10 | 10 | ~77% |
 | Navigation | 8 | 6 | 6 | 6 | 75% |
