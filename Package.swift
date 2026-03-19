@@ -194,6 +194,11 @@ targets += [
         dependencies: exampleDeps,
         path: "Examples/Parity/Modifiers"
     ),
+    .executableTarget(
+        name: "ParityStateData",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/StateData"
+    ),
 ]
 
 #if os(macOS)
