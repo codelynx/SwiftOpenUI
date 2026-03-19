@@ -17,14 +17,33 @@ mkdir -p "$OUTDIR"
 
 DELAY=3
 
-TARGETS=(HelloWorld TextStyles Buttons StateDemo Layout)
+TARGETS=(
+    # Showcase
+    HelloWorld Stopwatch ColorMixer
+    # Parity
+    ParityViewsBasic ParityViewsLayout ParityViewsContainers
+    ParityModifiers ParityStateData ParityNavigation
+    ParityEnvironment ParityGestures ParityAnimation
+    ParityFocus ParityAppStructure
+)
 typeset -A FILENAMES
 FILENAMES=(
-    HelloWorld  "01-HelloWorld"
-    TextStyles  "02-TextStyles"
-    Buttons     "03-Buttons"
-    StateDemo   "04-State"
-    Layout      "05-Layout"
+    # Showcase
+    HelloWorld          "showcase-HelloWorld"
+    Stopwatch           "showcase-Stopwatch"
+    ColorMixer          "showcase-ColorMixer"
+    # Parity
+    ParityViewsBasic       "parity-ViewsBasic"
+    ParityViewsLayout      "parity-ViewsLayout"
+    ParityViewsContainers  "parity-ViewsContainers"
+    ParityModifiers        "parity-Modifiers"
+    ParityStateData        "parity-StateData"
+    ParityNavigation       "parity-Navigation"
+    ParityEnvironment      "parity-Environment"
+    ParityGestures         "parity-Gestures"
+    ParityAnimation        "parity-Animation"
+    ParityFocus            "parity-Focus"
+    ParityAppStructure     "parity-AppStructure"
 )
 
 # Build the window-id helper if needed
