@@ -2,7 +2,7 @@
 
 Comparison of SwiftUI features and their SwiftOpenUI implementation status across backends.
 
-Last updated: 2026-03-18
+Last updated: 2026-03-19
 
 ## Legend
 
@@ -20,8 +20,8 @@ Last updated: 2026-03-18
 | TextField | Y | Y | Y | Y | Y | Y | Single-line; Binding<String> |
 | Toggle | Y | Y | Y | Y | - | - | GtkCheckButton / Win32 checkbox |
 | Slider | Y | Y | Y | Y | - | - | Debounced commit on GTK4 (150ms) |
-| Image (system) | Y | Y | Y | Y | - | - | GTK icon theme names, not SF Symbols |
-| Image (file) | Y | Y | Y | Y | - | - | |
+| Image (system) | Y | Y | Y | ~ | - | - | GTK icon theme names; Win32: text fallback |
+| Image (file) | Y | Y | Y | ~ | - | - | Win32: text fallback `[img: path]` |
 | Color | Y | Y | Y | Y | Y | Y | RGBA, hex, HSB constructors |
 | Spacer | Y | Y | Y | Y | Y | Y | |
 | Divider | Y | Y | Y | Y | Y | Y | |
@@ -76,7 +76,7 @@ Last updated: 2026-03-18
 | .offset() | Y | Y | Y | Y | Y | Y | CSS transform on GTK4 |
 | .scaleEffect() | Y | Y | Y | ~ | Y | Y | Win32: D2D surface only |
 | .animation() | Y | Y | Y | ~ | Y | - | Win32: D2D only; Android: stub |
-| .imageScale() | Y | Y | Y | Y | - | - | |
+| .imageScale() | Y | Y | Y | ~ | - | - | Win32: no real image rendering |
 | .onTapGesture() | Y | Y | Y | Y | Y | Y | count parameter |
 | .onLongPressGesture() | Y | Y | Y | Y | Y | Y | minimumDuration |
 | .onDrag() | Y | Y | Y | Y | Y | Y | minimumDistance filtering |
@@ -84,7 +84,7 @@ Last updated: 2026-03-18
 | .environment() | Y | Y | Y | Y | Y | Y | |
 | .navigationTitle() | Y | Y | Y | Y | Y | Y | |
 | .navigationDestination() | Y | Y | Y | Y | Y | Y | Type-based registry |
-| .focused() | Y | Y | Y | Y | ~ | Y | Web: stub |
+| .focused() | Y | Y | Y | Y | - | Y | Web: no-op (pass-through) |
 | .modifier() | Y | Y | Y | Y | Y | Y | Custom ViewModifier |
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
 | .rotationEffect() | Y | - | - | - | - | - | |
@@ -163,8 +163,9 @@ Last updated: 2026-03-18
 
 | Category | SwiftUI Total | SwiftOpenUI Implemented | Coverage |
 |----------|--------------|------------------------|----------|
-| Views | ~45 | 20 | ~44% |
-| Modifiers | ~35 | 22 | ~63% |
-| State wrappers | 10 | 8 | 80% |
-| Navigation | 7 | 6 | 86% |
-| App structure | 8 | 5 | 63% |
+| Views | 45 | 21 | ~47% |
+| Modifiers | 34 | 22 | ~65% |
+| State & Data | 13 | 9 | ~69% |
+| Navigation | 8 | 6 | 75% |
+| App structure | 9 | 5 | ~56% |
+| Layout system | 9 | 6 | ~67% |
