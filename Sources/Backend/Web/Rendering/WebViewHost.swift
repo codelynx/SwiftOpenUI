@@ -1,5 +1,8 @@
 import JavaScriptKit
 import SwiftOpenUI
+#if canImport(Observation)
+import Observation
+#endif
 
 /// Web-specific ViewHost that manages a stable DOM container element.
 /// On state change, rebuilds the body and swaps children.
@@ -31,6 +34,21 @@ public class WebViewHost: AnyViewHost {
         // No-op for web — browser handles focus
     }
 
+    /// Build the body with observation tracking for @Observable support.
+    func buildBodyWithTracking() -> JSValue {
+        #if canImport(Observation)
+        var result: JSValue = .undefined
+        withObservationTracking {
+            result = buildBody()
+        } onChange: { [weak self] in
+            self?.scheduleRebuild()
+        }
+        return result
+        #else
+        return buildBody()
+        #endif
+    }
+
     func rebuild() {
         scheduled = false
 
@@ -46,7 +64,7 @@ public class WebViewHost: AnyViewHost {
 
         let previousEnv = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
-        let element = buildBody()
+        let element = buildBodyWithTracking()
         setCurrentEnvironment(previousEnv)
 
         WebViewHost.currentRebuilding = previousHost
@@ -75,7 +93,7 @@ public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
     // Initial render
     let previousEnv = getCurrentEnvironment()
     host.capturedEnvironment = previousEnv
-    let element = host.buildBody()
+    let element = host.buildBodyWithTracking()
     _ = host.container.appendChild(element)
 
     return host.container

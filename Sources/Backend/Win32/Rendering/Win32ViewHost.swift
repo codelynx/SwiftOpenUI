@@ -3,6 +3,9 @@ import CWin32
 import CWin32Bridge
 import SwiftOpenUI
 import Foundation
+#if canImport(Observation)
+import Observation
+#endif
 
 /// Hosts a stateful view's Win32 HWND subtree. The container HWND
 /// is stable across re-renders — only its children are replaced.
@@ -101,6 +104,21 @@ public class Win32ViewHost: AnyViewHost {
         lock.unlock()
     }
 
+    /// Build the body with observation tracking for @Observable support.
+    public func buildBodyWithTracking(_ context: RenderContext) -> HWND? {
+        #if canImport(Observation)
+        var result: HWND?
+        withObservationTracking {
+            result = buildBody(context)
+        } onChange: { [weak self] in
+            self?.scheduleRebuild()
+        }
+        return result
+        #else
+        return buildBody(context)
+        #endif
+    }
+
     /// Capture the current environment.
     public func captureEnvironment() {
         capturedEnvironment = getCurrentEnvironment()
@@ -138,7 +156,7 @@ public class Win32ViewHost: AnyViewHost {
         if let captured = capturedEnvironment {
             setCurrentEnvironment(captured)
         }
-        let newChild = buildBody(childContext)
+        let newChild = buildBodyWithTracking(childContext)
 
         if let newChild = newChild {
             currentChild = newChild
