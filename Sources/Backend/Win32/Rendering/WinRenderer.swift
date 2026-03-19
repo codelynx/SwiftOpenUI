@@ -2770,8 +2770,53 @@ extension ToolbarView: WinRenderable {
     }
 
     private func renderToolbarWithContent(hwnd: HWND, context: RenderContext) -> HWND? {
-        // Standalone: just return content (toolbar items not rendered outside NavigationStack)
-        return hwnd
+        guard !toolbarItems.isEmpty else { return hwnd }
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Render toolbar items with placement: leading left, trailing/primary right
+        let toolbarContext = RenderContext(parent: container, hInstance: context.hInstance)
+        var leadingX: Int32 = 0
+        var trailingRendered: [(hwnd: HWND, width: Int32)] = []
+        let barH: Int32 = 28
+
+        for item in toolbarItems {
+            guard let itemHwnd = winRenderAnyView(item.wrapped, in: toolbarContext) else { continue }
+            var r = RECT()
+            GetWindowRect(itemHwnd, &r)
+            let w = r.right - r.left
+            switch item.placement {
+            case .leading:
+                SetWindowPos(itemHwnd, nil, leadingX, 0, w, barH, UINT(SWP_NOZORDER))
+                leadingX += w + 4
+            case .trailing, .primaryAction:
+                trailingRendered.append((hwnd: itemHwnd, width: w))
+            }
+        }
+
+        SetParent(hwnd, container)
+        var contentRect = RECT()
+        GetWindowRect(hwnd, &contentRect)
+        let contentW = max(contentRect.right - contentRect.left, leadingX + 100)
+
+        // Position trailing items from right edge
+        var trailingX = contentW - 4
+        for item in trailingRendered.reversed() {
+            trailingX -= item.width
+            SetWindowPos(item.hwnd, nil, trailingX, 0, item.width, barH, UINT(SWP_NOZORDER))
+            trailingX -= 4
+        }
+        let contentH = contentRect.bottom - contentRect.top
+        SetWindowPos(container, nil, 0, 0, contentW, barH + contentH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+        SetWindowPos(hwnd, nil, 0, barH, contentW, contentH, UINT(SWP_NOZORDER))
+        return container
     }
 
     private func renderToolbarItems(into navCtx: Win32NavigationContext, context: RenderContext) {
@@ -2841,39 +2886,28 @@ extension Menu: WinRenderable {
             var menuID: UINT = 50000
             var menuActions: [UINT: () -> Void] = [:]
 
-            func addElements(_ elems: [MenuElement]) {
+            func addElementsTo(_ targetMenu: HMENU, _ elems: [MenuElement]) {
                 for elem in elems {
                     switch elem {
                     case .item(let label, let action):
                         let id = menuID; menuID += 1
                         label.withCString(encodedAs: UTF16.self) { wstr in
-                            AppendMenuW(hMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+                            AppendMenuW(targetMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
                         }
                         menuActions[id] = action
                     case .divider:
-                        AppendMenuW(hMenu, UINT(MF_SEPARATOR), 0, nil)
+                        AppendMenuW(targetMenu, UINT(MF_SEPARATOR), 0, nil)
                     case .submenu(let label, let children):
                         if let subMenu = CreatePopupMenu() {
-                            // Recursion not ideal but works for shallow menus
-                            var subID = menuID
-                            for child in children {
-                                if case .item(let l, let a) = child {
-                                    let id = subID; subID += 1
-                                    l.withCString(encodedAs: UTF16.self) { wstr in
-                                        AppendMenuW(subMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
-                                    }
-                                    menuActions[id] = a
-                                }
-                            }
-                            menuID = subID
+                            addElementsTo(subMenu, children)
                             label.withCString(encodedAs: UTF16.self) { wstr in
-                                AppendMenuW(hMenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: subMenu)), wstr)
+                                AppendMenuW(targetMenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: subMenu)), wstr)
                             }
                         }
                     }
                 }
             }
-            addElements(menuElements)
+            addElementsTo(hMenu, menuElements)
 
             var pt = POINT()
             GetCursorPos(&pt)
@@ -2963,7 +2997,7 @@ extension DatePicker: WinRenderable {
         }
 
         let dtpClass: [WCHAR] = Array("SysDateTimePick32".utf16) + [0]
-        _ = dtpClass.withUnsafeBufferPointer { ptr in
+        let dtp = dtpClass.withUnsafeBufferPointer { ptr in
             CreateWindowExW(
                 0, ptr.baseAddress!, nil,
                 DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP),
@@ -2971,9 +3005,71 @@ extension DatePicker: WinRenderable {
                 container, nil, context.hInstance, nil
             )
         }
-        // DTN_DATETIMECHANGE binding: display-only for now
-        // (DateComponents binding requires WM_NOTIFY + SYSTEMTIME conversion)
+
+        // Initialize control from binding value
+        if let dtp = dtp, let sel = selection {
+            let dc = sel.wrappedValue
+            var st = SYSTEMTIME()
+            st.wYear = WORD(dc.year); st.wMonth = WORD(dc.month); st.wDay = WORD(dc.day)
+            withUnsafePointer(to: st) { stPtr in
+                _ = SendMessageW(dtp, UINT(DTM_SETSYSTEMTIME), 0,
+                                 LPARAM(Int(bitPattern: stPtr)))
+            }
+        }
+
+        // Wire DTN_DATETIMECHANGE → DateComponents binding/callback
+        if let dtp = dtp {
+            let sel = selection
+            let cb = onChange
+            let info = DatePickerNotifyInfo(selection: sel, onChange: cb, dtp: dtp)
+            let infoPtr = Unmanaged.passRetained(info).toOpaque()
+            SetWindowSubclass(container, datePickerNotifyProc, 43, DWORD_PTR(UInt(bitPattern: infoPtr)))
+        }
         return container
+    }
+}
+
+private class DatePickerNotifyInfo {
+    let selection: Binding<SwiftOpenUI.DateComponents>?
+    let onChange: ((SwiftOpenUI.DateComponents) -> Void)?
+    let dtp: HWND
+    init(selection: Binding<SwiftOpenUI.DateComponents>?, onChange: ((SwiftOpenUI.DateComponents) -> Void)?, dtp: HWND) {
+        self.selection = selection
+        self.onChange = onChange
+        self.dtp = dtp
+    }
+}
+
+private let datePickerNotifyProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_NOTIFY):
+        if dwRefData != 0 {
+            let nmhdr = UnsafePointer<NMHDR>(bitPattern: Int(lParam))
+            if let nmhdr = nmhdr, nmhdr.pointee.code == UINT(DTN_DATETIMECHANGE) {
+                let info = Unmanaged<DatePickerNotifyInfo>.fromOpaque(
+                    UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+                ).takeUnretainedValue()
+                var st = SYSTEMTIME()
+                withUnsafeMutablePointer(to: &st) { stPtr in
+                    _ = SendMessageW(info.dtp, UINT(DTM_GETSYSTEMTIME), 0,
+                                     LPARAM(Int(bitPattern: stPtr)))
+                }
+                let dc = SwiftOpenUI.DateComponents(year: Int(st.wYear), month: Int(st.wMonth), day: Int(st.wDay))
+                info.selection?.wrappedValue = dc
+                info.onChange?(dc)
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            Unmanaged<DatePickerNotifyInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).release()
+        }
+        RemoveWindowSubclass(hwnd, datePickerNotifyProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
@@ -3008,28 +3104,72 @@ extension Grid: WinRenderable {
             context.parent, nil, context.hInstance, nil
         )!
 
-        // Render each GridRow as an HStack
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
-        var rows: [HWND] = []
         var maxW: Int32 = 0
         var totalH: Int32 = 0
 
-        if let multi = content as? MultiChildView {
-            for child in multi.children {
-                func renderRow<V: View>(_ v: V) {
-                    let rowView = HStack(spacing: hSpacing) { v }
-                    if let rowHwnd = winRenderView(rowView, in: childContext) {
-                        var r = RECT()
-                        GetWindowRect(rowHwnd, &r)
-                        let rw = r.right - r.left
-                        let rh = r.bottom - r.top
-                        SetWindowPos(rowHwnd, nil, 0, totalH, rw, rh, UINT(SWP_NOZORDER))
-                        maxW = max(maxW, rw)
-                        totalH += rh + Int32(vSpacing)
-                        rows.append(rowHwnd)
+        if useExplicitRows {
+            // Explicit rows mode: each child is a GridRow
+            if let multi = content as? MultiChildView {
+                for child in multi.children {
+                    func renderRow<V: View>(_ v: V) {
+                        let rowView = HStack(spacing: hSpacing) { v }
+                        if let rowHwnd = winRenderView(rowView, in: childContext) {
+                            var r = RECT()
+                            GetWindowRect(rowHwnd, &r)
+                            let rw = r.right - r.left
+                            let rh = r.bottom - r.top
+                            SetWindowPos(rowHwnd, nil, 0, totalH, rw, rh, UINT(SWP_NOZORDER))
+                            maxW = max(maxW, rw)
+                            totalH += rh + Int32(vSpacing)
+                        }
+                    }
+                    renderRow(child)
+                }
+            }
+        } else {
+            // Auto-wrap mode: group flat children into rows of `columns` items
+            var allChildren: [any View] = []
+            if let multi = content as? MultiChildView {
+                allChildren = multi.children
+            } else {
+                allChildren = [content]
+            }
+
+            var i = 0
+            while i < allChildren.count {
+                let end = min(i + columns, allChildren.count)
+                // Render row items individually into an HStack container
+                registerStackClassIfNeeded(hInstance: context.hInstance)
+                let rowContainer = CreateWindowExW(
+                    0, stackContainerClassName, nil,
+                    DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+                    0, 0, 0, 0, container, nil, context.hInstance, nil
+                )!
+                let rowContext = RenderContext(parent: rowContainer, hInstance: context.hInstance)
+                var rowHwnds: [HWND] = []
+                for j in i..<end {
+                    if let h = winRenderAnyView(allChildren[j], in: rowContext) {
+                        rowHwnds.append(h)
                     }
                 }
-                renderRow(child)
+                let rowInfo = StackLayoutInfo(direction: .horizontal, spacing: Int32(hSpacing),
+                                              children: rowHwnds, flexibleIndices: [])
+                let rowInfoPtr = Unmanaged.passRetained(rowInfo).toOpaque()
+                SetWindowSubclass(rowContainer, stackLayoutProc, 1, DWORD_PTR(UInt(bitPattern: rowInfoPtr)))
+                let rowSize = computeNaturalSize(info: rowInfo)
+                SetWindowPos(rowContainer, nil, 0, 0, rowSize.width, rowSize.height,
+                             UINT(SWP_NOZORDER | SWP_NOMOVE))
+                if let rowHwnd = rowContainer as HWND? {
+                    var r = RECT()
+                    GetWindowRect(rowHwnd, &r)
+                    let rw = r.right - r.left
+                    let rh = r.bottom - r.top
+                    SetWindowPos(rowHwnd, nil, 0, totalH, rw, rh, UINT(SWP_NOZORDER))
+                    maxW = max(maxW, rw)
+                    totalH += rh + Int32(vSpacing)
+                }
+                i = end
             }
         }
 
@@ -3050,20 +3190,69 @@ extension GridRow: WinRenderable {
 extension LazyVGrid: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let cols = max(gridItems.count, 1)
-        let vstack = VStack(spacing: 0) {
-            ForEach(0..<items.count) { i in contentBuilder(items[i]) }
+        // Group items into rows of `cols` columns
+        let grid = Grid(columns: cols, spacing: 0) {
+            ForEach(0..<items.count) { i in
+                AnyView(contentBuilder(items[i]))
+            }
         }
-        let scrollView = ScrollView(.vertical) { vstack }
+        let scrollView = ScrollView(.vertical) { grid }
         return winRenderView(scrollView, in: context)
     }
 }
 
 extension LazyHGrid: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        let hstack = HStack(spacing: 0) {
-            ForEach(0..<items.count) { i in contentBuilder(items[i]) }
+        // Horizontal grid: items distributed across `gridItems.count` rows
+        // Each row is an HStack; items fill rows left-to-right, top-to-bottom
+        let rowCount = max(gridItems.count, 1)
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        var maxW: Int32 = 0
+        var totalH: Int32 = 0
+
+        // Distribute items across rows
+        let itemsPerRow = max(1, (items.count + rowCount - 1) / rowCount)
+        var itemIdx = 0
+        for _ in 0..<rowCount {
+            guard itemIdx < items.count else { break }
+            let rowEnd = min(itemIdx + itemsPerRow, items.count)
+
+            let rowContainer = CreateWindowExW(
+                0, stackContainerClassName, nil,
+                DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+                0, 0, 0, 0, container, nil, context.hInstance, nil
+            )!
+            let rowCtx = RenderContext(parent: rowContainer, hInstance: context.hInstance)
+            var rowHwnds: [HWND] = []
+            for j in itemIdx..<rowEnd {
+                if let h = winRenderView(contentBuilder(items[j]), in: rowCtx) {
+                    rowHwnds.append(h)
+                }
+            }
+            let rowInfo = StackLayoutInfo(direction: .horizontal, spacing: 0,
+                                          children: rowHwnds, flexibleIndices: [])
+            let rowInfoPtr = Unmanaged.passRetained(rowInfo).toOpaque()
+            SetWindowSubclass(rowContainer, stackLayoutProc, 1, DWORD_PTR(UInt(bitPattern: rowInfoPtr)))
+            let rowSize = computeNaturalSize(info: rowInfo)
+            SetWindowPos(rowContainer, nil, 0, totalH, rowSize.width, rowSize.height,
+                         UINT(SWP_NOZORDER))
+            maxW = max(maxW, rowSize.width)
+            totalH += rowSize.height
+
+            itemIdx = rowEnd
         }
-        return winRenderView(hstack, in: context)
+
+        SetWindowPos(container, nil, 0, 0, maxW, totalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        return container
     }
 }
 
