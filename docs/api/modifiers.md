@@ -25,8 +25,9 @@ All modifier view structs live in `Sources/SwiftOpenUI/Modifiers/`. Each wraps c
 ### Backend support
 
 - **GTK4**: GtkGestureClick, GtkGestureLongPress, GtkGestureDrag event controllers.
+- **Win32**: Recursive subclassing on all HWNDs. TapGesture uses armed down→up tracking. LongPress via SetTimer. Drag with minimumDistance filtering and WM_MOUSEMOVE capture.
 - **macOS**: Uses real SwiftUI gesture modifiers.
-- **Win32 / Web**: Core types compile; backend rendering not yet implemented.
+- **Web**: Core types compile; backend rendering not yet implemented.
 
 ## Image
 
@@ -51,8 +52,9 @@ All modifier view structs live in `Sources/SwiftOpenUI/Modifiers/`. Each wraps c
 ### Backend support
 
 - **GTK4**: CSS `transition` property. On rebuild, old values are set first, then new values are applied on the next frame via `g_idle_add` so GTK interpolates.
+- **Win32**: D2D surface rendering with `SetTimer` at 60fps for `OpacityView`/`ScaleEffectView` on D2D-renderable subtrees (Text, Color, Divider). Easing curves: linear, easeIn, easeOut, easeInOut, spring. `consumePendingAnimation()` captures animation across deferred PostMessage rebuilds.
 - **macOS**: Uses real SwiftUI animation.
-- **Win32 / Web**: Core types compile; backend rendering not yet implemented.
+- **Web**: Core types compile; backend rendering not yet implemented.
 
 ## Environment
 

@@ -157,6 +157,23 @@ void d2d1_RenderTarget_DrawText(
     float x, float y, float width, float height
 );
 
+// Draw a line between two points
+void d2d1_RenderTarget_DrawLine(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float x1, float y1, float x2, float y2,
+    float strokeWidth
+);
+
+// Transform
+void d2d1_RenderTarget_SetTransform(
+    D2DRenderTarget target,
+    float m11, float m12, float m21, float m22, float dx, float dy
+);
+
+// Set transform to identity (reset)
+void d2d1_RenderTarget_SetTransformIdentity(D2DRenderTarget target);
+
 #ifdef __cplusplus
 }
 #endif

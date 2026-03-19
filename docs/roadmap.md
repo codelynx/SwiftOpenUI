@@ -12,6 +12,11 @@
 - GTK4: Animation — withAnimation(), .animation(), .opacity(), .offset(), .scaleEffect()
 - GTK4+Win32: Toggle, Slider, ScrollView, List, Image (+ .imageScale())
 - Win32 backend (Windows) — full rendering + layout engine + reactive rebuilds
+- Win32: Navigation — NavigationStack, NavigationLink, NavigationPath, .navigationTitle(), .navigationDestination(for:)
+- Win32: Gestures — .onTapGesture(), .onLongPressGesture(), .onDrag() with recursive subclassing
+- Win32: Animation — withAnimation(), .animation(), .opacity(), .scaleEffect() via D2D surface + SetTimer 60fps
+- Win32: Phase 4 parity — SecureField, TextEditor, Stepper, ProgressView, Picker, Label, Link, TabView, Grid, GridRow, Canvas, Menu, DisclosureGroup, DatePicker, GeometryReader, LazyStacks, LazyGrids, Form, Section
+- Win32: Modifiers — .cornerRadius() (SetWindowRgn), .shadow() (layered alpha), .rotationEffect() (D2D SetTransform), .pickerStyle() (segmented radio buttons), .gridCellColumns(), .searchable(), .toolbar(), .sheet(), .alert(), .overlay(), .onAppear(), .onDisappear()
 - macOS support — examples use real SwiftUI via conditional compilation
 - Web/Wasm backend (experimental) — DOM rendering via JavaScriptKit, verified in browser
 - `./configure` script — automated toolchain + Wasm SDK setup
@@ -19,16 +24,15 @@
 ## Next
 
 ### Views & Modifiers
-- Rotation modifier
-- DragGesture (SwiftUI-style Gesture protocol)
-- Grid layout
+- .clipShape() — needs D2D path geometry shim
+- .task() — needs Swift async runtime integration
+- Canvas: stroke styles (line caps, joins, dash), bezier/quadratic curves, rotate/translate transforms
 
 ### State & Data
 - Resolve ObservableObject/Published namespace conflict on macOS (see `docs/issues/`)
 - @AppStorage, @SceneStorage
 
 ### Backends
-- Win32/Web: port navigation, gesture, and animation rendering (core types exist, GTK4 backend done)
 - Web: release build optimization (reduce from 59MB debug)
 - Web: serve workflow (dev server with hot reload)
 - Android: core library cross-compiles (see [setup guide](guides/android-setup.md)); backend design complete (see [design doc](architecture/android-backend-design.md)); Phase 1 implementation pending (Text, Button, VStack/HStack, @State via batched JNI diffs to Kotlin host)

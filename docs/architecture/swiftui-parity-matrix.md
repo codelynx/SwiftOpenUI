@@ -43,7 +43,7 @@ Last updated: 2026-03-19
 | Link | Y | Y | Y | Y | - | - | GTK: LinkButton; Win32: ShellExecuteW |
 | TabView | Y | Y | Y | Y | - | - | GTK: Stack+Switcher; Win32: button bar |
 | Grid | Y | Y | Y | Y | - | - | GTK: GtkGrid auto-wrap+rows; Win32: VStack of HStacks |
-| GridRow | Y | Y | Y | - | - | - | MultiChildView, .gridCellColumns() span |
+| GridRow | Y | Y | Y | Y | - | - | MultiChildView, .gridCellColumns() span |
 | DisclosureGroup | Y | Y | Y | Y | - | - | GTK: GtkExpander; Win32: toggle+show/hide |
 | Form | Y | Y | Y | Y | - | - | GTK: styled GtkBox; Win32: VStack+padding |
 | Section | Y | Y | Y | Y | - | - | GTK: Pango header; Win32: header+divider |
@@ -56,8 +56,8 @@ Last updated: 2026-03-19
 | GeometryReader | Y | Y | Y | Y | - | - | GTK: map+tick; Win32: parent rect |
 | Menu | Y | Y | Y | Y | - | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu |
 | ConfirmationDialog | Y | Y | Y | Y | - | - | GTK: vertical modal; Win32: MessageBoxW |
-| Canvas | Y | Y | Y | - | - | - | GtkDrawingArea + Cairo |
-| Map | Y | - | - | - | - | - | Needs external map library |
+| Canvas | Y | Y | Y | ~ | - | - | GTK: Cairo; Win32: D2D subset (paths, transforms, alpha; no filters/symbols) |
+| Map | Y | - | - | - | - | - | No core type defined; needs external map library |
 
 ## Modifiers
 
@@ -85,9 +85,9 @@ Last updated: 2026-03-19
 | .focused() | Y | Y | Y | Y | - | Y | Web: no-op (pass-through) |
 | .modifier() | Y | Y | Y | Y | Y | Y | Custom ViewModifier |
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
-| .cornerRadius() | Y | Y | Y | ~ | - | - | GTK: CSS; Win32: stub (needs D2D) |
-| .shadow() | Y | Y | Y | ~ | - | - | GTK: CSS; Win32: stub (needs D2D) |
-| .rotationEffect() | Y | Y | Y | ~ | - | - | GTK: CSS transform; Win32: stub |
+| .cornerRadius() | Y | Y | Y | Y | - | - | GTK: CSS; Win32: SetWindowRgn rounded region |
+| .shadow() | Y | Y | Y | Y | - | - | GTK: CSS; Win32: layered shadow with alpha |
+| .rotationEffect() | Y | Y | Y | Y | - | - | GTK: CSS transform; Win32: D2D SetTransform |
 | .overlay() | Y | Y | Y | Y | - | - | GTK: GtkOverlay; Win32: container |
 | .sheet() | Y | Y | Y | Y | - | - | GTK: modal window; Win32: popup |
 | .alert() | Y | Y | Y | Y | - | - | GTK: modal dialog; Win32: MessageBoxW |
@@ -96,8 +96,8 @@ Last updated: 2026-03-19
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
 | .searchable() | Y | Y | Y | Y | - | - | GTK: SearchEntry; Win32: EDIT |
 | .toolbar() | Y | Y | Y | Y | - | - | GTK: header bar; Win32: nav header |
-| .gridCellColumns() | Y | Y | Y | - | - | - | Column span in Grid/GridRow |
-| .pickerStyle() | Y | Y | Y | - | - | - | .automatic, .segmented, .palette |
+| .gridCellColumns() | Y | Y | Y | Y | - | - | Column span in Grid/GridRow |
+| .pickerStyle() | Y | Y | Y | Y | - | - | .automatic, .segmented, .palette |
 | .navigationSplitViewColumnWidth() | Y | Y | Y | - | - | - | min/ideal/max; GTK divider stays resizable |
 | .clipShape() | Y | - | - | - | - | - | |
 | .task() | Y | - | - | - | - | - | Needs async runtime |
@@ -165,8 +165,8 @@ Last updated: 2026-03-19
 
 | Category | SwiftUI Total | Core Implemented | GTK4 | Win32 | Coverage |
 |----------|--------------|-----------------|------|-------|----------|
-| Views | 44 | 43 | 43 | 42 | ~98% |
-| Modifiers | 38 | 36 | 36 | 31 | ~95% |
+| Views | 44 | 43 | 43 | 43 | ~98% |
+| Modifiers | 38 | 36 | 36 | 35 | ~95% |
 | State & Data | 13 | 10 | 10 | 10 | ~77% |
 | Navigation | 8 | 7 | 7 | 6 | 88% |
 | App structure | 9 | 5 | 5 | 5 | ~56% |

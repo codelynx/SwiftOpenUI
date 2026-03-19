@@ -54,6 +54,10 @@ extension OpacityView: _D2DContentAccess {
     var _isContentD2DRenderable: Bool { isD2DRenderable(content) }
 }
 
+extension RotationView: _D2DContentAccess {
+    var _isContentD2DRenderable: Bool { isD2DRenderable(content) }
+}
+
 /// Measure a D2D-renderable view's size.
 func d2dMeasure<V: View>(_ view: V) -> (width: Float, height: Float) {
     if let text = view as? Text {
@@ -108,6 +112,19 @@ extension ScaleEffectView: _D2DMeasurable {
 extension OpacityView: _D2DMeasurable {
     var _d2dMeasureContent: (width: Float, height: Float) {
         d2dMeasure(content)
+    }
+}
+
+extension RotationView: _D2DMeasurable {
+    var _d2dMeasureContent: (width: Float, height: Float) {
+        let inner = d2dMeasure(content)
+        // Compute rotated bounding box
+        let rad = Float(angle) * .pi / 180.0
+        let cosA = abs(cos(rad))
+        let sinA = abs(sin(rad))
+        let w = inner.width * cosA + inner.height * sinA
+        let h = inner.width * sinA + inner.height * cosA
+        return (w, h)
     }
 }
 
@@ -192,6 +209,35 @@ extension OpacityView: _D2DDrawable {
                          x: Float, y: Float, width: Float, height: Float) {
         // Opacity is handled by the D2DSurfaceState, just draw content
         d2dDraw(content, target: target, brush: brush, x: x, y: y, width: width, height: height)
+    }
+}
+
+extension RotationView: _D2DDrawable {
+    func _d2dDrawContent(target: D2DRenderTarget, brush: D2DBrush,
+                         x: Float, y: Float, width: Float, height: Float) {
+        let rad = Float(angle) * .pi / 180.0
+        let cosA = cos(rad)
+        let sinA = sin(rad)
+
+        // Rotate around center of the drawing area
+        let cx = x + width / 2
+        let cy = y + height / 2
+
+        // Build rotation matrix around center:
+        // Translate(-cx,-cy) * Rotate * Translate(cx,cy)
+        let dx = cx - cx * cosA + cy * sinA
+        let dy = cy - cx * sinA - cy * cosA
+        d2d1_RenderTarget_SetTransform(target, cosA, sinA, -sinA, cosA, dx, dy)
+
+        // Draw the inner content at its natural size, centered
+        let inner = d2dMeasure(content)
+        let ix = cx - inner.width / 2
+        let iy = cy - inner.height / 2
+        d2dDraw(content, target: target, brush: brush,
+                x: ix, y: iy, width: inner.width, height: inner.height)
+
+        // Reset transform
+        d2d1_RenderTarget_SetTransformIdentity(target)
     }
 }
 
@@ -395,7 +441,7 @@ func createD2DSurface<V: View>(
 
 // MARK: - Window class
 
-private let d2dSurfaceClassName: UnsafePointer<WCHAR> = {
+let d2dSurfaceClassName: UnsafePointer<WCHAR> = {
     "SwiftUID2DSurface".withCString(encodedAs: UTF16.self) { ptr in
         let len = wcslen(ptr) + 1
         let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
@@ -406,7 +452,7 @@ private let d2dSurfaceClassName: UnsafePointer<WCHAR> = {
 
 private var d2dSurfaceClassRegistered = false
 
-private func registerD2DSurfaceClassIfNeeded(hInstance: HINSTANCE) {
+func registerD2DSurfaceClassIfNeeded(hInstance: HINSTANCE) {
     guard !d2dSurfaceClassRegistered else { return }
     d2dSurfaceClassRegistered = true
 

@@ -290,3 +290,33 @@ void d2d1_RenderTarget_DrawText(
         AS_BRUSH(brush)
     );
 }
+
+// --- Line ---
+
+void d2d1_RenderTarget_DrawLine(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float x1, float y1, float x2, float y2,
+    float strokeWidth
+) {
+    AS_TARGET(target)->DrawLine(
+        D2D1::Point2F(x1, y1),
+        D2D1::Point2F(x2, y2),
+        AS_BRUSH(brush),
+        strokeWidth
+    );
+}
+
+// --- Transform ---
+
+void d2d1_RenderTarget_SetTransform(
+    D2DRenderTarget target,
+    float m11, float m12, float m21, float m22, float dx, float dy
+) {
+    D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F(m11, m12, m21, m22, dx, dy);
+    AS_TARGET(target)->SetTransform(matrix);
+}
+
+void d2d1_RenderTarget_SetTransformIdentity(D2DRenderTarget target) {
+    AS_TARGET(target)->SetTransform(D2D1::IdentityMatrix());
+}

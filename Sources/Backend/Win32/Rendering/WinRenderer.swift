@@ -2692,8 +2692,83 @@ extension TabView: WinRenderable {
     }
 }
 
+/// Retains per-radio-button callback info for segmented Picker.
+private class SegmentedPickerInfo {
+    let index: Int
+    let callback: (Int) -> Void
+    init(index: Int, callback: @escaping (Int) -> Void) {
+        self.index = index
+        self.callback = callback
+    }
+}
+
+/// Subclass proc for radio buttons in a segmented Picker.
+private let segmentedRadioProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_COMMAND):
+        let code = Int32(win32_HIWORD(DWORD_PTR(wParam)))
+        if code == BN_CLICKED {
+            let childHwnd = HWND(bitPattern: UInt(lParam))
+            if let childHwnd = childHwnd {
+                let ptr = GetPropW(childHwnd, segmentedPickerPropName)
+                if let ptr = ptr {
+                    let info = Unmanaged<SegmentedPickerInfo>.fromOpaque(ptr).takeUnretainedValue()
+                    info.callback(info.index)
+                }
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_CTLCOLORSTATIC):
+        // Forward to parent for background color propagation
+        let parentHwnd = GetParent(hwnd)
+        if let parentHwnd = parentHwnd {
+            return SendMessageW(parentHwnd, uMsg, wParam, lParam)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        RemoveWindowSubclass(hwnd, segmentedRadioProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+/// Cleanup proc for radio buttons — releases the SegmentedPickerInfo.
+private let segmentedRadioCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    if uMsg == UINT(WM_NCDESTROY) {
+        let ptr = GetPropW(hwnd, segmentedPickerPropName)
+        if let ptr = ptr {
+            Unmanaged<SegmentedPickerInfo>.fromOpaque(ptr).release()
+            RemovePropW(hwnd, segmentedPickerPropName)
+        }
+        RemoveWindowSubclass(hwnd, segmentedRadioCleanupProc, uIdSubclass)
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
+private let segmentedPickerPropName: UnsafePointer<WCHAR> = {
+    "SwiftUISegPicker".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
 extension Picker: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        switch style {
+        case .segmented, .palette:
+            return winCreateSegmentedWidget(in: context)
+        case .automatic:
+            return winCreateDropdownWidget(in: context)
+        }
+    }
+
+    private func winCreateDropdownWidget(in context: RenderContext) -> HWND? {
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
         let container = CreateWindowExW(
@@ -2745,6 +2820,74 @@ extension Picker: WinRenderable {
         SetWindowSubclass(comboHwnd, textFieldCleanupProc, 41, DWORD_PTR(UInt(bitPattern: statePtr)))
 
         SetWindowPos(container, nil, 0, 0, comboX + 150, 24, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+
+    private func winCreateSegmentedWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        var x: Int32 = 0
+        let buttonHeight: Int32 = 24
+        let clampedSel = options.isEmpty ? 0 : max(0, min(selected, options.count - 1))
+
+        // Optional label
+        if !label.isEmpty {
+            let labelMeasured = measureText(label, hwnd: context.parent)
+            _ = label.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                    x, 2, labelMeasured.width + 4, 20,
+                    container, nil, context.hInstance
+                )
+            }
+            x += labelMeasured.width + 8
+        }
+
+        // Radio buttons — first gets WS_GROUP for keyboard grouping
+        for (index, option) in options.enumerated() {
+            let measured = measureText(option, hwnd: context.parent)
+            let btnWidth = measured.width + 24  // extra space for radio circle
+            let groupStyle: Int32 = (index == 0) ? WS_GROUP : 0
+
+            let radioHwnd = option.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_BUTTON(), wstr,
+                    DWORD(BS_AUTORADIOBUTTON | WS_TABSTOP | groupStyle),
+                    x, 0, btnWidth, buttonHeight,
+                    container, nil, context.hInstance
+                )
+            }
+
+            if let radioHwnd = radioHwnd {
+                if index == clampedSel {
+                    SendMessageW(radioHwnd, UINT(BM_SETCHECK), WPARAM(BST_CHECKED), 0)
+                }
+
+                // Attach callback info via window property
+                if let callback = onChanged {
+                    let info = SegmentedPickerInfo(index: index, callback: callback)
+                    let infoPtr = Unmanaged.passRetained(info).toOpaque()
+                    SetPropW(radioHwnd, segmentedPickerPropName, HANDLE(infoPtr))
+                    SetWindowSubclass(radioHwnd, segmentedRadioCleanupProc, 42, 0)
+                }
+            }
+
+            x += btnWidth + 4
+        }
+
+        // Subclass container to handle WM_COMMAND from radio buttons
+        SetWindowSubclass(container, segmentedRadioProc, 42, 0)
+
+        SetWindowPos(container, nil, 0, 0, x > 0 ? x - 4 : 0, buttonHeight,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         return container
     }
@@ -3093,6 +3236,61 @@ extension LazyHStack: WinRenderable {
     }
 }
 
+/// A rendered grid cell: its HWND, column span, and natural size.
+private struct GridCellInfo {
+    let hwnd: HWND
+    let span: Int
+    let naturalWidth: Int32
+    let naturalHeight: Int32
+}
+
+/// Extract cells from a GridRow, unwrapping GridCellSpanView to get span metadata.
+private func extractGridCells(from view: any View, in context: RenderContext) -> [GridCellInfo] {
+    // If the view is a GridRow, get its children
+    func getCells<V: View>(_ v: V) -> [any View] {
+        if let gridRow = v as? MultiChildView {
+            return gridRow.children
+        }
+        return [v]
+    }
+    let cellViews = getCells(view)
+
+    var cells: [GridCellInfo] = []
+    for cellView in cellViews {
+        func renderCell<C: View>(_ c: C) {
+            // Check if the cell has a column span via GridCellSpanView
+            let span: Int
+            let viewToRender: any View
+            if let spanView = c as? GridCellSpanProvider {
+                span = spanView.gridColumnSpan
+                // Unwrap the GridCellSpanView to get the actual content
+                let mirror = Mirror(reflecting: c)
+                if let content = mirror.children.first(where: { $0.label == "content" })?.value as? any View {
+                    viewToRender = content
+                } else {
+                    viewToRender = c
+                }
+            } else {
+                span = 1
+                viewToRender = c
+            }
+
+            if let hwnd = winRenderAnyView(viewToRender, in: context) {
+                var r = RECT()
+                GetWindowRect(hwnd, &r)
+                cells.append(GridCellInfo(
+                    hwnd: hwnd,
+                    span: span,
+                    naturalWidth: r.right - r.left,
+                    naturalHeight: r.bottom - r.top
+                ))
+            }
+        }
+        renderCell(cellView)
+    }
+    return cells
+}
+
 extension Grid: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         registerStackClassIfNeeded(hInstance: context.hInstance)
@@ -3105,28 +3303,80 @@ extension Grid: WinRenderable {
         )!
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
-        var maxW: Int32 = 0
-        var totalH: Int32 = 0
 
         if useExplicitRows {
-            // Explicit rows mode: each child is a GridRow
+            // Explicit rows mode: each child should be a GridRow
+            var rowChildren: [any View] = []
             if let multi = content as? MultiChildView {
-                for child in multi.children {
-                    func renderRow<V: View>(_ v: V) {
-                        let rowView = HStack(spacing: hSpacing) { v }
-                        if let rowHwnd = winRenderView(rowView, in: childContext) {
-                            var r = RECT()
-                            GetWindowRect(rowHwnd, &r)
-                            let rw = r.right - r.left
-                            let rh = r.bottom - r.top
-                            SetWindowPos(rowHwnd, nil, 0, totalH, rw, rh, UINT(SWP_NOZORDER))
-                            maxW = max(maxW, rw)
-                            totalH += rh + Int32(vSpacing)
-                        }
+                rowChildren = multi.children
+            } else {
+                rowChildren = [content]
+            }
+
+            // Pass 1: Extract all cells per row to determine max column count
+            //         and measure natural column widths
+            var allRowCells: [[GridCellInfo]] = []
+            var maxLogicalCols = 0
+
+            for child in rowChildren {
+                let cells = extractGridCells(from: child, in: childContext)
+                let logicalCols = cells.reduce(0) { $0 + $1.span }
+                maxLogicalCols = max(maxLogicalCols, logicalCols)
+                allRowCells.append(cells)
+            }
+
+            // Pass 2: Compute the natural width for each logical column
+            //         by finding the max width among cells that span exactly 1 column
+            var colWidths = [Int32](repeating: 0, count: maxLogicalCols)
+            for cells in allRowCells {
+                var col = 0
+                for cell in cells {
+                    if cell.span == 1 {
+                        colWidths[col] = max(colWidths[col], cell.naturalWidth)
                     }
-                    renderRow(child)
+                    col += cell.span
                 }
             }
+            // Ensure all columns have at least some minimum width
+            for i in 0..<colWidths.count {
+                if colWidths[i] == 0 { colWidths[i] = 40 }
+            }
+
+            // Pass 3: Position each row's cells using computed column widths
+            var totalH: Int32 = 0
+            let totalW = colWidths.reduce(0, +) + Int32(hSpacing) * Int32(max(maxLogicalCols - 1, 0))
+
+            for cells in allRowCells {
+                var x: Int32 = 0
+                var rowH: Int32 = 0
+                var col = 0
+
+                for cell in cells {
+                    // Width for this cell = sum of spanned columns + spacing between them
+                    var cellW: Int32 = 0
+                    for s in 0..<cell.span {
+                        let colIdx = col + s
+                        if colIdx < colWidths.count {
+                            cellW += colWidths[colIdx]
+                        }
+                    }
+                    cellW += Int32(hSpacing) * Int32(max(cell.span - 1, 0))
+
+                    SetWindowPos(cell.hwnd, nil, x, totalH, cellW, cell.naturalHeight,
+                                 UINT(SWP_NOZORDER))
+                    x += cellW + Int32(hSpacing)
+                    rowH = max(rowH, cell.naturalHeight)
+                    col += cell.span
+                }
+
+                totalH += rowH + Int32(vSpacing)
+            }
+
+            // Remove trailing vSpacing
+            if !allRowCells.isEmpty { totalH -= Int32(vSpacing) }
+
+            SetWindowPos(container, nil, 0, 0, totalW, totalH,
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
         } else {
             // Auto-wrap mode: group flat children into rows of `columns` items
             var allChildren: [any View] = []
@@ -3136,11 +3386,11 @@ extension Grid: WinRenderable {
                 allChildren = [content]
             }
 
+            var maxW: Int32 = 0
+            var totalH: Int32 = 0
             var i = 0
             while i < allChildren.count {
                 let end = min(i + columns, allChildren.count)
-                // Render row items individually into an HStack container
-                registerStackClassIfNeeded(hInstance: context.hInstance)
                 let rowContainer = CreateWindowExW(
                     0, stackContainerClassName, nil,
                     DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
@@ -3158,23 +3408,19 @@ extension Grid: WinRenderable {
                 let rowInfoPtr = Unmanaged.passRetained(rowInfo).toOpaque()
                 SetWindowSubclass(rowContainer, stackLayoutProc, 1, DWORD_PTR(UInt(bitPattern: rowInfoPtr)))
                 let rowSize = computeNaturalSize(info: rowInfo)
-                SetWindowPos(rowContainer, nil, 0, 0, rowSize.width, rowSize.height,
-                             UINT(SWP_NOZORDER | SWP_NOMOVE))
-                if let rowHwnd = rowContainer as HWND? {
-                    var r = RECT()
-                    GetWindowRect(rowHwnd, &r)
-                    let rw = r.right - r.left
-                    let rh = r.bottom - r.top
-                    SetWindowPos(rowHwnd, nil, 0, totalH, rw, rh, UINT(SWP_NOZORDER))
-                    maxW = max(maxW, rw)
-                    totalH += rh + Int32(vSpacing)
-                }
+                SetWindowPos(rowContainer, nil, 0, totalH, rowSize.width, rowSize.height,
+                             UINT(SWP_NOZORDER))
+                maxW = max(maxW, rowSize.width)
+                totalH += rowSize.height + Int32(vSpacing)
                 i = end
             }
-        }
 
-        SetWindowPos(container, nil, 0, 0, maxW, totalH,
-                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+            // Remove trailing vSpacing
+            if !allChildren.isEmpty && totalH > 0 { totalH -= Int32(vSpacing) }
+
+            SetWindowPos(container, nil, 0, 0, maxW, totalH,
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+        }
 
         return container
     }
@@ -3182,8 +3428,40 @@ extension Grid: WinRenderable {
 
 extension GridRow: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        let hstack = HStack(spacing: 4) { content }
-        return winRenderView(hstack, in: context)
+        // When rendered standalone (not inside Grid's explicit rows mode),
+        // render cells as an HStack with span-aware layout
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        let cellContext = RenderContext(parent: container, hInstance: context.hInstance)
+        let cells = extractGridCells(from: self, in: cellContext)
+
+        var x: Int32 = 0
+        var maxH: Int32 = 0
+        for cell in cells {
+            SetWindowPos(cell.hwnd, nil, x, 0, cell.naturalWidth, cell.naturalHeight,
+                         UINT(SWP_NOZORDER))
+            x += cell.naturalWidth + 4
+            maxH = max(maxH, cell.naturalHeight)
+        }
+
+        SetWindowPos(container, nil, 0, 0, x > 0 ? x - 4 : 0, maxH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+extension GridCellSpanView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Render the wrapped content — span metadata is consumed by Grid
+        return winRenderView(content, in: context)
     }
 }
 
@@ -3215,7 +3493,6 @@ extension LazyHGrid: WinRenderable {
             context.parent, nil, context.hInstance, nil
         )!
 
-        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         var maxW: Int32 = 0
         var totalH: Int32 = 0
 
@@ -3415,34 +3692,174 @@ extension SearchableView: WinRenderable {
 
 extension CornerRadiusView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Corner radius requires D2D surface for proper clipping.
-        // For HWND controls, apply WS_EX_CLIENTEDGE as visual approximation.
         guard let hwnd = winRenderView(content, in: context) else { return nil }
         if radius > 0 {
-            // Win32 doesn't support per-corner radius on native controls.
-            // For D2D-renderable content, this could use FillRoundedRectangle.
-            // For now, pass through (content renders normally).
+            // Use Win32 region clipping to round corners on any HWND
+            var r = RECT()
+            GetWindowRect(hwnd, &r)
+            let w = r.right - r.left
+            let h = r.bottom - r.top
+            let rx = Int32(radius)
+            let ry = Int32(radius)
+            let rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, rx * 2, ry * 2)
+            // SetWindowRgn takes ownership of the region — do not delete
+            SetWindowRgn(hwnd, rgn, true)
         }
         return hwnd
     }
 }
 
+/// Property name for shadow info on container HWNDs.
+private let shadowInfoPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIShadowInfo".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+/// Shadow metadata stored on the container HWND.
+private class ShadowInfo {
+    let colorR: Float
+    let colorG: Float
+    let colorB: Float
+    let colorA: Float
+    let radius: Int32
+    let offsetX: Int32
+    let offsetY: Int32
+
+    init(color: Color, radius: Double, x: Double, y: Double) {
+        self.colorR = Float(color.red)
+        self.colorG = Float(color.green)
+        self.colorB = Float(color.blue)
+        self.colorA = Float(color.alpha)
+        self.radius = Int32(max(1, radius))
+        self.offsetX = Int32(x)
+        self.offsetY = Int32(y)
+    }
+}
+
+/// Subclass proc that draws a shadow rectangle behind children.
+private let shadowContainerProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_PAINT):
+        // Shadow is drawn via GDI with alpha-blended color approximation.
+        // A real gaussian blur would need D2D effects (ID2D1Effect).
+        // We simulate softness by drawing multiple offset rects with
+        // decreasing opacity mapped to lighter colors.
+        var ps = PAINTSTRUCT()
+        let hdc = BeginPaint(hwnd, &ps)
+
+        let ptr = GetPropW(hwnd, shadowInfoPropName)
+        if let ptr = ptr {
+            let info = Unmanaged<ShadowInfo>.fromOpaque(ptr).takeUnretainedValue()
+
+            var clientRect = RECT()
+            GetClientRect(hwnd, &clientRect)
+
+            // Query actual parent background color (falls back to system window color)
+            let bgColorRef = GetSysColor(COLOR_WINDOW)
+            let bgR = Float(win32_GetRValue(bgColorRef)) / 255.0
+            let bgG = Float(win32_GetGValue(bgColorRef)) / 255.0
+            let bgB = Float(win32_GetBValue(bgColorRef)) / 255.0
+
+            let shadowPad = info.radius
+            let layers = max(1, shadowPad)
+
+            // Draw shadow layers from outermost (lightest) to innermost (darkest)
+            for i in (0..<layers).reversed() {
+                let fraction = Float(i + 1) / Float(layers)
+                let layerAlpha = info.colorA * fraction * 0.5
+                // Blend shadow color with actual background color
+                let r = UInt8(max(0, min(255, (info.colorR * layerAlpha + bgR * (1 - layerAlpha)) * 255)))
+                let g = UInt8(max(0, min(255, (info.colorG * layerAlpha + bgG * (1 - layerAlpha)) * 255)))
+                let b = UInt8(max(0, min(255, (info.colorB * layerAlpha + bgB * (1 - layerAlpha)) * 255)))
+
+                let expand = i
+                var shadowRect = RECT(
+                    left: shadowPad + info.offsetX - expand,
+                    top: shadowPad + info.offsetY - expand,
+                    right: clientRect.right - shadowPad + info.offsetX + expand,
+                    bottom: clientRect.bottom - shadowPad + info.offsetY + expand
+                )
+                let shadowBrush = CreateSolidBrush(win32_RGB(r, g, b))
+                FillRect(hdc, &shadowRect, shadowBrush)
+                DeleteObject(shadowBrush)
+            }
+        }
+
+        EndPaint(hwnd, &ps)
+        // Let children paint on top via DefSubclassProc
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_CTLCOLORSTATIC):
+        let parentHwnd = GetParent(hwnd)
+        if let parentHwnd = parentHwnd {
+            return SendMessageW(parentHwnd, uMsg, wParam, lParam)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        let ptr = GetPropW(hwnd, shadowInfoPropName)
+        if let ptr = ptr {
+            Unmanaged<ShadowInfo>.fromOpaque(ptr).release()
+            RemovePropW(hwnd, shadowInfoPropName)
+        }
+        RemoveWindowSubclass(hwnd, shadowContainerProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
 extension ShadowView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Shadow on HWND controls is not natively supported.
-        // Pass through — content renders normally without shadow.
-        // D2D shadow would require rendering content to a bitmap
-        // and drawing a blurred offset copy underneath.
-        winRenderView(content, in: context)
+        guard let childHwnd = winRenderView(content, in: context) else { return nil }
+
+        // Get content size
+        var r = RECT()
+        GetWindowRect(childHwnd, &r)
+        let cw = r.right - r.left
+        let ch = r.bottom - r.top
+
+        // Create a container slightly larger to accommodate the shadow
+        let shadowOffset = Int32(max(radius, max(abs(x), abs(y))))
+        let containerW = cw + shadowOffset * 2
+        let containerH = ch + shadowOffset * 2
+
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, containerW, containerH,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Re-parent the child into the container, centered with padding for shadow
+        SetParent(childHwnd, container)
+        SetWindowPos(childHwnd, nil, shadowOffset, shadowOffset, cw, ch, UINT(SWP_NOZORDER))
+
+        // Attach shadow info and install paint subclass
+        let info = ShadowInfo(color: color, radius: radius, x: x, y: y)
+        let infoPtr = Unmanaged.passRetained(info).toOpaque()
+        SetPropW(container, shadowInfoPropName, HANDLE(infoPtr))
+        SetWindowSubclass(container, shadowContainerProc, 44, 0)
+
+        return container
     }
 }
 
 extension RotationView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Rotation requires D2D SetTransform with rotation matrix.
-        // Not implemented — would need d2d1_shim.h addition.
-        // Pass through for now.
-        winRenderView(content, in: context)
+        // For D2D-renderable content (Text, Color, Divider), render with rotation
+        // via D2D SetTransform. Native HWND controls can't be rotated.
+        if isD2DRenderable(content) && angle != 0 {
+            return createD2DSurface(view: self, context: context)
+        }
+        // Pass through for non-D2D content
+        return winRenderView(content, in: context)
     }
 }
 
@@ -3891,6 +4308,380 @@ private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
 
     default:
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+// MARK: - Canvas Win32 extension
+
+// MARK: - D2D Canvas Context
+
+/// Path element for deferred stroke/fill rendering.
+enum CanvasPathElement {
+    case moveTo(Float, Float)
+    case lineTo(Float, Float)
+    case rectangle(Float, Float, Float, Float)
+    case ellipse(Float, Float, Float, Float)  // centerX, centerY, radiusX, radiusY
+    case arc(Float, Float, Float, Float, Float)  // centerX, centerY, radius, startAngle, endAngle
+}
+
+/// Saved graphics state for save/restore.
+struct CanvasGraphicsState {
+    let colorR, colorG, colorB, colorA: Float
+    let lineWidth: Float
+    let currentX, currentY: Float
+    // Transform matrix (row-major 3x2)
+    let m11, m12, m21, m22, dx, dy: Float
+}
+
+/// D2D-backed drawing context state. Stored as a retained class;
+/// DrawingContext.cr holds an OpaquePointer to this instance.
+class D2DCanvasContext {
+    let renderTarget: D2DRenderTarget
+    let brush: D2DBrush
+
+    // Current drawing state
+    var colorR: Float = 0
+    var colorG: Float = 0
+    var colorB: Float = 0
+    var colorA: Float = 1
+    var lineWidth: Float = 1
+    var currentX: Float = 0
+    var currentY: Float = 0
+
+    // Current transform
+    var m11: Float = 1, m12: Float = 0
+    var m21: Float = 0, m22: Float = 1
+    var dx: Float = 0, dy: Float = 0
+
+    // Accumulated path for deferred stroke/fill
+    var path: [CanvasPathElement] = []
+
+    // State stack for save/restore (full graphics state including transform)
+    var stateStack: [CanvasGraphicsState] = []
+
+    init(renderTarget: D2DRenderTarget, brush: D2DBrush) {
+        self.renderTarget = renderTarget
+        self.brush = brush
+    }
+
+    func applyColor() {
+        d2d1_SolidColorBrush_SetColor(brush, colorR, colorG, colorB, colorA)
+    }
+}
+
+/// Holds draw closure + D2D resources for the Canvas HWND.
+private class CanvasDrawState {
+    let drawHandler: (DrawingContext, Int, Int) -> Void
+    var renderTarget: D2DRenderTarget?
+    var brush: D2DBrush?
+
+    init(_ handler: @escaping (DrawingContext, Int, Int) -> Void) {
+        self.drawHandler = handler
+    }
+
+    func ensureTarget(hwnd: HWND, width: UInt32, height: UInt32) {
+        if renderTarget == nil && width > 0 && height > 0 {
+            renderTarget = D2DRenderer.shared.createRenderTarget(for: hwnd, width: width, height: height)
+            if let rt = renderTarget {
+                brush = D2DRenderer.shared.createBrush(rt, r: 0, g: 0, b: 0)
+            }
+        }
+    }
+
+    func cleanup() {
+        if let b = brush { D2DRenderer.shared.releaseBrush(b); brush = nil }
+        if let rt = renderTarget { D2DRenderer.shared.releaseRenderTarget(rt); renderTarget = nil }
+    }
+
+    deinit { cleanup() }
+}
+
+/// Property name for CanvasDrawState on the Canvas HWND.
+private let canvasStatePropName: UnsafePointer<WCHAR> = {
+    "SwiftUICanvasState".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+/// Subclass proc for Canvas — invokes draw closure with D2D-backed DrawingContext.
+private let canvasPaintProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_PAINT):
+        var ps = PAINTSTRUCT()
+        _ = BeginPaint(hwnd, &ps)
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let w = UInt32(rect.right)
+        let h = UInt32(rect.bottom)
+
+        let ptr = GetPropW(hwnd, canvasStatePropName)
+        if let ptr = ptr, let hwnd = hwnd, w > 0, h > 0 {
+            let state = Unmanaged<CanvasDrawState>.fromOpaque(ptr).takeUnretainedValue()
+            state.ensureTarget(hwnd: hwnd, width: w, height: h)
+
+            if let rt = state.renderTarget, let brush = state.brush {
+                d2d1_RenderTarget_BeginDraw(rt)
+                // Clear with window background
+                let bgColor = GetSysColor(COLOR_WINDOW)
+                d2d1_RenderTarget_Clear(rt,
+                    Float(win32_GetRValue(bgColor)) / 255.0,
+                    Float(win32_GetGValue(bgColor)) / 255.0,
+                    Float(win32_GetBValue(bgColor)) / 255.0, 1.0)
+
+                let d2dCtx = D2DCanvasContext(renderTarget: rt, brush: brush)
+                let ctxPtr = Unmanaged.passRetained(d2dCtx).toOpaque()
+                let context = DrawingContext(cr: OpaquePointer(ctxPtr))
+                state.drawHandler(context, Int(w), Int(h))
+                Unmanaged<D2DCanvasContext>.fromOpaque(ctxPtr).release()
+
+                _ = d2d1_RenderTarget_EndDraw(rt)
+            }
+        }
+
+        EndPaint(hwnd, &ps)
+        return 0
+
+    case UINT(WM_SIZE):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let ptr = GetPropW(hwnd, canvasStatePropName)
+        if let ptr = ptr {
+            let state = Unmanaged<CanvasDrawState>.fromOpaque(ptr).takeUnretainedValue()
+            if let rt = state.renderTarget {
+                D2DRenderer.shared.resize(rt, width: UInt32(rect.right), height: UInt32(rect.bottom))
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_ERASEBKGND):
+        return 1  // D2D handles background clearing
+
+    case UINT(WM_NCDESTROY):
+        let ptr = GetPropW(hwnd, canvasStatePropName)
+        if let ptr = ptr {
+            Unmanaged<CanvasDrawState>.fromOpaque(ptr).release()
+            RemovePropW(hwnd, canvasStatePropName)
+        }
+        RemoveWindowSubclass(hwnd, canvasPaintProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+extension Canvas: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
+
+        let w = width > 0 ? Int32(width) : 200
+        let h = height > 0 ? Int32(height) : 200
+
+        let hwnd = CreateWindowExW(
+            0, d2dSurfaceClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE),
+            0, 0, w, h,
+            context.parent, nil, context.hInstance, nil
+        )
+
+        guard let hwnd = hwnd else { return nil }
+
+        let state = CanvasDrawState(drawHandler)
+        let statePtr = Unmanaged.passRetained(state).toOpaque()
+        SetPropW(hwnd, canvasStatePropName, HANDLE(statePtr))
+        SetWindowSubclass(hwnd, canvasPaintProc, 45, 0)
+
+        return hwnd
+    }
+}
+
+/// Win32 D2D-backed DrawingContext extensions.
+/// The `cr` field stores a retained pointer to a D2DCanvasContext.
+/// Path operations accumulate elements; stroke()/fill() execute them.
+extension DrawingContext {
+    /// Get the underlying D2DCanvasContext.
+    private var ctx: D2DCanvasContext {
+        Unmanaged<D2DCanvasContext>.fromOpaque(UnsafeMutableRawPointer(cr)).takeUnretainedValue()
+    }
+
+    // MARK: - Color
+
+    public func setColor(r: Double, g: Double, b: Double) {
+        ctx.colorR = Float(r)
+        ctx.colorG = Float(g)
+        ctx.colorB = Float(b)
+        ctx.colorA = 1.0
+    }
+
+    public func setColor(r: Double, g: Double, b: Double, a: Double) {
+        ctx.colorR = Float(r)
+        ctx.colorG = Float(g)
+        ctx.colorB = Float(b)
+        ctx.colorA = Float(a)
+    }
+
+    // MARK: - Line style
+
+    public func setLineWidth(_ width: Double) {
+        ctx.lineWidth = Float(width)
+    }
+
+    public func setLineCap(_ cap: LineCap) {
+        // D2D supports line caps via stroke style — for basic usage, ignored.
+        // Full support would require ID2D1StrokeStyle creation.
+    }
+
+    public func setLineJoin(_ join: LineJoin) {
+        // D2D supports line joins via stroke style — for basic usage, ignored.
+    }
+
+    // MARK: - Path operations (deferred — drawn on stroke/fill)
+
+    public func moveTo(x: Double, y: Double) {
+        ctx.currentX = Float(x)
+        ctx.currentY = Float(y)
+        ctx.path.append(.moveTo(Float(x), Float(y)))
+    }
+
+    public func lineTo(x: Double, y: Double) {
+        ctx.path.append(.lineTo(Float(x), Float(y)))
+        ctx.currentX = Float(x)
+        ctx.currentY = Float(y)
+    }
+
+    public func rectangle(x: Double, y: Double, width: Double, height: Double) {
+        ctx.path.append(.rectangle(Float(x), Float(y), Float(width), Float(height)))
+    }
+
+    public func arc(centerX: Double, centerY: Double, radius: Double,
+                    startAngle: Double = 0, endAngle: Double = .pi * 2) {
+        let span = abs(endAngle - startAngle)
+        if span >= .pi * 2 - 0.01 {
+            // Full circle — use ellipse primitive
+            ctx.path.append(.ellipse(Float(centerX), Float(centerY), Float(radius), Float(radius)))
+        } else {
+            // Partial arc — stored for line-segment approximation
+            ctx.path.append(.arc(Float(centerX), Float(centerY), Float(radius),
+                                 Float(startAngle), Float(endAngle)))
+        }
+    }
+
+    // MARK: - Drawing (execute accumulated path)
+
+    public func stroke() {
+        let c = ctx
+        c.applyColor()
+        var lastX: Float = c.currentX
+        var lastY: Float = c.currentY
+
+        for element in c.path {
+            switch element {
+            case .moveTo(let x, let y):
+                lastX = x
+                lastY = y
+
+            case .lineTo(let x, let y):
+                d2d1_RenderTarget_DrawLine(c.renderTarget, c.brush,
+                                            lastX, lastY, x, y, c.lineWidth)
+                lastX = x
+                lastY = y
+
+            case .rectangle(let x, let y, let w, let h):
+                d2d1_RenderTarget_DrawRectangle(c.renderTarget, c.brush,
+                                                 x, y, w, h, c.lineWidth)
+
+            case .ellipse(let cx, let cy, let rx, let ry):
+                d2d1_RenderTarget_DrawEllipse(c.renderTarget, c.brush,
+                                               cx, cy, rx, ry, c.lineWidth)
+
+            case .arc(let cx, let cy, let r, let start, let end):
+                // Approximate arc with line segments
+                let segments = max(8, Int(abs(end - start) / (Float.pi / 16)))
+                let step = (end - start) / Float(segments)
+                var prevX = cx + r * cos(start)
+                var prevY = cy + r * sin(start)
+                for i in 1...segments {
+                    let angle = start + step * Float(i)
+                    let nx = cx + r * cos(angle)
+                    let ny = cy + r * sin(angle)
+                    d2d1_RenderTarget_DrawLine(c.renderTarget, c.brush,
+                                                prevX, prevY, nx, ny, c.lineWidth)
+                    prevX = nx
+                    prevY = ny
+                }
+                lastX = prevX
+                lastY = prevY
+            }
+        }
+        c.path.removeAll()
+    }
+
+    public func fill() {
+        let c = ctx
+        c.applyColor()
+
+        for element in c.path {
+            switch element {
+            case .moveTo, .lineTo, .arc:
+                break  // Lines and arcs don't fill (would need ID2D1PathGeometry)
+
+            case .rectangle(let x, let y, let w, let h):
+                d2d1_RenderTarget_FillRectangle(c.renderTarget, c.brush, x, y, w, h)
+
+            case .ellipse(let cx, let cy, let rx, let ry):
+                d2d1_RenderTarget_FillEllipse(c.renderTarget, c.brush, cx, cy, rx, ry)
+            }
+        }
+        c.path.removeAll()
+    }
+
+    public func paint() {
+        let c = ctx
+        c.applyColor()
+        // Fill the entire render target
+        d2d1_RenderTarget_FillRectangle(c.renderTarget, c.brush, 0, 0, 10000, 10000)
+    }
+
+    // MARK: - State
+
+    public func save() {
+        let c = ctx
+        c.stateStack.append(CanvasGraphicsState(
+            colorR: c.colorR, colorG: c.colorG, colorB: c.colorB, colorA: c.colorA,
+            lineWidth: c.lineWidth, currentX: c.currentX, currentY: c.currentY,
+            m11: c.m11, m12: c.m12, m21: c.m21, m22: c.m22, dx: c.dx, dy: c.dy
+        ))
+    }
+
+    public func restore() {
+        let c = ctx
+        guard let state = c.stateStack.popLast() else { return }
+        c.colorR = state.colorR
+        c.colorG = state.colorG
+        c.colorB = state.colorB
+        c.colorA = state.colorA
+        c.lineWidth = state.lineWidth
+        c.currentX = state.currentX
+        c.currentY = state.currentY
+        // Restore transform
+        c.m11 = state.m11; c.m12 = state.m12
+        c.m21 = state.m21; c.m22 = state.m22
+        c.dx = state.dx; c.dy = state.dy
+        d2d1_RenderTarget_SetTransform(c.renderTarget,
+            c.m11, c.m12, c.m21, c.m22, c.dx, c.dy)
+    }
+
+    public func scale(x: Double, y: Double) {
+        let c = ctx
+        // Compose with current transform: new = current * scale
+        c.m11 *= Float(x); c.m12 *= Float(y)
+        c.m21 *= Float(x); c.m22 *= Float(y)
+        d2d1_RenderTarget_SetTransform(c.renderTarget,
+            c.m11, c.m12, c.m21, c.m22, c.dx, c.dy)
     }
 }
 
