@@ -84,6 +84,10 @@ static inline LPCWSTR win32_IDC_ARROW(void) {
     return MAKEINTRESOURCEW(32512);
 }
 
+static inline LPCWSTR win32_IDC_SIZEWE(void) {
+    return MAKEINTRESOURCEW(32644);
+}
+
 // --- Subclassing helpers ---
 
 static inline BOOL win32_SetWindowSubclass(

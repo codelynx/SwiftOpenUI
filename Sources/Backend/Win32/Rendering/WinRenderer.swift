@@ -3533,6 +3533,292 @@ extension LazyHGrid: WinRenderable {
     }
 }
 
+// MARK: - NavigationSplitView state and layout
+
+/// Extract column width provider from a view tree via Mirror walking.
+private func winExtractColumnWidthProvider(from view: Any, depth: Int = 0) -> NavigationSplitViewColumnWidthProvider? {
+    guard depth < 20 else { return nil }
+    if let provider = view as? NavigationSplitViewColumnWidthProvider {
+        return provider
+    }
+    let mirror = Mirror(reflecting: view)
+    for child in mirror.children {
+        if let provider = child.value as? NavigationSplitViewColumnWidthProvider {
+            return provider
+        }
+    }
+    for child in mirror.children {
+        if child.value is any View {
+            if let result = winExtractColumnWidthProvider(from: child.value, depth: depth + 1) {
+                return result
+            }
+        }
+    }
+    return nil
+}
+
+/// State for a NavigationSplitView container HWND.
+private class SplitViewState {
+    var sidebarHwnd: HWND?
+    var contentHwnd: HWND?   // nil in 2-column mode
+    var detailHwnd: HWND?
+
+    // Column widths (in pixels)
+    var sidebarWidth: Int32
+    var contentWidth: Int32  // 0 in 2-column mode
+
+    // Constraints from .navigationSplitViewColumnWidth()
+    var sidebarMinWidth: Int32
+    var sidebarMaxWidth: Int32
+    var contentMinWidth: Int32
+    var contentMaxWidth: Int32
+
+    // Divider dragging
+    var draggingDivider: Int = 0  // 0=none, 1=first divider, 2=second divider
+    let dividerWidth: Int32 = 4  // visible divider width
+    let hasContentColumn: Bool
+
+    // Actual laid-out widths (after clamping to container), used for hit-testing
+    var layoutSidebarW: Int32 = 0
+    var layoutContentW: Int32 = 0
+
+    // Visibility
+    var visibility: NavigationSplitViewVisibility = .automatic
+
+    init(hasContentColumn: Bool, sidebarWidth: Int32, contentWidth: Int32) {
+        self.hasContentColumn = hasContentColumn
+        self.sidebarWidth = sidebarWidth
+        self.contentWidth = contentWidth
+        self.sidebarMinWidth = 100
+        self.sidebarMaxWidth = 600
+        self.contentMinWidth = 100
+        self.contentMaxWidth = 600
+    }
+
+    /// Perform layout: position sidebar, content, and detail within the container.
+    /// Updates `layoutSidebarW` / `layoutContentW` for accurate hit-testing.
+    func layout(containerW: Int32, containerH: Int32) {
+        let effectiveVisibility = visibility
+
+        switch effectiveVisibility {
+        case .detailOnly:
+            layoutSidebarW = 0
+            layoutContentW = 0
+            if let sh = sidebarHwnd { ShowWindow(sh, SW_HIDE) }
+            if let ch = contentHwnd { ShowWindow(ch, SW_HIDE) }
+            if let dh = detailHwnd {
+                ShowWindow(dh, SW_SHOW)
+                SetWindowPos(dh, nil, 0, 0, containerW, containerH, UINT(SWP_NOZORDER))
+            }
+
+        case .doubleColumn where hasContentColumn:
+            // Show sidebar + detail, hide content
+            if let ch = contentHwnd { ShowWindow(ch, SW_HIDE) }
+            let sw = min(sidebarWidth, containerW - 50)
+            layoutSidebarW = sw
+            layoutContentW = 0
+            if let sh = sidebarHwnd {
+                ShowWindow(sh, SW_SHOW)
+                SetWindowPos(sh, nil, 0, 0, sw, containerH, UINT(SWP_NOZORDER))
+            }
+            if let dh = detailHwnd {
+                ShowWindow(dh, SW_SHOW)
+                let detailX = sw + dividerWidth
+                SetWindowPos(dh, nil, detailX, 0, max(0, containerW - detailX), containerH,
+                             UINT(SWP_NOZORDER))
+            }
+
+        default:
+            // .automatic, .all, .doubleColumn (2-col)
+            if hasContentColumn {
+                let sw = min(sidebarWidth, containerW / 3)
+                let cw = min(contentWidth, containerW / 3)
+                layoutSidebarW = sw
+                layoutContentW = cw
+                let detailX = sw + dividerWidth + cw + dividerWidth
+
+                if let sh = sidebarHwnd {
+                    ShowWindow(sh, SW_SHOW)
+                    SetWindowPos(sh, nil, 0, 0, sw, containerH, UINT(SWP_NOZORDER))
+                }
+                if let ch = contentHwnd {
+                    ShowWindow(ch, SW_SHOW)
+                    SetWindowPos(ch, nil, sw + dividerWidth, 0, cw, containerH, UINT(SWP_NOZORDER))
+                }
+                if let dh = detailHwnd {
+                    ShowWindow(dh, SW_SHOW)
+                    SetWindowPos(dh, nil, detailX, 0, max(0, containerW - detailX), containerH,
+                                 UINT(SWP_NOZORDER))
+                }
+            } else {
+                let sw = min(sidebarWidth, containerW - 50)
+                layoutSidebarW = sw
+                layoutContentW = 0
+                if let sh = sidebarHwnd {
+                    ShowWindow(sh, SW_SHOW)
+                    SetWindowPos(sh, nil, 0, 0, sw, containerH, UINT(SWP_NOZORDER))
+                }
+                if let dh = detailHwnd {
+                    ShowWindow(dh, SW_SHOW)
+                    let detailX = sw + dividerWidth
+                    SetWindowPos(dh, nil, detailX, 0, max(0, containerW - detailX), containerH,
+                                 UINT(SWP_NOZORDER))
+                }
+            }
+        }
+    }
+
+    /// Returns which divider (1 or 2) is at the given x position, or 0 if none.
+    /// Uses the actual laid-out widths, not the unclamped stored widths.
+    func hitTestDivider(x: Int32) -> Int {
+        let hitSlop = dividerWidth + 2
+        if hasContentColumn && visibility != .doubleColumn && visibility != .detailOnly {
+            // 3-column: two dividers at actual laid-out positions
+            let div1 = layoutSidebarW
+            let div2 = layoutSidebarW + dividerWidth + layoutContentW
+            if abs(x - div1) <= hitSlop { return 1 }
+            if abs(x - div2) <= hitSlop { return 2 }
+        } else if visibility != .detailOnly {
+            let div1 = layoutSidebarW
+            if abs(x - div1) <= hitSlop { return 1 }
+        }
+        return 0
+    }
+
+    /// Clamp sidebar/content width to min/max constraints.
+    func clampWidths() {
+        sidebarWidth = max(sidebarMinWidth, min(sidebarMaxWidth, sidebarWidth))
+        if hasContentColumn {
+            contentWidth = max(contentMinWidth, min(contentMaxWidth, contentWidth))
+        }
+    }
+}
+
+/// Subclass proc for NavigationSplitView container — handles resize, divider drag, and message forwarding.
+private let splitViewLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let state = Unmanaged<SplitViewState>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_SIZE):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        state.layout(containerW: rect.right, containerH: rect.bottom)
+        InvalidateRect(hwnd, nil, false)  // repaint dividers
+        return 0
+
+    case UINT(WM_PAINT):
+        // Draw visible divider lines
+        var ps = PAINTSTRUCT()
+        let hdc = BeginPaint(hwnd, &ps)
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let h = rect.bottom
+
+        let dividerBrush = CreateSolidBrush(win32_RGB(210, 210, 215))
+
+        if state.visibility != .detailOnly {
+            // First divider after sidebar
+            let div1X = state.layoutSidebarW
+            if div1X > 0 {
+                var divRect = RECT(left: div1X, top: 0,
+                                   right: div1X + state.dividerWidth, bottom: h)
+                FillRect(hdc, &divRect, dividerBrush)
+            }
+
+            // Second divider after content (3-column only)
+            if state.hasContentColumn && state.layoutContentW > 0
+               && state.visibility != .doubleColumn {
+                let div2X = state.layoutSidebarW + state.dividerWidth + state.layoutContentW
+                var divRect = RECT(left: div2X, top: 0,
+                                   right: div2X + state.dividerWidth, bottom: h)
+                FillRect(hdc, &divRect, dividerBrush)
+            }
+        }
+
+        DeleteObject(dividerBrush)
+        EndPaint(hwnd, &ps)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_LBUTTONDOWN):
+        let x = Int32(win32_LOWORD(DWORD_PTR(lParam)))
+        let divider = state.hitTestDivider(x: x)
+        if divider > 0 {
+            state.draggingDivider = divider
+            SetCapture(hwnd)
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_MOUSEMOVE):
+        let x = Int32(win32_LOWORD(DWORD_PTR(lParam)))
+        if state.draggingDivider > 0 {
+            if state.draggingDivider == 1 {
+                state.sidebarWidth = max(state.sidebarMinWidth, x)
+                state.clampWidths()
+            } else if state.draggingDivider == 2, state.hasContentColumn {
+                let contentStart = state.sidebarWidth + state.dividerWidth
+                state.contentWidth = max(state.contentMinWidth, x - contentStart)
+                state.clampWidths()
+            }
+            var rect = RECT()
+            GetClientRect(hwnd, &rect)
+            state.layout(containerW: rect.right, containerH: rect.bottom)
+            return 0
+        }
+        // Set resize cursor when hovering over divider
+        let divider = state.hitTestDivider(x: x)
+        if divider > 0 {
+            SetCursor(LoadCursorW(nil, win32_IDC_SIZEWE()))
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_LBUTTONUP):
+        if state.draggingDivider > 0 {
+            state.draggingDivider = 0
+            ReleaseCapture()
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_SETCURSOR):
+        // Let WM_MOUSEMOVE handle cursor changes for divider area
+        if state.draggingDivider > 0 {
+            SetCursor(LoadCursorW(nil, win32_IDC_SIZEWE()))
+            return 1  // handled
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_COMMAND):
+        if let parent = GetParent(hwnd) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_CTLCOLORSTATIC):
+        let parentHwnd = GetParent(hwnd)
+        if let parentHwnd = parentHwnd {
+            return SendMessageW(parentHwnd, uMsg, wParam, lParam)
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        Unmanaged<SplitViewState>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, splitViewLayoutProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
 extension NavigationSplitView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         registerStackClassIfNeeded(hInstance: context.hInstance)
@@ -3545,32 +3831,69 @@ extension NavigationSplitView: WinRenderable {
         )!
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+
+        // Render columns
         let sidebarHwnd = winRenderView(sidebar, in: childContext)
+        let contentHwnd = hasContentColumn ? winRenderView(content, in: childContext) : nil
         let detailHwnd = winRenderView(detail, in: childContext)
 
-        // Side-by-side layout: sidebar 200px, detail fills rest
-        let sidebarWidth: Int32 = 200
-        var totalW: Int32 = 400
-        var totalH: Int32 = 300
+        // Extract column width constraints from modifier chain
+        let sidebarProvider = winExtractColumnWidthProvider(from: sidebar)
+        let sidebarW = Int32(sidebarProvider?.columnIdealWidth ?? Double(sidebarWidth))
 
-        if let sh = sidebarHwnd {
-            var r = RECT()
-            GetWindowRect(sh, &r)
-            totalH = max(totalH, r.bottom - r.top)
-            SetWindowPos(sh, nil, 0, 0, sidebarWidth, totalH, UINT(SWP_NOZORDER))
-        }
-        if let dh = detailHwnd {
-            var r = RECT()
-            GetWindowRect(dh, &r)
-            totalH = max(totalH, r.bottom - r.top)
-            totalW = sidebarWidth + max(r.right - r.left, 200)
-            SetWindowPos(dh, nil, sidebarWidth, 0, totalW - sidebarWidth, totalH, UINT(SWP_NOZORDER))
+        let contentW: Int32
+        if hasContentColumn {
+            let contentProvider = winExtractColumnWidthProvider(from: content)
+            contentW = Int32(contentProvider?.columnIdealWidth ?? 250)
+        } else {
+            contentW = 0
         }
 
-        SetWindowPos(container, nil, 0, 0, totalW, totalH,
+        // Create state
+        let state = SplitViewState(
+            hasContentColumn: hasContentColumn,
+            sidebarWidth: sidebarW,
+            contentWidth: contentW
+        )
+        state.sidebarHwnd = sidebarHwnd
+        state.contentHwnd = contentHwnd
+        state.detailHwnd = detailHwnd
+
+        // Apply min/max constraints
+        if let provider = sidebarProvider {
+            if let minW = provider.columnMinWidth { state.sidebarMinWidth = Int32(minW) }
+            if let maxW = provider.columnMaxWidth { state.sidebarMaxWidth = Int32(maxW) }
+        }
+        if hasContentColumn, let contentProvider = winExtractColumnWidthProvider(from: content) {
+            if let minW = contentProvider.columnMinWidth { state.contentMinWidth = Int32(minW) }
+            if let maxW = contentProvider.columnMaxWidth { state.contentMaxWidth = Int32(maxW) }
+        }
+
+        // Apply visibility
+        if let visBinding = columnVisibility {
+            state.visibility = visBinding.wrappedValue
+        }
+
+        // Install subclass for layout + divider dragging
+        let ptr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(container, splitViewLayoutProc, 50, DWORD_PTR(UInt(bitPattern: ptr)))
+
+        // Set initial size from parent
+        var parentRect = RECT()
+        GetClientRect(context.parent, &parentRect)
+        let w = parentRect.right - parentRect.left
+        let h = parentRect.bottom - parentRect.top
+        SetWindowPos(container, nil, 0, 0, max(w, 400), max(h, 300),
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         return container
+    }
+}
+
+extension NavigationSplitViewColumnWidthView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Render the wrapped content — width constraints are consumed by NavigationSplitView
+        winRenderView(content, in: context)
     }
 }
 
