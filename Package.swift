@@ -204,6 +204,11 @@ targets += [
         dependencies: exampleDeps,
         path: "Examples/Parity/Navigation"
     ),
+    .executableTarget(
+        name: "ParityGestures",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/Gestures"
+    ),
 ]
 
 #if os(macOS)
