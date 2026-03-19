@@ -12,9 +12,12 @@ public struct NavigationSplitView<Sidebar: View, Detail: View>: View {
 
     public let sidebar: Sidebar
     public let detail: Detail
+    public let sidebarWidth: Int
 
-    public init(@ViewBuilder sidebar: () -> Sidebar,
+    public init(sidebarWidth: Int = 250,
+                @ViewBuilder sidebar: () -> Sidebar,
                 @ViewBuilder detail: () -> Detail) {
+        self.sidebarWidth = sidebarWidth
         self.sidebar = sidebar()
         self.detail = detail()
     }

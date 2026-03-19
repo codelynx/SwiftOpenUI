@@ -379,6 +379,33 @@ gtk_swift_orientable_set_orientation(GtkWidget *widget, GtkOrientation orientati
     gtk_orientable_set_orientation(GTK_ORIENTABLE(widget), orientation);
 }
 
+// --- GtkPaned shims ---
+
+static inline void
+gtk_swift_paned_set_start_child(GtkWidget *paned, GtkWidget *child) {
+    gtk_paned_set_start_child(GTK_PANED(paned), child);
+}
+
+static inline void
+gtk_swift_paned_set_end_child(GtkWidget *paned, GtkWidget *child) {
+    gtk_paned_set_end_child(GTK_PANED(paned), child);
+}
+
+static inline void
+gtk_swift_paned_set_position(GtkWidget *paned, int position) {
+    gtk_paned_set_position(GTK_PANED(paned), position);
+}
+
+static inline void
+gtk_swift_paned_set_shrink_start_child(GtkWidget *paned, gboolean shrink) {
+    gtk_paned_set_shrink_start_child(GTK_PANED(paned), shrink);
+}
+
+static inline void
+gtk_swift_paned_set_shrink_end_child(GtkWidget *paned, gboolean shrink) {
+    gtk_paned_set_shrink_end_child(GTK_PANED(paned), shrink);
+}
+
 // --- GtkDrawingArea shims ---
 
 static inline void

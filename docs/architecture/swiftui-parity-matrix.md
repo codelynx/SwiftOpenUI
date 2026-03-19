@@ -129,7 +129,7 @@ Last updated: 2026-03-19
 | .navigationTitle() | Y | Y | Y | Y | Y | ~ | Header bar / title bar; Android falls back to path value |
 | .navigationDestination() | Y | Y | Y | Y | Y | Y | Type-based |
 | NavigateAction (env) | Y | Y | Y | Y | Y | Y | push/pop/popToRoot |
-| NavigationSplitView | Y | - | - | - | - | - | |
+| NavigationSplitView | Y | Y | Y | - | - | - | GtkPaned, configurable sidebar width |
 | .navigationBarItems() | Y | - | - | - | - | - | |
 
 ## App Structure

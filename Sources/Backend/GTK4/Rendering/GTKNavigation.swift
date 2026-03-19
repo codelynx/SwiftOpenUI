@@ -495,3 +495,48 @@ extension TitledView: GTKRenderable {
         gtkRenderView(content)
     }
 }
+
+// MARK: - NavigationSplitView GTK extension
+
+extension NavigationSplitView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL)!
+
+        let sidebarWidget = widgetFromOpaque(gtkRenderView(sidebar))
+        let detailWidget = widgetFromOpaque(gtkRenderView(detail))
+
+        // Extract toolbar items from the detail view tree and expose
+        // a header bar for Window to install as the native titlebar.
+        let toolbarItems = gtkExtractToolbarItems(from: detail)
+        if !toolbarItems.isEmpty {
+            let headerBar = gtk_header_bar_new()!
+            let headerBarOp = OpaquePointer(headerBar)
+            gtk_header_bar_set_title_widget(headerBarOp, gtk_label_new(""))
+            for item in toolbarItems {
+                let itemWidget = widgetFromOpaque(gtkRenderAnyView(item.wrapped))
+                switch item.placement {
+                case .leading:
+                    gtk_header_bar_pack_start(headerBarOp, itemWidget)
+                case .primaryAction, .trailing:
+                    gtk_header_bar_pack_end(headerBarOp, itemWidget)
+                }
+            }
+
+            g_object_ref(gpointer(headerBar))
+            let panedObject = UnsafeMutableRawPointer(paned).assumingMemoryBound(to: GObject.self)
+            g_object_set_data_full(panedObject, "gtk-swift-window-titlebar", headerBar,
+                { userData in g_object_unref(userData) })
+        }
+
+        gtk_swift_paned_set_start_child(paned, sidebarWidget)
+        gtk_swift_paned_set_end_child(paned, detailWidget)
+        gtk_swift_paned_set_position(paned, gint(sidebarWidth))
+        gtk_swift_paned_set_shrink_start_child(paned, 0)
+        gtk_swift_paned_set_shrink_end_child(paned, 0)
+
+        gtk_widget_set_hexpand(paned, 1)
+        gtk_widget_set_vexpand(paned, 1)
+
+        return opaqueFromWidget(paned)
+    }
+}
