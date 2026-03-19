@@ -1805,11 +1805,15 @@ private struct GTKGridCell {
 }
 
 /// Flatten a view into its top-level child views using the MultiChildView
-/// contract.  This handles TupleView2-12, Group, ForEach, and any other
-/// MultiChildView correctly — Mirror reflection on stored properties is
-/// intentionally avoided because it exposes implementation details (e.g.
-/// ForEach's `data`/`id`/`content` fields) instead of actual child views.
+/// contract.  Stops at GridRow boundaries — GridRow is a row delimiter,
+/// not a transparent container, so its children must stay grouped.
 private func gtkFlattenChildren(_ view: any View) -> [any View] {
+    // GridRow is a MultiChildView but must NOT be flattened — it's a
+    // semantic boundary that gtkExtractRowCells needs to see intact.
+    let typeName = String(describing: type(of: view))
+    if typeName.contains("GridRow") {
+        return [view]
+    }
     if let multi = view as? MultiChildView {
         return multi.children.flatMap { gtkFlattenChildren($0) }
     }
