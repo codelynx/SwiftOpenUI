@@ -36,30 +36,27 @@ Last updated: 2026-03-19
 | EmptyView | Y | Y | Y | Y | Y | Y | |
 | NavigationStack | Y | Y | Y | Y | Y | Y | GtkStack / Win32 HWND stack / DOM stack |
 | NavigationLink | Y | Y | Y | Y | Y | Y | String label only |
-| TabView | Y | - | - | - | - | - | |
-| GeometryReader | Y | - | - | - | - | - | |
-| LazyVStack | Y | - | - | - | - | - | |
-| LazyHStack | Y | - | - | - | - | - | |
-| LazyVGrid | Y | - | - | - | - | - | |
-| LazyHGrid | Y | - | - | - | - | - | |
-| Grid | Y | - | - | - | - | - | |
-| Sheet | Y | - | - | - | - | - | |
-| Alert | Y | - | - | - | - | - | |
-| ConfirmationDialog | Y | - | - | - | - | - | |
-| Picker | Y | - | - | - | - | - | |
-| DatePicker | Y | - | - | - | - | - | |
-| ProgressView | Y | - | - | - | - | - | |
-| Menu | Y | - | - | - | - | - | |
-| Label | Y | - | - | - | - | - | |
-| Link | Y | - | - | - | - | - | |
-| DisclosureGroup | Y | - | - | - | - | - | |
-| Form | Y | - | - | - | - | - | |
-| Section | Y | - | - | - | - | - | |
-| SecureField | Y | - | - | - | - | - | |
-| TextEditor | Y | - | - | - | - | - | |
-| Stepper | Y | - | - | - | - | - | |
-| Map | Y | - | - | - | - | - | |
-| Canvas | Y | - | - | - | - | - | |
+| SecureField | Y | Y | Y | - | - | - | GtkPasswordEntry with peek icon |
+| TextEditor | Y | Y | Y | - | - | - | GtkTextView in ScrolledWindow |
+| ProgressView | Y | Y | Y | - | - | - | Determinate or indeterminate (pulse TODO) |
+| Stepper | Y | Y | Y | - | - | - | GtkSpinButton with label, range/step |
+| Label | Y | Y | Y | - | - | - | systemImage or filePath + title |
+| Link | Y | Y | Y | - | - | - | GtkLinkButton |
+| TabView | Y | Y | Y | - | - | - | GtkStack + GtkStackSwitcher, TabBuilder |
+| Grid | Y | Y | Y | - | - | - | Auto-wrap and explicit GridRow modes |
+| DisclosureGroup | Y | Y | Y | - | - | - | GtkExpander, Binding<Bool> |
+| Form | Y | Y | Y | - | - | - | Styled GtkBox with padding/spacing |
+| Section | Y | Y | Y | - | - | - | Header (Pango markup), footer, separator |
+| LazyVStack | Y | Y | Y | - | - | - | GtkListView factory pattern |
+| LazyHStack | Y | Y | Y | - | - | - | GtkListView horizontal |
+| LazyVGrid | Y | Y | Y | - | - | - | GtkGridView, GridItem adaptive/fixed |
+| LazyHGrid | Y | Y | Y | - | - | - | GtkGridView horizontal |
+| Picker | Y | Y | Y | - | - | - | GtkDropDown or segmented toggle group |
+| DatePicker | Y | Y | Y | - | - | - | GtkCalendar, DateComponents type |
+| GeometryReader | Y | Y | Y | - | - | - | Deferred map + tick resize tracking |
+| Menu | Y | Y | Y | - | - | - | GMenu + GSimpleActionGroup + PopoverMenu |
+| Map | Y | - | - | - | - | - | Needs external map library |
+| Canvas | Y | - | - | - | - | - | Needs Cairo binding |
 
 ## Modifiers
 
@@ -87,18 +84,19 @@ Last updated: 2026-03-19
 | .focused() | Y | Y | Y | Y | - | Y | Web: no-op (pass-through) |
 | .modifier() | Y | Y | Y | Y | Y | Y | Custom ViewModifier |
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
-| .rotationEffect() | Y | - | - | - | - | - | |
-| .shadow() | Y | - | - | - | - | - | |
-| .cornerRadius() | Y | - | - | - | - | - | |
+| .cornerRadius() | Y | Y | Y | - | - | - | CSS border-radius |
+| .shadow() | Y | Y | Y | - | - | - | CSS box-shadow + margin |
+| .rotationEffect() | Y | Y | Y | - | - | - | CSS transform rotate, Angle type |
+| .overlay() | Y | Y | Y | - | - | - | GtkOverlay with alignment |
+| .sheet() | Y | Y | Y | - | - | - | Modal GtkWindow, DismissAction env |
+| .alert() | Y | Y | Y | - | - | - | Modal dialog with AlertButton array |
+| .onAppear() | Y | Y | Y | - | - | - | "map" signal, rebuild-suppressed |
+| .onDisappear() | Y | Y | Y | - | - | - | "unmap" signal, rebuild vs real |
+| .searchable() | Y | Y | Y | - | - | - | GtkSearchEntry + binding |
+| .toolbar() | Y | Y | Y | - | - | - | ToolbarProvider, header bar integration |
+| .gridCellColumns() | Y | Y | Y | - | - | - | Column span in Grid/GridRow |
 | .clipShape() | Y | - | - | - | - | - | |
-| .overlay() | Y | - | - | - | - | - | |
-| .sheet() | Y | - | - | - | - | - | |
-| .alert() | Y | - | - | - | - | - | |
-| .onAppear() | Y | - | - | - | - | - | |
-| .onDisappear() | Y | - | - | - | - | - | |
-| .task() | Y | - | - | - | - | - | |
-| .searchable() | Y | - | - | - | - | - | |
-| .toolbar() | Y | - | - | - | - | - | |
+| .task() | Y | - | - | - | - | - | Needs async runtime |
 
 ## State & Data
 
@@ -155,17 +153,17 @@ Last updated: 2026-03-19
 | Edge / Edge.Set | Y | Y | OptionSet |
 | EdgeInsets | Y | Y | |
 | ProposedViewSize | Y | Y | |
+| GeometryReader | Y | Y | Deferred + tick-based resize |
 | Layout protocol | Y | - | Custom layout engine |
 | AlignmentGuide | Y | - | |
-| GeometryReader | Y | - | |
 
 ## Summary
 
 | Category | SwiftUI Total | SwiftOpenUI Implemented | Coverage |
 |----------|--------------|------------------------|----------|
-| Views | 45 | 21 | ~47% |
-| Modifiers | 34 | 22 | ~65% |
+| Views | 43 | 39 | ~91% |
+| Modifiers | 35 | 33 | ~94% |
 | State & Data | 13 | 9 | ~69% |
 | Navigation | 8 | 6 | 75% |
 | App structure | 9 | 5 | ~56% |
-| Layout system | 9 | 6 | ~67% |
+| Layout system | 9 | 7 | ~78% |

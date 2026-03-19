@@ -1,174 +1,133 @@
 # GTK4 Parity Roadmap: Fill the SwiftUI Matrix
 
+## Status: COMPLETE (2026-03-19)
+
+All 6 phases implemented. GTK4 column: ~91% views, ~94% modifiers.
+118 tests, all passing. `swift build` clean.
+
 ## Context
 
-The swiftui-parity-matrix.md shows GTK4 at ~47% view coverage and ~65% modifier coverage. All missing features have reference implementations in SwiftLinuxUI. This plan organizes them into phases by dependency order and complexity, targeting GTK4 column completion.
+The swiftui-parity-matrix.md showed GTK4 at ~47% view coverage and ~65% modifier coverage. All missing features had reference implementations in SwiftLinuxUI. This plan organized them into phases by dependency order and complexity, targeting GTK4 column completion.
 
 ## Phase Overview
 
-| Phase | Theme | Items | Complexity | Unlocks |
-|-------|-------|-------|-----------|---------|
-| A | CSS Modifiers | 4 modifiers | Simple | Visual polish for all views |
-| B | Simple Controls | 5 views | Simple | Form-building capability |
-| C | Lifecycle & Presentation | 4 modifiers + 2 views | Medium | Sheet/Alert, onAppear/onDisappear |
-| D | Containers & Layout | 4 views | Medium | Grid, TabView, Form, DisclosureGroup |
-| E | Lazy Collections | 4 views | Medium | LazyVStack, LazyHStack, LazyVGrid, LazyHGrid |
-| F | Advanced | 4 views + 2 modifiers | Complex | Menu, GeometryReader, Canvas, searchable, toolbar |
+| Phase | Theme | Items | Status |
+|-------|-------|-------|--------|
+| A | CSS Modifiers | 4 modifiers | **Done** |
+| B | Simple Controls | 5 views | **Done** |
+| C | Lifecycle & Presentation | 4 modifiers + 2 views | **Done** |
+| D | Containers & Layout | 6 views | **Done** |
+| E | Lazy Collections | 4 views | **Done** |
+| F | Advanced | 4 views + 2 modifiers | **Done** |
 
 ---
 
-## Phase A: CSS Modifiers (simple, no dependencies)
+## Phase A: CSS Modifiers — DONE
 
-All pure CSS — no new GTK widgets, no signals. Just `applyCSSToWidget()`.
-
-| Item | GTK Mechanism | Reference | Est. Lines |
-|------|-------------|-----------|-----------|
-| `.cornerRadius()` | `border-radius: Npx` | CornerRadiusModifier.swift | ~25 |
-| `.shadow()` | `box-shadow` + margin fallback | ShadowModifier.swift | ~40 |
-| `.rotationEffect()` | CSS `transform: rotate(Ndeg)` | RotationModifier.swift | ~30 |
-| `.overlay()` | `GtkOverlay` widget | OverlayModifier.swift | ~55 |
-
-**Core types needed**: `Angle` struct (degrees/radians) for rotation. `Shape` enum (circle, capsule, roundedRectangle) if adding `.clipShape()`.
-
-**Files**:
-- New: `Modifiers/CornerRadiusModifier.swift`, `Modifiers/ShadowModifier.swift`, `Modifiers/RotationModifier.swift`, `Modifiers/OverlayModifier.swift`
-- Edit: `GTKRenderer.swift` (4 extensions)
+| Item | GTK Mechanism | Commit |
+|------|-------------|--------|
+| `.cornerRadius()` | CSS `border-radius` | `e139b1d` |
+| `.shadow()` | CSS `box-shadow` + margin | `e139b1d` |
+| `.rotationEffect()` | CSS `transform: rotate()`, Angle type | `e139b1d` |
+| `.overlay()` | GtkOverlay with Alignment-to-GtkAlign | `e139b1d` |
 
 ---
 
-## Phase B: Simple Controls (1 GTK widget each)
+## Phase B: Simple Controls — DONE
 
-All have SwiftLinuxUI reference. Each is a single GTK widget + signal.
-
-| Item | GTK Widget | Signal | Reference | Est. Lines |
-|------|-----------|--------|-----------|-----------|
-| SecureField | GtkPasswordEntry | "changed" | SecureField.swift | ~40 |
-| TextEditor | GtkTextView + GtkScrolledWindow | "changed" on buffer | TextEditor.swift | ~50 |
-| ProgressView | GtkProgressBar | none | ProgressBar.swift | ~20 |
-| Stepper | GtkSpinButton | "value-changed" | Stepper.swift | ~40 |
-| Label | GtkBox(H) + GtkImage + GtkLabel | none | Label.swift | ~30 |
-
-**Depends on**: Image view (done in Phase 3)
-
-**Shims needed**: `gtk_swift_password_entry_set_show_peek_icon`, spin button helpers
-
-**Files**:
-- New: `Views/SecureField.swift`, `Views/TextEditor.swift`, `Views/ProgressView.swift`, `Views/Stepper.swift`, `Views/Label.swift`
-- Edit: `GTKRenderer.swift` (5 extensions), `shim.h`
+| Item | GTK Widget | Commit |
+|------|-----------|--------|
+| SecureField | GtkPasswordEntry + peek icon | `e139b1d` |
+| TextEditor | GtkTextView + GtkScrolledWindow | `e139b1d` |
+| ProgressView | GtkProgressBar (indeterminate pulse TODO) | `e139b1d` |
+| Stepper | GtkSpinButton with label, range/step | `e139b1d` |
+| Label | GtkBox(H) + GtkImage + GtkLabel | `e139b1d` |
 
 ---
 
-## Phase C: Lifecycle & Presentation (medium, needs ViewHost awareness)
+## Phase C: Lifecycle & Presentation — DONE
 
-These interact with the rebuild cycle and window management.
+| Item | GTK Mechanism | Commit |
+|------|-------------|--------|
+| `.onAppear()` | "map" signal, rebuild-suppressed | `5716c3c` |
+| `.onDisappear()` | "unmap" signal, rebuild vs real | `5716c3c` |
+| `.sheet()` | Modal GtkWindow, g_idle_add, DismissAction env | `5716c3c` |
+| `.alert()` | Modal dialog, AlertButton array, destructive CSS | `5716c3c` |
+| Link | GtkLinkButton | `5716c3c` |
 
-| Item | GTK Mechanism | Key Challenge | Reference | Est. Lines |
-|------|-------------|---------------|-----------|-----------|
-| `.onAppear()` | "map" signal | Suppress on rebuild (check ViewHost mapped) | LifecycleModifier.swift | ~60 |
-| `.onDisappear()` | "unmap" signal | Distinguish rebuild vs real disappear | LifecycleModifier.swift | ~60 |
-| `.sheet()` | Modal GtkWindow | Deferred via g_idle_add, DismissAction env | SheetModifier.swift | ~100 |
-| `.alert()` | Modal GtkWindow + buttons | Deferred, prevent duplicates | Alert.swift | ~80 |
-| Link | GtkLinkButton | none | Link.swift | ~15 |
-| ConfirmationDialog | Modal GtkWindow + multiple buttons | Similar to Alert | AlertModifier.swift | ~80 |
-
-**Depends on**: Environment system (done), DismissAction (done)
-
-**Files**:
-- New: `Modifiers/LifecycleModifier.swift`, `Modifiers/SheetModifier.swift`, `Modifiers/AlertModifier.swift`, `Views/Link.swift`
-- Edit: `GTKRenderer.swift`
+**Not implemented**: ConfirmationDialog (similar to Alert, deferred to future work).
 
 ---
 
-## Phase D: Containers & Layout (medium, new widget patterns)
+## Phase D: Containers & Layout — DONE
 
-| Item | GTK Widget | Key Challenge | Reference | Est. Lines |
-|------|-----------|---------------|-----------|-----------|
-| TabView | GtkStack + GtkStackSwitcher | Tab builder, transition types | TabView.swift | ~100 |
-| Grid | GtkGrid | GridRow, column spans, auto-wrap | Grid.swift | ~120 |
-| DisclosureGroup | GtkExpander | "notify::expanded" signal, Binding<Bool> | DisclosureGroup.swift | ~50 |
-| Form / Section | GtkBox with CSS padding | Section headers, grouped styling | Form.swift | ~60 |
+| Item | GTK Widget | Commit |
+|------|-----------|--------|
+| TabView | GtkStack + GtkStackSwitcher, TabBuilder | `1f3d14a` |
+| Grid | GtkGrid, auto-wrap + explicit GridRow modes | `1f3d14a` |
+| GridRow | MultiChildView, .gridCellColumns() span | `1f3d14a` |
+| DisclosureGroup | GtkExpander, Binding<Bool>, notify::expanded | `1f3d14a` |
+| Form | GtkBox with 12px spacing, 16px CSS padding | `1f3d14a` |
+| Section | Bold Pango header, 11px footer, separator | `1f3d14a` |
 
-**Depends on**: Phase A (.cornerRadius for Form styling)
-
-**Shims needed**: `gtk_swift_grid_attach`, `gtk_swift_expander_*`
-
-**Files**:
-- New: `Views/TabView.swift`, `Views/Grid.swift`, `Views/DisclosureGroup.swift`, `Views/Form.swift`
-- Edit: `GTKRenderer.swift`, `shim.h`
-
----
-
-## Phase E: Lazy Collections (medium, GTK factory pattern)
-
-All use `GtkSignalListItemFactory` + `GtkStringList` as lightweight index model.
-
-| Item | GTK Widget | Key Challenge | Reference | Est. Lines |
-|------|-----------|---------------|-----------|-----------|
-| LazyVStack | GtkListView (vertical) | Item factory, bind/unbind signals | LazyVStack.swift | ~80 |
-| LazyHStack | GtkListView (horizontal) | Same factory, different orientation | LazyVStack.swift | ~20 (shared) |
-| LazyVGrid | GtkGridView (vertical) | Column config (adaptive/fixed) | LazyGrid.swift | ~80 |
-| LazyHGrid | GtkGridView (horizontal) | Row config | LazyGrid.swift | ~20 (shared) |
-
-**Depends on**: None (standalone pattern)
-
-**Shims needed**: ~22 shims for GtkListView, GtkGridView, GtkStringList, factory system
-
-**Files**:
-- New: `Views/LazyStacks.swift`, `Views/LazyGrids.swift`
-- Edit: `GTKRenderer.swift`, `shim.h` (~80 lines of shims)
+**Review fixes**:
+- Grid explicit-row mode uses MultiChildView.children instead of Mirror (`1aedbcc`)
+- TupleView4-12 rendering via MultiChildView check in gtkRenderView (`1aedbcc`)
+- TabBuilder conditional content (buildOptional, buildEither, buildArray) (`1aedbcc`)
+- gtkFlattenChildren stops at GridRow boundaries (`cc357d9`)
 
 ---
 
-## Phase F: Advanced (complex, specialized GTK subsystems)
+## Phase E: Lazy Collections — DONE
 
-| Item | GTK Mechanism | Key Challenge | Reference | Est. Lines |
-|------|-------------|---------------|-----------|-----------|
-| Menu | GMenu + GSimpleActionGroup + GtkPopoverMenu | Recursive menu building, action naming | Menu.swift | ~150 |
-| Picker | GtkDropDown or GtkToggleButton group | Two display styles | Picker.swift | ~100 |
-| DatePicker | GtkCalendar | Custom DateComponents type | DatePicker.swift | ~60 |
-| GeometryReader | GtkBox + "map" signal | Deferred rendering until dimensions known | GeometryReader.swift | ~80 |
-| `.searchable()` | GtkSearchEntry above content | Binding + "search-changed" signal | SearchableModifier.swift | ~50 |
-| `.toolbar()` | ToolbarProvider extraction + header bar items | Mirror-based extraction before render | ToolbarModifier.swift | ~80 |
+| Item | GTK Widget | Commit |
+|------|-----------|--------|
+| LazyVStack | GtkListView (vertical), factory pattern | `b7bfde4` |
+| LazyHStack | GtkListView (horizontal) | `b7bfde4` |
+| LazyVGrid | GtkGridView, GridItem adaptive/fixed/flexible | `b7bfde4` |
+| LazyHGrid | GtkGridView (horizontal) | `b7bfde4` |
 
-**Depends on**: Phase C (lifecycle signals for GeometryReader), Phase B (Image for Picker icons)
+All use GtkSignalListItemFactory + GtkStringList index model with setup/bind/unbind callbacks.
+
+---
+
+## Phase F: Advanced — DONE
+
+| Item | GTK Mechanism | Commit |
+|------|-------------|--------|
+| Picker | GtkDropDown (auto) or GtkToggleButton group (segmented) | `f73c218` |
+| DatePicker | GtkCalendar, DateComponents, day-selected signal | `f73c218` |
+| GeometryReader | GtkBox + map signal + tick callback resize tracking | `f73c218`, `051d16f` |
+| Menu | GMenu + GSimpleActionGroup + GtkPopoverMenu, MenuBuilder | `f73c218` |
+| `.searchable()` | GtkSearchEntry, search-changed signal | `f73c218` |
+| `.toolbar()` | ToolbarProvider, Mirror extraction, header bar integration | `f73c218`, `0e24245` |
+
+**Review fixes**:
+- Toolbar integrated into NavigationStack header bar with push/pop widget swap (`0e24245`)
+- GeometryReader uses tick callback for live resize (GtkEventControllerResize unavailable) (`051d16f`)
+- MenuDivider produces GMenu sections for visible separators (`0e24245`)
+
+---
+
+## Final Impact on Matrix
+
+| Category | Before | After | Coverage |
+|----------|--------|-------|----------|
+| Views (Core+GTK4) | 21/45 (~47%) | 39/43 (~91%) | +18 views |
+| Modifiers (Core+GTK4) | 22/34 (~65%) | 33/35 (~94%) | +11 modifiers |
+| Tests | 71 | 118 | +47 tests |
 
 **Not planned (too specialized)**:
 - Map — needs external map library
 - Canvas — needs full Cairo binding (~140 lines of shims)
 - `.task()` — needs async runtime integration
+- `.clipShape()` — needs Shape protocol system
 - @AppStorage — needs GSettings or file persistence
 - @Observable — needs Swift macro support
 
----
+## Verification
 
-## Execution Order
-
-```
-Phase A (CSS modifiers)     ─────►  can start immediately
-Phase B (simple controls)   ─────►  can start immediately
-Phase C (lifecycle/present) ─────►  after A (overlay pattern helps sheet)
-Phase D (containers)        ─────►  after A (cornerRadius for Form)
-Phase E (lazy collections)  ─────►  can start independently
-Phase F (advanced)          ─────►  after B + C
-```
-
-A and B can run in parallel. C depends lightly on A. D depends lightly on A. E is independent. F comes last.
-
-## Estimated Impact on Matrix
-
-| Phase | Views Added | Modifiers Added | New GTK4 Coverage |
-|-------|-----------|----------------|-------------------|
-| A | 0 | 4 | Modifiers: 65% → 76% |
-| B | 5 | 0 | Views: 47% → 58% |
-| C | 2 | 4 | Views: 58% → 62%, Modifiers: 76% → 88% |
-| D | 4 | 0 | Views: 62% → 71% |
-| E | 4 | 0 | Views: 71% → 80% |
-| F | 4 | 2 | Views: 80% → 89%, Modifiers: 88% → 94% |
-
-**Final GTK4 column: ~89% views, ~94% modifiers**
-
-## Verification (per phase)
-
+All phases verified:
 1. `swift build` — clean
-2. `swift test` — all tests pass (add construction tests per phase)
-3. Manual demo example per phase
+2. `swift test` — 118 tests, all pass
+3. Construction tests for all new views/modifiers
