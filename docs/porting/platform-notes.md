@@ -52,6 +52,10 @@ The workaround is `d2d1_shim.cpp`: a C++ file that wraps each COM call in a `ext
 - Recursive font application via `applyFontRecursively()` to reach controls inside modifier wrappers
 - HFONT leak prevention via cleanup subclass on `WM_NCDESTROY`
 - Thread-local environment via `TlsAlloc` / `TlsGetValue`
+- Gesture routing via recursive subclassing (same proc on root + all descendants, not WM_PARENTNOTIFY)
+- Navigation via Win32Navigation.swift — show/hide HWND stack with header bar, thread-local context sharing
+- Animation: `AnimatedView` is a pass-through stub. Timer-driven animation (SetTimer 60fps + easing) exists only for `OpacityView`/`ScaleEffectView` on fully D2D-renderable subtrees (Text, Color, Divider, simple wrappers). `consumePendingAnimation()` reads animation set by `withAnimation()` after deferred rebuild
+- Cursor/selection preservation for all Edit controls via `EM_GETSEL`/`EM_SETSEL` (not just focused control)
 
 ## Web (WebAssembly) — Experimental
 

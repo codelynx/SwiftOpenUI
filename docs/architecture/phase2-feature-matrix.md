@@ -19,7 +19,7 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 | **opacity()** | ✅ | ✅ gtk_widget_set_opacity | ⚠️ D2D surface only | ✅ CSS opacity | ✅ Modifier.alpha |
 | **offset()** | ✅ | ✅ CSS transform | ✅ SetWindowPos | ✅ CSS translate | ✅ Modifier.offset |
 | **scaleEffect()** | ✅ | ✅ CSS transform | ⚠️ D2D surface only | ✅ CSS scale | ✅ Modifier.graphicsLayer |
-| **.animation()** | ✅ | ✅ CSS transition | ❌ stub (instant) | ✅ CSS transition | ❌ pass-through |
+| **.animation()** | ✅ | ✅ CSS transition | ⚠️ D2D opacity/scale only | ✅ CSS transition | ❌ pass-through |
 | **withAnimation()** | ✅ TLS context | ✅ | ✅ | ✅ | ✅ partial |
 | **TextField binding** | ✅ | ✅ GtkEntry notify::text | ✅ SubclassHandler EN_CHANGE | ✅ addEventListener input | ✅ BasicTextField (verified) |
 | **@FocusState binding** | ✅ | ✅ GtkEventControllerFocus | ✅ WM_SETFOCUS/KILLFOCUS | ⚠️ stub | ✅ FocusRequester + onFocusChanged |
@@ -28,7 +28,7 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 | **@State (nested/composed)** | ✅ | ✅ per-view host | ✅ per-view host | ✅ per-view host | ✅ structural state cache |
 | **Display cutout** | N/A | N/A | N/A | N/A | ✅ statusBarsPadding |
 | **HStack centering** | ✅ | ✅ | ✅ | ✅ | ✅ (no-Spacer only) |
-| **Cursor/selection restore** | ✅ SwiftUI | ❌ | ❌ | ❌ | ⚠️ TextFieldValue preserves cursor |
+| **Cursor/selection restore** | ✅ SwiftUI | ❌ | ✅ EM_GETSEL/SETSEL all Edits | ❌ | ⚠️ TextFieldValue preserves cursor |
 
 ## Legend
 
@@ -43,7 +43,7 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 Most complete Phase 2 implementation. Navigation uses `GtkStack` with slide transitions. Gestures use GTK gesture controllers. Animations use CSS `transition` property. Focus is bidirectional with programmatic grab/clear.
 
 ### Win32 (Windows)
-Navigation and gestures fully working. Gesture installation is recursive (root + all children). Animation timing is stub — `withAnimation()` state changes trigger rebuilds but transitions are instant. Opacity and scale only work on D2D-rendered content (custom surface); native HWND controls cannot be alpha-blended or scaled.
+Navigation and gestures fully working. Navigation uses show/hide HWND stack with header bar (back button + title). Gestures use recursive subclassing (same proc on root + all descendants). Animation is partial: `AnimatedView` is a pass-through stub, but `OpacityView` and `ScaleEffectView` have timer-driven animation (SetTimer at 60fps with easing curves) when their content is fully D2D-renderable (`Text`, `Color`, `Divider`, and simple modifier wrappers). Native HWND controls inside `withAnimation` rebuild instantly without interpolation. The `consumePendingAnimation()` pattern (TLS-stored animation survives until rebuild consumes it) could be reused by Android for its animation gap. Cursor/selection preserved for all Edit controls across rebuilds via `EM_GETSEL`/`EM_SETSEL`.
 
 ### Web (Wasm)
 Full Phase 2 coverage. Navigation uses a JS-side stack with header bar and back button. NavigationPath binding is bidirectional with re-entrancy guard (matching GTK4/Win32 pattern). Destination registry supports type-based path navigation via `.navigationDestination(for:)`. `NavigateAction` is wired into the environment for programmatic push/pop/popToRoot — including inside pushed destinations. Gestures use pointer events (tap, double-tap via click count, long press via setTimeout, drag via pointermove). Animations use CSS transitions with timing curves. Known issue: animation demo shows double-rendered text due to a rendering bug.
@@ -70,10 +70,10 @@ See [running-examples.md](../guides/running-examples.md) for full instructions.
 ## Known Limitations
 
 1. **Android nested @State**: Resolved. Structural state cache keyed by node ID persists `@State` values across rebuilds for nested child views.
-2. **Win32 animation**: Transitions are instant (no smooth animation). `withAnimation()` triggers state change but no interpolation.
-3. **Win32 opacity/scale**: Only works on D2D-rendered content, not native HWND controls.
+2. **Win32 opacity/scale**: Only works on D2D-rendered content (Text, Color, Divider), not native HWND controls (Button, TextField). Applying `.opacity()` or `.scaleEffect()` to a container with interactive children falls through to instant application.
+3. **Win32 animation on HWND controls**: Animation timing works for D2D surfaces. Native HWND controls inside `withAnimation` rebuild instantly without interpolation.
 4. **Web animation**: Double-rendered text in animation demo due to modifier wrapping bug.
-5. **Cursor/selection restore**: Lost on rebuild across all platforms except macOS (which uses real SwiftUI).
+5. **Cursor/selection restore**: Lost on rebuild on GTK4 and Web. Win32 preserves all Edit controls' cursor/selection. Android preserves via TextFieldValue.
 6. **Android JSON Int64 precision**: Node IDs must be serialized as strings, not bare numbers. Java's `JSONObject` parses numbers through `Double`, losing precision for values > 2^53. See [android-json-int64-precision.md](../issues/android-json-int64-precision.md).
 
 ## Key Files
