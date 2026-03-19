@@ -498,19 +498,36 @@ extension TitledView: GTKRenderable {
 
 // MARK: - NavigationSplitView GTK extension
 
-/// Extract column ideal width from a view with .navigationSplitViewColumnWidth applied.
-private func gtkExtractColumnWidth<V: View>(from view: V) -> Double? {
+/// Extract column width provider from a view tree, walking through modifier
+/// wrappers recursively so modifier ordering doesn't matter.
+private func gtkExtractColumnWidthProvider<V: View>(from view: V) -> NavigationSplitViewColumnWidthProvider? {
+    return gtkExtractColumnWidthProviderAny(from: view)
+}
+
+private func gtkExtractColumnWidthProviderAny(from view: Any, depth: Int = 0) -> NavigationSplitViewColumnWidthProvider? {
+    guard depth < 20 else { return nil }
     if let provider = view as? NavigationSplitViewColumnWidthProvider {
-        return provider.columnIdealWidth
+        return provider
     }
-    // Check via Mirror for nested modifiers
     let mirror = Mirror(reflecting: view)
     for child in mirror.children {
         if let provider = child.value as? NavigationSplitViewColumnWidthProvider {
-            return provider.columnIdealWidth
+            return provider
+        }
+    }
+    for child in mirror.children {
+        if child.value is any View {
+            if let result = gtkExtractColumnWidthProviderAny(from: child.value, depth: depth + 1) {
+                return result
+            }
         }
     }
     return nil
+}
+
+/// Extract column ideal width from a view with .navigationSplitViewColumnWidth applied.
+private func gtkExtractColumnWidth<V: View>(from view: V) -> Double? {
+    gtkExtractColumnWidthProvider(from: view)?.columnIdealWidth
 }
 
 /// Install toolbar items from a view tree into a GtkHeaderBar, attaching
@@ -576,8 +593,8 @@ extension NavigationSplitView: GTKRenderable {
         let sidebarWidget = widgetFromOpaque(gtkRenderView(sidebar))
         let detailWidget = widgetFromOpaque(gtkRenderView(detail))
 
-        // Apply min width from column width modifier
-        if let provider = sidebar as? NavigationSplitViewColumnWidthProvider,
+        // Apply min width from column width modifier (walks modifier chain)
+        if let provider = gtkExtractColumnWidthProvider(from: sidebar),
            let minW = provider.columnMinWidth {
             gtk_widget_set_size_request(sidebarWidget, gint(minW), -1)
         }
@@ -614,12 +631,12 @@ extension NavigationSplitView: GTKRenderable {
         let sidebarW = gtkExtractColumnWidth(from: sidebar) ?? Double(sidebarWidth)
         let contentW = gtkExtractColumnWidth(from: content) ?? 250.0
 
-        // Apply min widths from column width modifiers
-        if let provider = sidebar as? NavigationSplitViewColumnWidthProvider,
+        // Apply min widths from column width modifiers (walks modifier chain)
+        if let provider = gtkExtractColumnWidthProvider(from: sidebar),
            let minW = provider.columnMinWidth {
             gtk_widget_set_size_request(sidebarWidget, gint(minW), -1)
         }
-        if let provider = content as? NavigationSplitViewColumnWidthProvider,
+        if let provider = gtkExtractColumnWidthProvider(from: content),
            let minW = provider.columnMinWidth {
             gtk_widget_set_size_request(contentWidget, gint(minW), -1)
         }

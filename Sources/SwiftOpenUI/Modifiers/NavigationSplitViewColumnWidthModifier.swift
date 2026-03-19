@@ -33,6 +33,8 @@ extension View {
     }
 
     /// Set a fixed column width.
+    /// Note: on GTK4, GtkPaned remains user-resizable — this sets the
+    /// initial position and minimum width but cannot lock the divider.
     public func navigationSplitViewColumnWidth(
         _ width: Double
     ) -> NavigationSplitViewColumnWidthView<Self> {
