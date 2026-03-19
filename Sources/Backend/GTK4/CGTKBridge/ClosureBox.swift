@@ -18,6 +18,12 @@ public class BoolClosureBox {
     public init(_ closure: @escaping (Bool) -> Void) { self.closure = closure }
 }
 
+/// A box for closures that take an Int parameter (e.g., picker selection signals).
+public class IntClosureBox {
+    public let closure: (Int) -> Void
+    public init(_ closure: @escaping (Int) -> Void) { self.closure = closure }
+}
+
 /// A box for closures that take a single Double parameter (e.g., stepper/spinner signals).
 public class DoubleClosureBox {
     public let closure: (Double) -> Void

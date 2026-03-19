@@ -2302,6 +2302,460 @@ extension LazyHGrid: GTKRenderable {
     }
 }
 
+// MARK: - Picker GTK extension
+
+/// Closure box for segmented picker toggle events.
+private class SegmentClosureBox {
+    let index: Int
+    let closure: (Int) -> Void
+    init(index: Int, closure: @escaping (Int) -> Void) {
+        self.index = index
+        self.closure = closure
+    }
+}
+
+extension Picker: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        switch style {
+        case .segmented, .palette:
+            return gtkCreateSegmentedWidget()
+        default:
+            return gtkCreateDropdownWidget()
+        }
+    }
+
+    private func gtkCreateDropdownWidget() -> OpaquePointer {
+        let cStrings: [UnsafeMutablePointer<CChar>?] = options.map { strdup($0) } + [nil]
+
+        let dropdown = cStrings.withUnsafeBufferPointer { buf -> UnsafeMutablePointer<GtkWidget> in
+            buf.baseAddress!.withMemoryRebound(to: UnsafePointer<CChar>?.self, capacity: buf.count) { ptr in
+                gtk_drop_down_new_from_strings(ptr)!
+            }
+        }
+
+        for cStr in cStrings { cStr.map { free($0) } }
+
+        let dropdownOp = OpaquePointer(dropdown)
+        let clampedSelection = max(0, min(selected, options.count - 1))
+        if !options.isEmpty {
+            gtk_drop_down_set_selected(dropdownOp, guint(clampedSelection))
+        }
+
+        if let onChanged = onChanged {
+            let box = Unmanaged.passRetained(IntClosureBox(onChanged)).toOpaque()
+            g_signal_connect_data(
+                gpointer(dropdown),
+                "notify::selected",
+                unsafeBitCast({ (widget: gpointer?, _: gpointer?, userData: gpointer?) in
+                    let box = Unmanaged<IntClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                    let sel = Int(gtk_drop_down_get_selected(OpaquePointer(widget!)))
+                    box.closure(sel)
+                } as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
+                box,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<IntClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+        }
+
+        if !label.isEmpty {
+            let hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)!
+            let labelWidget = gtk_label_new(label)!
+            gtk_box_append(boxPointer(hbox), labelWidget)
+            gtk_box_append(boxPointer(hbox), dropdown)
+            return opaqueFromWidget(hbox)
+        }
+
+        return opaqueFromWidget(dropdown)
+    }
+
+    private func gtkCreateSegmentedWidget() -> OpaquePointer {
+        let hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)!
+        gtk_widget_add_css_class(hbox, "linked")
+
+        var firstButton: UnsafeMutablePointer<GtkWidget>?
+        let clampedSelection = options.isEmpty ? 0 : max(0, min(selected, options.count - 1))
+
+        for (index, option) in options.enumerated() {
+            let button = gtk_toggle_button_new_with_label(option)!
+
+            if let first = firstButton {
+                gtk_swift_toggle_button_set_group(button, first)
+            } else {
+                firstButton = button
+            }
+
+            if index == clampedSelection {
+                gtk_swift_toggle_button_set_active(button, 1)
+            }
+
+            if let onChanged = onChanged {
+                let box = Unmanaged.passRetained(
+                    SegmentClosureBox(index: index, closure: onChanged)
+                ).toOpaque()
+                g_signal_connect_data(
+                    gpointer(button),
+                    "toggled",
+                    unsafeBitCast({ (buttonPtr: gpointer?, userData: gpointer?) in
+                        guard let buttonPtr = buttonPtr, let userData = userData else { return }
+                        let widget = UnsafeMutableRawPointer(buttonPtr)
+                            .assumingMemoryBound(to: GtkWidget.self)
+                        let box = Unmanaged<SegmentClosureBox>.fromOpaque(userData).takeUnretainedValue()
+                        if gtk_swift_toggle_button_get_active(widget) != 0 {
+                            box.closure(box.index)
+                        }
+                    } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                    box,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<SegmentClosureBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+            }
+
+            gtk_box_append(boxPointer(hbox), button)
+        }
+
+        if !label.isEmpty {
+            let outer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)!
+            let labelWidget = gtk_label_new(label)!
+            gtk_box_append(boxPointer(outer), labelWidget)
+            gtk_box_append(boxPointer(outer), hbox)
+            return opaqueFromWidget(outer)
+        }
+
+        return opaqueFromWidget(hbox)
+    }
+}
+
+// MARK: - DatePicker GTK extension
+
+private class DatePickerBox {
+    let calendar: UnsafeMutablePointer<GtkWidget>
+    let binding: Binding<SwiftOpenUI.DateComponents>?
+    let onChange: ((SwiftOpenUI.DateComponents) -> Void)?
+
+    init(calendar: UnsafeMutablePointer<GtkWidget>,
+         binding: Binding<SwiftOpenUI.DateComponents>?,
+         onChange: ((SwiftOpenUI.DateComponents) -> Void)?) {
+        self.calendar = calendar
+        self.binding = binding
+        self.onChange = onChange
+    }
+}
+
+extension DatePicker: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4)!
+        let boxPtr = boxPointer(box)
+
+        if !title.isEmpty {
+            let label = gtk_label_new(title)!
+            gtk_widget_set_halign(label, GTK_ALIGN_START)
+            gtk_box_append(boxPtr, label)
+        }
+
+        let calendar = gtk_calendar_new()!
+        gtk_box_append(boxPtr, calendar)
+
+        if let sel = selection {
+            let dc = sel.wrappedValue
+            gtk_swift_calendar_select_ymd(calendar, gint(dc.year), gint(dc.month), gint(dc.day))
+        }
+
+        let callbackBox = Unmanaged.passRetained(DatePickerBox(
+            calendar: calendar, binding: selection, onChange: onChange
+        )).toOpaque()
+
+        g_signal_connect_data(
+            gpointer(calendar),
+            "day-selected",
+            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<DatePickerBox>.fromOpaque(userData!).takeUnretainedValue()
+                var y: gint = 0, m: gint = 0, d: gint = 0
+                gtk_swift_calendar_get_ymd(box.calendar, &y, &m, &d)
+                let dc = SwiftOpenUI.DateComponents(year: Int(y), month: Int(m), day: Int(d))
+                if let binding = box.binding, dc != binding.wrappedValue {
+                    binding.wrappedValue = dc
+                }
+                box.onChange?(dc)
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            callbackBox,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<DatePickerBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        return opaqueFromWidget(box)
+    }
+}
+
+// MARK: - GeometryReader GTK extension
+
+/// Context holding the content builder for deferred rendering.
+private class GeometryReaderContext {
+    let renderContent: (GeometryProxy) -> OpaquePointer
+    let box: UnsafeMutablePointer<GtkWidget>
+    var renderScheduled = false
+    var idleRetryCount = 0
+
+    init<Content: View>(content: @escaping (GeometryProxy) -> Content,
+                        box: UnsafeMutablePointer<GtkWidget>) {
+        self.box = box
+        self.renderContent = { proxy in
+            gtkRenderView(content(proxy))
+        }
+    }
+}
+
+private func geometryRenderContent(_ context: GeometryReaderContext,
+                                    widget: UnsafeMutablePointer<GtkWidget>,
+                                    width: Double, height: Double) {
+    let proxy = GeometryProxy(size: GeometrySize(width: width, height: height))
+    while let child = gtk_widget_get_first_child(widget) {
+        gtk_box_remove(boxPointer(widget), child)
+    }
+    let rendered = context.renderContent(proxy)
+    gtk_box_append(boxPointer(widget), widgetFromOpaque(rendered))
+}
+
+private let geometryMapCallback: @convention(c) (
+    gpointer?, gpointer?
+) -> Void = { widgetPtr, _ in
+    guard let widgetPtr = widgetPtr else { return }
+    let widget = UnsafeMutableRawPointer(widgetPtr).assumingMemoryBound(to: GtkWidget.self)
+    let gobject = UnsafeMutableRawPointer(widgetPtr).assumingMemoryBound(to: GObject.self)
+    guard let contextPtr = g_object_get_data(gobject, "gtk-swift-geometry-context") else { return }
+    let context = Unmanaged<GeometryReaderContext>.fromOpaque(contextPtr).takeUnretainedValue()
+    guard !context.renderScheduled else { return }
+
+    // Walk ancestors to find one with valid dimensions
+    var ancestor = gtk_widget_get_parent(widget)
+    while let a = ancestor {
+        let aw = Double(gtk_widget_get_width(a))
+        let ah = Double(gtk_widget_get_height(a))
+        if aw > 1, ah > 1 {
+            geometryRenderContent(context, widget: widget, width: aw, height: ah)
+            return
+        }
+        ancestor = gtk_widget_get_parent(a)
+    }
+
+    // Defer to idle handler
+    context.renderScheduled = true
+    context.idleRetryCount = 0
+    g_object_ref(gpointer(widgetPtr))
+    g_idle_add({ userData -> gboolean in
+        guard let userData = userData else { return 0 }
+        let widget = UnsafeMutableRawPointer(userData).assumingMemoryBound(to: GtkWidget.self)
+        guard gtk_swift_is_widget(widget) != 0 else {
+            g_object_unref(userData)
+            return 0
+        }
+
+        let gobject = UnsafeMutableRawPointer(userData).assumingMemoryBound(to: GObject.self)
+        guard let contextPtr = g_object_get_data(gobject, "gtk-swift-geometry-context") else {
+            g_object_unref(userData)
+            return 0
+        }
+        let context = Unmanaged<GeometryReaderContext>.fromOpaque(contextPtr).takeUnretainedValue()
+
+        let width = Double(gtk_widget_get_width(widget))
+        let height = Double(gtk_widget_get_height(widget))
+
+        if width <= 1 || height <= 1 {
+            context.idleRetryCount += 1
+            if context.idleRetryCount <= 10 {
+                return 1 // retry
+            }
+            context.renderScheduled = false
+            g_object_unref(userData)
+            return 0
+        }
+
+        context.renderScheduled = false
+        geometryRenderContent(context, widget: widget, width: width, height: height)
+        g_object_unref(userData)
+        return 0
+    }, widgetPtr)
+}
+
+extension GeometryReader: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtk_widget_set_hexpand(box, 1)
+        gtk_widget_set_vexpand(box, 1)
+
+        let context = GeometryReaderContext(content: content, box: box)
+        let contextPtr = Unmanaged.passRetained(context).toOpaque()
+        let gobject = UnsafeMutableRawPointer(box).assumingMemoryBound(to: GObject.self)
+        g_object_set_data_full(gobject, "gtk-swift-geometry-context", contextPtr,
+            { userData in Unmanaged<GeometryReaderContext>.fromOpaque(userData!).release() })
+
+        g_signal_connect_data(
+            gpointer(box), "map",
+            unsafeBitCast(geometryMapCallback, to: GCallback.self),
+            nil, nil, GConnectFlags(rawValue: 0))
+
+        return opaqueFromWidget(box)
+    }
+}
+
+// MARK: - Searchable GTK extension
+
+private class SearchBox {
+    let entry: UnsafeMutablePointer<GtkWidget>
+    let binding: Binding<String>
+
+    init(entry: UnsafeMutablePointer<GtkWidget>, binding: Binding<String>) {
+        self.entry = entry
+        self.binding = binding
+    }
+}
+
+extension SearchableView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        let boxPtr = boxPointer(box)
+
+        let entry = gtk_swift_search_entry_new()!
+        if !prompt.isEmpty {
+            g_object_set_property_string(entry, "placeholder-text", prompt)
+        }
+        gtk_box_append(boxPtr, entry)
+
+        if !text.wrappedValue.isEmpty {
+            gtk_swift_editable_set_text(entry, text.wrappedValue)
+        }
+
+        let binding = text
+        let callbackBox = Unmanaged.passRetained(
+            SearchBox(entry: entry, binding: binding)
+        ).toOpaque()
+
+        g_signal_connect_data(
+            gpointer(entry),
+            "search-changed",
+            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<SearchBox>.fromOpaque(userData!).takeUnretainedValue()
+                let cStr = gtk_swift_editable_get_text(box.entry)
+                let newValue = cStr.map { String(cString: $0) } ?? ""
+                if newValue != box.binding.wrappedValue {
+                    box.binding.wrappedValue = newValue
+                }
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            callbackBox,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<SearchBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        let contentWidget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_vexpand(contentWidget, 1)
+        gtk_box_append(boxPtr, contentWidget)
+
+        return opaqueFromWidget(box)
+    }
+}
+
+// MARK: - Menu GTK extension
+
+/// Holds menu action closures for lifetime management.
+private class MenuActionBox {
+    var actions: [ClosureBox] = []
+}
+
+extension Menu: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let button = gtk_menu_button_new()!
+        gtk_swift_menu_button_set_label(button, title)
+
+        let actionGroup = g_simple_action_group_new()!
+        let menuModel = gtk_swift_menu_new()!
+        let actionBox = MenuActionBox()
+        var actionIndex = 0
+
+        gtkBuildMenuModel(elements: elements, menu: menuModel,
+                          actionGroup: actionGroup, actionBox: actionBox,
+                          actionIndex: &actionIndex)
+
+        let popover = gtk_swift_popover_menu_new_from_model(menuModel)!
+        gtk_swift_menu_button_set_popover(button, popover)
+
+        gtk_swift_widget_insert_action_group(button, "menu", gpointer(actionGroup))
+
+        // Attach actionBox to button for lifetime management
+        let retained = Unmanaged.passRetained(actionBox).toOpaque()
+        let gobject = UnsafeMutableRawPointer(button).assumingMemoryBound(to: GObject.self)
+        g_object_set_data_full(gobject, "gtk-swift-menu-actions", retained,
+            { userData in Unmanaged<MenuActionBox>.fromOpaque(userData!).release() })
+
+        return opaqueFromWidget(button)
+    }
+}
+
+private func gtkBuildMenuModel(elements: [MenuElement], menu: gpointer,
+                                actionGroup: UnsafeMutablePointer<GSimpleActionGroup>,
+                                actionBox: MenuActionBox,
+                                actionIndex: inout Int) {
+    for element in elements {
+        switch element {
+        case .item(let label, let action):
+            let actionName = "action\(actionIndex)"
+            actionIndex += 1
+
+            let gAction = g_simple_action_new(actionName, nil)!
+
+            let box = ClosureBox(action)
+            actionBox.actions.append(box)
+            let boxPtr = Unmanaged.passUnretained(box).toOpaque()
+
+            g_signal_connect_data(
+                gpointer(gAction),
+                "activate",
+                unsafeBitCast({ (_: gpointer?, _: gpointer?, userData: gpointer?) in
+                    let box = Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                    box.closure()
+                } as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
+                boxPtr, nil,
+                GConnectFlags(rawValue: 0)
+            )
+
+            gtk_swift_action_map_add_action(gpointer(actionGroup), gpointer(gAction))
+            gtk_swift_menu_append(menu, label, "menu.\(actionName)")
+
+        case .divider:
+            break // GMenu separates sections visually; skip standalone dividers
+
+        case .submenu(let label, let children):
+            let submenu = gtk_swift_menu_new()!
+            gtkBuildMenuModel(elements: children, menu: submenu,
+                              actionGroup: actionGroup, actionBox: actionBox,
+                              actionIndex: &actionIndex)
+            gtk_swift_menu_append_submenu(menu, label, submenu)
+        }
+    }
+}
+
+// MARK: - Toolbar GTK extension
+
+extension ToolbarItem: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkRenderView(content)
+    }
+}
+
+extension ToolbarView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // Render the content; toolbar items are extracted by NavigationStack
+        // via the ToolbarProvider protocol during header bar construction.
+        gtkRenderView(content)
+    }
+}
+
 // MARK: - Stateful view rendering
 
 private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {

@@ -196,6 +196,111 @@ gtk_swift_stack_switcher_set_stack(GtkWidget *switcher, GtkWidget *stack) {
     gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(switcher), GTK_STACK(stack));
 }
 
+// --- Picker shims ---
+
+static inline void
+gtk_swift_toggle_button_set_group(GtkWidget *button, GtkWidget *group_member) {
+    gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(button),
+                                group_member ? GTK_TOGGLE_BUTTON(group_member) : NULL);
+}
+
+static inline void
+gtk_swift_toggle_button_set_active(GtkWidget *button, gboolean active) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(button), active);
+}
+
+static inline gboolean
+gtk_swift_toggle_button_get_active(GtkWidget *button) {
+    return gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button));
+}
+
+// --- Calendar shims ---
+
+static inline void
+gtk_swift_calendar_get_ymd(GtkWidget *calendar, int *year, int *month, int *day) {
+    GDateTime *dt = gtk_calendar_get_date(GTK_CALENDAR(calendar));
+    *year = g_date_time_get_year(dt);
+    *month = g_date_time_get_month(dt);
+    *day = g_date_time_get_day_of_month(dt);
+    g_date_time_unref(dt);
+}
+
+static inline void
+gtk_swift_calendar_select_ymd(GtkWidget *calendar, int year, int month, int day) {
+    GDateTime *dt = g_date_time_new_local(year, month, day, 0, 0, 0);
+    if (dt) {
+        gtk_calendar_select_day(GTK_CALENDAR(calendar), dt);
+        g_date_time_unref(dt);
+    }
+}
+
+// --- Search entry shims ---
+
+static inline GtkWidget *
+gtk_swift_search_entry_new(void) {
+    return gtk_search_entry_new();
+}
+
+static inline void
+gtk_swift_editable_set_text(GtkWidget *widget, const char *text) {
+    gtk_editable_set_text(GTK_EDITABLE(widget), text);
+}
+
+static inline const char *
+gtk_swift_editable_get_text(GtkWidget *widget) {
+    return gtk_editable_get_text(GTK_EDITABLE(widget));
+}
+
+// --- GObject property setter (variadic g_object_set not callable from Swift) ---
+
+static inline void
+g_object_set_property_string(GtkWidget *widget, const char *property, const char *value) {
+    g_object_set(G_OBJECT(widget), property, value, NULL);
+}
+
+// --- Menu / Action system shims ---
+
+static inline gpointer
+gtk_swift_menu_new(void) {
+    return (gpointer)g_menu_new();
+}
+
+static inline void
+gtk_swift_menu_append(gpointer menu, const char *label, const char *action) {
+    g_menu_append(G_MENU(menu), label, action);
+}
+
+static inline void
+gtk_swift_menu_append_submenu(gpointer menu, const char *label, gpointer submenu) {
+    g_menu_append_submenu(G_MENU(menu), label, G_MENU_MODEL(submenu));
+}
+
+static inline void
+gtk_swift_action_map_add_action(gpointer group, gpointer action) {
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(action));
+}
+
+static inline void
+gtk_swift_widget_insert_action_group(GtkWidget *widget, const char *prefix,
+                                     gpointer group) {
+    gtk_widget_insert_action_group(widget, prefix, G_ACTION_GROUP(group));
+}
+
+static inline GtkWidget *
+gtk_swift_popover_menu_new_from_model(gpointer menu) {
+    return gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+}
+
+static inline void
+gtk_swift_menu_button_set_popover(GtkWidget *button, GtkWidget *popover) {
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+}
+
+static inline void
+gtk_swift_menu_button_set_label(GtkWidget *button, const char *label) {
+    gtk_menu_button_set_label(GTK_MENU_BUTTON(button), label);
+}
+
 // --- GtkListView / GtkListItem / GtkStringObject shims ---
 
 static inline gpointer
