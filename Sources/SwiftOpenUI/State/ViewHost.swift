@@ -31,7 +31,9 @@ public func hasReactiveProperties<V>(_ view: V) -> Bool {
     return mirror.children.contains { child in
         if child.value is AnyStateStorageProvider { return true }
         #if canImport(Observation)
-        if child.value is Observable { return true }
+        if #available(macOS 14.0, iOS 17.0, *) {
+            if child.value is Observable { return true }
+        }
         #endif
         return false
     }

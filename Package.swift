@@ -126,12 +126,12 @@ targets += [
     .executableTarget(
         name: "HelloWorld",
         dependencies: exampleDeps,
-        path: "Examples/HelloWorld"
+        path: "Examples/Showcase/HelloWorld"
     ),
     .executableTarget(
         name: "Counter",
         dependencies: exampleDeps,
-        path: "Examples/Counter"
+        path: "Examples/Showcase/Counter"
     ),
     .executableTarget(
         name: "Showcase1",
@@ -171,7 +171,7 @@ targets += [
     .executableTarget(
         name: "ColorMixer",
         dependencies: exampleDeps,
-        path: "Examples/ColorMixer"
+        path: "Examples/Showcase/ColorMixer"
     ),
     .executableTarget(
         name: "Layout",

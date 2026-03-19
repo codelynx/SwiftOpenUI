@@ -15,7 +15,7 @@ targets:
     type: application
     platform: macOS
     sources:
-      - path: ../../Examples/HelloWorld
+      - path: ../../Examples/Showcase/HelloWorld
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.HelloWorld
       GENERATE_INFOPLIST_FILE: YES
@@ -24,7 +24,7 @@ targets:
     type: application
     platform: macOS
     sources:
-      - path: ../../Examples/Counter
+      - path: ../../Examples/Showcase/Counter
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.Counter
       GENERATE_INFOPLIST_FILE: YES
@@ -99,4 +99,13 @@ targets:
       - path: ../../Examples/BasicInteractive
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.BasicInteractive
+      GENERATE_INFOPLIST_FILE: YES
+
+  ColorMixer:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Showcase/ColorMixer
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ColorMixer
       GENERATE_INFOPLIST_FILE: YES

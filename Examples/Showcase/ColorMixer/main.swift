@@ -45,7 +45,7 @@ struct ColorMixerView: View {
         VStack(spacing: 8) {
             // Color swatch + value display
             HStack(spacing: 8) {
-                Color(red: Int(red), green: Int(green), blue: Int(blue))
+                Color(red: red / 255.0, green: green / 255.0, blue: blue / 255.0)
                     .frame(width: 40, height: 24)
                 if showHex {
                     Text(String(format: "#%02X%02X%02X", Int(red), Int(green), Int(blue)))

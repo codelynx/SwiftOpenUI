@@ -158,14 +158,14 @@ Redesign as a "Color Studio" — visually presentable like a Photoshop/Figma col
 
 ### Calculator (future)
 **Target:** `Calculator`
-**Reference:** `~/Projects/SwiftLinuxUI/Examples/Calculator/main.swift` (213 lines)
+**Reference:** SwiftLinuxUI repo, `Examples/Calculator/main.swift` (213 lines)
 **Features:** Grid/GridRow, Button (17 keys), @State (display, currentValue, pendingOperation), .font(), .foregroundColor(), .background(), .frame(), .padding()
 iOS-style calculator — dark theme, orange operator keys, 5×4 grid layout, full arithmetic logic. Exercises Grid (not yet rendered on backends), precise layout, and multi-property @State.
 
 ### PaintApp (future)
 **Target:** `PaintApp`
 **Requires:** Canvas rendering on backends
-**Reference:** `~/Projects/SwiftLinuxUI/Examples/PaintApp/main.swift`
+**Reference:** SwiftLinuxUI repo, `Examples/PaintApp/main.swift`
 **Features:** Canvas, .onDrag(), @State, Color palette, brush size selection
 Drawing app — drag to paint strokes, pick colors and brush sizes. Borrowed from SwiftLinuxUI's PaintApp. Depends on Canvas view having backend rendering (currently core-defined, no backend renderers yet).
 

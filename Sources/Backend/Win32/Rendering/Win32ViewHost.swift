@@ -107,16 +107,17 @@ public class Win32ViewHost: AnyViewHost {
     /// Build the body with observation tracking for @Observable support.
     public func buildBodyWithTracking(_ context: RenderContext) -> HWND? {
         #if canImport(Observation)
-        var result: HWND?
-        withObservationTracking {
-            result = buildBody(context)
-        } onChange: { [weak self] in
-            self?.scheduleRebuild()
+        if #available(macOS 14.0, iOS 17.0, *) {
+            var result: HWND?
+            withObservationTracking {
+                result = buildBody(context)
+            } onChange: { [weak self] in
+                self?.scheduleRebuild()
+            }
+            return result
         }
-        return result
-        #else
-        return buildBody(context)
         #endif
+        return buildBody(context)
     }
 
     /// Capture the current environment.

@@ -85,16 +85,17 @@ public class GTKViewHost: AnyViewHost {
     /// scheduleRebuild() fires and the next rebuild re-registers tracking.
     func buildBodyWithTracking() -> OpaquePointer {
         #if canImport(Observation)
-        var result: OpaquePointer!
-        withObservationTracking {
-            result = buildBody()
-        } onChange: { [weak self] in
-            self?.scheduleRebuild()
+        if #available(macOS 14.0, iOS 17.0, *) {
+            var result: OpaquePointer!
+            withObservationTracking {
+                result = buildBody()
+            } onChange: { [weak self] in
+                self?.scheduleRebuild()
+            }
+            return result
         }
-        return result
-        #else
-        return buildBody()
         #endif
+        return buildBody()
     }
 
     func rebuild() {

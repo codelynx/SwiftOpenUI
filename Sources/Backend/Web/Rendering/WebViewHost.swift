@@ -37,16 +37,17 @@ public class WebViewHost: AnyViewHost {
     /// Build the body with observation tracking for @Observable support.
     func buildBodyWithTracking() -> JSValue {
         #if canImport(Observation)
-        var result: JSValue = .undefined
-        withObservationTracking {
-            result = buildBody()
-        } onChange: { [weak self] in
-            self?.scheduleRebuild()
+        if #available(macOS 14.0, iOS 17.0, *) {
+            var result: JSValue = .undefined
+            withObservationTracking {
+                result = buildBody()
+            } onChange: { [weak self] in
+                self?.scheduleRebuild()
+            }
+            return result
         }
-        return result
-        #else
-        return buildBody()
         #endif
+        return buildBody()
     }
 
     func rebuild() {
