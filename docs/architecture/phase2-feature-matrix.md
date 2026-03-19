@@ -28,7 +28,7 @@ Cross-platform alignment as of 2026-03-18. Tracked in [issue #2](https://github.
 | **@State (nested/composed)** | ✅ | ✅ per-view host | ✅ per-view host | ✅ per-view host | ✅ structural state cache |
 | **Display cutout** | N/A | N/A | N/A | N/A | ✅ statusBarsPadding |
 | **HStack centering** | ✅ | ✅ | ✅ | ✅ | ✅ (no-Spacer only) |
-| **Cursor/selection restore** | ✅ SwiftUI | ❌ | ✅ EM_GETSEL/SETSEL all Edits | ❌ | ⚠️ TextFieldValue preserves cursor |
+| **Cursor/selection restore** | ✅ SwiftUI | ✅ DFS-indexed save/restore | ✅ EM_GETSEL/SETSEL all Edits | ❌ | ⚠️ TextFieldValue preserves cursor |
 
 ## Legend
 
@@ -73,7 +73,7 @@ See [running-examples.md](../guides/running-examples.md) for full instructions.
 2. **Win32 opacity/scale**: Only works on D2D-rendered content (Text, Color, Divider), not native HWND controls (Button, TextField). Applying `.opacity()` or `.scaleEffect()` to a container with interactive children falls through to instant application.
 3. **Win32 animation on HWND controls**: Animation timing works for D2D surfaces. Native HWND controls inside `withAnimation` rebuild instantly without interpolation.
 4. **Web animation**: Double-rendered text in animation demo due to modifier wrapping bug.
-5. **Cursor/selection restore**: Lost on rebuild on GTK4 and Web. Win32 preserves all Edit controls' cursor/selection. Android preserves via TextFieldValue.
+5. **Cursor/selection restore**: Lost on rebuild on Web. GTK4 preserves via DFS-indexed save/restore (GtkEditable, GtkTextView, GtkScale). Win32 preserves all Edit controls' cursor/selection. Android preserves via TextFieldValue.
 6. **Android JSON Int64 precision**: Node IDs must be serialized as strings, not bare numbers. Java's `JSONObject` parses numbers through `Double`, losing precision for values > 2^53. See [android-json-int64-precision.md](../issues/android-json-int64-precision.md).
 
 ## Key Files

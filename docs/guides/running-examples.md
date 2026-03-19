@@ -60,12 +60,20 @@ The same Xcode project can be extended with iOS targets. Add a new target in `pr
 # Install GTK4 (Ubuntu/Debian)
 sudo apt install libgtk-4-dev
 
-# Build and run
+# Build and run any example
 swift run HelloWorld
-swift run BasicInteractive
+swift run Counter
+swift run Showcase1
+swift run Showcase2
+swift run TextStyles
+swift run Buttons
+swift run StateDemo
+swift run Layout
+swift run FocusTest
+swift run BasicInteractive   # Navigation, gestures, animation
 ```
 
-Launches a native GTK4 window.
+Launches a native GTK4 window. All examples are supported on Linux.
 
 ## Windows (Win32)
 
