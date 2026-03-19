@@ -10,6 +10,7 @@
 - GTK4: Navigation — NavigationStack, NavigationLink, NavigationPath, .navigationTitle(), .navigationDestination(for:)
 - GTK4: Gestures — .onTapGesture(), .onLongPressGesture(), .onDrag(minimumDistance:)
 - GTK4: Animation — withAnimation(), .animation(), .opacity(), .offset(), .scaleEffect()
+- GTK4+Win32: Toggle, Slider, ScrollView, List, Image (+ .imageScale())
 - Win32 backend (Windows) — full rendering + layout engine + reactive rebuilds
 - macOS support — examples use real SwiftUI via conditional compilation
 - Web/Wasm backend (experimental) — DOM rendering via JavaScriptKit, verified in browser
@@ -18,11 +19,9 @@
 ## Next
 
 ### Views & Modifiers
-- Toggle/Switch, Slider
-- List, ScrollView
-- Image (with platform-native image loading)
 - Rotation modifier
 - DragGesture (SwiftUI-style Gesture protocol)
+- Grid layout
 
 ### State & Data
 - Resolve ObservableObject/Published namespace conflict on macOS (see `docs/issues/`)

@@ -28,6 +28,12 @@ All modifier view structs live in `Sources/SwiftOpenUI/Modifiers/`. Each wraps c
 - **macOS**: Uses real SwiftUI gesture modifiers.
 - **Win32 / Web**: Core types compile; backend rendering not yet implemented.
 
+## Image
+
+| Modifier | Description |
+|----------|-------------|
+| `.imageScale(_:)` | Sets icon size: `.small` (14pt), `.medium` (20pt), `.large` (24pt). Applies to both system icons and file-backed images. |
+
 ## Animation & Transform
 
 | Modifier / Function | Description |

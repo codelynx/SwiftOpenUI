@@ -71,6 +71,7 @@ swift run StateDemo
 swift run Layout
 swift run FocusTest
 swift run BasicInteractive   # Navigation, gestures, animation
+swift run ColorMixer          # Toggle, Slider, ScrollView, List
 ```
 
 Launches a native GTK4 window. All examples are supported on Linux.

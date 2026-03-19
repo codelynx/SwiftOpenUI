@@ -450,8 +450,14 @@ extension FrameView: GTKRenderable {
         let child = widgetFromOpaque(gtkRenderView(content))
         let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
         var css = ""
-        if let w = width { css += "min-width: \(Int(w))px; max-width: \(Int(w))px; " }
-        if let h = height { css += "min-height: \(Int(h))px; max-height: \(Int(h))px; " }
+        if let w = width {
+            css += "min-width: \(Int(w))px; max-width: \(Int(w))px; "
+            gtk_widget_set_hexpand(wrapper, 0)
+        }
+        if let h = height {
+            css += "min-height: \(Int(h))px; max-height: \(Int(h))px; "
+            gtk_widget_set_vexpand(wrapper, 0)
+        }
         if let mw = minWidth { css += "min-width: \(Int(mw))px; " }
         if let mh = minHeight { css += "min-height: \(Int(mh))px; " }
         if let xw = maxWidth {

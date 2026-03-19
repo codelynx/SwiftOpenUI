@@ -77,13 +77,13 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 ## Current Views & Modifiers
 
 ### Views (Sources/SwiftOpenUI/Views/)
-Text, Button, TextField, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView
+Text, Button, TextField, Toggle, Slider, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView
 
 ### Navigation (Sources/SwiftOpenUI/Navigation/)
 NavigationStack, NavigationLink, NavigationPath, .navigationTitle(), .navigationDestination(for:), NavigateAction (environment)
 
 ### Modifiers (Sources/SwiftOpenUI/Modifiers/)
-.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .environmentObject(), .environment(), withAnimation(), custom ViewModifier
+.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .environmentObject(), .environment(), withAnimation(), custom ViewModifier
 
 ### State (Sources/SwiftOpenUI/State/)
 @State, @Binding, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @FocusState
@@ -104,7 +104,7 @@ NavigationStack, NavigationLink, NavigationPath, .navigationTitle(), .navigation
 
 ## Examples
 
-- Current: HelloWorld, Counter, Showcase1, Showcase2, BasicInteractive, FocusTest, TextStyles, Buttons, StateDemo, Layout
+- Current: HelloWorld, Counter, Showcase1, Showcase2, BasicInteractive, FocusTest, ColorMixer, TextStyles, Buttons, StateDemo, Layout
 - Reorganization plan: `docs/guides/examples-plan.md` — 12 themed examples
 - **Rules**: single `main.swift` per example, compiles and runs on all platforms, platform limitations labeled inline with fallback text (never build errors)
 - Import boilerplate: `#if os(macOS) import SwiftUI #else import SwiftOpenUI + backend imports #endif`

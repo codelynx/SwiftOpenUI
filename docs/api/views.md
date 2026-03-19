@@ -17,6 +17,8 @@ All view structs live in `Sources/SwiftOpenUI/Views/` and `Sources/SwiftOpenUI/N
 |------|-------------|
 | `Button(_ label:, action:)` | Tappable button with a text label and action closure. |
 | `TextField(_ placeholder:, text: Binding<String>)` | Single-line text input bound to a `@State` string. |
+| `Toggle(_ label:, isOn: Binding<Bool>)` | Checkbox/switch control bound to a boolean state. |
+| `Slider(value:in:step:)` | Horizontal range slider bound to a `Binding<Double>`. GTK4 uses debounced commits (150ms) to keep drag alive during rebuilds. |
 
 ## Layout
 
@@ -25,6 +27,7 @@ All view structs live in `Sources/SwiftOpenUI/Views/` and `Sources/SwiftOpenUI/N
 | `VStack(spacing:)` | Vertical stack via `@ViewBuilder`. |
 | `HStack(spacing:)` | Horizontal stack via `@ViewBuilder`. |
 | `ZStack` | Overlay stack (back-to-front). |
+| `ScrollView(_ axes:)` | Scrollable container. Axes: `.vertical` (default), `.horizontal`, or both. Defines `Axis` OptionSet. |
 
 ## Containers
 
@@ -32,8 +35,18 @@ All view structs live in `Sources/SwiftOpenUI/Views/` and `Sources/SwiftOpenUI/N
 |------|-------------|
 | `Group` | Transparent grouping — no visual effect, passes children through. |
 | `ForEach` | Data-driven repetition of views from a `RandomAccessCollection`. |
+| `List` | Scrollable list rendering each child in a row with separators. Content-based: `List { ForEach(...) { } }`. |
 | `AnyView` | Type-erased wrapper for heterogeneous view storage. |
 | `EmptyView` | Renders nothing. Used as a default placeholder. |
+
+## Media
+
+| View | Description |
+|------|-------------|
+| `Image(systemName:)` | Displays an icon from the platform icon theme (GTK icon names on Linux, SF Symbols on macOS). |
+| `Image(filePath:)` | Displays an image from a file path. |
+
+`ImageScale` enum (`.small` 14pt, `.medium` 20pt, `.large` 24pt) controls size via `.imageScale()` modifier.
 
 ## Navigation
 
