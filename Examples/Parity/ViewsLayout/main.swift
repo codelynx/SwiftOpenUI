@@ -139,9 +139,9 @@ struct ParityViewsLayoutView: View {
                 Text("ForEach")
                     .font(.subheadline)
                     .foregroundColor(.gray)
-                // Range-based
+                // Range-based with id for dynamic updates
                 HStack(spacing: 4) {
-                    ForEach(0..<forEachCount) { i in
+                    ForEach(0..<forEachCount, id: \.self) { i in
                         Text("\(i)")
                             .frame(width: 24, height: 24)
                             .background(Color.purple)

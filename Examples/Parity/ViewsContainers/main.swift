@@ -133,7 +133,7 @@ struct ParityViewsContainersView: View {
                         .foregroundColor(.gray)
                 }
                 List {
-                    ForEach(0..<itemCount) { i in
+                    ForEach(0..<itemCount, id: \.self) { i in
                         Text("List item \(i)")
                     }
                 }
