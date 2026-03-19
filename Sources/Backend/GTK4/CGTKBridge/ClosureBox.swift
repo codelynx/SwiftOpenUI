@@ -18,6 +18,12 @@ public class BoolClosureBox {
     public init(_ closure: @escaping (Bool) -> Void) { self.closure = closure }
 }
 
+/// A box for closures that take a single Double parameter (e.g., stepper/spinner signals).
+public class DoubleClosureBox {
+    public let closure: (Double) -> Void
+    public init(_ closure: @escaping (Double) -> Void) { self.closure = closure }
+}
+
 /// A box for closures that take two Double parameters (e.g., drag offsets).
 public class DoubleDoubleClosureBox {
     public let closure: (Double, Double) -> Void

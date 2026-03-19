@@ -807,6 +807,269 @@ extension AnimatedView: GTKRenderable {
     }
 }
 
+// MARK: - SecureField GTK extension
+
+extension SecureField: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let entry = gtk_password_entry_new()!
+        gtk_swift_password_entry_set_show_peek_icon(entry, 1)
+
+        let current = text.wrappedValue
+        if !current.isEmpty {
+            gtk_editable_set_text(OpaquePointer(entry), current)
+        }
+
+        if !placeholder.isEmpty {
+            if let delegate = gtk_editable_get_delegate(OpaquePointer(entry)) {
+                let textWidget = UnsafeMutableRawPointer(delegate).assumingMemoryBound(to: GtkText.self)
+                gtk_text_set_placeholder_text(textWidget, placeholder)
+            }
+        }
+
+        let binding = text
+        let box = Unmanaged.passRetained(StringClosureBox { newText in
+            if newText != binding.wrappedValue {
+                binding.wrappedValue = newText
+            }
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(entry),
+            "changed",
+            unsafeBitCast({ (editable: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<StringClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                let cStr = gtk_editable_get_text(OpaquePointer(editable))!
+                box.closure(String(cString: cStr))
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<StringClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        return opaqueFromWidget(entry)
+    }
+}
+
+// MARK: - TextEditor GTK extension
+
+extension TextEditor: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let textView = gtk_text_view_new()!
+        let textViewPtr = UnsafeMutableRawPointer(textView).assumingMemoryBound(to: GtkTextView.self)
+        gtk_text_view_set_wrap_mode(textViewPtr, GTK_WRAP_WORD_CHAR)
+
+        let current = text.wrappedValue
+        if !current.isEmpty {
+            let buffer = gtk_text_view_get_buffer(textViewPtr)
+            gtk_text_buffer_set_text(buffer, current, gint(current.utf8.count))
+        }
+
+        let binding = text
+        let buffer = gtk_text_view_get_buffer(textViewPtr)!
+        let box = Unmanaged.passRetained(StringClosureBox { newText in
+            if newText != binding.wrappedValue {
+                binding.wrappedValue = newText
+            }
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(buffer),
+            "changed",
+            unsafeBitCast({ (bufferPtr: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<StringClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                let buf = UnsafeMutableRawPointer(bufferPtr!).assumingMemoryBound(to: GtkTextBuffer.self)
+                var start = GtkTextIter()
+                var end = GtkTextIter()
+                gtk_text_buffer_get_bounds(buf, &start, &end)
+                let cStr = gtk_text_buffer_get_text(buf, &start, &end, 0)!
+                let result = String(cString: cStr)
+                g_free(gpointer(mutating: cStr))
+                box.closure(result)
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<StringClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        let scrolled = gtk_scrolled_window_new()!
+        gtk_scrolled_window_set_policy(OpaquePointer(scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC)
+        gtk_scrolled_window_set_child(OpaquePointer(scrolled), textView)
+        gtk_widget_set_vexpand(scrolled, 1)
+        gtk_widget_set_hexpand(scrolled, 1)
+
+        return opaqueFromWidget(scrolled)
+    }
+}
+
+// MARK: - ProgressView GTK extension
+
+extension ProgressView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let bar = gtk_progress_bar_new()!
+        if let value = value {
+            gtk_progress_bar_set_fraction(OpaquePointer(bar), max(0, min(1, value / total)))
+        }
+        // TODO: indeterminate mode (pulse) when value is nil
+        gtk_widget_set_hexpand(bar, 1)
+        return opaqueFromWidget(bar)
+    }
+}
+
+// MARK: - Stepper GTK extension
+
+extension Stepper: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let spin = gtk_swift_spin_button_new_with_range(
+            range.lowerBound,
+            range.upperBound,
+            step
+        )!
+
+        gtk_swift_spin_button_set_value(spin, value.wrappedValue)
+
+        let binding = value
+        let stepVal = step
+        let box = Unmanaged.passRetained(DoubleClosureBox { newValue in
+            if abs(newValue - binding.wrappedValue) > stepVal * 0.01 {
+                binding.wrappedValue = newValue
+            }
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(spin),
+            "value-changed",
+            unsafeBitCast({ (widget: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<DoubleClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                let val = gtk_swift_spin_button_get_value(
+                    UnsafeMutableRawPointer(widget!).assumingMemoryBound(to: GtkWidget.self)
+                )
+                box.closure(val)
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<DoubleClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        if !label.isEmpty {
+            let hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)!
+            let lbl = gtk_label_new(label)!
+            gtk_box_append(boxPointer(hbox), lbl)
+            gtk_box_append(boxPointer(hbox), spin)
+            return opaqueFromWidget(hbox)
+        }
+
+        return opaqueFromWidget(spin)
+    }
+}
+
+// MARK: - Label GTK extension
+
+extension Label: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)!
+
+        if let iconName = systemImage {
+            let img = gtk_image_new_from_icon_name(iconName)!
+            gtk_box_append(boxPointer(box), img)
+        } else if let path = imagePath {
+            let img = gtk_image_new_from_file(path)!
+            gtk_box_append(boxPointer(box), img)
+        }
+
+        let lbl = gtk_label_new(title)!
+        gtk_box_append(boxPointer(box), lbl)
+
+        return opaqueFromWidget(box)
+    }
+}
+
+// MARK: - Corner Radius GTK extension
+
+extension CornerRadiusView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        applyCSSToWidget(widget, properties: "border-radius: \(Int(radius))px;")
+        return opaqueFromWidget(widget)
+    }
+}
+
+// MARK: - Shadow GTK extension
+
+extension ShadowView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        let r = Int(color.red * 255)
+        let g = Int(color.green * 255)
+        let b = Int(color.blue * 255)
+        let a = String(format: "%.2f", color.alpha)
+        let css = """
+            box-shadow: \(Int(x))px \(Int(y))px \(Int(radius))px rgba(\(r),\(g),\(b),\(a));
+            margin: \(Int(radius))px;
+            """
+        applyCSSToWidget(widget, properties: css)
+        return opaqueFromWidget(widget)
+    }
+}
+
+// MARK: - Rotation GTK extension
+
+extension RotationView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let inner = widgetFromOpaque(gtkRenderView(content))
+        let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtk_box_append(boxPointer(wrapper), inner)
+        applyCSSToWidget(wrapper, properties: "transform: rotate(\(angle)deg);")
+        return opaqueFromWidget(wrapper)
+    }
+}
+
+// MARK: - Overlay GTK extension
+
+extension OverlayView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let container = gtk_overlay_new()!
+
+        let baseWidget = widgetFromOpaque(gtkRenderView(content))
+        gtk_overlay_set_child(OpaquePointer(container), baseWidget)
+
+        if gtk_widget_get_hexpand(baseWidget) != 0 {
+            gtk_widget_set_hexpand(container, 1)
+        }
+        if gtk_widget_get_vexpand(baseWidget) != 0 {
+            gtk_widget_set_vexpand(container, 1)
+        }
+
+        let overlayWidget = widgetFromOpaque(gtkRenderView(overlay))
+        let (hAlign, vAlign) = gtkAlignFromAlignment(alignment)
+        gtk_widget_set_halign(overlayWidget, hAlign)
+        gtk_widget_set_valign(overlayWidget, vAlign)
+        gtk_overlay_add_overlay(OpaquePointer(container), overlayWidget)
+
+        return opaqueFromWidget(container)
+    }
+}
+
+/// Convert SwiftOpenUI Alignment to GTK align pair.
+private func gtkAlignFromAlignment(_ alignment: Alignment) -> (GtkAlign, GtkAlign) {
+    let h: GtkAlign
+    let v: GtkAlign
+    switch alignment {
+    case .topLeading:     h = GTK_ALIGN_START;  v = GTK_ALIGN_START
+    case .top:            h = GTK_ALIGN_CENTER; v = GTK_ALIGN_START
+    case .topTrailing:    h = GTK_ALIGN_END;    v = GTK_ALIGN_START
+    case .leading:        h = GTK_ALIGN_START;  v = GTK_ALIGN_CENTER
+    case .center:         h = GTK_ALIGN_CENTER; v = GTK_ALIGN_CENTER
+    case .trailing:       h = GTK_ALIGN_END;    v = GTK_ALIGN_CENTER
+    case .bottomLeading:  h = GTK_ALIGN_START;  v = GTK_ALIGN_END
+    case .bottom:         h = GTK_ALIGN_CENTER; v = GTK_ALIGN_END
+    case .bottomTrailing: h = GTK_ALIGN_END;    v = GTK_ALIGN_END
+    }
+    return (h, v)
+}
+
 // MARK: - Toggle GTK extension
 
 extension Toggle: GTKRenderable {

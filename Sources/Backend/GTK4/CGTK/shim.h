@@ -95,6 +95,30 @@ gtk_swift_image_set_pixel_size(GtkWidget *image, int size) {
     gtk_image_set_pixel_size(GTK_IMAGE(image), size);
 }
 
+// --- GtkPasswordEntry ---
+
+static inline void
+gtk_swift_password_entry_set_show_peek_icon(GtkWidget *entry, gboolean show) {
+    gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(entry), show);
+}
+
+// --- GtkSpinButton ---
+
+static inline GtkWidget *
+gtk_swift_spin_button_new_with_range(double min, double max, double step) {
+    return gtk_spin_button_new_with_range(min, max, step);
+}
+
+static inline void
+gtk_swift_spin_button_set_value(GtkWidget *widget, double value) {
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(widget), value);
+}
+
+static inline double
+gtk_swift_spin_button_get_value(GtkWidget *widget) {
+    return gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
+}
+
 // --- Window titlebar helpers ---
 
 /// Set or clear the window titlebar. Pass NULL to remove a custom titlebar.
