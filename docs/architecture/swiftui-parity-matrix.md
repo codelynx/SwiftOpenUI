@@ -38,21 +38,21 @@ Last updated: 2026-03-19
 | NavigationLink | Y | Y | Y | Y | Y | Y | String label only |
 | TabView | Y | Y | - | Y | - | - | Win32: button bar + show/hide pages |
 | GeometryReader | Y | - | - | - | - | - | |
-| LazyVStack | Y | - | - | - | - | - | |
-| LazyHStack | Y | - | - | - | - | - | |
-| LazyVGrid | Y | - | - | - | - | - | |
-| LazyHGrid | Y | - | - | - | - | - | |
-| Grid | Y | - | - | - | - | - | |
+| LazyVStack | Y | Y | - | Y | - | - | Win32: non-virtualized (ScrollView+VStack) |
+| LazyHStack | Y | Y | - | Y | - | - | Win32: non-virtualized (HStack) |
+| LazyVGrid | Y | Y | - | Y | - | - | Win32: non-virtualized (ScrollView+Grid) |
+| LazyHGrid | Y | Y | - | Y | - | - | Win32: non-virtualized (Grid) |
+| Grid | Y | Y | - | Y | - | - | Win32: VStack of HStack rows |
 | Sheet | Y | Y | - | Y | - | - | Win32: popup window on root |
 | Alert | Y | Y | - | Y | - | - | Win32: MessageBoxW |
 | ConfirmationDialog | Y | Y | - | Y | - | - | Win32: MessageBoxW Yes/No |
 | Picker | Y | Y | - | ~ | - | - | Win32: stub (text placeholder) |
-| DatePicker | Y | - | - | - | - | - | |
+| DatePicker | Y | Y | - | ~ | - | - | Win32: SysDateTimePick32 (display only) |
 | ProgressView | Y | Y | - | Y | - | - | Win32: msctls_progress32 |
-| Menu | Y | - | - | - | - | - | |
+| Menu | Y | Y | - | Y | - | - | Win32: TrackPopupMenu |
 | Label | Y | Y | - | Y | - | - | Win32: text with [icon] prefix |
 | Link | Y | Y | - | Y | - | - | Win32: button → ShellExecuteW |
-| DisclosureGroup | Y | - | - | - | - | - | |
+| DisclosureGroup | Y | Y | - | Y | - | - | Win32: toggle button + show/hide |
 | Form | Y | Y | - | Y | - | - | Win32: VStack + padding |
 | Section | Y | Y | - | Y | - | - | Win32: header + divider + content |
 | SecureField | Y | Y | - | Y | - | - | Win32: EDIT + ES_PASSWORD |
@@ -100,8 +100,8 @@ Last updated: 2026-03-19
 | .tabItem() | Y | Y | - | Y | - | - | Win32: button bar label |
 | .tag() | Y | Y | - | Y | - | - | For Picker item identification |
 | .task() | Y | - | - | - | - | - | |
-| .searchable() | Y | - | - | - | - | - | |
-| .toolbar() | Y | - | - | - | - | - | |
+| .searchable() | Y | Y | - | Y | - | - | Win32: EDIT above content |
+| .toolbar() | Y | Y | - | Y | - | - | Win32: nav header or HStack |
 
 ## State & Data
 
@@ -166,9 +166,9 @@ Last updated: 2026-03-19
 
 | Category | SwiftUI Total | Core Implemented | Win32 | Coverage (Win32) |
 |----------|--------------|-----------------|-------|-----------------|
-| Views | 45 | 34 | 33 | ~73% |
-| Modifiers | 37 | 31 | 30 | ~81% |
+| Views | 45 | 42 | 41 | ~91% |
+| Modifiers | 37 | 33 | 32 | ~86% |
 | State & Data | 13 | 9 | 9 | ~69% |
-| Navigation | 8 | 6 | 6 | 75% |
+| Navigation | 8 | 7 | 7 | ~88% |
 | App structure | 9 | 5 | 5 | ~56% |
 | Layout system | 9 | 6 | 6 | ~67% |

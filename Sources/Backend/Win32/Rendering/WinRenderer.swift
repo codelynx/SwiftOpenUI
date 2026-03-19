@@ -2960,6 +2960,287 @@ extension ToolbarItem: WinRenderable {
     }
 }
 
+// MARK: - Phase 4D views
+
+extension Menu: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Render as a button that shows a popup menu on click
+        let menuLabel = label
+        let menuContent = content
+        let hInst = context.hInstance
+
+        return createNativeButton(title: "☰ \(menuLabel)", action: {
+            // Build popup menu from children
+            guard let hMenu = CreatePopupMenu() else { return }
+
+            var menuID: UINT = 50000
+            var menuActions: [UINT: () -> Void] = [:]
+
+            if let multi = menuContent as? MultiChildView {
+                for child in multi.children {
+                    func addItem<V: View>(_ v: V) {
+                        if v is Divider {
+                            AppendMenuW(hMenu, UINT(MF_SEPARATOR), 0, nil)
+                        } else if let btn = v as? Button<Text> {
+                            let title = btn.label.content
+                            let action = btn.action
+                            let id = menuID
+                            menuID += 1
+                            title.withCString(encodedAs: UTF16.self) { wstr in
+                                AppendMenuW(hMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+                            }
+                            menuActions[id] = action
+                        } else if let text = extractTextFromView(v) {
+                            let id = menuID
+                            menuID += 1
+                            text.withCString(encodedAs: UTF16.self) { wstr in
+                                AppendMenuW(hMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+                            }
+                        }
+                    }
+                    addItem(child)
+                }
+            }
+
+            // Show popup at cursor position
+            var pt = POINT()
+            GetCursorPos(&pt)
+            // Register menu item actions as command handlers so they fire
+            // via WM_COMMAND when the user selects a menu item
+            let root = findRootWindow(from: context.parent)
+            for (id, action) in menuActions {
+                registerCommandHandler(controlID: WORD(id), action: action)
+            }
+
+            _ = TrackPopupMenu(hMenu, 0, pt.x, pt.y, 0, root, nil)
+            DestroyMenu(hMenu)
+
+            // Unregister after menu closes
+            for id in menuActions.keys {
+                unregisterCommandHandler(controlID: WORD(id))
+            }
+        }, context: context)
+    }
+}
+
+extension DisclosureGroup: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Toggle button
+        let expanded = isExpanded.wrappedValue
+        let arrow = expanded ? "▼" : "▶"
+        let btnText = "\(arrow) \(label)"
+        let controlID = nextControlID()
+        let measured = measureText(btnText, hwnd: context.parent)
+
+        _ = btnText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
+                0, 0, measured.width + 16, measured.height + 8,
+                container, HMENU(bitPattern: UInt(controlID)), context.hInstance
+            )
+        }
+
+        let binding = isExpanded
+        registerCommandHandler(controlID: controlID) {
+            binding.wrappedValue = !binding.wrappedValue
+        }
+
+        // Content (shown only if expanded)
+        var totalH = measured.height + 12
+        if expanded {
+            let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+            if let childHwnd = winRenderView(content, in: childContext) {
+                var r = RECT()
+                GetWindowRect(childHwnd, &r)
+                let ch = r.bottom - r.top
+                let cw = r.right - r.left
+                SetWindowPos(childHwnd, nil, 8, totalH, cw, ch, UINT(SWP_NOZORDER))
+                totalH += ch
+            }
+        }
+
+        SetWindowPos(container, nil, 0, 0, max(measured.width + 20, 200), totalH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+extension DatePicker: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 250, 24,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Label
+        let labelMeasured = measureText(label, hwnd: context.parent)
+        _ = label.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                0, 2, labelMeasured.width + 4, 20,
+                container, nil, context.hInstance
+            )
+        }
+
+        // Date/time picker control
+        let dtpClass: [WCHAR] = Array("SysDateTimePick32".utf16) + [0]
+        let dtp = dtpClass.withUnsafeBufferPointer { ptr in
+            CreateWindowExW(
+                0, ptr.baseAddress!, nil,
+                DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP),
+                labelMeasured.width + 8, 0, 150, 24,
+                container, nil, context.hInstance, nil
+            )
+        }
+
+        // Note: binding to Date requires DTN_DATETIMECHANGE notification
+        // which needs WM_NOTIFY handling — left as display-only for now
+        _ = dtp
+
+        return container
+    }
+}
+
+extension LazyVStack: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Non-virtualized: render as ScrollView + VStack
+        let scrollView = ScrollView(.vertical) {
+            VStack(alignment: alignment, spacing: spacing) { content }
+        }
+        return winRenderView(scrollView, in: context)
+    }
+}
+
+extension LazyHStack: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Non-virtualized: render as HStack (no horizontal scroll yet)
+        let stack = HStack(alignment: alignment, spacing: spacing) { content }
+        return winRenderView(stack, in: context)
+    }
+}
+
+extension Grid: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Render each GridRow as an HStack
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        var rows: [HWND] = []
+        var maxW: Int32 = 0
+        var totalH: Int32 = 0
+
+        if let multi = content as? MultiChildView {
+            for child in multi.children {
+                func renderRow<V: View>(_ v: V) {
+                    let rowView = HStack(spacing: horizontalSpacing) { v }
+                    if let rowHwnd = winRenderView(rowView, in: childContext) {
+                        var r = RECT()
+                        GetWindowRect(rowHwnd, &r)
+                        let rw = r.right - r.left
+                        let rh = r.bottom - r.top
+                        SetWindowPos(rowHwnd, nil, 0, totalH, rw, rh, UINT(SWP_NOZORDER))
+                        maxW = max(maxW, rw)
+                        totalH += rh + Int32(verticalSpacing)
+                        rows.append(rowHwnd)
+                    }
+                }
+                renderRow(child)
+            }
+        }
+
+        SetWindowPos(container, nil, 0, 0, maxW, totalH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
+extension GridRow: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let hstack = HStack(spacing: 4) { content }
+        return winRenderView(hstack, in: context)
+    }
+}
+
+extension LazyVGrid: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Non-virtualized: render as Grid-like layout in ScrollView
+        let grid = Grid(horizontalSpacing: spacing) { content }
+        let scrollView = ScrollView(.vertical) { grid }
+        return winRenderView(scrollView, in: context)
+    }
+}
+
+extension LazyHGrid: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Non-virtualized: render as horizontal grid
+        let grid = Grid(verticalSpacing: spacing) { content }
+        return winRenderView(grid, in: context)
+    }
+}
+
+extension NavigationSplitView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        let sidebarHwnd = winRenderView(sidebar, in: childContext)
+        let detailHwnd = winRenderView(detail, in: childContext)
+
+        // Side-by-side layout: sidebar 200px, detail fills rest
+        let sidebarWidth: Int32 = 200
+        var totalW: Int32 = 400
+        var totalH: Int32 = 300
+
+        if let sh = sidebarHwnd {
+            var r = RECT()
+            GetWindowRect(sh, &r)
+            totalH = max(totalH, r.bottom - r.top)
+            SetWindowPos(sh, nil, 0, 0, sidebarWidth, totalH, UINT(SWP_NOZORDER))
+        }
+        if let dh = detailHwnd {
+            var r = RECT()
+            GetWindowRect(dh, &r)
+            totalH = max(totalH, r.bottom - r.top)
+            totalW = sidebarWidth + max(r.right - r.left, 200)
+            SetWindowPos(dh, nil, sidebarWidth, 0, totalW - sidebarWidth, totalH, UINT(SWP_NOZORDER))
+        }
+
+        SetWindowPos(container, nil, 0, 0, totalW, totalH,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        return container
+    }
+}
+
 // MARK: - Searchable
 
 extension SearchableView: WinRenderable {
