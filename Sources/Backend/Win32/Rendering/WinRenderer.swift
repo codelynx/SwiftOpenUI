@@ -1759,6 +1759,368 @@ private func extractTextFromView<V: View>(_ view: V) -> String? {
     return nil
 }
 
+// MARK: - Phase 3 views
+
+extension Toggle: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let text = label.isEmpty ? "Toggle" : label
+        let measured = measureText(text, hwnd: context.parent)
+        let checkWidth = measured.width + 24  // space for checkbox
+        let checkHeight = max(measured.height + 4, 20)
+
+        let hwnd = text.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_BUTTON(),
+                wstr,
+                DWORD(BS_AUTOCHECKBOX | WS_TABSTOP),
+                0, 0, checkWidth, checkHeight,
+                context.parent,
+                nil,
+                context.hInstance
+            )
+        }
+
+        guard let hwnd = hwnd else { return nil }
+
+        // Set initial check state from binding
+        if isOn.wrappedValue {
+            SendMessageW(hwnd, UINT(BM_SETCHECK), WPARAM(BST_CHECKED), 0)
+        }
+
+        // Subclass to route BN_CLICKED → binding update
+        let binding = isOn
+        let controlID = nextControlID()
+        win32_SetWindowLongPtrW(hwnd, GWL_ID, LONG_PTR(Int(controlID)))
+        registerCommandHandler(controlID: WORD(controlID)) {
+            let checked = SendMessageW(hwnd, UINT(BM_GETCHECK), 0, 0) == LRESULT(BST_CHECKED)
+            if checked != binding.wrappedValue {
+                binding.wrappedValue = checked
+            }
+        }
+        SetWindowSubclass(hwnd, buttonCleanupProc, 0, DWORD_PTR(controlID))
+
+        return hwnd
+    }
+}
+
+extension Slider: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let trackbarClass: [WCHAR] = Array("msctls_trackbar32".utf16) + [0]
+        let trackbar = trackbarClass.withUnsafeBufferPointer { ptr in
+            CreateWindowExW(
+                0, ptr.baseAddress!, nil,
+                DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_HORZ | TBS_AUTOTICKS),
+                0, 0, 200, 30,
+                context.parent, nil, context.hInstance, nil
+            )
+        }
+
+        guard let trackbar = trackbar else { return nil }
+
+        // Convert range to integer trackbar positions via precision factor
+        let precision = 1.0 / step
+        let rangeMin = Int32(range.lowerBound * precision)
+        let rangeMax = Int32(range.upperBound * precision)
+        let pos = Int32(value.wrappedValue * precision)
+
+        SendMessageW(trackbar, UINT(TBM_SETRANGEMIN), 0, LPARAM(rangeMin))
+        SendMessageW(trackbar, UINT(TBM_SETRANGEMAX), 1, LPARAM(rangeMax))
+        SendMessageW(trackbar, UINT(TBM_SETPOS), 1, LPARAM(pos))
+
+        let tickFreq = max(1, Int32((range.upperBound - range.lowerBound) / (step * 10)))
+        SendMessageW(trackbar, UINT(TBM_SETTICFREQ), WPARAM(tickFreq), 0)
+        SendMessageW(trackbar, UINT(TBM_SETLINESIZE), 0, 1)
+        SendMessageW(trackbar, UINT(TBM_SETPAGESIZE), 0, LPARAM(Int32(precision)))
+
+        // Dedicated subclass — fires onChanged on TB_ENDTRACK only
+        // (not during TB_THUMBTRACK which would rebuild and kill the drag)
+        let binding = value
+        let sliderInfo = SliderInfo(binding: binding, precision: precision, hwnd: trackbar)
+        let infoPtr = Unmanaged.passRetained(sliderInfo).toOpaque()
+        SetWindowSubclass(trackbar, sliderSubclassProc, 42, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        return trackbar
+    }
+}
+
+private class SliderInfo {
+    let binding: Binding<Double>
+    let precision: Double
+    let hwnd: HWND
+
+    init(binding: Binding<Double>, precision: Double, hwnd: HWND) {
+        self.binding = binding
+        self.precision = precision
+        self.hwnd = hwnd
+    }
+}
+
+private let sliderSubclassProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_HSCROLL), UINT(WM_VSCROLL):
+        if dwRefData != 0 {
+            let scrollCode = win32_LOWORD(DWORD_PTR(wParam))
+            let info = Unmanaged<SliderInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+
+            // Only update binding when drag ends or on discrete steps.
+            // TB_THUMBTRACK fires during continuous drag — updating @State
+            // would trigger a rebuild that destroys the trackbar mid-drag.
+            if scrollCode != WORD(TB_THUMBTRACK) {
+                let pos = SendMessageW(hwnd, UINT(TBM_GETPOS), 0, 0)
+                let newValue = Double(pos) / info.precision
+                if abs(newValue - info.binding.wrappedValue) > (1.0 / info.precision) * 0.01 {
+                    info.binding.wrappedValue = newValue
+                }
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            Unmanaged<SliderInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).release()
+        }
+        RemoveWindowSubclass(hwnd, sliderSubclassProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+extension ScrollView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerScrollViewClassIfNeeded(hInstance: context.hInstance)
+
+        var style = DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN)
+        if axes.contains(.vertical) { style |= DWORD(WS_VSCROLL) }
+        if axes.contains(.horizontal) { style |= DWORD(WS_HSCROLL) }
+
+        let container = CreateWindowExW(
+            0, scrollViewClassName, nil,
+            style,
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Render content into the scroll container
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        guard let child = winRenderView(VStack(spacing: 0) { content }, in: childContext) else {
+            return container
+        }
+
+        // Get content natural size
+        var childRect = RECT()
+        GetWindowRect(child, &childRect)
+        let contentW = childRect.right - childRect.left
+        let contentH = childRect.bottom - childRect.top
+
+        // Set container natural size (clamped for layout)
+        let displayH = min(contentH, 200)  // max visible height before scrolling
+        SetWindowPos(container, nil, 0, 0, contentW, displayH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        // Store scroll state
+        let scrollState = ScrollViewState(child: child, contentHeight: contentH)
+        let statePtr = Unmanaged.passRetained(scrollState).toOpaque()
+        win32_SetWindowLongPtrW(container, GWLP_USERDATA, LONG_PTR(Int(bitPattern: statePtr)))
+
+        // Size child to its natural width, full content height
+        SetWindowPos(child, nil, 0, 0, contentW, contentH, UINT(SWP_NOZORDER))
+
+        // Set initial scroll range
+        updateScrollRange(container, state: scrollState)
+
+        return container
+    }
+}
+
+private class ScrollViewState {
+    let child: HWND
+    let contentHeight: Int32
+    var scrollY: Int32 = 0
+
+    init(child: HWND, contentHeight: Int32) {
+        self.child = child
+        self.contentHeight = contentHeight
+    }
+}
+
+private func updateScrollRange(_ hwnd: HWND, state: ScrollViewState) {
+    var rect = RECT()
+    GetClientRect(hwnd, &rect)
+    let visibleH = rect.bottom - rect.top
+
+    var si = SCROLLINFO()
+    si.cbSize = UINT(MemoryLayout<SCROLLINFO>.size)
+    si.fMask = UINT(SIF_RANGE | SIF_PAGE)
+    si.nMin = 0
+    si.nMax = state.contentHeight - 1
+    si.nPage = UINT(visibleH)
+    SetScrollInfo(hwnd, INT(SB_VERT), &si, true)
+}
+
+private let scrollViewClassName: UnsafePointer<WCHAR> = {
+    "SwiftUIScrollView".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+private var scrollViewClassRegistered = false
+
+private func registerScrollViewClassIfNeeded(hInstance: HINSTANCE) {
+    guard !scrollViewClassRegistered else { return }
+    scrollViewClassRegistered = true
+
+    var wc = WNDCLASSEXW()
+    wc.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
+    wc.style = UINT(CS_HREDRAW | CS_VREDRAW)
+    wc.lpfnWndProc = scrollViewWndProc
+    wc.hInstance = hInstance
+    wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW)
+    wc.lpszClassName = scrollViewClassName
+    RegisterClassExW(&wc)
+}
+
+private let scrollViewWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
+    switch uMsg {
+    case UINT(WM_SIZE):
+        let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
+        if userData != 0 {
+            let state = Unmanaged<ScrollViewState>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: Int(userData))!
+            ).takeUnretainedValue()
+            var rect = RECT()
+            GetClientRect(hwnd, &rect)
+            let visibleW = rect.right - rect.left
+            // Child fills width, keeps its natural height
+            SetWindowPos(state.child, nil, 0, -state.scrollY, visibleW, state.contentHeight, UINT(SWP_NOZORDER))
+            updateScrollRange(hwnd!, state: state)
+        }
+        return 0
+
+    case UINT(WM_VSCROLL):
+        let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
+        guard userData != 0 else { return DefWindowProcW(hwnd, uMsg, wParam, lParam) }
+        let state = Unmanaged<ScrollViewState>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: Int(userData))!
+        ).takeUnretainedValue()
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let visibleH = rect.bottom - rect.top
+        let maxScroll = max(0, state.contentHeight - visibleH)
+
+        let action = Int32(win32_LOWORD(DWORD_PTR(wParam)))
+        var newPos = state.scrollY
+        switch action {
+        case SB_LINEUP:    newPos -= 20
+        case SB_LINEDOWN:  newPos += 20
+        case SB_PAGEUP:    newPos -= visibleH
+        case SB_PAGEDOWN:  newPos += visibleH
+        case SB_THUMBTRACK, SB_THUMBPOSITION:
+            newPos = Int32(win32_HIWORD(DWORD_PTR(wParam)))
+        default: break
+        }
+
+        newPos = min(max(newPos, 0), maxScroll)
+        if newPos != state.scrollY {
+            state.scrollY = newPos
+            SetWindowPos(state.child, nil, 0, -newPos,
+                         rect.right - rect.left, state.contentHeight, UINT(SWP_NOZORDER))
+            var si = SCROLLINFO()
+            si.cbSize = UINT(MemoryLayout<SCROLLINFO>.size)
+            si.fMask = UINT(SIF_POS)
+            si.nPos = newPos
+            SetScrollInfo(hwnd, INT(SB_VERT), &si, true)
+        }
+        return 0
+
+    case UINT(WM_MOUSEWHEEL):
+        // Forward mouse wheel to scroll
+        let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
+        guard userData != 0 else { return DefWindowProcW(hwnd, uMsg, wParam, lParam) }
+        let delta = Int16(bitPattern: UInt16(win32_HIWORD(DWORD_PTR(wParam))))
+        let scrollAmount: WPARAM = delta > 0 ? WPARAM(SB_LINEUP) : WPARAM(SB_LINEDOWN)
+        let steps = abs(Int32(delta)) / 120
+        for _ in 0..<max(steps, 1) {
+            SendMessageW(hwnd, UINT(WM_VSCROLL), scrollAmount, 0)
+        }
+        return 0
+
+    case UINT(WM_COMMAND):
+        if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
+            SendMessageW(childHwnd, uMsg, wParam, lParam)
+        }
+        if let root = findRootWindow(from: hwnd!) as HWND? {
+            return SendMessageW(root, uMsg, wParam, lParam)
+        }
+        return 0
+
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
+        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        SetBkMode(hdc, TRANSPARENT)
+        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+
+    case UINT(WM_NCDESTROY):
+        let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
+        if userData != 0 {
+            Unmanaged<ScrollViewState>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: Int(userData))!
+            ).release()
+        }
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+extension List: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // List renders as a VStack inside a scrollable container
+        let scrollView = ScrollView(.vertical) { content }
+        return winRenderView(scrollView, in: context)
+    }
+}
+
+extension Image: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Win32 doesn't have a built-in icon theme like GTK.
+        // Render as a text label showing the icon name as fallback.
+        let displayText: String
+        switch source {
+        case .systemName(let name):
+            displayText = "[\(name)]"
+        case .filePath(let path):
+            displayText = "[img: \(path)]"
+        }
+
+        let measured = measureText(displayText, hwnd: context.parent)
+        let hwnd = displayText.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(),
+                wstr,
+                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                0, 0, measured.width + 4, measured.height + 2,
+                context.parent,
+                nil,
+                context.hInstance
+            )
+        }
+
+        return hwnd
+    }
+}
+
 // MARK: - Animation/effect stubs (render content, ignore effects for now)
 
 extension OpacityView: WinRenderable {
