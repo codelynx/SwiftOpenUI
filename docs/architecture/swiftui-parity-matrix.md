@@ -20,8 +20,7 @@ Last updated: 2026-03-19
 | TextField | Y | Y | Y | Y | Y | Y | Single-line; Binding<String> |
 | Toggle | Y | Y | Y | Y | - | - | GtkCheckButton / Win32 checkbox |
 | Slider | Y | Y | Y | Y | - | - | Debounced commit on GTK4 (150ms) |
-| Image (system) | Y | Y | Y | ~ | - | - | GTK icon theme names; Win32: text fallback |
-| Image (file) | Y | Y | Y | ~ | - | - | Win32: text fallback `[img: path]` |
+| Image | Y | Y | Y | ~ | - | - | GTK icon theme + file; Win32: text fallback |
 | Color | Y | Y | Y | Y | Y | Y | RGBA, hex, HSB constructors |
 | Spacer | Y | Y | Y | Y | Y | Y | |
 | Divider | Y | Y | Y | Y | Y | Y | |
@@ -38,12 +37,13 @@ Last updated: 2026-03-19
 | NavigationLink | Y | Y | Y | Y | Y | Y | String label only |
 | SecureField | Y | Y | Y | - | - | - | GtkPasswordEntry with peek icon |
 | TextEditor | Y | Y | Y | - | - | - | GtkTextView in ScrolledWindow |
-| ProgressView | Y | Y | Y | - | - | - | Determinate or indeterminate (pulse TODO) |
+| ProgressView | Y | Y | Y | - | - | - | Determinate; indeterminate pulse TODO |
 | Stepper | Y | Y | Y | - | - | - | GtkSpinButton with label, range/step |
 | Label | Y | Y | Y | - | - | - | systemImage or filePath + title |
 | Link | Y | Y | Y | - | - | - | GtkLinkButton |
 | TabView | Y | Y | Y | - | - | - | GtkStack + GtkStackSwitcher, TabBuilder |
 | Grid | Y | Y | Y | - | - | - | Auto-wrap and explicit GridRow modes |
+| GridRow | Y | Y | Y | - | - | - | MultiChildView, .gridCellColumns() span |
 | DisclosureGroup | Y | Y | Y | - | - | - | GtkExpander, Binding<Bool> |
 | Form | Y | Y | Y | - | - | - | Styled GtkBox with padding/spacing |
 | Section | Y | Y | Y | - | - | - | Header (Pango markup), footer, separator |
@@ -55,6 +55,7 @@ Last updated: 2026-03-19
 | DatePicker | Y | Y | Y | - | - | - | GtkCalendar, DateComponents type |
 | GeometryReader | Y | Y | Y | - | - | - | Deferred map + tick resize tracking |
 | Menu | Y | Y | Y | - | - | - | GMenu + GSimpleActionGroup + PopoverMenu |
+| ConfirmationDialog | Y | - | - | - | - | - | Similar to Alert (not yet implemented) |
 | Map | Y | - | - | - | - | - | Needs external map library |
 | Canvas | Y | - | - | - | - | - | Needs Cairo binding |
 
@@ -72,7 +73,7 @@ Last updated: 2026-03-19
 | .opacity() | Y | Y | Y | Y | Y | Y | |
 | .offset() | Y | Y | Y | Y | Y | Y | CSS transform on GTK4 |
 | .scaleEffect() | Y | Y | Y | ~ | Y | Y | Win32: D2D surface only |
-| .animation() | Y | Y | Y | ~ | Y | - | Win32: D2D only; Android: stub |
+| .animation() | Y | Y | Y | ~ | Y | Y | Win32: D2D only; Android: JSON node |
 | .imageScale() | Y | Y | Y | ~ | - | - | Win32: no real image rendering |
 | .onTapGesture() | Y | Y | Y | Y | Y | Y | count parameter |
 | .onLongPressGesture() | Y | Y | Y | Y | Y | Y | minimumDuration |
@@ -95,6 +96,7 @@ Last updated: 2026-03-19
 | .searchable() | Y | Y | Y | - | - | - | GtkSearchEntry + binding |
 | .toolbar() | Y | Y | Y | - | - | - | ToolbarProvider, header bar integration |
 | .gridCellColumns() | Y | Y | Y | - | - | - | Column span in Grid/GridRow |
+| .pickerStyle() | Y | Y | Y | - | - | - | .automatic, .segmented, .palette |
 | .clipShape() | Y | - | - | - | - | - | |
 | .task() | Y | - | - | - | - | - | Needs async runtime |
 
@@ -110,11 +112,11 @@ Last updated: 2026-03-19
 | @Published | Y | Y | Observer-based change notification |
 | @Environment | Y | Y | Custom keys supported |
 | @FocusState | Y | Y | Bool and enum variants |
+| @Observable | Y | Y | Swift Observation framework, withObservationTracking |
+| ObservableObject | Y | Y | Protocol marker |
 | @AppStorage | Y | - | |
 | @SceneStorage | Y | - | |
 | @FetchRequest | Y | - | Core Data specific |
-| ObservableObject | Y | Y | Protocol marker |
-| Observable (@Observable) | Y | Y | Swift Observation framework, withObservationTracking |
 
 ## Navigation
 
@@ -161,8 +163,8 @@ Last updated: 2026-03-19
 
 | Category | SwiftUI Total | SwiftOpenUI Implemented | Coverage |
 |----------|--------------|------------------------|----------|
-| Views | 43 | 39 | ~91% |
-| Modifiers | 35 | 33 | ~94% |
+| Views | 43 | 40 | ~93% |
+| Modifiers | 36 | 34 | ~94% |
 | State & Data | 13 | 10 | ~77% |
 | Navigation | 8 | 6 | 75% |
 | App structure | 9 | 5 | ~56% |
