@@ -55,9 +55,9 @@ Last updated: 2026-03-19
 | DatePicker | Y | Y | Y | - | - | - | GtkCalendar, DateComponents type |
 | GeometryReader | Y | Y | Y | - | - | - | Deferred map + tick resize tracking |
 | Menu | Y | Y | Y | - | - | - | GMenu + GSimpleActionGroup + PopoverMenu |
-| ConfirmationDialog | Y | - | - | - | - | - | Similar to Alert (not yet implemented) |
+| ConfirmationDialog | Y | Y | Y | - | - | - | Vertical buttons, Binding<Bool>, deferred |
 | Map | Y | - | - | - | - | - | Needs external map library |
-| Canvas | Y | - | - | - | - | - | Needs Cairo binding |
+| Canvas | Y | Y | Y | - | - | - | GtkDrawingArea + Cairo, DrawingContext API |
 
 ## Modifiers
 
@@ -163,7 +163,7 @@ Last updated: 2026-03-19
 
 | Category | SwiftUI Total | SwiftOpenUI Implemented | Coverage |
 |----------|--------------|------------------------|----------|
-| Views | 43 | 40 | ~93% |
+| Views | 43 | 42 | ~98% |
 | Modifiers | 36 | 34 | ~94% |
 | State & Data | 13 | 10 | ~77% |
 | Navigation | 8 | 6 | 75% |

@@ -379,6 +379,122 @@ gtk_swift_orientable_set_orientation(GtkWidget *widget, GtkOrientation orientati
     gtk_orientable_set_orientation(GTK_ORIENTABLE(widget), orientation);
 }
 
+// --- GtkDrawingArea shims ---
+
+static inline void
+gtk_swift_drawing_area_set_content_width(GtkWidget *area, int width) {
+    gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(area), width);
+}
+
+static inline void
+gtk_swift_drawing_area_set_content_height(GtkWidget *area, int height) {
+    gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(area), height);
+}
+
+typedef void (*GtkSwiftDrawFunc)(GtkWidget *widget, cairo_t *cr,
+                                  int width, int height, gpointer user_data);
+
+static inline void
+gtk_swift_drawing_area_set_draw_func(GtkWidget *area,
+                                      GtkSwiftDrawFunc func,
+                                      gpointer user_data,
+                                      GDestroyNotify destroy) {
+    gtk_drawing_area_set_draw_func(
+        GTK_DRAWING_AREA(area),
+        (GtkDrawingAreaDrawFunc)func,
+        user_data,
+        destroy);
+}
+
+static inline void
+gtk_swift_widget_queue_draw(GtkWidget *widget) {
+    gtk_widget_queue_draw(widget);
+}
+
+// --- Cairo drawing shims ---
+
+static inline void
+gtk_swift_cairo_set_source_rgb(cairo_t *cr, double r, double g, double b) {
+    cairo_set_source_rgb(cr, r, g, b);
+}
+
+static inline void
+gtk_swift_cairo_set_source_rgba(cairo_t *cr, double r, double g, double b, double a) {
+    cairo_set_source_rgba(cr, r, g, b, a);
+}
+
+static inline void
+gtk_swift_cairo_set_line_width(cairo_t *cr, double width) {
+    cairo_set_line_width(cr, width);
+}
+
+static inline void
+gtk_swift_cairo_set_line_cap(cairo_t *cr, cairo_line_cap_t cap) {
+    cairo_set_line_cap(cr, cap);
+}
+
+static inline void
+gtk_swift_cairo_set_line_join(cairo_t *cr, cairo_line_join_t join) {
+    cairo_set_line_join(cr, join);
+}
+
+static inline void
+gtk_swift_cairo_move_to(cairo_t *cr, double x, double y) {
+    cairo_move_to(cr, x, y);
+}
+
+static inline void
+gtk_swift_cairo_line_to(cairo_t *cr, double x, double y) {
+    cairo_line_to(cr, x, y);
+}
+
+static inline void
+gtk_swift_cairo_rectangle(cairo_t *cr, double x, double y, double w, double h) {
+    cairo_rectangle(cr, x, y, w, h);
+}
+
+static inline void
+gtk_swift_cairo_arc(cairo_t *cr, double xc, double yc, double radius,
+                     double angle1, double angle2) {
+    cairo_arc(cr, xc, yc, radius, angle1, angle2);
+}
+
+static inline void
+gtk_swift_cairo_stroke(cairo_t *cr) {
+    cairo_stroke(cr);
+}
+
+static inline void
+gtk_swift_cairo_fill(cairo_t *cr) {
+    cairo_fill(cr);
+}
+
+static inline void
+gtk_swift_cairo_paint(cairo_t *cr) {
+    cairo_paint(cr);
+}
+
+static inline void
+gtk_swift_cairo_save(cairo_t *cr) {
+    cairo_save(cr);
+}
+
+static inline void
+gtk_swift_cairo_restore(cairo_t *cr) {
+    cairo_restore(cr);
+}
+
+static inline void
+gtk_swift_cairo_scale(cairo_t *cr, double sx, double sy) {
+    cairo_scale(cr, sx, sy);
+}
+
+static inline void
+gtk_swift_cairo_set_source_surface(cairo_t *cr, cairo_surface_t *surface,
+                                    double x, double y) {
+    cairo_set_source_surface(cr, surface, x, y);
+}
+
 // --- Window titlebar helpers ---
 
 /// Set or clear the window titlebar. Pass NULL to remove a custom titlebar.

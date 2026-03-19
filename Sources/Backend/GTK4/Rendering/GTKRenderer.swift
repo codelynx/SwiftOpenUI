@@ -2821,6 +2821,251 @@ extension ToolbarView: GTKRenderable {
     }
 }
 
+// MARK: - ConfirmationDialog GTK extension
+
+extension ConfirmationDialogView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+
+        let anchor: UnsafeMutablePointer<GtkWidget>
+        if let host = GTKViewHost.getCurrentRebuilding() {
+            anchor = host.container
+        } else {
+            anchor = widget
+        }
+        let gobject = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+
+        if !isPresented.wrappedValue {
+            if let dialogPtr = g_object_get_data(gobject, "swift-dialog-window") {
+                let dialog = dialogPtr.assumingMemoryBound(to: GtkWindow.self)
+                g_object_set_data(gobject, "swift-dialog-window", nil)
+                gtk_window_destroy(dialog)
+            }
+            return opaqueFromWidget(widget)
+        }
+
+        guard g_object_get_data(gobject, "swift-dialog-active") == nil else {
+            return opaqueFromWidget(widget)
+        }
+        g_object_set_data(gobject, "swift-dialog-active", gpointer(bitPattern: 1))
+        g_object_ref(gpointer(anchor))
+
+        let dialogTitle = title
+        let dialogButtons = buttons
+        let binding = isPresented
+
+        let onDismiss: () -> Void = {
+            let obj = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+            g_object_set_data(obj, "swift-dialog-active", nil)
+            g_object_set_data(obj, "swift-dialog-window", nil)
+            binding.wrappedValue = false
+        }
+
+        g_idle_add({ userData -> gboolean in
+            let box = Unmanaged<ClosureBox>.fromOpaque(userData!).takeRetainedValue()
+            box.closure()
+            return 0
+        }, Unmanaged.passRetained(ClosureBox { [anchor, dialogTitle, dialogButtons, onDismiss] in
+            guard let root = gtk_widget_get_root(anchor) else {
+                onDismiss()
+                g_object_unref(gpointer(anchor))
+                return
+            }
+
+            let dialog = gtk_window_new()!
+            let dialogWin = windowPointer(dialog)
+            gtk_window_set_modal(dialogWin, 1)
+            gtk_window_set_title(dialogWin, dialogTitle)
+            gtk_window_set_default_size(dialogWin, 300, -1)
+            gtk_window_set_resizable(dialogWin, 0)
+            gtk_window_set_transient_for(
+                dialogWin,
+                UnsafeMutableRawPointer(root).assumingMemoryBound(to: GtkWindow.self)
+            )
+
+            let vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8)!
+            gtk_widget_set_margin_top(vbox, 20)
+            gtk_widget_set_margin_bottom(vbox, 20)
+            gtk_widget_set_margin_start(vbox, 20)
+            gtk_widget_set_margin_end(vbox, 20)
+
+            // Title
+            let titleLabel = gtk_label_new(nil)!
+            let escaped = dialogTitle
+                .replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+            gtk_swift_label_set_markup(titleLabel, "<b>\(escaped)</b>")
+            gtk_box_append(boxPointer(vbox), titleLabel)
+
+            let sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)!
+            gtk_box_append(boxPointer(vbox), sep)
+
+            // Vertical buttons
+            for alertButton in dialogButtons {
+                let btn = gtk_button_new_with_label(alertButton.label)!
+                gtk_widget_set_hexpand(btn, 1)
+
+                if alertButton.role == .destructive {
+                    gtk_widget_add_css_class(btn, "destructive-action")
+                }
+
+                let actionBox = Unmanaged.passRetained(AlertActionBox(
+                    action: alertButton.action, dialog: dialog
+                )).toOpaque()
+                g_signal_connect_data(
+                    gpointer(btn),
+                    "clicked",
+                    unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                        let box = Unmanaged<AlertActionBox>.fromOpaque(userData!).takeUnretainedValue()
+                        box.action()
+                        gtk_window_destroy(windowPointer(box.dialog))
+                    } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                    actionBox,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<AlertActionBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+
+                gtk_box_append(boxPointer(vbox), btn)
+            }
+
+            let anchorObj = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+            g_object_set_data(anchorObj, "swift-dialog-window", gpointer(dialogWin))
+
+            let closeDismiss = Unmanaged.passRetained(ClosureBox(onDismiss)).toOpaque()
+            g_signal_connect_data(
+                gpointer(dialog),
+                "close-request",
+                unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
+                    return 0
+                } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
+                closeDismiss,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+
+            gtk_window_set_child(dialogWin, vbox)
+            gtk_window_present(dialogWin)
+            g_object_unref(gpointer(anchor))
+        }).toOpaque())
+
+        return opaqueFromWidget(widget)
+    }
+}
+
+// MARK: - Canvas GTK extension
+
+/// Wraps draw closure for C callback bridging.
+private class DrawClosureBox {
+    let closure: (DrawingContext, Int, Int) -> Void
+    init(_ closure: @escaping (DrawingContext, Int, Int) -> Void) {
+        self.closure = closure
+    }
+}
+
+extension DrawingContext {
+    // MARK: - Color
+    public func setColor(r: Double, g: Double, b: Double) {
+        gtk_swift_cairo_set_source_rgb(cr, r, g, b)
+    }
+    public func setColor(r: Double, g: Double, b: Double, a: Double) {
+        gtk_swift_cairo_set_source_rgba(cr, r, g, b, a)
+    }
+
+    // MARK: - Line style
+    public func setLineWidth(_ width: Double) {
+        gtk_swift_cairo_set_line_width(cr, width)
+    }
+    public func setLineCap(_ cap: LineCap) {
+        let v: cairo_line_cap_t
+        switch cap {
+        case .butt:   v = CAIRO_LINE_CAP_BUTT
+        case .round:  v = CAIRO_LINE_CAP_ROUND
+        case .square: v = CAIRO_LINE_CAP_SQUARE
+        }
+        gtk_swift_cairo_set_line_cap(cr, v)
+    }
+    public func setLineJoin(_ join: LineJoin) {
+        let v: cairo_line_join_t
+        switch join {
+        case .miter: v = CAIRO_LINE_JOIN_MITER
+        case .round: v = CAIRO_LINE_JOIN_ROUND
+        case .bevel: v = CAIRO_LINE_JOIN_BEVEL
+        }
+        gtk_swift_cairo_set_line_join(cr, v)
+    }
+
+    // MARK: - Path operations
+    public func moveTo(x: Double, y: Double) {
+        gtk_swift_cairo_move_to(cr, x, y)
+    }
+    public func lineTo(x: Double, y: Double) {
+        gtk_swift_cairo_line_to(cr, x, y)
+    }
+    public func rectangle(x: Double, y: Double, width: Double, height: Double) {
+        gtk_swift_cairo_rectangle(cr, x, y, width, height)
+    }
+    public func arc(centerX: Double, centerY: Double, radius: Double,
+                    startAngle: Double = 0, endAngle: Double = .pi * 2) {
+        gtk_swift_cairo_arc(cr, centerX, centerY, radius, startAngle, endAngle)
+    }
+
+    // MARK: - Drawing
+    public func stroke() { gtk_swift_cairo_stroke(cr) }
+    public func fill() { gtk_swift_cairo_fill(cr) }
+    public func paint() { gtk_swift_cairo_paint(cr) }
+
+    // MARK: - State
+    public func save() { gtk_swift_cairo_save(cr) }
+    public func restore() { gtk_swift_cairo_restore(cr) }
+    public func scale(x: Double, y: Double) { gtk_swift_cairo_scale(cr, x, y) }
+
+    // MARK: - Surface painting
+    public func setSourceSurface(_ surface: OpaquePointer, x: Double = 0, y: Double = 0) {
+        gtk_swift_cairo_set_source_surface(cr, surface, x, y)
+    }
+}
+
+extension Canvas: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let area = gtk_drawing_area_new()!
+
+        if width > 0 {
+            gtk_swift_drawing_area_set_content_width(area, gint(width))
+        }
+        if height > 0 {
+            gtk_swift_drawing_area_set_content_height(area, gint(height))
+        }
+
+        let box = Unmanaged.passRetained(DrawClosureBox(drawHandler)).toOpaque()
+
+        gtk_swift_drawing_area_set_draw_func(
+            area,
+            { (widget: UnsafeMutablePointer<GtkWidget>?,
+               cr: OpaquePointer?,
+               w: gint, h: gint,
+               userData: gpointer?) in
+                guard let cr = cr, let userData = userData else { return }
+                let box = Unmanaged<DrawClosureBox>.fromOpaque(userData).takeUnretainedValue()
+                let context = DrawingContext(cr: cr)
+                box.closure(context, Int(w), Int(h))
+            },
+            box,
+            { (userData: gpointer?) in
+                guard let userData = userData else { return }
+                Unmanaged<DrawClosureBox>.fromOpaque(userData).release()
+            }
+        )
+
+        return opaqueFromWidget(area)
+    }
+}
+
 // MARK: - Stateful view rendering
 
 private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {

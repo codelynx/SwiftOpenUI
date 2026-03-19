@@ -145,4 +145,56 @@ final class Phase4FViewTests: XCTestCase {
             XCTFail("Expected .trailing placement")
         }
     }
+
+    // MARK: - ConfirmationDialog
+
+    func testConfirmationDialogConstruction() {
+        let dialog = Text("Content").confirmationDialog(
+            "Delete Item?",
+            isPresented: .constant(false),
+            actions: [
+                AlertButton("Delete", role: .destructive) { },
+                AlertButton("Cancel", role: .cancel) { }
+            ]
+        )
+        XCTAssertEqual(dialog.title, "Delete Item?")
+        XCTAssertFalse(dialog.isPresented.wrappedValue)
+        XCTAssertEqual(dialog.buttons.count, 2)
+        XCTAssertEqual(dialog.buttons[0].label, "Delete")
+        XCTAssertEqual(dialog.buttons[0].role, .destructive)
+        XCTAssertEqual(dialog.buttons[1].role, .cancel)
+    }
+
+    // MARK: - Canvas
+
+    func testCanvasConstruction() {
+        let canvas = Canvas(width: 400, height: 300) { context, w, h in
+            // draw handler
+        }
+        XCTAssertEqual(canvas.width, 400)
+        XCTAssertEqual(canvas.height, 300)
+    }
+
+    func testCanvasDefaultSize() {
+        let canvas = Canvas { _, _, _ in }
+        XCTAssertEqual(canvas.width, 0)
+        XCTAssertEqual(canvas.height, 0)
+    }
+
+    func testCanvasSizeModifier() {
+        let canvas = Canvas { _, _, _ in }
+            .canvasSize(width: 200, height: 100)
+        XCTAssertEqual(canvas.width, 200)
+        XCTAssertEqual(canvas.height, 100)
+    }
+
+    func testDrawingContextTypes() {
+        // LineCap and LineJoin enums should be constructible
+        let _ = LineCap.round
+        let _ = LineCap.butt
+        let _ = LineCap.square
+        let _ = LineJoin.miter
+        let _ = LineJoin.round
+        let _ = LineJoin.bevel
+    }
 }
