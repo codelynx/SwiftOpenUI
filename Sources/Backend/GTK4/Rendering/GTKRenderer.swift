@@ -2500,6 +2500,8 @@ private class GeometryReaderContext {
     let box: UnsafeMutablePointer<GtkWidget>
     var renderScheduled = false
     var idleRetryCount = 0
+    var lastWidth: Double = 0
+    var lastHeight: Double = 0
 
     init<Content: View>(content: @escaping (GeometryProxy) -> Content,
                         box: UnsafeMutablePointer<GtkWidget>) {
@@ -2582,22 +2584,26 @@ private let geometryMapCallback: @convention(c) (
     }, widgetPtr)
 }
 
-/// Resize callback via "notify::default-width" on GtkWidget.
-/// Catches size changes on the root window and re-renders content.
-private let geometryResizeNotifyCallback: @convention(c) (
-    gpointer?, gpointer?, gpointer?
-) -> Void = { widgetPtr, _, _ in
-    guard let widgetPtr = widgetPtr else { return }
-    let widget = UnsafeMutableRawPointer(widgetPtr).assumingMemoryBound(to: GtkWidget.self)
-    let gobject = UnsafeMutableRawPointer(widgetPtr).assumingMemoryBound(to: GObject.self)
-    guard let contextPtr = g_object_get_data(gobject, "gtk-swift-geometry-context") else { return }
+/// Tick callback: checks if the widget's allocated size changed since the last
+/// render and re-renders content if so.  The tick callback fires once per frame
+/// (~60 Hz) but only re-renders on actual size changes, so the cost is just two
+/// integer reads per frame.  The callback is removed when the widget is unmapped.
+private let geometryTickCallback: GtkTickCallback = { widget, _, userData in
+    guard let widget = widget else { return 0 }
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    guard let contextPtr = g_object_get_data(gobject, "gtk-swift-geometry-context") else {
+        return 0 // G_SOURCE_REMOVE
+    }
     let context = Unmanaged<GeometryReaderContext>.fromOpaque(contextPtr).takeUnretainedValue()
 
     let w = Double(gtk_widget_get_width(widget))
     let h = Double(gtk_widget_get_height(widget))
-    if w > 1, h > 1 {
+    if w > 1, h > 1, (w != context.lastWidth || h != context.lastHeight) {
+        context.lastWidth = w
+        context.lastHeight = h
         geometryRenderContent(context, widget: widget, width: w, height: h)
     }
+    return 1 // G_SOURCE_CONTINUE
 }
 
 extension GeometryReader: GTKRenderable {
@@ -2618,11 +2624,14 @@ extension GeometryReader: GTKRenderable {
             unsafeBitCast(geometryMapCallback, to: GCallback.self),
             nil, nil, GConnectFlags(rawValue: 0))
 
-        // Re-render when allocation changes (fires on window resize)
-        g_signal_connect_data(
-            gpointer(box), "notify::width-request",
-            unsafeBitCast(geometryResizeNotifyCallback, to: GCallback.self),
-            nil, nil, GConnectFlags(rawValue: 0))
+        // Track size changes via tick callback (fires per frame, re-renders
+        // only when allocated size actually changes).  The tick callback is
+        // automatically paused when the widget is unmapped.
+        _ = gtk_widget_add_tick_callback(
+            box,
+            geometryTickCallback,
+            nil, nil
+        )
 
         return opaqueFromWidget(box)
     }
