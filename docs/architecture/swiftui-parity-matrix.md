@@ -98,6 +98,7 @@ Last updated: 2026-03-19
 | .toolbar() | Y | Y | Y | Y | - | - | GTK: header bar; Win32: nav header |
 | .gridCellColumns() | Y | Y | Y | - | - | - | Column span in Grid/GridRow |
 | .pickerStyle() | Y | Y | Y | - | - | - | .automatic, .segmented, .palette |
+| .navigationSplitViewColumnWidth() | Y | Y | Y | - | - | - | min/ideal/max; GTK divider stays resizable |
 | .clipShape() | Y | - | - | - | - | - | |
 | .task() | Y | - | - | - | - | - | Needs async runtime |
 
@@ -165,8 +166,8 @@ Last updated: 2026-03-19
 | Category | SwiftUI Total | Core Implemented | GTK4 | Win32 | Coverage |
 |----------|--------------|-----------------|------|-------|----------|
 | Views | 44 | 43 | 43 | 42 | ~98% |
-| Modifiers | 37 | 35 | 35 | 31 | ~95% |
+| Modifiers | 38 | 36 | 36 | 31 | ~95% |
 | State & Data | 13 | 10 | 10 | 10 | ~77% |
-| Navigation | 8 | 6 | 6 | 6 | 75% |
+| Navigation | 8 | 7 | 7 | 6 | 88% |
 | App structure | 9 | 5 | 5 | 5 | ~56% |
 | Layout system | 9 | 7 | 7 | 7 | ~78% |
