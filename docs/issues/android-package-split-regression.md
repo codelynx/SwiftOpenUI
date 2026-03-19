@@ -66,11 +66,12 @@ Build from repo root (not from `swift-lib/`):
 cd "$(dirname "$0")/../.."
 swift build \
     --swift-sdk swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android \
+    --triple aarch64-unknown-linux-android28 \
     --product BackendAndroid \
     -c release
 ```
 
-**Do not use `--triple`** — it causes Foundation module resolution failure after `.build` cache clears.
+**Note:** `--triple aarch64-unknown-linux-android28` is required — without it the SDK defaults to armv7. The earlier Foundation module resolution failure was caused by the SDK's `swiftResourcesPath` pointing to the wrong architecture; fix with `swift sdk configure --swift-resources-path .../swift-aarch64`. See [android-json-int64-precision.md](android-json-int64-precision.md) §3.
 
 ## Consequences
 

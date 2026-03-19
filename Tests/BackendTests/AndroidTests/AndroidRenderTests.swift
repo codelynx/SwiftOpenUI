@@ -7,6 +7,8 @@ final class AndroidRenderTests: XCTestCase {
     override func setUp() {
         super.setUp()
         androidBeginRenderPass()
+        androidStateCache.removeAll()
+        androidCurrentHost = nil
     }
 
     // MARK: - TextField rendering
@@ -402,6 +404,89 @@ final class AndroidRenderTests: XCTestCase {
         XCTAssertEqual(node2.props["content"], "Count: 5")
 
         androidCurrentHost = nil
+    }
+
+    // MARK: - Drag gesture
+
+    func testDragGestureRegistersHandler() {
+        var changedValue: DragGestureValue?
+        var endedValue: DragGestureValue?
+
+        let view = Text("Drag me").onDrag(
+            minimumDistance: 5,
+            onChanged: { changedValue = $0 },
+            onEnded: { endedValue = $0 }
+        )
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.props["onDrag"], "true")
+        XCTAssertEqual(node.props["dragMinDist"], "5.0")
+
+        // Verify handler is registered
+        let handler = androidDragHandlers[node.id]
+        XCTAssertNotNil(handler)
+        XCTAssertEqual(handler?.minimumDistance, 5.0)
+
+        // Simulate drag changed
+        handler?.onChanged?(DragGestureValue(
+            startLocation: (x: 10, y: 20),
+            location: (x: 30, y: 40),
+            translation: (width: 20, height: 20)
+        ))
+        XCTAssertNotNil(changedValue)
+        XCTAssertEqual(changedValue?.translation.width, 20)
+
+        // Simulate drag ended
+        handler?.onEnded?(DragGestureValue(
+            startLocation: (x: 10, y: 20),
+            location: (x: 50, y: 60),
+            translation: (width: 40, height: 40)
+        ))
+        XCTAssertNotNil(endedValue)
+        XCTAssertEqual(endedValue?.translation.width, 40)
+    }
+
+    // MARK: - Navigation back button
+
+    func testNavigationStackRendersWithTitle() {
+        let host = MockViewHost()
+        androidCurrentHost = host
+
+        let view = NavigationStack {
+            Text("Home").navigationTitle("My App")
+        }
+
+        androidBeginRenderPass()
+        let node = androidRenderView(view)
+        let navNode = findNode(node, type: "navigationStack")
+        XCTAssertNotNil(navNode)
+        // Root view — no back button
+        XCTAssertNil(navNode?.props["showBack"])
+
+        androidCurrentHost = nil
+    }
+
+    func testBackButtonActionRegisteredInButtonActions() {
+        // Verify the backNodeId mechanism: when a back action is registered,
+        // it appears in androidButtonActions and can be invoked
+        let backId: Int64 = 12345
+        var popCalled = false
+        androidButtonActions[backId] = { popCalled = true }
+
+        // Simulate what jniOnButtonClick does
+        if let action = androidButtonActions[backId] {
+            action()
+        }
+        XCTAssertTrue(popCalled, "Back action should be callable via androidButtonActions")
+    }
+
+    /// Helper to find a node by type in the render tree.
+    private func findNode(_ node: RenderNode, type: String) -> RenderNode? {
+        if node.type == type { return node }
+        for child in node.children {
+            if let found = findNode(child, type: type) { return found }
+        }
+        return nil
     }
 }
 

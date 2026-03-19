@@ -106,13 +106,22 @@ cp "$NDK_LIBS/libc++_shared.so" "$JNILIBS/"
 
 Without running `setup-android-sdk.sh`, the SDK fails with `'semaphore.h' file not found` or `could not find module 'Foundation'`. The script creates symlinks from the SDK's `ndk-sysroot/` to the NDK's headers and libraries.
 
-### Do not use `--triple` flag with `--target`
+### SDK resource path configuration
 
-`swift build --swift-sdk ... --triple aarch64-unknown-linux-android28 --target SwiftOpenUI` causes module resolution errors — the compiler looks for aarch64 modules in the armv7 path. Omitting `--triple` works correctly; the SDK defaults to building all architectures and finds modules properly.
+The Android Swift SDK may default to armv7 resources for aarch64 targets. If you see `could not find module 'Foundation' for target 'aarch64-unknown-linux-android'`, reconfigure:
 
-For building a `.so` library (not the SwiftOpenUI core), `--triple` works fine:
 ```bash
-swift build --swift-sdk ... --triple aarch64-unknown-linux-android28 -c release
+swift sdk configure \
+    --swift-resources-path .../swift-resources/usr/lib/swift-aarch64 \
+    swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android \
+    aarch64-unknown-linux-android28
+```
+
+The settled build command uses `--triple` to target aarch64:
+```bash
+swift build --swift-sdk swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android \
+    --triple aarch64-unknown-linux-android28 \
+    --product BackendAndroid -c release
 ```
 
 ### All Swift runtime .so files must be bundled
@@ -157,7 +166,7 @@ This is the same core that compiles for macOS, Linux, Windows, and WebAssembly.
 
 ## Known Issues
 
-- Android's Swift build uses the **root** `Package.swift` (not the separate `swift-lib` package). Building from a separate package caused a state wiring regression — see `docs/issues/android-package-split-regression.md`. Do not use `--triple` with the Android SDK; let SPM resolve the target automatically.
+- Android's Swift build uses the **root** `Package.swift` with `--triple aarch64-unknown-linux-android28`. Building from a separate package caused a state wiring regression — see `docs/issues/android-package-split-regression.md`. The SDK's `swiftResourcesPath` may need reconfiguration for aarch64 — see above.
 - The "multiple Swift SDKs match" warning is harmless — the SDK bundles multiple arch variants.
 - Debug APK is large (~77MB) due to unstripped Swift runtime libraries.
 
