@@ -12,6 +12,7 @@ Last updated: 2026-03-19
 - N/A — Not applicable
 
 ## Views
+<!-- Parity: Examples/Parity/ViewsBasic, ViewsLayout, ViewsContainers -->
 
 | View | SwiftUI | Core | GTK4 | Win32 | Web | Android | Notes |
 |------|---------|------|------|-------|-----|---------|-------|
@@ -60,6 +61,7 @@ Last updated: 2026-03-19
 | Map | Y | - | - | - | - | - | No core type defined; needs external map library |
 
 ## Modifiers
+<!-- Parity: Examples/Parity/Modifiers, Gestures, Animation -->
 
 | Modifier | SwiftUI | Core | GTK4 | Win32 | Web | Android | Notes |
 |----------|---------|------|------|-------|-----|---------|-------|
@@ -103,6 +105,7 @@ Last updated: 2026-03-19
 | .task() | Y | - | - | - | - | - | Needs async runtime |
 
 ## State & Data
+<!-- Parity: Examples/Parity/StateData, Environment, Focus -->
 
 | Feature | SwiftUI | SwiftOpenUI | Notes |
 |---------|---------|-------------|-------|
@@ -121,6 +124,7 @@ Last updated: 2026-03-19
 | @FetchRequest | Y | - | Core Data specific |
 
 ## Navigation
+<!-- Parity: Examples/Parity/Navigation -->
 
 | Feature | SwiftUI | Core | GTK4 | Win32 | Web | Android | Notes |
 |---------|---------|------|------|-------|-----|---------|-------|
@@ -134,6 +138,7 @@ Last updated: 2026-03-19
 | .navigationBarItems() | Y | - | - | - | - | - | |
 
 ## App Structure
+<!-- Parity: Examples/Parity/AppStructure -->
 
 | Feature | SwiftUI | SwiftOpenUI | Notes |
 |---------|---------|-------------|-------|

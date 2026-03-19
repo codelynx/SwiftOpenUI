@@ -2,15 +2,32 @@
 
 How to build and run SwiftOpenUI examples on each platform.
 
-All examples live in `Examples/*/main.swift`. Each file uses `#if os(macOS) import SwiftUI` for real SwiftUI validation on macOS, and `import SwiftOpenUI` with platform backends elsewhere. One source file per example, all platforms.
+Examples are organized into two tracks:
+- **Showcase** (`Examples/Showcase/`) — polished mini-apps for demos and screenshots
+- **Parity** (`Examples/Parity/`) — matrix-backed coverage screens, one per feature section
+
+Each example is a single `main.swift` using `#if os(macOS) import SwiftUI` for real SwiftUI validation on macOS, and `import SwiftOpenUI` with platform backends elsewhere.
 
 ## macOS — Terminal (SwiftUI)
 
 ```bash
+# Showcase
 swift run HelloWorld
-swift run Counter
-swift run StateDemo
-swift run BasicInteractive
+swift run Stopwatch
+swift run ColorMixer
+
+# Parity
+swift run ParityViewsBasic
+swift run ParityViewsLayout
+swift run ParityViewsContainers
+swift run ParityModifiers
+swift run ParityStateData
+swift run ParityNavigation
+swift run ParityEnvironment
+swift run ParityGestures
+swift run ParityAnimation
+swift run ParityFocus
+swift run ParityAppStructure
 ```
 
 Requires Xcode command-line tools. The window appears as a native SwiftUI app with Dock icon and ⌘Tab support.
@@ -36,7 +53,7 @@ xcodegen generate
 open apple/Examples/Examples.xcodeproj
 ```
 
-Select any scheme (HelloWorld, Counter, StateDemo, etc.) and press ⌘R.
+Select any scheme and press ⌘R.
 
 ### Regenerating after changes
 
@@ -60,18 +77,15 @@ The same Xcode project can be extended with iOS targets. Add a new target in `pr
 # Install GTK4 (Ubuntu/Debian)
 sudo apt install libgtk-4-dev
 
-# Build and run any example
+# Showcase
 swift run HelloWorld
-swift run Counter
-swift run Showcase1
-swift run Showcase2
-swift run TextStyles
-swift run Buttons
-swift run StateDemo
-swift run Layout
-swift run FocusTest
-swift run BasicInteractive   # Navigation, gestures, animation
-swift run ColorMixer          # Toggle, Slider, ScrollView, List
+swift run Stopwatch
+swift run ColorMixer
+
+# Parity
+swift run ParityViewsBasic
+swift run ParityModifiers
+# ... all Parity targets work on Linux
 ```
 
 Launches a native GTK4 window. All examples are supported on Linux.
@@ -80,7 +94,9 @@ Launches a native GTK4 window. All examples are supported on Linux.
 
 ```bash
 swift run HelloWorld
-swift run BasicInteractive
+swift run Stopwatch
+swift run ParityViewsBasic
+# ... all targets work on Windows
 ```
 
 Launches a native Win32 window.
@@ -121,25 +137,46 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.example.swiftopenui/.MainActivity --es example "StateDemo"
 ```
 
-Available examples via intent extra: `HelloWorld`, `TextStyles`, `Buttons`, `StateDemo`, `NavigationDemo`, `TextFieldDemo`, `Layout`.
-
 See [android-setup.md](android-setup.md) for full setup instructions.
 
 ## Example List
 
-| Example | What it demonstrates |
-|---------|---------------------|
-| HelloWorld | Text with padding |
-| Counter | @State with Int |
-| Showcase1 | Text, Button, Spacer, Divider, Color |
-| Showcase2 | VStack, HStack, ZStack, ForEach, Frame |
-| TextStyles | All font presets and named colors |
-| Buttons | Button variants, custom labels, actions |
-| StateDemo | @State, @Binding, conditional rendering, multiple state |
-| Layout | VStack/HStack alignment, Spacer, ZStack, Frame, nested stacks |
-| FocusTest | TextField with focus preservation across rebuilds |
-| BasicInteractive | NavigationStack, gestures, animations |
-| TextFieldDemo | TextField with live Binding (Android only) |
+### Showcase
+
+| Example | Target | What it demonstrates |
+|---------|--------|---------------------|
+| HelloWorld | `HelloWorld` | Text with padding — minimal app |
+| Stopwatch | `Stopwatch` | Timer, ObservableObject, start/stop/lap |
+| ColorMixer | `ColorMixer` | Sliders, color swatches, harmony, dark theme |
+
+### Parity
+
+| Example | Target | Matrix section covered |
+|---------|--------|----------------------|
+| ViewsBasic | `ParityViewsBasic` | Text, Button, TextField, Color, Spacer, Divider |
+| ViewsLayout | `ParityViewsLayout` | VStack, HStack, ZStack, Group, ForEach, AnyView, EmptyView |
+| ViewsContainers | `ParityViewsContainers` | Toggle, Slider, Image, ScrollView, List |
+| Modifiers | `ParityModifiers` | padding, frame, colors, font, border, opacity, offset, scale |
+| StateData | `ParityStateData` | @State, @Binding, @ObservedObject, @StateObject, @Published |
+| Navigation | `ParityNavigation` | NavigationStack, NavigationLink, NavigationPath, destinations |
+| Environment | `ParityEnvironment` | @Environment, @EnvironmentObject, custom keys |
+| Gestures | `ParityGestures` | onTapGesture, onLongPressGesture, onDrag |
+| Animation | `ParityAnimation` | .animation(), withAnimation() |
+| Focus | `ParityFocus` | @FocusState (bool + enum), .focused() |
+| AppStructure | `ParityAppStructure` | App, Scene, WindowGroup, @ViewBuilder |
+
+### Legacy (to be absorbed)
+
+| Example | Will be absorbed into |
+|---------|----------------------|
+| Showcase1 | ParityViewsBasic |
+| Showcase2 | ParityViewsLayout |
+| TextStyles | ParityViewsBasic |
+| Buttons | ParityViewsBasic |
+| StateDemo | ParityStateData |
+| Layout | ParityViewsLayout |
+| FocusTest | ParityFocus |
+| BasicInteractive | ParityGestures |
 
 ## Platform Support Matrix
 

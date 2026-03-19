@@ -104,8 +104,10 @@ NavigationStack, NavigationLink, NavigationPath, .navigationTitle(), .navigation
 
 ## Examples
 
-- Current: HelloWorld, Counter, Showcase1, Showcase2, BasicInteractive, FocusTest, ColorMixer, TextStyles, Buttons, StateDemo, Layout
-- Reorganization plan: `docs/guides/examples-plan.md` — 12 themed examples
+- Showcase: HelloWorld, Stopwatch, ColorMixer (in `Examples/Showcase/`)
+- Parity: ParityViewsBasic, ParityViewsLayout, ParityViewsContainers, ParityModifiers, ParityStateData, ParityNavigation, ParityEnvironment, ParityGestures, ParityAnimation, ParityFocus, ParityAppStructure (in `Examples/Parity/`)
+- Legacy (to be absorbed): Showcase1, Showcase2, BasicInteractive, FocusTest, TextStyles, Buttons, StateDemo, Layout
+- Plan: `docs/guides/examples-plan.md` — two-track Showcase + Parity design
 - **Rules**: single `main.swift` per example, compiles and runs on all platforms, platform limitations labeled inline with fallback text (never build errors)
 - Import boilerplate: `#if os(macOS) import SwiftUI #else import SwiftOpenUI + backend imports #endif`
 - Entry point: `#if os(macOS) App.main() #elseif canImport(BackendGTK4) GTK4Backend().run() ...`
