@@ -3042,6 +3042,15 @@ extension Canvas: GTKRenderable {
             gtk_swift_drawing_area_set_content_height(area, gint(height))
         }
 
+        // When no explicit size is set, expand to fill available space
+        // (matches SwiftUI Canvas which fills its proposed size).
+        if width <= 0 {
+            gtk_widget_set_hexpand(area, 1)
+        }
+        if height <= 0 {
+            gtk_widget_set_vexpand(area, 1)
+        }
+
         let box = Unmanaged.passRetained(DrawClosureBox(drawHandler)).toOpaque()
 
         gtk_swift_drawing_area_set_draw_func(
