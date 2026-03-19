@@ -2640,6 +2640,41 @@ extension Section: WinRenderable {
     }
 }
 
+// MARK: - Phase 4C: Shape modifiers
+
+extension CornerRadiusView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Corner radius requires D2D surface for proper clipping.
+        // For HWND controls, apply WS_EX_CLIENTEDGE as visual approximation.
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        if radius > 0 {
+            // Win32 doesn't support per-corner radius on native controls.
+            // For D2D-renderable content, this could use FillRoundedRectangle.
+            // For now, pass through (content renders normally).
+        }
+        return hwnd
+    }
+}
+
+extension ShadowView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Shadow on HWND controls is not natively supported.
+        // Pass through — content renders normally without shadow.
+        // D2D shadow would require rendering content to a bitmap
+        // and drawing a blurred offset copy underneath.
+        winRenderView(content, in: context)
+    }
+}
+
+extension RotationEffectView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Rotation requires D2D SetTransform with rotation matrix.
+        // Not implemented — would need d2d1_shim.h addition.
+        // Pass through for now.
+        winRenderView(content, in: context)
+    }
+}
+
 // MARK: - Animation/effect stubs (render content, ignore effects for now)
 
 extension OpacityView: WinRenderable {
