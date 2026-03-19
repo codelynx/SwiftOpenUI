@@ -109,3 +109,12 @@ targets:
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ColorMixer
       GENERATE_INFOPLIST_FILE: YES
+
+  ParityViewsBasic:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Examples/Parity/ViewsBasic
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.electricwoods.examples.ParityViewsBasic
+      GENERATE_INFOPLIST_FILE: YES
