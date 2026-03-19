@@ -229,6 +229,11 @@ targets += [
         dependencies: exampleDeps,
         path: "Examples/Parity/Focus"
     ),
+    .executableTarget(
+        name: "ParityAppStructure",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/AppStructure"
+    ),
 ]
 
 #if os(macOS)
