@@ -1698,6 +1698,295 @@ extension TupleView3: GTKRenderable {
     }
 }
 
+// MARK: - TabView GTK extension
+
+extension Tab: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkRenderView(content)
+    }
+}
+
+extension TabView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let stack = gtk_stack_new()!
+        gtk_swift_stack_set_transition_type(stack, GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT)
+
+        var usedIds = Set<String>()
+        var orderedIds: [String] = []
+        for tab in tabs {
+            var id = tab.id
+            if usedIds.contains(id) {
+                var suffix = 2
+                while usedIds.contains("\(id)-\(suffix)") { suffix += 1 }
+                id = "\(id)-\(suffix)"
+            }
+            usedIds.insert(id)
+            orderedIds.append(id)
+            let childWidget = widgetFromOpaque(gtkRenderAnyView(tab.wrapped))
+            gtk_swift_stack_add_titled(stack, childWidget, id, tab.title)
+        }
+
+        if let tabIndex = initialTab, tabIndex >= 0, tabIndex < orderedIds.count {
+            gtk_swift_stack_set_visible_child_name(stack, orderedIds[tabIndex])
+        }
+
+        let switcher = gtk_stack_switcher_new()!
+        gtk_swift_stack_switcher_set_stack(switcher, stack)
+
+        let vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtk_box_append(boxPointer(vbox), switcher)
+        gtk_box_append(boxPointer(vbox), stack)
+        gtk_widget_set_vexpand(stack, 1)
+
+        return opaqueFromWidget(vbox)
+    }
+}
+
+// MARK: - Grid GTK extension
+
+extension Grid: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let grid = gtk_grid_new()!
+        gtk_swift_grid_set_row_spacing(grid, guint(vSpacing))
+        gtk_swift_grid_set_column_spacing(grid, guint(hSpacing))
+        gtk_swift_grid_set_column_homogeneous(grid, 1)
+
+        if useExplicitRows {
+            gtkLayoutExplicitRows(grid: grid)
+            gtk_widget_set_hexpand(grid, 1)
+            gtk_widget_set_vexpand(grid, 1)
+        } else {
+            let children = gtkRenderChildren(content)
+            for (index, child) in children.enumerated() {
+                let row = index / columns
+                let col = index % columns
+                gtk_swift_grid_attach(grid, widgetFromOpaque(child), gint(col), gint(row), 1, 1)
+            }
+        }
+
+        return opaqueFromWidget(grid)
+    }
+
+    private func gtkLayoutExplicitRows(grid: UnsafeMutablePointer<GtkWidget>) {
+        let rowViews = gtkCollectGridRows(content)
+        var row = 0
+        for rowContent in rowViews {
+            var col = 0
+            for cell in rowContent {
+                let widget = widgetFromOpaque(cell.widget)
+                gtk_widget_set_hexpand(widget, 1)
+                gtk_widget_set_vexpand(widget, 1)
+                gtk_widget_set_halign(widget, GTK_ALIGN_FILL)
+                gtk_widget_set_valign(widget, GTK_ALIGN_FILL)
+                gtk_swift_grid_attach(grid, widget, gint(col), gint(row), gint(cell.columnSpan), 1)
+                col += cell.columnSpan
+            }
+            row += 1
+        }
+    }
+}
+
+/// Grid cell info for layout.
+private struct GTKGridCell {
+    let widget: OpaquePointer
+    let columnSpan: Int
+}
+
+/// Walk the content view tree and extract GridRow children with their cell spans.
+private func gtkCollectGridRows<V: View>(_ view: V) -> [[GTKGridCell]] {
+    var rows: [[GTKGridCell]] = []
+    let mirror = Mirror(reflecting: view)
+    let children = mirror.children.map { $0.value }
+
+    if children.count > 1 || (children.count == 1 && children[0] is MultiChildView) {
+        for child in children {
+            if let rowCells = gtkExtractRowCells(child) {
+                rows.append(rowCells)
+            } else if let anyView = child as? any View {
+                rows.append([GTKGridCell(widget: gtkRenderAnyView(anyView), columnSpan: 1)])
+            }
+        }
+    } else if let rowCells = gtkExtractRowCells(view) {
+        rows.append(rowCells)
+    } else {
+        rows.append([GTKGridCell(widget: gtkRenderView(view), columnSpan: 1)])
+    }
+
+    return rows
+}
+
+/// Try to extract cells from a GridRow view.
+private func gtkExtractRowCells(_ view: Any) -> [GTKGridCell]? {
+    let typeName = String(describing: type(of: view))
+    guard typeName.contains("GridRow") else { return nil }
+
+    let mirror = Mirror(reflecting: view)
+    guard let contentChild = mirror.children.first(where: { $0.label == "content" }) else {
+        if let anyView = view as? any View {
+            return [GTKGridCell(widget: gtkRenderAnyView(anyView), columnSpan: 1)]
+        }
+        return nil
+    }
+
+    return gtkExtractCellsFromContent(contentChild.value)
+}
+
+/// Extract cells from a GridRow's inner content, checking for GridCellSpanProvider.
+private func gtkExtractCellsFromContent(_ content: Any) -> [GTKGridCell] {
+    var cells: [GTKGridCell] = []
+    let typeName = String(describing: type(of: content))
+
+    if typeName.contains("TupleView") || content is MultiChildView {
+        let contentMirror = Mirror(reflecting: content)
+        for child in contentMirror.children {
+            cells.append(gtkMakeCell(from: child.value))
+        }
+    } else {
+        cells.append(gtkMakeCell(from: content))
+    }
+
+    return cells
+}
+
+/// Create a GTKGridCell from a view, checking for GridCellSpanProvider.
+private func gtkMakeCell(from view: Any) -> GTKGridCell {
+    let span = gtkFindColumnSpan(in: view)
+
+    if let anyView = view as? any View {
+        return GTKGridCell(widget: gtkRenderAnyView(anyView), columnSpan: span)
+    }
+
+    let placeholder = gtk_label_new("?")!
+    return GTKGridCell(widget: opaqueFromWidget(placeholder), columnSpan: span)
+}
+
+/// Recursively walk through modifier wrappers to find a GridCellSpanProvider.
+private func gtkFindColumnSpan(in view: Any) -> Int {
+    if let spanProvider = view as? GridCellSpanProvider {
+        return spanProvider.gridColumnSpan
+    }
+    let mirror = Mirror(reflecting: view)
+    for child in mirror.children {
+        if child.label == "content" {
+            let innerSpan = gtkFindColumnSpan(in: child.value)
+            if innerSpan > 1 { return innerSpan }
+        }
+    }
+    return 1
+}
+
+extension GridRow: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // Fallback if used outside Grid — wrap in HStack
+        let box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)!
+        for child in gtkRenderChildren(content) {
+            gtk_box_append(boxPointer(box), widgetFromOpaque(child))
+        }
+        return opaqueFromWidget(box)
+    }
+}
+
+extension GridCellSpanView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkRenderView(content)
+    }
+}
+
+// MARK: - DisclosureGroup GTK extension
+
+/// Closure box for expander state change.
+private class ExpandedClosureBox {
+    let closure: (Bool) -> Void
+    init(_ closure: @escaping (Bool) -> Void) { self.closure = closure }
+}
+
+extension DisclosureGroup: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let expander = gtk_swift_expander_new(title)!
+        gtk_swift_expander_set_expanded(expander, isExpanded ? 1 : 0)
+
+        let childWidget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_margin_start(childWidget, 16)
+        gtk_swift_expander_set_child(expander, childWidget)
+
+        if let onChange = onExpandedChange {
+            let box = Unmanaged.passRetained(ExpandedClosureBox(onChange)).toOpaque()
+            g_signal_connect_data(
+                gpointer(expander),
+                "notify::expanded",
+                unsafeBitCast({ (expanderPtr: gpointer?, _: gpointer?, userData: gpointer?) in
+                    guard let expanderPtr = expanderPtr, let userData = userData else { return }
+                    let widget = UnsafeMutableRawPointer(expanderPtr).assumingMemoryBound(to: GtkWidget.self)
+                    let box = Unmanaged<ExpandedClosureBox>.fromOpaque(userData).takeUnretainedValue()
+                    let expanded = gtk_swift_expander_get_expanded(widget) != 0
+                    box.closure(expanded)
+                } as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
+                box,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<ExpandedClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+        }
+
+        return opaqueFromWidget(expander)
+    }
+}
+
+// MARK: - Form GTK extension
+
+extension Form: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12)!
+        let boxPtr = boxPointer(box)
+
+        for child in gtkRenderChildren(content) {
+            gtk_box_append(boxPtr, widgetFromOpaque(child))
+        }
+
+        gtk_widget_set_hexpand(box, 1)
+        gtk_widget_set_vexpand(box, 1)
+        applyCSSToWidget(box, properties: "padding: 16px;")
+
+        return opaqueFromWidget(box)
+    }
+}
+
+// MARK: - Section GTK extension
+
+extension Section: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4)!
+        let boxPtr = boxPointer(box)
+
+        if let header = header {
+            let label = gtk_label_new(nil)!
+            let escaped = header
+                .replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+            gtk_swift_label_set_markup(label, "<b>\(escaped)</b>")
+            gtk_widget_set_halign(label, GTK_ALIGN_START)
+            gtk_box_append(boxPtr, label)
+        }
+
+        let contentWidget = widgetFromOpaque(gtkRenderView(content))
+        gtk_box_append(boxPtr, contentWidget)
+
+        if let footer = footer {
+            let label = gtk_label_new(footer)!
+            gtk_widget_set_halign(label, GTK_ALIGN_START)
+            applyCSSToWidget(label, properties: "font-size: 11px; opacity: 0.6;")
+            gtk_box_append(boxPtr, label)
+        }
+
+        let sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)!
+        gtk_box_append(boxPtr, sep)
+
+        return opaqueFromWidget(box)
+    }
+}
+
 // MARK: - Stateful view rendering
 
 private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {

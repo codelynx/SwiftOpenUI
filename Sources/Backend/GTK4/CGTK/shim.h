@@ -119,6 +119,83 @@ gtk_swift_spin_button_get_value(GtkWidget *widget) {
     return gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
 }
 
+// --- GtkGrid shims ---
+
+static inline void
+gtk_swift_grid_attach(GtkWidget *grid, GtkWidget *child,
+                      gint col, gint row, gint width, gint height) {
+    gtk_grid_attach(GTK_GRID(grid), child, col, row, width, height);
+}
+
+static inline void
+gtk_swift_grid_set_row_spacing(GtkWidget *grid, guint spacing) {
+    gtk_grid_set_row_spacing(GTK_GRID(grid), spacing);
+}
+
+static inline void
+gtk_swift_grid_set_column_spacing(GtkWidget *grid, guint spacing) {
+    gtk_grid_set_column_spacing(GTK_GRID(grid), spacing);
+}
+
+static inline void
+gtk_swift_grid_set_column_homogeneous(GtkWidget *grid, gboolean homogeneous) {
+    gtk_grid_set_column_homogeneous(GTK_GRID(grid), homogeneous);
+}
+
+// --- GtkExpander shims ---
+
+static inline GtkWidget *
+gtk_swift_expander_new(const char *label) {
+    return gtk_expander_new(label);
+}
+
+static inline void
+gtk_swift_expander_set_child(GtkWidget *expander, GtkWidget *child) {
+    gtk_expander_set_child(GTK_EXPANDER(expander), child);
+}
+
+static inline void
+gtk_swift_expander_set_expanded(GtkWidget *expander, gboolean expanded) {
+    gtk_expander_set_expanded(GTK_EXPANDER(expander), expanded);
+}
+
+static inline gboolean
+gtk_swift_expander_get_expanded(GtkWidget *expander) {
+    return gtk_expander_get_expanded(GTK_EXPANDER(expander));
+}
+
+// --- Label markup ---
+
+static inline void
+gtk_swift_label_set_markup(GtkWidget *label, const char *markup) {
+    gtk_label_set_markup(GTK_LABEL(label), markup);
+}
+
+// --- GtkStack / GtkStackSwitcher shims ---
+
+static inline void
+gtk_swift_stack_set_transition_type(GtkWidget *stack, GtkStackTransitionType type) {
+    gtk_stack_set_transition_type(GTK_STACK(stack), type);
+}
+
+static inline GtkWidget *
+gtk_swift_stack_add_titled(GtkWidget *stack, GtkWidget *child,
+                           const char *name, const char *title) {
+    GtkStackPage *page = gtk_stack_add_titled(GTK_STACK(stack), child, name, title);
+    (void)page;
+    return child;
+}
+
+static inline void
+gtk_swift_stack_set_visible_child_name(GtkWidget *stack, const char *name) {
+    gtk_stack_set_visible_child_name(GTK_STACK(stack), name);
+}
+
+static inline void
+gtk_swift_stack_switcher_set_stack(GtkWidget *switcher, GtkWidget *stack) {
+    gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(switcher), GTK_STACK(stack));
+}
+
 // --- Window titlebar helpers ---
 
 /// Set or clear the window titlebar. Pass NULL to remove a custom titlebar.
