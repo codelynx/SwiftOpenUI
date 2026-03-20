@@ -91,11 +91,13 @@ struct CalculatorView: View {
     func calcBtn(_ label: String, bg: Color, fg: Color,
                   action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label)
-                .font(.title)
-                .foregroundColor(fg)
-                .frame(width: 64, height: 64)
-                .background(bg)
+            ZStack {
+                bg
+                Text(label)
+                    .font(.title)
+                    .foregroundColor(fg)
+            }
+            .frame(minHeight: 64)
         }
     }
 

@@ -396,6 +396,13 @@ extension ZStack: GTKRenderable {
                 gtk_overlay_set_child(OpaquePointer(overlay), widget)
                 first = false
             } else {
+                // Center overlay children (matches SwiftUI ZStack default)
+                if gtk_widget_get_hexpand(widget) == 0 {
+                    gtk_widget_set_halign(widget, GTK_ALIGN_CENTER)
+                }
+                if gtk_widget_get_vexpand(widget) == 0 {
+                    gtk_widget_set_valign(widget, GTK_ALIGN_CENTER)
+                }
                 gtk_overlay_add_overlay(OpaquePointer(overlay), widget)
             }
         }
