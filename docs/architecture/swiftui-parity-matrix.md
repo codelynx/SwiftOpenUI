@@ -19,8 +19,8 @@ Last updated: 2026-03-19
 | Text | Y | Y | Y | Y | Y | Y | |
 | Button | Y | Y | Y | Y | Y | Y | Generic Label view supported |
 | TextField | Y | Y | Y | Y | Y | Y | Single-line; Binding<String> |
-| Toggle | Y | Y | Y | Y | - | - | GtkCheckButton / Win32 checkbox |
-| Slider | Y | Y | Y | Y | - | - | Debounced on GTK4; container subclass on Win32 |
+| Toggle | Y | Y | Y | Y | Y | - | GtkCheckButton / Win32 checkbox / Web checkbox |
+| Slider | Y | Y | Y | Y | Y | - | Debounced on GTK4; container subclass on Win32; Web range input |
 | Image | Y | Y | Y | Y | - | - | GTK icon theme + file; Win32: WIC (PNG/JPEG/BMP/GIF) + stock icons |
 | Color | Y | Y | Y | Y | Y | Y | RGBA, hex, HSB constructors |
 | Spacer | Y | Y | Y | Y | Y | Y | |
@@ -31,23 +31,23 @@ Last updated: 2026-03-19
 | Group | Y | Y | Y | Y | Y | Y | |
 | ForEach | Y | Y | Y | Y | Y | Y | Identifiable, keyPath, Range |
 | List | Y | Y | Y | Y | - | - | Content-based; no selection yet |
-| ScrollView | Y | Y | Y | Y | - | - | Axis OptionSet |
+| ScrollView | Y | Y | Y | Y | Y | - | Axis OptionSet; Web: CSS overflow |
 | AnyView | Y | Y | Y | Y | Y | Y | |
 | EmptyView | Y | Y | Y | Y | Y | Y | |
 | NavigationStack | Y | Y | Y | Y | Y | Y | GtkStack / Win32 HWND stack / DOM stack |
 | NavigationLink | Y | Y | Y | Y | Y | Y | String label only |
-| SecureField | Y | Y | Y | Y | - | - | GTK: PasswordEntry; Win32: EDIT+ES_PASSWORD |
-| TextEditor | Y | Y | Y | Y | - | - | GTK: TextView+ScrolledWindow; Win32: EDIT+ES_MULTILINE |
+| SecureField | Y | Y | Y | Y | Y | - | GTK: PasswordEntry; Win32: EDIT+ES_PASSWORD; Web: password input |
+| TextEditor | Y | Y | Y | Y | Y | - | GTK: TextView+ScrolledWindow; Win32: EDIT+ES_MULTILINE; Web: textarea |
 | ProgressView | Y | Y | Y | Y | - | - | GTK: GtkProgressBar; Win32: msctls_progress32 |
 | Stepper | Y | Y | Y | Y | - | - | GTK: SpinButton; Win32: label+buttons |
 | Label | Y | Y | Y | Y | - | - | GTK: icon+text; Win32: text with [icon] prefix |
-| Link | Y | Y | Y | Y | - | - | GTK: LinkButton; Win32: ShellExecuteW |
+| Link | Y | Y | Y | Y | Y | - | GTK: LinkButton; Win32: ShellExecuteW; Web: anchor tag |
 | TabView | Y | Y | Y | Y | - | - | GTK: Stack+Switcher; Win32: button bar |
 | Grid | Y | Y | Y | Y | - | - | GTK: GtkGrid auto-wrap+rows; Win32: VStack of HStacks |
 | GridRow | Y | Y | Y | Y | - | - | MultiChildView, .gridCellColumns() span |
 | DisclosureGroup | Y | Y | Y | Y | - | - | GTK: GtkExpander; Win32: toggle+show/hide |
-| Form | Y | Y | Y | Y | - | - | GTK: styled GtkBox; Win32: VStack+padding |
-| Section | Y | Y | Y | Y | - | - | GTK: Pango header; Win32: header+divider |
+| Form | Y | Y | Y | Y | Y | - | GTK: styled GtkBox; Win32: VStack+padding; Web: styled div |
+| Section | Y | Y | Y | Y | Y | - | GTK: Pango header; Win32: header+divider; Web: h3+content |
 | LazyVStack | Y | Y | Y | Y | - | - | GTK: virtualized GtkListView; Win32: non-virtualized |
 | LazyHStack | Y | Y | Y | Y | - | - | GTK: GtkListView horizontal; Win32: HStack |
 | LazyVGrid | Y | Y | Y | Y | - | - | GTK: GtkGridView adaptive; Win32: non-virtualized |
@@ -87,9 +87,9 @@ Last updated: 2026-03-19
 | .focused() | Y | Y | Y | Y | - | Y | Web: no-op (pass-through) |
 | .modifier() | Y | Y | Y | Y | Y | Y | Custom ViewModifier |
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
-| .cornerRadius() | Y | Y | Y | Y | - | - | GTK: CSS; Win32: SetWindowRgn rounded region |
-| .shadow() | Y | Y | Y | Y | - | - | GTK: CSS; Win32: layered shadow with alpha |
-| .rotationEffect() | Y | Y | Y | Y | - | - | GTK: CSS transform; Win32: D2D SetTransform |
+| .cornerRadius() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: SetWindowRgn rounded region |
+| .shadow() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: layered shadow with alpha |
+| .rotationEffect() | Y | Y | Y | Y | Y | - | GTK/Web: CSS transform; Win32: D2D SetTransform |
 | .overlay() | Y | Y | Y | Y | - | - | GTK: GtkOverlay; Win32: container |
 | .sheet() | Y | Y | Y | Y | - | - | GTK: modal window; Win32: popup |
 | .alert() | Y | Y | Y | Y | - | - | GTK: modal dialog; Win32: MessageBoxW |

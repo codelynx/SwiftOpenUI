@@ -938,3 +938,192 @@ extension EnvironmentModifierView: WebRenderable {
         return result
     }
 }
+
+// MARK: - Phase A views
+
+extension Toggle: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("label")
+        container.style = "display: flex; align-items: center; gap: 8px; cursor: pointer;"
+
+        let input = document.createElement("input")
+        input.type = "checkbox"
+        input.checked = .boolean(isOn.wrappedValue)
+
+        let binding = isOn
+        let handler = JSClosure { _ in
+            binding.wrappedValue = input.checked.boolean ?? false
+            return .undefined
+        }
+        webRetainClosure(handler)
+        _ = input.addEventListener("change", handler)
+
+        let text = document.createTextNode(label)
+        _ = container.appendChild(input)
+        _ = container.appendChild(text)
+        return container
+    }
+}
+
+extension Slider: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let input = document.createElement("input")
+        input.type = "range"
+        input.min = .string("\(range.lowerBound)")
+        input.max = .string("\(range.upperBound)")
+        input.step = .string("\(step)")
+        input.value = .string("\(value.wrappedValue)")
+        input.style = "width: 100%;"
+
+        let binding = value
+        let handler = JSClosure { _ in
+            if let str = input.value.string, let val = Double(str) {
+                binding.wrappedValue = val
+            }
+            return .undefined
+        }
+        webRetainClosure(handler)
+        _ = input.addEventListener("input", handler)
+
+        return input
+    }
+}
+
+extension ScrollView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let div = document.createElement("div")
+        let overflowX = axes.contains(.horizontal) ? "auto" : "hidden"
+        let overflowY = axes.contains(.vertical) ? "auto" : "hidden"
+        div.style = .string("overflow-x: \(overflowX); overflow-y: \(overflowY); max-height: 100%;")
+
+        let child = webRenderView(content)
+        _ = div.appendChild(child)
+        return div
+    }
+}
+
+extension SecureField: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let input = document.createElement("input")
+        input.type = "password"
+        input.value = .string(text.wrappedValue)
+        input.placeholder = .string(placeholder)
+        input.style = "padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box;"
+
+        let binding = text
+        let handler = JSClosure { _ in
+            let newValue = input.value.string ?? ""
+            if newValue != binding.wrappedValue {
+                binding.wrappedValue = newValue
+            }
+            return .undefined
+        }
+        webRetainClosure(handler)
+        _ = input.addEventListener("input", handler)
+
+        return input
+    }
+}
+
+extension TextEditor: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let textarea = document.createElement("textarea")
+        textarea.value = .string(text.wrappedValue)
+        textarea.style = "padding: 6px 8px; font-size: 16px; width: 100%; min-height: 80px; box-sizing: border-box; resize: vertical;"
+
+        let binding = text
+        let handler = JSClosure { _ in
+            let newValue = textarea.value.string ?? ""
+            if newValue != binding.wrappedValue {
+                binding.wrappedValue = newValue
+            }
+            return .undefined
+        }
+        webRetainClosure(handler)
+        _ = textarea.addEventListener("input", handler)
+
+        return textarea
+    }
+}
+
+extension Link: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let a = document.createElement("a")
+        a.href = .string(destination)
+        a.target = "_blank"
+        a.textContent = .string(title)
+        a.style = "color: #0a84ff; text-decoration: underline; cursor: pointer;"
+        return a
+    }
+}
+
+extension Form: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let div = document.createElement("div")
+        div.style = "display: flex; flex-direction: column; gap: 8px; padding: 12px;"
+
+        let children = BackendWeb.webRenderChildren(content)
+        for child in children {
+            _ = div.appendChild(child)
+        }
+        return div
+    }
+}
+
+extension Section: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let div = document.createElement("div")
+        div.style = "display: flex; flex-direction: column; gap: 4px;"
+
+        if let headerText = header {
+            let h = document.createElement("h3")
+            h.textContent = .string(headerText)
+            h.style = "margin: 0; font-size: 14px; font-weight: 600; color: #888;"
+            _ = div.appendChild(h)
+        }
+
+        let child = webRenderView(content)
+        _ = div.appendChild(child)
+
+        if let footerText = footer {
+            let f = document.createElement("p")
+            f.textContent = .string(footerText)
+            f.style = "margin: 0; font-size: 12px; color: #666;"
+            _ = div.appendChild(f)
+        }
+
+        return div
+    }
+}
+
+// MARK: - Phase A modifiers
+
+extension CornerRadiusView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("display: inline-block; border-radius: \(radius)px; overflow: hidden;")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension ShadowView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("display: inline-block; box-shadow: \(x)px \(y)px \(radius)px \(color.cssColor);")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension RotationView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("display: inline-block; transform: rotate(\(angle)deg); transform-origin: center;")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
