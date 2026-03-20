@@ -140,13 +140,94 @@ extension SwiftOpenUI.TextField: WebRenderable {
 
 extension FocusedView: WebRenderable {
     public func webCreateElement() -> JSValue {
-        webRenderView(content)
+        let child = webRenderView(content)
+
+        // Wire DOM focus/blur to update @FocusState<Bool>
+        let storage = focusState.storage
+        let focusHandler = JSClosure { _ in
+            storage.setValue(true)
+            return .undefined
+        }
+        let blurHandler = JSClosure { _ in
+            storage.setValue(false)
+            return .undefined
+        }
+        webRetainClosure(focusHandler)
+        webRetainClosure(blurHandler)
+        _ = child.addEventListener("focus", focusHandler)
+        _ = child.addEventListener("blur", blurHandler)
+
+        // Handle programmatic focus changes
+        let childRef = child
+        storage.addPlatformFocusCallback(key: AnyHashable(ObjectIdentifier(storage))) { newValue in
+            if let focused = newValue as? Bool {
+                if focused {
+                    _ = childRef.focus()
+                } else {
+                    _ = childRef.blur()
+                }
+            }
+        }
+
+        // Apply initial focus if already set
+        if focusState.wrappedValue {
+            // Defer focus to after DOM insertion
+            let applyFocus = JSClosure { _ in
+                _ = childRef.focus()
+                return .undefined
+            }
+            webRetainClosure(applyFocus)
+            _ = JSObject.global.requestAnimationFrame!(applyFocus)
+        }
+
+        return child
     }
 }
 
 extension FocusedEqualsView: WebRenderable {
     public func webCreateElement() -> JSValue {
-        webRenderView(content)
+        let child = webRenderView(content)
+
+        // Wire DOM focus/blur to update @FocusState<Value?>
+        let storage = focusState.storage
+        let matchValue = value
+        let focusHandler = JSClosure { _ in
+            storage.setValue(matchValue)
+            return .undefined
+        }
+        let blurHandler = JSClosure { _ in
+            // Only clear if we're still the focused field
+            if storage.value == matchValue {
+                storage.setValue(nil)
+            }
+            return .undefined
+        }
+        webRetainClosure(focusHandler)
+        webRetainClosure(blurHandler)
+        _ = child.addEventListener("focus", focusHandler)
+        _ = child.addEventListener("blur", blurHandler)
+
+        // Handle programmatic focus changes
+        let childRef = child
+        storage.addPlatformFocusCallback(key: AnyHashable(matchValue)) { newValue in
+            if newValue == matchValue {
+                _ = childRef.focus()
+            } else {
+                _ = childRef.blur()
+            }
+        }
+
+        // Apply initial focus if already set to our value
+        if focusState.wrappedValue == value {
+            let applyFocus = JSClosure { _ in
+                _ = childRef.focus()
+                return .undefined
+            }
+            webRetainClosure(applyFocus)
+            _ = JSObject.global.requestAnimationFrame!(applyFocus)
+        }
+
+        return child
     }
 }
 
@@ -235,6 +316,7 @@ private class WebNavigationContext {
     var pathBinding: Binding<NavigationPath>?
     let destinationRegistry = WebDestinationRegistry()
     private var isSyncing = false
+    let toolbarArea: JSValue  // Right side of header for toolbar items
 
     init() {
         let doc = JSObject.global.document
@@ -253,6 +335,16 @@ private class WebNavigationContext {
         headerTitle = doc.createElement("span")
         headerTitle.style = "font-weight: bold; font-size: 17px;"
         _ = header.appendChild(headerTitle)
+
+        // Spacer pushes toolbar to the right
+        let spacer = doc.createElement("div")
+        spacer.style = "flex: 1;"
+        _ = header.appendChild(spacer)
+
+        // Toolbar area (right side of header)
+        toolbarArea = doc.createElement("div")
+        toolbarArea.style = "display: flex; align-items: center; gap: 4px;"
+        _ = header.appendChild(toolbarArea)
 
         _ = container.appendChild(header)
 
@@ -1930,6 +2022,25 @@ extension AlertModifierView: WebRenderable {
             _ = wrapper.appendChild(child)
             _ = wrapper.appendChild(overlay)
             return wrapper
+        }
+
+        return child
+    }
+}
+
+// MARK: - Phase D (partial)
+
+extension ToolbarView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+
+        // Inject toolbar items into the current NavigationStack header
+        if let ctx = _webCurrentNavContext {
+            ctx.toolbarArea.innerHTML = ""
+            for item in toolbarItems {
+                let rendered = webRenderAnyView(item.wrapped)
+                _ = ctx.toolbarArea.appendChild(rendered)
+            }
         }
 
         return child

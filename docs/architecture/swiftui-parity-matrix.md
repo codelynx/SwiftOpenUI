@@ -84,7 +84,7 @@ Last updated: 2026-03-19
 | .environment() | Y | Y | Y | Y | Y | Y | |
 | .navigationTitle() | Y | Y | Y | Y | Y | Y | |
 | .navigationDestination() | Y | Y | Y | Y | Y | Y | Type-based registry |
-| .focused() | Y | Y | Y | Y | - | Y | Web: no-op (pass-through) |
+| .focused() | Y | Y | Y | Y | Y | Y | Web: DOM focus/blur + FocusState binding |
 | .modifier() | Y | Y | Y | Y | Y | Y | Custom ViewModifier |
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
 | .cornerRadius() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: SetWindowRgn rounded region |
@@ -97,7 +97,7 @@ Last updated: 2026-03-19
 | .onAppear() | Y | Y | Y | Y | ~ | - | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
 | .searchable() | Y | Y | Y | Y | Y | - | GTK: SearchEntry; Win32: EDIT; Web: search input |
-| .toolbar() | Y | Y | Y | Y | - | - | GTK: header bar; Win32: nav header |
+| .toolbar() | Y | Y | Y | Y | Y | - | GTK: header bar; Win32: nav header; Web: header right area |
 | .gridCellColumns() | Y | Y | Y | Y | Y | - | Column span in Grid/GridRow; Web: grid-column span |
 | .pickerStyle() | Y | Y | Y | Y | Y | - | .automatic (select), .segmented (button row), .palette (alias) |
 | .navigationSplitViewColumnWidth() | Y | Y | Y | Y | Y | - | min/ideal/max; Web: pass-through (consumed by NavigationSplitView) |
