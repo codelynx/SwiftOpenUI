@@ -96,7 +96,9 @@ extension Spacer: GTKRenderable {
 
 extension Divider: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        opaqueFromWidget(gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)!)
+        let sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)!
+        gtk_widget_set_hexpand(sep, 1)
+        return opaqueFromWidget(sep)
     }
 }
 
@@ -280,6 +282,15 @@ extension Button: GTKRenderable {
             let childWidget = widgetFromOpaque(gtkRenderView(label))
             let btnPtr = UnsafeMutableRawPointer(button).assumingMemoryBound(to: GtkButton.self)
             gtk_button_set_child(btnPtr, childWidget)
+            // Remove GTK default button border/padding so custom-styled
+            // labels (with .background/.frame) render cleanly.
+            applyCSSToWidget(button, properties: """
+                border: none;
+                outline: none;
+                padding: 0;
+                min-height: 0;
+                min-width: 0;
+                """)
         }
 
         gtk_widget_set_hexpand(button, 0)
@@ -461,26 +472,45 @@ extension FrameView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let child = widgetFromOpaque(gtkRenderView(content))
         let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        var css = ""
+        // SwiftUI .frame() centers non-expanding content by default.
+        // Center the child inside the wrapper when the frame has an
+        // explicit size on that axis.  Only set alignment — do NOT
+        // set expand on the child, as that would interfere with
+        // parent VStack/HStack alignment logic.
+        if width != nil && gtk_widget_get_hexpand(child) == 0 {
+            gtk_widget_set_halign(child, GTK_ALIGN_CENTER)
+        }
+        if height != nil && gtk_widget_get_vexpand(child) == 0 {
+            gtk_widget_set_valign(child, GTK_ALIGN_CENTER)
+        }
+        // Use gtk_widget_set_size_request for dimensions.
+        // GTK4 CSS does not support max-width/max-height.
+        var reqW: gint = -1
+        var reqH: gint = -1
+
         if let w = width {
-            css += "min-width: \(Int(w))px; max-width: \(Int(w))px; "
+            reqW = gint(w)
             gtk_widget_set_hexpand(wrapper, 0)
         }
         if let h = height {
-            css += "min-height: \(Int(h))px; max-height: \(Int(h))px; "
+            reqH = gint(h)
             gtk_widget_set_vexpand(wrapper, 0)
         }
-        if let mw = minWidth { css += "min-width: \(Int(mw))px; " }
-        if let mh = minHeight { css += "min-height: \(Int(mh))px; " }
+        if let mw = minWidth {
+            if reqW < gint(mw) { reqW = gint(mw) }
+        }
+        if let mh = minHeight {
+            if reqH < gint(mh) { reqH = gint(mh) }
+        }
         if let xw = maxWidth {
             if xw == .infinity { gtk_widget_set_hexpand(wrapper, 1) }
-            else { css += "max-width: \(Int(xw))px; " }
         }
         if let xh = maxHeight {
             if xh == .infinity { gtk_widget_set_vexpand(wrapper, 1) }
-            else { css += "max-height: \(Int(xh))px; " }
         }
-        if !css.isEmpty { applyCSSToWidget(wrapper, properties: css) }
+        if reqW != -1 || reqH != -1 {
+            gtk_widget_set_size_request(wrapper, reqW, reqH)
+        }
         // Propagate child expand flags to wrapper when the frame doesn't
         // constrain that axis.  Without this, a Spacer inside an HStack
         // inside .frame(height:) loses its horizontal expansion.

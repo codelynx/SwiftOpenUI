@@ -1,6 +1,7 @@
 import CGTK
 import CGTKBridge
 import SwiftOpenUI
+import Foundation
 
 /// Recursively search a widget tree for a navigation-provided window titlebar.
 private func findTitlebar(in widget: UnsafeMutablePointer<GtkWidget>) -> UnsafeMutablePointer<GtkWidget>? {
@@ -98,6 +99,16 @@ public struct GTK4Backend: RenderBackend {
             },
             GConnectFlags(rawValue: 0)
         )
+
+        // Pump Foundation RunLoop sources (Timer, etc.) periodically.
+        // GTK4's g_application_run blocks in GMainLoop, so Foundation
+        // timers (e.g. Timer.scheduledTimer) never fire unless we
+        // explicitly spin RunLoop.main from a GLib timeout source.
+        g_timeout_add(5, { _ -> gboolean in
+            let limit = Date(timeIntervalSinceNow: 0.001)
+            _ = RunLoop.main.run(mode: .default, before: limit)
+            return 1 // G_SOURCE_CONTINUE
+        }, nil)
 
         let status = g_application_run(applicationPointer(appPtr), 0, nil)
         g_object_unref(gpointer(appPtr))
