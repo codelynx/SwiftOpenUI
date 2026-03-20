@@ -13,10 +13,13 @@ extension WindowGroup: WebWindowRenderable {
         // Set page title
         document.title = .string(title)
 
+        // Reset body margins so app fills viewport
+        document.body.style = "margin: 0; min-height: 100vh;"
+
         // Create app container
         let container = document.createElement("div")
         container.id = "app"
-        container.style = "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px;"
+        container.style = "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; display: flex; flex-direction: column;"
 
         // Render content into DOM
         let element = webRenderView(content)

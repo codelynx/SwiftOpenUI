@@ -816,7 +816,10 @@ extension ZStack: WebRenderable {
 
 extension Group: WebRenderable, WebMultiChildRenderable {
     public func webCreateElement() -> JSValue {
+        // display: contents makes Group invisible to layout —
+        // children participate directly in the parent flex container.
         let div = document.createElement("div")
+        div.style = "display: contents;"
         for child in webRenderChildren() {
             _ = div.appendChild(child)
         }
@@ -868,6 +871,9 @@ extension FrameView: WebRenderable {
         if let maxW = maxWidth { styles.append("max-width: \(maxW == .infinity ? 99999 : maxW)px") }
         if let minH = minHeight { styles.append("min-height: \(minH)px") }
         if let maxH = maxHeight { styles.append("max-height: \(maxH == .infinity ? 99999 : maxH)px") }
+        // Propagate flex layout so children (Spacer, etc.) work inside frames
+        styles.append("display: flex")
+        styles.append("flex-direction: column")
 
         let wrapper = document.createElement("div")
         wrapper.style = .string(styles.joined(separator: "; ") + ";")
@@ -890,7 +896,7 @@ extension ForegroundColorView: WebRenderable {
 extension BackgroundView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
-        let css = "background-color: \(color.cssColor);"
+        let css = "background-color: \(color.cssColor); display: flex; flex-direction: column; flex: 1;"
         let wrapper = document.createElement("div")
         wrapper.style = .string(css)
         _ = wrapper.appendChild(child)
