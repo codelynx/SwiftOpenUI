@@ -8,9 +8,9 @@ A cross-platform SwiftUI framework that renders natively on macOS, Linux, Window
 
 | macOS (SwiftUI) | Linux (GTK4) |
 |:---:|:---:|
-| ![macOS](screenshots/macos/showcase-ColorMixer.png) | ![Linux](screenshots/linux/showcase-ColorMixer.png) |
+| <img src="screenshots/macos/showcase-ColorMixer.png" width="380"> | <img src="screenshots/linux/showcase-ColorMixer.png" width="380"> |
 | **Windows (Win32)** | **Web (Wasm)** |
-| ![Windows](screenshots/windows/showcase-ColorMixer.png) | ![Web](screenshots/web/showcase-ColorMixer.png) |
+| <img src="screenshots/windows/showcase-ColorMixer.png" width="380"> | <img src="screenshots/web/showcase-ColorMixer.png" width="380"> |
 
 > Same Swift code. Native rendering on each platform. No electron, no webview wrappers.
 
