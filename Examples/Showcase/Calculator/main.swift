@@ -42,11 +42,11 @@ struct CalculatorView: View {
             HStack {
                 Spacer()
                 Text(display)
-                    .font(.largeTitle)
+                    .font(.system(size: 48, weight: .light))
                     .foregroundColor(.white)
                     .padding()
             }
-            .frame(minHeight: 80)
+            .frame(minHeight: 88)
             .background(Color.black)
 
             // Button grid
@@ -97,7 +97,7 @@ struct CalculatorView: View {
                     .font(.title)
                     .foregroundColor(fg)
             }
-            .frame(minHeight: 64)
+            .frame(minHeight: 72)
         }
     }
 
