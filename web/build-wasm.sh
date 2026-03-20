@@ -7,7 +7,15 @@
 set -e
 cd "$(dirname "$0")/.."
 
-PRODUCTS=(HelloWorld TextStyles Buttons StateDemo Layout)
+PRODUCTS=(
+    # Showcase
+    HelloWorld Stopwatch ColorMixer
+    # Parity
+    ParityViewsBasic ParityViewsLayout ParityViewsContainers
+    ParityModifiers ParityStateData ParityNavigation
+    ParityEnvironment ParityGestures ParityAnimation
+    ParityFocus ParityAppStructure
+)
 WEB_EXAMPLES="web/examples"
 mkdir -p "$WEB_EXAMPLES"
 

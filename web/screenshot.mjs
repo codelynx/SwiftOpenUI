@@ -17,11 +17,22 @@ mkdirSync(outDir, { recursive: true })
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
 const examples = [
-    { name: '01-HelloWorld', path: '/examples/HelloWorld.html' },
-    { name: '02-TextStyles', path: '/examples/TextStyles.html' },
-    { name: '03-Buttons', path: '/examples/Buttons.html' },
-    { name: '04-State', path: '/examples/StateDemo.html' },
-    { name: '05-Layout', path: '/examples/Layout.html' },
+    // Showcase
+    { name: 'showcase-HelloWorld', path: '/examples/HelloWorld.html' },
+    { name: 'showcase-Stopwatch', path: '/examples/Stopwatch.html' },
+    { name: 'showcase-ColorMixer', path: '/examples/ColorMixer.html' },
+    // Parity
+    { name: 'parity-ViewsBasic', path: '/examples/ParityViewsBasic.html' },
+    { name: 'parity-ViewsLayout', path: '/examples/ParityViewsLayout.html' },
+    { name: 'parity-ViewsContainers', path: '/examples/ParityViewsContainers.html' },
+    { name: 'parity-Modifiers', path: '/examples/ParityModifiers.html' },
+    { name: 'parity-StateData', path: '/examples/ParityStateData.html' },
+    { name: 'parity-Navigation', path: '/examples/ParityNavigation.html' },
+    { name: 'parity-Environment', path: '/examples/ParityEnvironment.html' },
+    { name: 'parity-Gestures', path: '/examples/ParityGestures.html' },
+    { name: 'parity-Animation', path: '/examples/ParityAnimation.html' },
+    { name: 'parity-Focus', path: '/examples/ParityFocus.html' },
+    { name: 'parity-AppStructure', path: '/examples/ParityAppStructure.html' },
 ]
 
 async function main() {
