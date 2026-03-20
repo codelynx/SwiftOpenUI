@@ -8,7 +8,8 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 - `Sources/Backend/GTK4/` — Linux backend (GTK4): CGTK system module, CGTKBridge interop, Rendering
 - `Sources/Backend/Win32/` — Windows backend (Win32): CWin32, CWin32Bridge, Rendering + LayoutEngine
 - `Sources/Backend/Web/` — Web/Wasm backend (experimental): DOM rendering via JavaScriptKit
-- `Examples/` — Executable examples (`swift run HelloWorld`, `swift run Counter`, etc.)
+- `Examples/Showcase/` — Polished demo apps (HelloWorld, Stopwatch, ColorMixer)
+- `Examples/Parity/` — Matrix-backed coverage examples (11 parity targets)
 - `Tests/SwiftOpenUITests/` — Core tests (platform-independent, 60 tests)
 - `Tests/BackendTests/` — Platform-specific backend tests
 - `docs/` — Architecture, API reference, porting guides, mission
@@ -33,9 +34,9 @@ swift build --swift-sdk swift-6.2.4-RELEASE_wasm
 
 # Run examples on macOS
 swift run HelloWorld
-swift run Counter
-swift run Showcase1
-swift run Showcase2
+swift run Stopwatch
+swift run ColorMixer
+swift run ParityViewsBasic
 
 # Run in browser (Wasm)
 swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld
