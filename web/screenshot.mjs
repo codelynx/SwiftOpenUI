@@ -53,7 +53,8 @@ async function main() {
                 timeout: 30000,
             })
             // Wait for Wasm to initialize and render
-            await page.waitForFunction(() => document.body.children.length > 0, { timeout: 15000 })
+            // Wait for the #app container to appear (created by WebBackend)
+            await page.waitForFunction(() => document.getElementById('app') !== null, { timeout: 30000 })
             await new Promise(r => setTimeout(r, 2000))
 
             const outFile = resolve(outDir, `${example.name}.png`)
