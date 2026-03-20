@@ -871,9 +871,12 @@ extension FrameView: WebRenderable {
         if let maxW = maxWidth { styles.append("max-width: \(maxW == .infinity ? 99999 : maxW)px") }
         if let minH = minHeight { styles.append("min-height: \(minH)px") }
         if let maxH = maxHeight { styles.append("max-height: \(maxH == .infinity ? 99999 : maxH)px") }
-        // Propagate flex layout so children (Spacer, etc.) work inside frames
+        // Propagate flex layout so children (Spacer, etc.) work inside frames.
+        // Center content by default — matches SwiftUI .frame() behavior.
         styles.append("display: flex")
         styles.append("flex-direction: column")
+        styles.append("align-items: center")
+        styles.append("justify-content: center")
 
         let wrapper = document.createElement("div")
         wrapper.style = .string(styles.joined(separator: "; ") + ";")
