@@ -44,6 +44,8 @@ swift run ColorMixer
 ./web/run.sh ColorMixer
 ```
 
+For detailed per-platform setup (prerequisites, toolchains, Vite, GTK4 packages, Visual Studio), see the **[Getting Started Guide](docs/guides/getting-started.md)**.
+
 ## Examples
 
 ### Showcase
