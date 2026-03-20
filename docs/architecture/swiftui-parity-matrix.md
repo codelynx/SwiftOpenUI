@@ -42,20 +42,20 @@ Last updated: 2026-03-19
 | Stepper | Y | Y | Y | Y | Y | - | GTK: SpinButton; Win32: label+buttons; Web: -/+ buttons |
 | Label | Y | Y | Y | Y | Y | - | GTK: icon+text; Win32/Web: text with icon placeholder |
 | Link | Y | Y | Y | Y | Y | - | GTK: LinkButton; Win32: ShellExecuteW; Web: anchor tag |
-| TabView | Y | Y | Y | Y | - | - | GTK: Stack+Switcher; Win32: button bar |
-| Grid | Y | Y | Y | Y | - | - | GTK: GtkGrid auto-wrap+rows; Win32: VStack of HStacks |
-| GridRow | Y | Y | Y | Y | - | - | MultiChildView, .gridCellColumns() span |
+| TabView | Y | Y | Y | Y | Y | - | GTK: Stack+Switcher; Win32: button bar; Web: tab bar+panels |
+| Grid | Y | Y | Y | Y | Y | - | GTK: GtkGrid; Win32: VStack of HStacks; Web: CSS grid |
+| GridRow | Y | Y | Y | Y | Y | - | MultiChildView, .gridCellColumns() span |
 | DisclosureGroup | Y | Y | Y | Y | Y | - | GTK: GtkExpander; Win32: toggle+show/hide; Web: details/summary |
 | Form | Y | Y | Y | Y | Y | - | GTK: styled GtkBox; Win32: VStack+padding; Web: styled div |
 | Section | Y | Y | Y | Y | Y | - | GTK: Pango header; Win32: header+divider; Web: h3+content |
-| LazyVStack | Y | Y | Y | Y | - | - | GTK: virtualized GtkListView; Win32: non-virtualized |
-| LazyHStack | Y | Y | Y | Y | - | - | GTK: GtkListView horizontal; Win32: HStack |
-| LazyVGrid | Y | Y | Y | Y | - | - | GTK: GtkGridView adaptive; Win32: non-virtualized |
-| LazyHGrid | Y | Y | Y | Y | - | - | GTK: GtkGridView horizontal; Win32: Grid |
+| LazyVStack | Y | Y | Y | Y | Y | - | GTK: virtualized; Win32/Web: non-virtualized |
+| LazyHStack | Y | Y | Y | Y | Y | - | GTK: horizontal; Win32/Web: non-virtualized |
+| LazyVGrid | Y | Y | Y | Y | Y | - | GTK: GtkGridView; Win32/Web: CSS grid, non-virtualized |
+| LazyHGrid | Y | Y | Y | Y | Y | - | GTK: horizontal; Win32/Web: CSS grid |
 | Picker | Y | Y | Y | Y | Y | - | GTK: dropdown/segmented; Win32: ComboBox; Web: select |
 | DatePicker | Y | Y | Y | Y | Y | - | GTK: GtkCalendar; Win32: SysDateTimePick32; Web: date input |
 | GeometryReader | Y | Y | Y | Y | - | - | GTK: map+tick; Win32: parent rect |
-| Menu | Y | Y | Y | Y | - | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu |
+| Menu | Y | Y | Y | Y | Y | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu; Web: dropdown div |
 | ConfirmationDialog | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | Canvas | Y | Y | Y | ~ | - | - | GTK: Cairo; Win32: D2D subset (paths, transforms, alpha; no filters/symbols) |
 | Map | Y | - | - | - | - | - | No core type defined; needs external map library |
@@ -91,14 +91,14 @@ Last updated: 2026-03-19
 | .shadow() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: layered shadow with alpha |
 | .rotationEffect() | Y | Y | Y | Y | Y | - | GTK/Web: CSS transform; Win32: D2D SetTransform |
 | .overlay() | Y | Y | Y | Y | Y | - | GTK: GtkOverlay; Win32: container; Web: absolute positioning |
-| .sheet() | Y | Y | Y | Y | - | - | GTK: modal window; Win32: popup |
-| .alert() | Y | Y | Y | Y | - | - | GTK: modal dialog; Win32: MessageBoxW |
+| .sheet() | Y | Y | Y | Y | Y | - | GTK: modal window; Win32: popup; Web: modal overlay |
+| .alert() | Y | Y | Y | Y | Y | - | GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay |
 | .confirmationDialog() | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | .onAppear() | Y | Y | Y | Y | ~ | - | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
 | .searchable() | Y | Y | Y | Y | Y | - | GTK: SearchEntry; Win32: EDIT; Web: search input |
 | .toolbar() | Y | Y | Y | Y | - | - | GTK: header bar; Win32: nav header |
-| .gridCellColumns() | Y | Y | Y | Y | - | - | Column span in Grid/GridRow |
+| .gridCellColumns() | Y | Y | Y | Y | Y | - | Column span in Grid/GridRow; Web: grid-column span |
 | .pickerStyle() | Y | Y | Y | Y | Y | - | .automatic (select), .segmented (button row), .palette (alias) |
 | .navigationSplitViewColumnWidth() | Y | Y | Y | Y | Y | - | min/ideal/max; Web: pass-through (consumed by NavigationSplitView) |
 | .clipShape() | Y | - | - | - | - | - | |
@@ -134,7 +134,7 @@ Last updated: 2026-03-19
 | .navigationTitle() | Y | Y | Y | Y | Y | ~ | Header bar / title bar; Android falls back to path value |
 | .navigationDestination() | Y | Y | Y | Y | Y | Y | Type-based |
 | NavigateAction (env) | Y | Y | Y | Y | Y | Y | push/pop/popToRoot |
-| NavigationSplitView | Y | Y | Y | Y | - | - | GTK: GtkPaned; Win32: draggable divider, 2/3-column, visibility |
+| NavigationSplitView | Y | Y | Y | Y | Y | - | GTK: GtkPaned; Win32: draggable divider; Web: flexbox columns |
 | .navigationBarItems() | Y | - | - | - | - | - | |
 
 ## App Structure

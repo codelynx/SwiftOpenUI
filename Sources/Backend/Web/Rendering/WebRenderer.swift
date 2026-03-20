@@ -70,6 +70,14 @@ public func webRenderAnyView(_ view: any View) -> JSValue {
     return render(view)
 }
 
+/// Flatten a view's children into an array of existential views.
+public func flattenChildren<V: View>(_ view: V) -> [any View] {
+    if let multi = view as? MultiChildView {
+        return multi.children
+    }
+    return [view]
+}
+
 // MARK: - Primitive view extensions
 
 extension Text: WebRenderable {
@@ -1482,43 +1490,442 @@ extension ConfirmationDialogView: WebRenderable {
         let child = webRenderView(content)
 
         if isPresented.wrappedValue {
-            // Render inline modal overlay
-            let overlay = document.createElement("div")
-            overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 9999;"
+            let overlay = webCreateModalOverlay(title: title, presented: isPresented, buttons: buttons)
+            let wrapper = document.createElement("div")
+            _ = wrapper.appendChild(child)
+            _ = wrapper.appendChild(overlay)
+            return wrapper
+        }
 
-            let dialog = document.createElement("div")
-            dialog.style = "background: #2a2a2a; border-radius: 8px; padding: 20px; min-width: 240px; color: white;"
+        return child
+    }
+}
 
-            let titleEl = document.createElement("h3")
-            titleEl.textContent = .string(title)
-            titleEl.style = "margin: 0 0 12px 0; font-size: 16px;"
-            _ = dialog.appendChild(titleEl)
+// MARK: - Modal overlay helper
 
-            let presented = isPresented
-            for button in buttons {
-                let btn = document.createElement("button")
-                btn.textContent = .string(button.label)
-                var btnStyle = "display: block; width: 100%; padding: 8px; margin-top: 4px; cursor: pointer; border: none; border-radius: 4px; font-size: 14px;"
-                switch button.role {
-                case .destructive: btnStyle += " background: #d33; color: white;"
-                case .cancel: btnStyle += " background: #555; color: white;"
-                default: btnStyle += " background: #0a84ff; color: white;"
+/// Shared modal overlay used by ConfirmationDialog, .sheet(), and .alert().
+private func webCreateModalOverlay(
+    title: String,
+    presented: Binding<Bool>,
+    message: String? = nil,
+    buttons: [AlertButton] = [],
+    sheetContent: JSValue? = nil
+) -> JSValue {
+    let overlay = document.createElement("div")
+    overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 9999;"
+
+    let dialog = document.createElement("div")
+    dialog.style = "background: #2a2a2a; border-radius: 8px; padding: 20px; min-width: 280px; max-width: 480px; color: white;"
+
+    let titleEl = document.createElement("h3")
+    titleEl.textContent = .string(title)
+    titleEl.style = "margin: 0 0 12px 0; font-size: 16px;"
+    _ = dialog.appendChild(titleEl)
+
+    if let msg = message, !msg.isEmpty {
+        let msgEl = document.createElement("p")
+        msgEl.textContent = .string(msg)
+        msgEl.style = "margin: 0 0 12px 0; font-size: 14px; color: #aaa;"
+        _ = dialog.appendChild(msgEl)
+    }
+
+    if let content = sheetContent {
+        _ = dialog.appendChild(content)
+        let closeBtn = document.createElement("button")
+        closeBtn.textContent = "Close"
+        closeBtn.style = "display: block; width: 100%; padding: 8px; margin-top: 12px; cursor: pointer; border: none; border-radius: 4px; font-size: 14px; background: #555; color: white;"
+        let handler = JSClosure { _ in
+            presented.wrappedValue = false
+            return .undefined
+        }
+        webRetainClosure(handler)
+        closeBtn.onclick = .object(handler)
+        _ = dialog.appendChild(closeBtn)
+    }
+
+    for button in buttons {
+        let btn = document.createElement("button")
+        btn.textContent = .string(button.label)
+        var btnStyle = "display: block; width: 100%; padding: 8px; margin-top: 4px; cursor: pointer; border: none; border-radius: 4px; font-size: 14px;"
+        switch button.role {
+        case .destructive: btnStyle += " background: #d33; color: white;"
+        case .cancel: btnStyle += " background: #555; color: white;"
+        default: btnStyle += " background: #0a84ff; color: white;"
+        }
+        btn.style = .string(btnStyle)
+
+        let action = button.action
+        let handler = JSClosure { _ in
+            action()
+            presented.wrappedValue = false
+            return .undefined
+        }
+        webRetainClosure(handler)
+        btn.onclick = .object(handler)
+        _ = dialog.appendChild(btn)
+    }
+
+    _ = overlay.appendChild(dialog)
+    return overlay
+}
+
+// MARK: - Phase C views
+
+extension TabView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("div")
+        container.style = "display: flex; flex-direction: column; height: 100%;"
+
+        // Tab bar
+        let tabBar = document.createElement("div")
+        tabBar.style = "display: flex; gap: 0; border-bottom: 1px solid #444;"
+
+        // Content panels — pre-render all, show active only
+        let contentArea = document.createElement("div")
+        contentArea.style = "flex: 1; overflow: auto;"
+
+        let activeIndex = initialTab ?? 0
+        var panels: [JSValue] = []
+
+        for (i, tab) in tabs.enumerated() {
+            // Tab button
+            let btn = document.createElement("button")
+            btn.textContent = .string(tab.title)
+            let isActive = i == activeIndex
+            btn.style = .string("padding: 8px 16px; cursor: pointer; border: none; border-bottom: 2px solid \(isActive ? "#0a84ff" : "transparent"); background: \(isActive ? "#2a2a2a" : "#1a1a1a"); color: \(isActive ? "white" : "#888"); font-size: 14px;")
+            btn.dataset.index = .string("\(i)")
+
+            // Panel
+            let panel = document.createElement("div")
+            panel.style = .string("display: \(isActive ? "block" : "none");")
+            let rendered = webRenderAnyView(tab.wrapped)
+            _ = panel.appendChild(rendered)
+            panels.append(panel)
+            _ = contentArea.appendChild(panel)
+
+            let tabBarRef = tabBar
+            let handler = JSClosure { _ in
+                // Hide all panels, show this one
+                for (j, p) in panels.enumerated() {
+                    p.style = .string("display: \(j == i ? "block" : "none");")
+                    // Update tab button styles
+                    if let tabBtn = tabBarRef.children[j].object {
+                        tabBtn.style = .string("padding: 8px 16px; cursor: pointer; border: none; border-bottom: 2px solid \(j == i ? "#0a84ff" : "transparent"); background: \(j == i ? "#2a2a2a" : "#1a1a1a"); color: \(j == i ? "white" : "#888"); font-size: 14px;")
+                    }
                 }
-                btn.style = .string(btnStyle)
+                return .undefined
+            }
+            webRetainClosure(handler)
+            btn.onclick = .object(handler)
 
-                let action = button.action
-                let handler = JSClosure { _ in
-                    action()
-                    presented.wrappedValue = false
-                    return .undefined
+            _ = tabBar.appendChild(btn)
+        }
+
+        _ = container.appendChild(tabBar)
+        _ = container.appendChild(contentArea)
+        return container
+    }
+}
+
+extension Grid: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let div = document.createElement("div")
+
+        if useExplicitRows {
+            // Explicit rows: detect max column count from GridRow children
+            let rows = BackendWeb.webRenderChildren(content)
+            var maxCols = 1
+
+            // First pass: find the widest row
+            let children = flattenChildren(content)
+            for child in children {
+                if let gridRow = child as? (any MultiChildView) {
+                    let rowChildren = gridRow.children
+                    var cols = 0
+                    for rc in rowChildren {
+                        if let span = rc as? GridCellSpanProvider {
+                            cols += span.gridColumnSpan
+                        } else {
+                            cols += 1
+                        }
+                    }
+                    maxCols = max(maxCols, cols)
                 }
-                webRetainClosure(handler)
-                btn.onclick = .object(handler)
-                _ = dialog.appendChild(btn)
             }
 
-            _ = overlay.appendChild(dialog)
+            div.style = .string("display: grid; grid-template-columns: repeat(\(maxCols), 1fr); gap: \(vSpacing)px \(hSpacing)px;")
 
+            // Second pass: render each row's children as grid cells
+            for child in children {
+                if let gridRow = child as? (any MultiChildView) {
+                    for rc in gridRow.children {
+                        let cell = webRenderAnyView(rc)
+                        if let span = rc as? GridCellSpanProvider, span.gridColumnSpan > 1 {
+                            let wrapper = document.createElement("div")
+                            wrapper.style = .string("grid-column: span \(span.gridColumnSpan);")
+                            _ = wrapper.appendChild(cell)
+                            _ = div.appendChild(wrapper)
+                        } else {
+                            _ = div.appendChild(cell)
+                        }
+                    }
+                } else {
+                    let cell = webRenderAnyView(child)
+                    _ = div.appendChild(cell)
+                }
+            }
+        } else {
+            // Auto-wrap mode
+            div.style = .string("display: grid; grid-template-columns: repeat(\(columns), 1fr); gap: \(vSpacing)px \(hSpacing)px;")
+            let children = BackendWeb.webRenderChildren(content)
+            for child in children {
+                _ = div.appendChild(child)
+            }
+        }
+
+        return div
+    }
+}
+
+extension GridRow: WebRenderable, WebMultiChildRenderable {
+    public func webCreateElement() -> JSValue {
+        // GridRow is typically consumed by Grid; standalone renders as a div
+        let div = document.createElement("div")
+        div.style = "display: contents;"
+        for child in webRenderChildren() {
+            _ = div.appendChild(child)
+        }
+        return div
+    }
+
+    public func webRenderChildren() -> [JSValue] {
+        BackendWeb.webRenderChildren(content)
+    }
+}
+
+extension GridCellSpanView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("grid-column: span \(gridColumnSpan);")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension LazyVStack: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let div = document.createElement("div")
+        div.style = "display: flex; flex-direction: column;"
+        for item in items {
+            let child = webRenderView(contentBuilder(item))
+            _ = div.appendChild(child)
+        }
+        return div
+    }
+}
+
+extension LazyHStack: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let div = document.createElement("div")
+        div.style = "display: flex; flex-direction: row;"
+        for item in items {
+            let child = webRenderView(contentBuilder(item))
+            _ = div.appendChild(child)
+        }
+        return div
+    }
+}
+
+extension LazyVGrid: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let colCount = max(1, gridItems.count)
+        let div = document.createElement("div")
+        div.style = .string("display: grid; grid-template-columns: repeat(\(colCount), 1fr); gap: 4px;")
+        for item in items {
+            let child = webRenderView(contentBuilder(item))
+            _ = div.appendChild(child)
+        }
+        return div
+    }
+}
+
+extension LazyHGrid: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let rowCount = max(1, gridItems.count)
+        let div = document.createElement("div")
+        div.style = .string("display: grid; grid-template-rows: repeat(\(rowCount), 1fr); grid-auto-flow: column; gap: 4px;")
+        for item in items {
+            let child = webRenderView(contentBuilder(item))
+            _ = div.appendChild(child)
+        }
+        return div
+    }
+}
+
+extension Menu: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("div")
+        container.style = "position: relative; display: inline-block;"
+
+        let btn = document.createElement("button")
+        btn.textContent = .string(title)
+        btn.style = "padding: 6px 12px; cursor: pointer; font-size: 14px;"
+
+        let dropdown = document.createElement("div")
+        dropdown.style = "display: none; position: absolute; top: 100%; left: 0; min-width: 160px; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; z-index: 9999; padding: 4px 0;"
+
+        webRenderMenuElements(elements, into: dropdown)
+
+        let toggleHandler = JSClosure { _ in
+            let current = dropdown.style.object?.display.string ?? "none"
+            dropdown.style.object?.display = .string(current == "none" ? "block" : "none")
+            return .undefined
+        }
+        webRetainClosure(toggleHandler)
+        btn.onclick = .object(toggleHandler)
+
+        // Close on outside click
+        let dropdownRef = dropdown
+        let dismissHandler = JSClosure { args in
+            guard let event = args.first?.object else { return .undefined }
+            let target = event.target
+            // Check if click is outside the container
+            if container.contains(target).boolean != true {
+                dropdownRef.style.object?.display = .string("none")
+            }
+            return .undefined
+        }
+        webRetainClosure(dismissHandler)
+        _ = JSObject.global.document.addEventListener("click", dismissHandler)
+
+        _ = container.appendChild(btn)
+        _ = container.appendChild(dropdown)
+        return container
+    }
+}
+
+private func webRenderMenuElements(_ elements: [MenuElement], into container: JSValue) {
+    for element in elements {
+        switch element {
+        case .item(let label, let action):
+            let item = document.createElement("button")
+            item.textContent = .string(label)
+            item.style = "display: block; width: 100%; padding: 6px 16px; border: none; background: none; color: white; text-align: left; cursor: pointer; font-size: 13px;"
+            let handler = JSClosure { _ in
+                action()
+                return .undefined
+            }
+            webRetainClosure(handler)
+            item.onclick = .object(handler)
+            _ = container.appendChild(item)
+
+        case .divider:
+            let hr = document.createElement("hr")
+            hr.style = "margin: 4px 0; border: none; border-top: 1px solid #444;"
+            _ = container.appendChild(hr)
+
+        case .submenu(let label, let children):
+            let sub = document.createElement("div")
+            sub.style = "position: relative;"
+            let subBtn = document.createElement("button")
+            subBtn.textContent = .string("\(label) ▸")
+            subBtn.style = "display: block; width: 100%; padding: 6px 16px; border: none; background: none; color: white; text-align: left; cursor: pointer; font-size: 13px;"
+
+            let subMenu = document.createElement("div")
+            subMenu.style = "display: none; position: absolute; left: 100%; top: 0; min-width: 140px; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; padding: 4px 0;"
+            webRenderMenuElements(children, into: subMenu)
+
+            let subHandler = JSClosure { _ in
+                let current = subMenu.style.object?.display.string ?? "none"
+                subMenu.style.object?.display = .string(current == "none" ? "block" : "none")
+                return .undefined
+            }
+            webRetainClosure(subHandler)
+            subBtn.onclick = .object(subHandler)
+
+            _ = sub.appendChild(subBtn)
+            _ = sub.appendChild(subMenu)
+            _ = container.appendChild(sub)
+        }
+    }
+}
+
+extension NavigationSplitView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("div")
+        container.style = "display: flex; flex-direction: row; height: 100%;"
+
+        // Sidebar
+        let sidebarEl = document.createElement("div")
+        sidebarEl.style = .string("width: \(sidebarWidth)px; min-width: \(sidebarWidth)px; border-right: 1px solid #444; overflow: auto;")
+
+        // Extract column width from sidebar if present
+        if let provider = sidebar as? NavigationSplitViewColumnWidthProvider,
+           let ideal = provider.columnIdealWidth {
+            let minW = provider.columnMinWidth ?? ideal
+            let maxW = provider.columnMaxWidth ?? ideal
+            sidebarEl.style = .string("width: \(Int(ideal))px; min-width: \(Int(minW))px; max-width: \(Int(maxW))px; border-right: 1px solid #444; overflow: auto;")
+        }
+
+        let sidebarContent = webRenderView(sidebar)
+        _ = sidebarEl.appendChild(sidebarContent)
+        _ = container.appendChild(sidebarEl)
+
+        // Content column (three-column mode)
+        if hasContentColumn {
+            let contentEl = document.createElement("div")
+            contentEl.style = "width: 250px; min-width: 200px; border-right: 1px solid #444; overflow: auto;"
+            let contentRendered = webRenderView(content)
+            _ = contentEl.appendChild(contentRendered)
+            _ = container.appendChild(contentEl)
+        }
+
+        // Detail
+        let detailEl = document.createElement("div")
+        detailEl.style = "flex: 1; overflow: auto;"
+        let detailContent = webRenderView(detail)
+        _ = detailEl.appendChild(detailContent)
+        _ = container.appendChild(detailEl)
+
+        return container
+    }
+}
+
+// MARK: - Phase C modifiers
+
+extension SheetModifierView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+
+        if isPresented.wrappedValue {
+            let sheetEl = webRenderView(sheetContent)
+            let overlay = webCreateModalOverlay(
+                title: "",
+                presented: isPresented,
+                sheetContent: sheetEl
+            )
+            let wrapper = document.createElement("div")
+            _ = wrapper.appendChild(child)
+            _ = wrapper.appendChild(overlay)
+            return wrapper
+        }
+
+        return child
+    }
+}
+
+extension AlertModifierView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+
+        if isPresented.wrappedValue {
+            let overlay = webCreateModalOverlay(
+                title: title,
+                presented: isPresented,
+                message: message,
+                buttons: buttons
+            )
             let wrapper = document.createElement("div")
             _ = wrapper.appendChild(child)
             _ = wrapper.appendChild(overlay)
