@@ -136,49 +136,9 @@ targets += [
         path: "Examples/Showcase/Stopwatch"
     ),
     .executableTarget(
-        name: "Showcase1",
-        dependencies: exampleDeps,
-        path: "Examples/Showcase1"
-    ),
-    .executableTarget(
-        name: "Showcase2",
-        dependencies: exampleDeps,
-        path: "Examples/Showcase2"
-    ),
-    .executableTarget(
-        name: "TextStyles",
-        dependencies: exampleDeps,
-        path: "Examples/02-TextStyles"
-    ),
-    .executableTarget(
-        name: "Buttons",
-        dependencies: exampleDeps,
-        path: "Examples/03-Buttons"
-    ),
-    .executableTarget(
-        name: "StateDemo",
-        dependencies: exampleDeps,
-        path: "Examples/04-State"
-    ),
-    .executableTarget(
-        name: "FocusTest",
-        dependencies: exampleDeps,
-        path: "Examples/FocusTest"
-    ),
-    .executableTarget(
-        name: "BasicInteractive",
-        dependencies: exampleDeps,
-        path: "Examples/BasicInteractive"
-    ),
-    .executableTarget(
         name: "ColorMixer",
         dependencies: exampleDeps,
         path: "Examples/Showcase/ColorMixer"
-    ),
-    .executableTarget(
-        name: "Layout",
-        dependencies: exampleDeps,
-        path: "Examples/05-Layout"
     ),
     // Parity
     .executableTarget(

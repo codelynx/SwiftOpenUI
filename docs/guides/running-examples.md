@@ -165,18 +165,6 @@ See [android-setup.md](android-setup.md) for full setup instructions.
 | Focus | `ParityFocus` | @FocusState (bool + enum), .focused() |
 | AppStructure | `ParityAppStructure` | App, Scene, WindowGroup, @ViewBuilder |
 
-### Legacy (to be absorbed)
-
-| Example | Will be absorbed into |
-|---------|----------------------|
-| Showcase1 | ParityViewsBasic |
-| Showcase2 | ParityViewsLayout |
-| TextStyles | ParityViewsBasic |
-| Buttons | ParityViewsBasic |
-| StateDemo | ParityStateData |
-| Layout | ParityViewsLayout |
-| FocusTest | ParityFocus |
-| BasicInteractive | ParityGestures |
 
 ## Platform Support Matrix
 
