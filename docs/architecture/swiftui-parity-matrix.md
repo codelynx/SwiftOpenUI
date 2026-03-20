@@ -21,7 +21,7 @@ Last updated: 2026-03-19
 | TextField | Y | Y | Y | Y | Y | Y | Single-line; Binding<String> |
 | Toggle | Y | Y | Y | Y | Y | - | GtkCheckButton / Win32 checkbox / Web checkbox |
 | Slider | Y | Y | Y | Y | Y | - | Debounced on GTK4; container subclass on Win32; Web range input |
-| Image | Y | Y | Y | Y | - | - | GTK icon theme + file; Win32: WIC (PNG/JPEG/BMP/GIF) + stock icons |
+| Image | Y | Y | Y | Y | ~ | - | GTK icon theme + file; Win32: WIC; Web: img tag (systemName as text placeholder) |
 | Color | Y | Y | Y | Y | Y | Y | RGBA, hex, HSB constructors |
 | Spacer | Y | Y | Y | Y | Y | Y | |
 | Divider | Y | Y | Y | Y | Y | Y | |
@@ -30,7 +30,7 @@ Last updated: 2026-03-19
 | ZStack | Y | Y | Y | Y | Y | Y | |
 | Group | Y | Y | Y | Y | Y | Y | |
 | ForEach | Y | Y | Y | Y | Y | Y | Identifiable, keyPath, Range |
-| List | Y | Y | Y | Y | - | - | Content-based; no selection yet |
+| List | Y | Y | Y | Y | Y | - | Content-based; no selection yet |
 | ScrollView | Y | Y | Y | Y | Y | - | Axis OptionSet; Web: CSS overflow |
 | AnyView | Y | Y | Y | Y | Y | Y | |
 | EmptyView | Y | Y | Y | Y | Y | Y | |
@@ -38,25 +38,25 @@ Last updated: 2026-03-19
 | NavigationLink | Y | Y | Y | Y | Y | Y | String label only |
 | SecureField | Y | Y | Y | Y | Y | - | GTK: PasswordEntry; Win32: EDIT+ES_PASSWORD; Web: password input |
 | TextEditor | Y | Y | Y | Y | Y | - | GTK: TextView+ScrolledWindow; Win32: EDIT+ES_MULTILINE; Web: textarea |
-| ProgressView | Y | Y | Y | Y | - | - | GTK: GtkProgressBar; Win32: msctls_progress32 |
-| Stepper | Y | Y | Y | Y | - | - | GTK: SpinButton; Win32: label+buttons |
-| Label | Y | Y | Y | Y | - | - | GTK: icon+text; Win32: text with [icon] prefix |
+| ProgressView | Y | Y | Y | Y | Y | - | GTK: GtkProgressBar; Win32: msctls_progress32; Web: progress element |
+| Stepper | Y | Y | Y | Y | Y | - | GTK: SpinButton; Win32: label+buttons; Web: -/+ buttons |
+| Label | Y | Y | Y | Y | Y | - | GTK: icon+text; Win32/Web: text with icon placeholder |
 | Link | Y | Y | Y | Y | Y | - | GTK: LinkButton; Win32: ShellExecuteW; Web: anchor tag |
 | TabView | Y | Y | Y | Y | - | - | GTK: Stack+Switcher; Win32: button bar |
 | Grid | Y | Y | Y | Y | - | - | GTK: GtkGrid auto-wrap+rows; Win32: VStack of HStacks |
 | GridRow | Y | Y | Y | Y | - | - | MultiChildView, .gridCellColumns() span |
-| DisclosureGroup | Y | Y | Y | Y | - | - | GTK: GtkExpander; Win32: toggle+show/hide |
+| DisclosureGroup | Y | Y | Y | Y | Y | - | GTK: GtkExpander; Win32: toggle+show/hide; Web: details/summary |
 | Form | Y | Y | Y | Y | Y | - | GTK: styled GtkBox; Win32: VStack+padding; Web: styled div |
 | Section | Y | Y | Y | Y | Y | - | GTK: Pango header; Win32: header+divider; Web: h3+content |
 | LazyVStack | Y | Y | Y | Y | - | - | GTK: virtualized GtkListView; Win32: non-virtualized |
 | LazyHStack | Y | Y | Y | Y | - | - | GTK: GtkListView horizontal; Win32: HStack |
 | LazyVGrid | Y | Y | Y | Y | - | - | GTK: GtkGridView adaptive; Win32: non-virtualized |
 | LazyHGrid | Y | Y | Y | Y | - | - | GTK: GtkGridView horizontal; Win32: Grid |
-| Picker | Y | Y | Y | Y | - | - | GTK: dropdown/segmented; Win32: ComboBox |
-| DatePicker | Y | Y | Y | Y | - | - | GTK: GtkCalendar; Win32: SysDateTimePick32 + binding |
+| Picker | Y | Y | Y | Y | Y | - | GTK: dropdown/segmented; Win32: ComboBox; Web: select |
+| DatePicker | Y | Y | Y | Y | Y | - | GTK: GtkCalendar; Win32: SysDateTimePick32; Web: date input |
 | GeometryReader | Y | Y | Y | Y | - | - | GTK: map+tick; Win32: parent rect |
 | Menu | Y | Y | Y | Y | - | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu |
-| ConfirmationDialog | Y | Y | Y | Y | - | - | GTK: vertical modal; Win32: MessageBoxW |
+| ConfirmationDialog | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | Canvas | Y | Y | Y | ~ | - | - | GTK: Cairo; Win32: D2D subset (paths, transforms, alpha; no filters/symbols) |
 | Map | Y | - | - | - | - | - | No core type defined; needs external map library |
 
@@ -90,13 +90,13 @@ Last updated: 2026-03-19
 | .cornerRadius() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: SetWindowRgn rounded region |
 | .shadow() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: layered shadow with alpha |
 | .rotationEffect() | Y | Y | Y | Y | Y | - | GTK/Web: CSS transform; Win32: D2D SetTransform |
-| .overlay() | Y | Y | Y | Y | - | - | GTK: GtkOverlay; Win32: container |
+| .overlay() | Y | Y | Y | Y | Y | - | GTK: GtkOverlay; Win32: container; Web: absolute positioning |
 | .sheet() | Y | Y | Y | Y | - | - | GTK: modal window; Win32: popup |
 | .alert() | Y | Y | Y | Y | - | - | GTK: modal dialog; Win32: MessageBoxW |
-| .confirmationDialog() | Y | Y | Y | Y | - | - | GTK: vertical modal; Win32: MessageBoxW |
-| .onAppear() | Y | Y | Y | Y | - | - | GTK: map signal; Win32: deferred |
+| .confirmationDialog() | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
+| .onAppear() | Y | Y | Y | Y | ~ | - | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
-| .searchable() | Y | Y | Y | Y | - | - | GTK: SearchEntry; Win32: EDIT |
+| .searchable() | Y | Y | Y | Y | Y | - | GTK: SearchEntry; Win32: EDIT; Web: search input |
 | .toolbar() | Y | Y | Y | Y | - | - | GTK: header bar; Win32: nav header |
 | .gridCellColumns() | Y | Y | Y | Y | - | - | Column span in Grid/GridRow |
 | .pickerStyle() | Y | Y | Y | Y | - | - | .automatic, .segmented, .palette |

@@ -1127,3 +1127,362 @@ extension RotationView: WebRenderable {
         return wrapper
     }
 }
+
+// MARK: - Phase B views
+
+extension List: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let div = document.createElement("div")
+        div.style = "display: flex; flex-direction: column; border: 1px solid #333; border-radius: 4px; overflow: hidden;"
+
+        let children = BackendWeb.webRenderChildren(content)
+        for (i, child) in children.enumerated() {
+            let row = document.createElement("div")
+            row.style = .string("padding: 8px 12px;\(i < children.count - 1 ? " border-bottom: 1px solid #333;" : "")")
+            _ = row.appendChild(child)
+            _ = div.appendChild(row)
+        }
+        return div
+    }
+}
+
+extension SwiftOpenUI.Image: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let size = scale.pointSize
+        switch source {
+        case .filePath(let path):
+            let img = document.createElement("img")
+            img.src = .string(path)
+            img.style = .string("width: \(size)px; height: \(size)px; object-fit: contain;")
+            return img
+        case .systemName(let name):
+            // No browser icon theme — render as text placeholder
+            let span = document.createElement("span")
+            span.textContent = .string("[\(name)]")
+            span.style = .string("font-size: \(size)px; color: #888;")
+            return span
+        }
+    }
+}
+
+extension ProgressView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let progress = document.createElement("progress")
+        progress.style = "width: 100%;"
+        if let val = value {
+            progress.value = .number(val)
+            progress.max = .number(total)
+        }
+        // No value attribute = indeterminate (browser handles natively)
+        return progress
+    }
+}
+
+extension Stepper: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("div")
+        container.style = "display: flex; align-items: center; gap: 8px;"
+
+        if !label.isEmpty {
+            let labelSpan = document.createElement("span")
+            labelSpan.textContent = .string(label)
+            _ = container.appendChild(labelSpan)
+        }
+
+        let binding = value
+        let rng = range
+        let stp = step
+
+        let minus = document.createElement("button")
+        minus.textContent = "-"
+        minus.style = "width: 28px; height: 28px; cursor: pointer;"
+        let minusHandler = JSClosure { _ in
+            let newVal = max(rng.lowerBound, binding.wrappedValue - stp)
+            binding.wrappedValue = newVal
+            return .undefined
+        }
+        webRetainClosure(minusHandler)
+        minus.onclick = .object(minusHandler)
+
+        let display = document.createElement("span")
+        display.textContent = .string("\(Int(value.wrappedValue))")
+        display.style = "min-width: 24px; text-align: center;"
+
+        let plus = document.createElement("button")
+        plus.textContent = "+"
+        plus.style = "width: 28px; height: 28px; cursor: pointer;"
+        let plusHandler = JSClosure { _ in
+            let newVal = min(rng.upperBound, binding.wrappedValue + stp)
+            binding.wrappedValue = newVal
+            return .undefined
+        }
+        webRetainClosure(plusHandler)
+        plus.onclick = .object(plusHandler)
+
+        _ = container.appendChild(minus)
+        _ = container.appendChild(display)
+        _ = container.appendChild(plus)
+        return container
+    }
+}
+
+extension SwiftOpenUI.Label: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("span")
+        container.style = "display: inline-flex; align-items: center; gap: 4px;"
+
+        if let path = imagePath {
+            let img = document.createElement("img")
+            img.src = .string(path)
+            img.style = "width: 16px; height: 16px; object-fit: contain;"
+            _ = container.appendChild(img)
+        } else if let sysName = systemImage {
+            let icon = document.createElement("span")
+            icon.textContent = .string("[\(sysName)]")
+            icon.style = "font-size: 14px; color: #888;"
+            _ = container.appendChild(icon)
+        }
+
+        let text = document.createTextNode(title)
+        _ = container.appendChild(text)
+        return container
+    }
+}
+
+extension DisclosureGroup: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let details = document.createElement("details")
+        if isExpanded {
+            details.open = .boolean(true)
+        }
+
+        let summary = document.createElement("summary")
+        summary.textContent = .string(title)
+        summary.style = "cursor: pointer; font-weight: 600; padding: 4px 0;"
+        _ = details.appendChild(summary)
+
+        let contentDiv = document.createElement("div")
+        contentDiv.style = "padding: 4px 0 4px 16px;"
+        let child = webRenderView(content)
+        _ = contentDiv.appendChild(child)
+        _ = details.appendChild(contentDiv)
+
+        if let callback = onExpandedChange {
+            let handler = JSClosure { _ in
+                let isOpen = details.open.boolean ?? false
+                callback(isOpen)
+                return .undefined
+            }
+            webRetainClosure(handler)
+            _ = details.addEventListener("toggle", handler)
+        }
+
+        return details
+    }
+}
+
+extension Picker: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("div")
+        container.style = "display: flex; align-items: center; gap: 8px;"
+
+        if !label.isEmpty {
+            let labelEl = document.createElement("label")
+            labelEl.textContent = .string(label)
+            _ = container.appendChild(labelEl)
+        }
+
+        let select = document.createElement("select")
+        select.style = "padding: 4px 8px; font-size: 14px;"
+        for (i, option) in options.enumerated() {
+            let opt = document.createElement("option")
+            opt.value = .string("\(i)")
+            opt.textContent = .string(option)
+            if i == selected {
+                opt.selected = .boolean(true)
+            }
+            _ = select.appendChild(opt)
+        }
+
+        if let callback = onChanged {
+            let handler = JSClosure { _ in
+                if let idxStr = select.value.string, let idx = Int(idxStr) {
+                    callback(idx)
+                }
+                return .undefined
+            }
+            webRetainClosure(handler)
+            _ = select.addEventListener("change", handler)
+        }
+
+        _ = container.appendChild(select)
+        return container
+    }
+}
+
+extension DatePicker: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("div")
+        container.style = "display: flex; align-items: center; gap: 8px;"
+
+        if !title.isEmpty {
+            let labelEl = document.createElement("label")
+            labelEl.textContent = .string(title)
+            _ = container.appendChild(labelEl)
+        }
+
+        let input = document.createElement("input")
+        input.type = "date"
+
+        // Set initial value from binding or default to today
+        if let sel = selection {
+            let dc = sel.wrappedValue
+            input.value = .string(String(format: "%04d-%02d-%02d", dc.year, dc.month, dc.day))
+        }
+
+        let sel = selection
+        let cb = onChange
+        let handler = JSClosure { _ in
+            guard let str = input.value.string else { return .undefined }
+            let parts = str.split(separator: "-")
+            guard parts.count == 3,
+                  let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]) else {
+                return .undefined
+            }
+            let dc = DateComponents(year: y, month: m, day: d)
+            sel?.wrappedValue = dc
+            cb?(dc)
+            return .undefined
+        }
+        webRetainClosure(handler)
+        _ = input.addEventListener("change", handler)
+
+        _ = container.appendChild(input)
+        return container
+    }
+}
+
+// MARK: - Phase B modifiers
+
+extension OverlayView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let wrapper = document.createElement("div")
+        wrapper.style = "position: relative; display: inline-block;"
+
+        let base = webRenderView(content)
+        _ = wrapper.appendChild(base)
+
+        let overlayEl = webRenderView(overlay)
+        let css: String
+        switch alignment {
+        case .topLeading:    css = "position: absolute; top: 0; left: 0;"
+        case .top:           css = "position: absolute; top: 0; left: 50%; transform: translateX(-50%);"
+        case .topTrailing:   css = "position: absolute; top: 0; right: 0;"
+        case .leading:       css = "position: absolute; top: 50%; left: 0; transform: translateY(-50%);"
+        case .center:        css = "position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);"
+        case .trailing:      css = "position: absolute; top: 50%; right: 0; transform: translateY(-50%);"
+        case .bottomLeading: css = "position: absolute; bottom: 0; left: 0;"
+        case .bottom:        css = "position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);"
+        case .bottomTrailing:css = "position: absolute; bottom: 0; right: 0;"
+        }
+        let overlayWrapper = document.createElement("div")
+        overlayWrapper.style = .string(css)
+        _ = overlayWrapper.appendChild(overlayEl)
+        _ = wrapper.appendChild(overlayWrapper)
+
+        return wrapper
+    }
+}
+
+extension OnAppearView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        // Fire on render — host-level approximation only.
+        // See web-parity-plan.md for limitations.
+        action()
+        return child
+    }
+}
+
+extension SearchableView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("div")
+        container.style = "display: flex; flex-direction: column; gap: 8px;"
+
+        let input = document.createElement("input")
+        input.type = "search"
+        input.placeholder = .string(prompt)
+        input.value = .string(text.wrappedValue)
+        input.style = "padding: 6px 8px; font-size: 14px; width: 100%; box-sizing: border-box;"
+
+        let binding = text
+        let handler = JSClosure { _ in
+            let newValue = input.value.string ?? ""
+            if newValue != binding.wrappedValue {
+                binding.wrappedValue = newValue
+            }
+            return .undefined
+        }
+        webRetainClosure(handler)
+        _ = input.addEventListener("input", handler)
+
+        _ = container.appendChild(input)
+
+        let contentEl = webRenderView(content)
+        _ = container.appendChild(contentEl)
+
+        return container
+    }
+}
+
+extension ConfirmationDialogView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+
+        if isPresented.wrappedValue {
+            // Render inline modal overlay
+            let overlay = document.createElement("div")
+            overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 9999;"
+
+            let dialog = document.createElement("div")
+            dialog.style = "background: #2a2a2a; border-radius: 8px; padding: 20px; min-width: 240px; color: white;"
+
+            let titleEl = document.createElement("h3")
+            titleEl.textContent = .string(title)
+            titleEl.style = "margin: 0 0 12px 0; font-size: 16px;"
+            _ = dialog.appendChild(titleEl)
+
+            let presented = isPresented
+            for button in buttons {
+                let btn = document.createElement("button")
+                btn.textContent = .string(button.label)
+                var btnStyle = "display: block; width: 100%; padding: 8px; margin-top: 4px; cursor: pointer; border: none; border-radius: 4px; font-size: 14px;"
+                switch button.role {
+                case .destructive: btnStyle += " background: #d33; color: white;"
+                case .cancel: btnStyle += " background: #555; color: white;"
+                default: btnStyle += " background: #0a84ff; color: white;"
+                }
+                btn.style = .string(btnStyle)
+
+                let action = button.action
+                let handler = JSClosure { _ in
+                    action()
+                    presented.wrappedValue = false
+                    return .undefined
+                }
+                webRetainClosure(handler)
+                btn.onclick = .object(handler)
+                _ = dialog.appendChild(btn)
+            }
+
+            _ = overlay.appendChild(dialog)
+
+            let wrapper = document.createElement("div")
+            _ = wrapper.appendChild(child)
+            _ = wrapper.appendChild(overlay)
+            return wrapper
+        }
+
+        return child
+    }
+}
