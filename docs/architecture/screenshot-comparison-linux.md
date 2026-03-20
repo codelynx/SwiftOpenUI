@@ -42,6 +42,19 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/linux/` (SwiftOpe
 | Harmony labels | Complementary/Analogous/Shades | Same | OK |
 | Overall | Reference quality | Very close match | A |
 
+### 4. Calculator
+
+| Aspect | macOS | GTK4 | Rating |
+|--------|-------|------|--------|
+| Grid layout | 5x4 grid with spacing | 5x4 grid with spacing | OK |
+| Button backgrounds | Digit gray, operator orange, function light gray | Same colors | OK |
+| Button text | Centered in each cell | Centered in each cell (ZStack) | OK |
+| Wide zero button | Spans 2 columns | Spans 2 columns (.gridCellColumns) | OK |
+| Display | Right-aligned, large thin font | Right-aligned, large light font | OK |
+| Dark theme | Full black background | Full black background | OK |
+| Arithmetic | Full calculator logic | Same (ported from SwiftLinuxUI) | OK |
+| Overall | Polished calculator | Very close match | A |
+
 ## Parity Examples
 
 ### 4. ViewsBasic
@@ -186,12 +199,12 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/linux/` (SwiftOpe
 | Rating | Examples |
 |--------|----------|
 | A+ | Gestures |
-| A | HelloWorld, Stopwatch, ColorStudio, ViewsLayout, Modifiers, StateData, Navigation, Environment, Animation, Focus, AppStructure |
+| A | HelloWorld, Stopwatch, ColorStudio, Calculator, ViewsLayout, Modifiers, StateData, Navigation, Environment, Animation, Focus, AppStructure |
 | A- | ViewsBasic, ViewsContainers |
 
 ### Overall: GTK4 achieves A or higher on all 14 examples
 
-The GTK4 backend achieves **A or higher on 14 of 14 examples** (vs Win32's 3 A-rated). Key strengths:
+The GTK4 backend achieves **A or higher on 15 of 15 examples** (vs Win32's 3 A-rated). Key strengths:
 - Native GTK widgets (checkbox, scale, text entry) look polished and consistent
 - All 4 animations render correctly (Win32 only showed 2 of 4)
 - Full gesture support including drag (unavailable on macOS SwiftUI)

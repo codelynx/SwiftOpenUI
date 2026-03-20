@@ -148,6 +148,7 @@ See [android-setup.md](android-setup.md) for full setup instructions.
 | HelloWorld | `HelloWorld` | Text with padding — minimal app |
 | Stopwatch | `Stopwatch` | Timer, ObservableObject, start/stop/lap |
 | ColorMixer | `ColorMixer` | Sliders, color swatches, harmony, dark theme |
+| Calculator | `Calculator` | Grid/GridRow, .gridCellColumns, ZStack, @State |
 
 ### Parity
 

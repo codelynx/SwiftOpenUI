@@ -21,7 +21,7 @@ Examples/
 │   ├── HelloWorld/main.swift    # target: HelloWorld
 │   ├── Stopwatch/main.swift     # target: Stopwatch (replaces Counter)
 │   ├── ColorMixer/main.swift    # target: ColorMixer
-│   ├── Calculator/main.swift    # target: Calculator (future)
+│   ├── Calculator/main.swift    # target: Calculator
 │   └── PaintApp/main.swift      # target: PaintApp (future, needs Canvas)
 │
 ├── Parity/                      # Maps to parity matrix sections
@@ -156,11 +156,11 @@ Stylish stopwatch with start/stop/reset, elapsed time display, lap times list. E
 **Features:** Slider, @State, Color, .frame(), .background(), .foregroundColor(), .onTapGesture(), HStack, VStack, Button, Spacer, Text
 Redesign as a "Color Studio" — visually presentable like a Photoshop/Figma color picker panel. Large color swatch with hex/RGB readout, RGB sliders with colored labels, preset palette grid (tap to apply), lighter/darker buttons, and color harmony row (complementary + analogous computed swatches). All using existing views — no new APIs needed.
 
-### Calculator (future)
+### Calculator — Done
 **Target:** `Calculator`
-**Reference:** SwiftLinuxUI repo, `Examples/Calculator/main.swift` (213 lines)
-**Features:** Grid/GridRow, Button (17 keys), @State (display, currentValue, pendingOperation), .font(), .foregroundColor(), .background(), .frame(), .padding()
-iOS-style calculator — dark theme, orange operator keys, 5×4 grid layout, full arithmetic logic. Exercises Grid (rendered on GTK4, Win32, Web), precise layout, and multi-property @State.
+**Ported from:** SwiftLinuxUI repo, `Examples/Calculator/main.swift`
+**Features:** Grid/GridRow, .gridCellColumns(2), ZStack, Button, @State, .font(), .foregroundColor(), .background(), .frame()
+iOS-style calculator — dark theme, orange operator keys, 5×4 grid layout with wide zero button, full arithmetic logic. Uses ZStack { Color; Text } for full-bleed button backgrounds with centered labels.
 
 ### PaintApp (future)
 **Target:** `PaintApp`

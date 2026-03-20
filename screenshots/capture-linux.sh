@@ -20,6 +20,7 @@ declare -A FILENAMES=(
     [HelloWorld]="showcase-HelloWorld"
     [Stopwatch]="showcase-Stopwatch"
     [ColorMixer]="showcase-ColorMixer"
+    [Calculator]="showcase-Calculator"
     # Parity
     [ParityViewsBasic]="parity-ViewsBasic"
     [ParityViewsLayout]="parity-ViewsLayout"
@@ -35,7 +36,7 @@ declare -A FILENAMES=(
 )
 
 TARGETS=(
-    HelloWorld Stopwatch ColorMixer
+    HelloWorld Stopwatch ColorMixer Calculator
     ParityViewsBasic ParityViewsLayout ParityViewsContainers
     ParityModifiers ParityStateData ParityNavigation
     ParityEnvironment ParityGestures ParityAnimation

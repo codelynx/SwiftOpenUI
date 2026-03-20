@@ -57,6 +57,7 @@ Polished mini-apps demonstrating what you can build:
 | HelloWorld | `swift run HelloWorld` | Minimal app — Text with padding |
 | Stopwatch | `swift run Stopwatch` | Timer, start/stop, lap times |
 | ColorMixer | `swift run ColorMixer` | Color picker with sliders, swatches, harmony |
+| Calculator | `swift run Calculator` | Grid/GridRow calculator with arithmetic logic |
 
 ### Parity
 
