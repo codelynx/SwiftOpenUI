@@ -23,7 +23,10 @@ final class ViewBuilderTests: XCTestCase {
             Text("b")
         }
         let view = build()
-        XCTAssertTrue(view is TupleView2<Text, Text>)
+        // With buildPartialBlock, multi-child results are ViewList (or TupleView2)
+        XCTAssertTrue(view is MultiChildView)
+        let children = (view as! MultiChildView).children
+        XCTAssertEqual(children.count, 2)
     }
 
     func testBuildBlockThree() {
@@ -33,7 +36,9 @@ final class ViewBuilderTests: XCTestCase {
             Text("c")
         }
         let view = build()
-        XCTAssertTrue(view is TupleView3<Text, Text, Text>)
+        XCTAssertTrue(view is MultiChildView)
+        let children = (view as! MultiChildView).children
+        XCTAssertEqual(children.count, 3)
     }
 
     func testBuildOptionalPresent() {

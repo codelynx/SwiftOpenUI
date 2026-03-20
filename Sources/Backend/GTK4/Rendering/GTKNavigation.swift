@@ -417,8 +417,33 @@ extension NavigationLink: GTKRenderable {
             return opaqueFromWidget(button)
         }
 
-        let dest = self.destination
         let destTitle = self.title
+
+        // Value-based NavigationLink — push value via registry
+        if let value = pushValue {
+            let box = Unmanaged.passRetained(ClosureBox { [weak context] in
+                context?.pushValue(value)
+            }).toOpaque()
+
+            g_signal_connect_data(
+                gpointer(button),
+                "clicked",
+                unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                    let box = Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                    box.closure()
+                } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                box,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+
+            return opaqueFromWidget(button)
+        }
+
+        // Destination-based NavigationLink
+        let dest = self.destination
 
         let box = Unmanaged.passRetained(ClosureBox {
             // Set context for rendering the destination

@@ -467,11 +467,21 @@ extension NavigationLink: WinRenderable {
             return winRenderView(Text(label), in: context)
         }
 
-        // Render as a button that pushes the destination on click
-        let dest = self.destination
         let destTitle = self.title
         let hInst = context.hInstance
 
+        if let value = pushValue {
+            // Value-based NavigationLink — resolve via destination registry
+            return createNativeButton(title: label, action: { [weak navCtx] in
+                guard let navCtx = navCtx else { return }
+                if let factory = navCtx.destinationRegistry.resolve(value) {
+                    navCtx.push(title: destTitle) { factory() }
+                }
+            }, context: context)
+        }
+
+        // Destination-based NavigationLink
+        let dest = self.destination
         return createNativeButton(title: label, action: { [weak navCtx] in
             guard let navCtx = navCtx else { return }
             navCtx.push(title: destTitle) {

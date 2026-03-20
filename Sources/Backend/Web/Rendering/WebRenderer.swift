@@ -864,6 +864,16 @@ extension _ConditionalView: WebRenderable {
     }
 }
 
+extension ViewList: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("div")
+        for child in children {
+            _ = container.appendChild(webRenderAnyView(child))
+        }
+        return container
+    }
+}
+
 // MARK: - TupleView rendering
 
 extension TupleView2: WebMultiChildRenderable {

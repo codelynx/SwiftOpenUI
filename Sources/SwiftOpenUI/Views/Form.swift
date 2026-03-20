@@ -9,6 +9,9 @@ public struct Form<Content: View>: View, MultiChildView {
     }
 
     public var children: [any View] {
+        if let multi = content as? MultiChildView {
+            return multi.children
+        }
         let mirror = Mirror(reflecting: content)
         if mirror.children.isEmpty {
             return [content]

@@ -5150,6 +5150,38 @@ extension DrawingContext {
 // TupleViews are already MultiChildView, so winRenderChildren handles them.
 // But if they appear as standalone views (not inside a container), we need a fallback.
 
+extension ViewList: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        var y: Int32 = 0
+        var maxW: Int32 = 0
+
+        for child in children {
+            if let hwnd = winRenderAnyView(child, in: childContext) {
+                var r = RECT()
+                GetWindowRect(hwnd, &r)
+                let w = r.right - r.left
+                let h = r.bottom - r.top
+                SetWindowPos(hwnd, nil, 0, y, w, h, UINT(SWP_NOZORDER))
+                y += h
+                maxW = max(maxW, w)
+            }
+        }
+
+        SetWindowPos(container, nil, 0, 0, maxW, y, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        return container
+    }
+}
+
 extension TupleView2: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let vstack = VStack(spacing: 0) { v0; v1 }

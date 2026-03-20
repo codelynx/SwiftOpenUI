@@ -17,11 +17,16 @@ public struct Animation: Equatable {
     }
 
     public static let `default` = Animation()
-    public static func linear(duration: Double = 0.35) -> Animation { Animation(curve: .linear, duration: duration) }
-    public static func easeIn(duration: Double = 0.35) -> Animation { Animation(curve: .easeIn, duration: duration) }
-    public static func easeOut(duration: Double = 0.35) -> Animation { Animation(curve: .easeOut, duration: duration) }
-    public static func easeInOut(duration: Double = 0.35) -> Animation { Animation(curve: .easeInOut, duration: duration) }
+    public static let linear = Animation(curve: .linear, duration: 0.35)
+    public static let easeIn = Animation(curve: .easeIn, duration: 0.35)
+    public static let easeOut = Animation(curve: .easeOut, duration: 0.35)
+    public static let easeInOut = Animation(curve: .easeInOut, duration: 0.35)
     public static let spring = Animation(curve: .spring, duration: 0.5)
+
+    public static func linear(duration: Double) -> Animation { Animation(curve: .linear, duration: duration) }
+    public static func easeIn(duration: Double) -> Animation { Animation(curve: .easeIn, duration: duration) }
+    public static func easeOut(duration: Double) -> Animation { Animation(curve: .easeOut, duration: duration) }
+    public static func easeInOut(duration: Double) -> Animation { Animation(curve: .easeInOut, duration: duration) }
 }
 
 /// A view with an opacity applied.

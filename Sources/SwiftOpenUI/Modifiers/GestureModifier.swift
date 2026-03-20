@@ -29,6 +29,11 @@ public struct DragGestureValue {
     /// The total translation from the start.
     public let translation: (width: Double, height: Double)
 
+    /// Convenience: translation width (matches SwiftUI CGSize.width).
+    public var width: Double { translation.width }
+    /// Convenience: translation height (matches SwiftUI CGSize.height).
+    public var height: Double { translation.height }
+
     public init(startLocation: (x: Double, y: Double), location: (x: Double, y: Double), translation: (width: Double, height: Double)) {
         self.startLocation = startLocation
         self.location = location
@@ -66,5 +71,13 @@ extension View {
         onEnded: ((DragGestureValue) -> Void)? = nil
     ) -> DragGestureView<Self> {
         DragGestureView(content: self, minimumDistance: minimumDistance, onChanged: onChanged, onEnded: onEnded)
+    }
+
+    /// Trailing-closure convenience: attach a drag gesture with an onChanged handler.
+    public func onDrag(
+        minimumDistance: Double = 10,
+        _ handler: @escaping (DragGestureValue) -> Void
+    ) -> DragGestureView<Self> {
+        DragGestureView(content: self, minimumDistance: minimumDistance, onChanged: handler, onEnded: nil)
     }
 }

@@ -1,7 +1,7 @@
 /// A transparent grouping container that flattens its children
 /// into the parent container without introducing an extra wrapper.
 /// Use Group to work around the ViewBuilder child limit.
-public struct Group<Content: View>: View, MultiChildView {
+public struct Group<Content: View>: View, TransparentMultiChildView {
     public typealias Body = Never
 
     public let content: Content

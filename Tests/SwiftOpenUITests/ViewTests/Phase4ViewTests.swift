@@ -58,6 +58,22 @@ final class Phase4ViewTests: XCTestCase {
         XCTAssertTrue(grid.useExplicitRows)
     }
 
+    func testGridExplicitRowsPreserveGridRowBoundaries() {
+        let grid = Grid(horizontalSpacing: 4, verticalSpacing: 8) {
+            GridRow { Text("A"); Text("B") }
+            GridRow { Text("C"); Text("D") }
+            Text("Footer")
+        }
+
+        let multi = try? XCTUnwrap(grid.content as? MultiChildView)
+        let children = multi?.children ?? []
+        XCTAssertEqual(children.count, 3)
+        // GridRow generic parameter varies with buildPartialBlock; check protocol
+        XCTAssertTrue(children[0] is MultiChildView, "First child should be a GridRow")
+        XCTAssertTrue(children[1] is MultiChildView, "Second child should be a GridRow")
+        XCTAssertTrue(children[2] is Text)
+    }
+
     // MARK: - GridRow
 
     func testGridRowChildren() {

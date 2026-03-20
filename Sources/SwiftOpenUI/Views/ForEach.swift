@@ -1,5 +1,5 @@
 /// A view that creates views from a collection of identified data.
-public struct ForEach<Data, ID: Hashable, Content: View>: View, MultiChildView {
+public struct ForEach<Data, ID: Hashable, Content: View>: View, TransparentMultiChildView {
     public typealias Body = Never
 
     public let data: [Data]
@@ -39,6 +39,13 @@ extension ForEach where Data == Int, ID == Int {
     public init(_ range: Range<Int>, @ViewBuilder content: @escaping (Int) -> Content) {
         self.data = Array(range)
         self.id = \.self
+        self.content = content
+    }
+
+    /// Range-based ForEach with explicit id key path (matches SwiftUI API).
+    public init(_ range: Range<Int>, id: KeyPath<Int, Int>, @ViewBuilder content: @escaping (Int) -> Content) {
+        self.data = Array(range)
+        self.id = id
         self.content = content
     }
 }
