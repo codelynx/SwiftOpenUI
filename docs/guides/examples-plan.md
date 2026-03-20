@@ -160,7 +160,7 @@ Redesign as a "Color Studio" — visually presentable like a Photoshop/Figma col
 **Target:** `Calculator`
 **Reference:** SwiftLinuxUI repo, `Examples/Calculator/main.swift` (213 lines)
 **Features:** Grid/GridRow, Button (17 keys), @State (display, currentValue, pendingOperation), .font(), .foregroundColor(), .background(), .frame(), .padding()
-iOS-style calculator — dark theme, orange operator keys, 5×4 grid layout, full arithmetic logic. Exercises Grid (not yet rendered on backends), precise layout, and multi-property @State.
+iOS-style calculator — dark theme, orange operator keys, 5×4 grid layout, full arithmetic logic. Exercises Grid (rendered on GTK4, Win32, Web), precise layout, and multi-property @State.
 
 ### PaintApp (future)
 **Target:** `PaintApp`
@@ -169,44 +169,30 @@ iOS-style calculator — dark theme, orange operator keys, 5×4 grid layout, ful
 **Features:** Canvas, .onDrag(), @State, Color palette, brush size selection
 Drawing app — drag to paint strokes, pick colors and brush sizes. Borrowed from SwiftLinuxUI's PaintApp. Depends on Canvas view having backend rendering (currently core-defined, no backend renderers yet).
 
-## Migration Plan
+## Migration Status
 
-### Phase 1: Restructure directories
-1. Create `Examples/Showcase/` and `Examples/Parity/`
-2. Move `HelloWorld`, `Counter`, `ColorMixer` → `Examples/Showcase/`
-3. Retire `Showcase1`, `Showcase2` (content absorbed into parity examples)
+All migration phases are **complete**.
 
-### Phase 2: Create parity examples
-4. Build parity examples one section at a time, starting with the most populated matrix sections
-5. Absorb existing numbered examples into parity files:
-   - `02-TextStyles` → `ParityViewsBasic`
-   - `03-Buttons` → `ParityViewsBasic`
-   - `04-State` → `ParityStateData`
-   - `05-Layout` → `ParityViewsLayout`
-   - `BasicInteractive` → `ParityGestures`
-   - `FocusTest` → `ParityFocus`
-6. Remove absorbed examples after content is migrated
+### Phase 1: Restructure directories — Done
+- Created `Examples/Showcase/` and `Examples/Parity/`
+- Moved HelloWorld, ColorMixer → `Examples/Showcase/`
+- Added Stopwatch (replaced Counter)
 
-### Phase 3: Wire up
-7. Update `Package.swift` targets (add new, remove old)
-8. Update `apple/Examples/project.yml` (XcodeGen schemes for all new targets)
-9. Update Android example registry in `JNIBridge.swift` if any parity examples are wired to Android
-10. Update matrix (`docs/architecture/swiftui-parity-matrix.md`) to reference parity example paths per section
-11. Update `CLAUDE.md` examples list
-12. Update `docs/guides/running-examples.md`
+### Phase 2: Create parity examples — Done
+- All 11 parity examples created
+- Legacy examples absorbed and removed: Showcase1, Showcase2, Counter, 02-TextStyles, 03-Buttons, 04-State, 05-Layout, BasicInteractive, FocusTest
 
-### Priority Order
-1. **ParityViewsBasic** — highest row count, absorbs 2 existing examples
-2. **ParityViewsLayout** — most visual, validates backend layout engines
-3. **ParityModifiers** — tests modifier stacking and rendering
-4. **ParityStateData** — absorbs existing State example
-5. **ParityNavigation** — complex multi-screen validation
-6. **ParityGestures** — absorbs BasicInteractive
-7. **ParityEnvironment** — currently untested in examples
-8. **ParityAppStructure** — App/Scene/WindowGroup verification
-9. **ParityAnimation** — cross-platform timing differences
-10. **ParityViewsContainers** — Phase 3 views (Toggle, Slider, Image, List, ScrollView)
-11. **ParityFocus** — absorbs FocusTest
+### Phase 3: Wire up — Done
+- `Package.swift` — 14 targets (3 showcase + 11 parity), legacy targets removed
+- `apple/Examples/project.yml` — 14 XcodeGen targets, legacy targets removed
+- `docs/architecture/swiftui-parity-matrix.md` — parity example references added per section
+- `CLAUDE.md` — examples list updated
+- `docs/guides/running-examples.md` — rewritten with Showcase + Parity tables
+
+### Screenshots
+- macOS reference screenshots captured for all 14 examples (50% Retina)
+- Linux and Windows screenshots captured in parallel session
+- Web screenshots pending
 
 ## Package.swift Target Layout
 
