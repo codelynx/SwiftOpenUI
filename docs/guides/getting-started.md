@@ -1,92 +1,297 @@
 # Getting Started
 
-## Prerequisites
+Complete setup guide for SwiftOpenUI on each platform.
 
-- **macOS**: Xcode or the open-source Swift toolchain
-- **Linux**: Swift toolchain + `libgtk-4-dev`
-- **Windows**: Swift toolchain + Visual Studio (Win32 SDK)
-- **Web (Wasm)**: Open-source Swift toolchain (not Xcode's) + Wasm SDK
+## macOS
 
-## Quick Setup (macOS)
+macOS is the primary development platform. Examples compile against real SwiftUI on macOS, validating API compatibility.
 
-Run the configure script to install the open-source Swift toolchain and Wasm SDK:
+### Prerequisites
 
-```bash
-./configure
-```
+- **Xcode** (or Xcode Command Line Tools): `xcode-select --install`
 
-This installs:
-1. **swiftly** — official Swift version manager
-2. **Open-source Swift 6.2.4** — includes the Wasm compiler backend (Xcode's Swift does not)
-3. **Wasm SDK** — cross-compilation SDK for WebAssembly
-
-Note: `./configure` is macOS-only. On Linux, install Swift from swift.org and `libgtk-4-dev`. On Windows, install Swift and Visual Studio with the Windows SDK.
-
-## Building
+### Build and Run
 
 ```bash
-# macOS (uses real SwiftUI)
+git clone https://github.com/codelynx/SwiftOpenUI.git
+cd SwiftOpenUI
+
 swift build
-
-# WebAssembly
-swift build --swift-sdk swift-6.2.4-RELEASE_wasm
-
-# Tests
 swift test
-```
-
-Note: after switching toolchains, run `swift package clean` to clear stale build cache.
-
-## Running Examples
-
-### macOS (native SwiftUI windows)
-
-```bash
 swift run HelloWorld
-swift run Counter
-swift run Showcase1
-swift run Showcase2
-swift run BasicInteractive   # Navigation, gestures, animation
-swift run ColorMixer          # Toggle, Slider, ScrollView, List
-swift run FocusTest           # TextField focus preservation
+swift run ColorMixer
 ```
 
-### Web (browser via Wasm)
+### Xcode Project
+
+For running examples in Xcode with scheme selection and debugging:
 
 ```bash
-# Build + package for browser
-swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld
+brew install xcodegen
+cd apple/Examples && xcodegen generate
+open Examples.xcodeproj
+```
 
-# Serve locally
-npx serve .build/plugins/PackageToJS/outputs/Package
+Select any scheme (HelloWorld, Stopwatch, ColorMixer, ParityViewsBasic, etc.) and press Cmd+R.
 
+The generated `.xcodeproj` is not committed — each developer generates it locally. If you add or rename an example, update `apple/Examples/project.yml` and re-run `xcodegen generate`.
+
+---
+
+## Linux (GTK4)
+
+SwiftOpenUI uses GTK4 for native Linux rendering. Tested on Ubuntu 22.04+ and Debian 12+.
+
+### Prerequisites
+
+1. **Swift toolchain** (6.0+)
+
+   Install via [swiftly](https://github.com/swiftlang/swiftly) (recommended):
+   ```bash
+   curl -L https://swift.org/install.sh | bash
+   ```
+
+   Or download from [swift.org/download](https://www.swift.org/download/).
+
+2. **GTK4 development libraries**
+
+   Ubuntu / Debian:
+   ```bash
+   sudo apt update
+   sudo apt install libgtk-4-dev pkg-config
+   ```
+
+   Fedora:
+   ```bash
+   sudo dnf install gtk4-devel pkg-config
+   ```
+
+   Arch Linux:
+   ```bash
+   sudo pacman -S gtk4 pkg-config
+   ```
+
+3. **Verify GTK4 is installed**
+   ```bash
+   pkg-config --modversion gtk4
+   # Should print 4.x.x
+   ```
+
+### Build and Run
+
+```bash
+swift build
+swift test
+swift run HelloWorld
+swift run ColorMixer
+swift run ParityViewsBasic
+```
+
+All 14 examples (3 Showcase + 11 Parity) work on Linux.
+
+### Notes
+
+- Font rendering uses the system sans-serif font (not SF Pro).
+- Image (systemName) renders GTK icon theme names (e.g., `"starred"`, `"emblem-favorite"`), not SF Symbols.
+- Timer-based apps (Stopwatch) work via Foundation RunLoop pumped from a GLib timeout source.
+
+---
+
+## Windows (Win32)
+
+SwiftOpenUI uses Win32 and Direct2D for native Windows rendering.
+
+### Prerequisites
+
+1. **Swift toolchain for Windows** (6.0+)
+
+   Download from [swift.org/download](https://www.swift.org/download/) — choose the Windows installer.
+
+2. **Visual Studio** (2022 recommended)
+
+   Install with these workloads:
+   - **Desktop development with C++** (includes Windows SDK)
+   - **Individual components**: Windows 10/11 SDK
+
+   Or install just the Build Tools:
+   ```powershell
+   winget install Microsoft.VisualStudio.2022.BuildTools
+   ```
+
+3. **Verify Swift is on PATH**
+   ```powershell
+   swift --version
+   # Should print Swift 6.x.x
+   ```
+
+### Build and Run
+
+Open **Developer Command Prompt for VS 2022** (or any shell with the Visual Studio environment loaded):
+
+```powershell
+swift build
+swift test
+swift run HelloWorld
+swift run ColorMixer
+swift run ParityViewsBasic
+```
+
+All 14 examples work on Windows.
+
+### Notes
+
+- Rendering uses native Win32 controls (HWND) for buttons, text fields, toggles, etc.
+- Direct2D is used for Canvas, opacity, scale, and rotation effects.
+- Image rendering uses Windows Imaging Component (WIC) — supports PNG, JPEG, BMP, GIF.
+- Timer-based apps (Stopwatch) work via a hybrid RunLoop + Win32 message pump.
+
+---
+
+## Web (Wasm)
+
+SwiftOpenUI compiles to WebAssembly and renders into the browser DOM via [JavaScriptKit](https://github.com/nicklama/JavaScriptKit).
+
+### Prerequisites
+
+1. **Open-source Swift toolchain** (not Xcode's — Xcode's Swift lacks the Wasm backend)
+
+   Install via [swiftly](https://github.com/swiftlang/swiftly):
+   ```bash
+   # macOS
+   curl -L https://swift.org/install.sh | bash
+   source ~/.swiftly/env.sh
+   ```
+
+   Or run the configure script (macOS only):
+   ```bash
+   ./configure
+   ```
+
+   This installs swiftly, Swift 6.2.4, and the Wasm SDK automatically.
+
+2. **Wasm SDK**
+
+   If not installed by `./configure`:
+   ```bash
+   swift sdk install https://download.swift.org/swift-6.2.4-release/wasm-sdk/swift-6.2.4-RELEASE/swift-6.2.4-RELEASE_wasm.artifactbundle.tar.gz
+   ```
+
+   Verify:
+   ```bash
+   swift sdk list
+   # Should include: swift-6.2.4-RELEASE_wasm
+   ```
+
+3. **Node.js** (18+) — for the Vite dev server
+
+   ```bash
+   # macOS
+   brew install node
+
+   # Ubuntu/Debian
+   sudo apt install nodejs npm
+
+   # Or use nvm
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+   nvm install 18
+   ```
+
+4. **Install Node dependencies**
+   ```bash
+   cd web && npm install
+   ```
+
+### Build and Run (Quick)
+
+The `run.sh` script builds a single example and serves it:
+
+```bash
+./web/run.sh HelloWorld
 # Open http://localhost:3000
 ```
 
-### Linux (GTK4)
-
 ```bash
-sudo apt install libgtk-4-dev
-swift run HelloWorld
+./web/run.sh ColorMixer
+./web/run.sh Stopwatch
+./web/run.sh ParityViewsBasic
 ```
 
-### Windows (Win32)
+### Build and Run (All Examples)
+
+Build all 14 examples at once, then serve via Vite:
 
 ```bash
-swift run HelloWorld
+source ~/.swiftly/env.sh
+./web/build-wasm.sh        # builds all examples
+cd web && npx vite         # serves at http://localhost:3000
 ```
 
-Requires Visual Studio with the Windows SDK installed.
+Navigate to `http://localhost:3000/examples/HelloWorld.html`, `ColorMixer.html`, etc.
 
-### Android (experimental)
+### Vite Dev Server
 
-See [Android Setup Guide](android-setup.md) for cross-compilation from macOS. Requires Swift 6.3 dev snapshot (opt-in).
+[Vite](https://vite.dev/) is used as the development server. It handles:
+- Correct MIME types for `.wasm` files
+- Module resolution for JavaScriptKit imports
+- Hot reload for HTML changes (not Swift — Wasm requires rebuild)
+
+The Vite config is at `web/vite.config.js`. No customization needed for basic usage.
+
+### How It Works
+
+```
+Swift source  -->  SwiftWasm compiler  -->  .wasm binary
+                                               |
+              PackageToJS plugin generates:     |
+              - index.js (loader)               |
+              - index.html                      v
+                                           Browser loads .wasm
+                                           JavaScriptKit bridges
+                                           Swift <-> DOM API
+```
+
+SwiftOpenUI's `WebBackend` creates DOM elements (`<div>`, `<input>`, `<button>`, etc.) via JavaScriptKit. Each SwiftOpenUI view maps to one or more DOM elements. CSS handles styling. No virtual DOM or React — direct DOM manipulation.
+
+### Notes
+
+- `Foundation.Timer` is not available on Wasm (no CFRunLoop). Use `JSObject.global.setInterval` via JavaScriptKit instead. The Stopwatch example demonstrates this pattern.
+- Image (systemName) renders as text placeholders — there is no browser icon theme equivalent to GTK or SF Symbols.
+- The Puppeteer screenshot tool (`web/screenshot.mjs`) requires Google Chrome installed locally.
+
+---
+
+## Toolchain Switching
+
+If you develop for both macOS (Xcode) and Web (Wasm), you'll switch between toolchains:
+
+```bash
+# Use Xcode's Swift (default for macOS)
+swift build
+swift run HelloWorld
+
+# Switch to open-source Swift for Wasm builds
+source ~/.swiftly/env.sh
+swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld
+```
+
+After switching, you may need to clean the build cache:
+
+```bash
+swift package clean
+# Or for a specific target:
+rm -rf .build/wasm32-unknown-wasip1
+```
+
+---
 
 ## Your First App
+
+Create a new file `Examples/Showcase/MyApp/main.swift`:
 
 ```swift
 #if os(macOS)
 import SwiftUI
+import AppKit
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -100,22 +305,30 @@ import BackendWeb
 #endif
 #endif
 
+struct ContentView: View {
+    @State private var count = 0
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Count: \(count)")
+                .font(.title)
+            Button("Increment") { count += 1 }
+        }
+        .padding()
+    }
+}
+
 struct MyApp: App {
     var body: some Scene {
         WindowGroup("My App") {
-            VStack(spacing: 8) {
-                Text("Hello!")
-                    .font(.title)
-                Button("Tap me") {
-                    print("Tapped")
-                }
-            }
-            .padding()
+            ContentView()
         }
     }
 }
 
 #if os(macOS)
+NSApplication.shared.setActivationPolicy(.regular)
+NSApplication.shared.activate(ignoringOtherApps: true)
 MyApp.main()
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(MyApp.self)
@@ -128,4 +341,29 @@ print("No backend available on this platform.")
 #endif
 ```
 
+Add the target to `Package.swift`:
+
+```swift
+.executableTarget(
+    name: "MyApp",
+    dependencies: exampleDeps,
+    path: "Examples/Showcase/MyApp"
+),
+```
+
+Then run:
+
+```bash
+swift run MyApp
+```
+
 The view code is identical across platforms — only the imports and entry point differ via `#if`.
+
+---
+
+## Next Steps
+
+- [Running Examples](running-examples.md) — all 14 examples with commands per platform
+- [Feature Parity Matrix](../architecture/swiftui-parity-matrix.md) — what's implemented on each backend
+- [Adding a Backend](adding-a-backend.md) — how to implement a new backend
+- [Web Setup Details](web-setup.md) — Wasm build pipeline, DOM mapping, Puppeteer screenshots
