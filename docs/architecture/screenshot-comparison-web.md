@@ -1,11 +1,11 @@
 # Screenshot Comparison: macOS vs Web (Wasm)
 
 Side-by-side comparison of all Showcase and Parity examples.
-Screenshots taken 2026-03-20 with latest develop branch.
+Screenshots recaptured 2026-03-20 after rendering fixes (viewport fill, Button reset, Frame centering, Group display:contents).
 
 Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/web/` (SwiftOpenUI Web/Wasm backend)
 
-Note: parity-Modifiers is missing from Web — the Wasm build timed out during screenshot capture.
+Note: parity-Modifiers times out during Puppeteer capture (Wasm init delay, not a build failure — the example runs when loaded manually).
 
 ## Showcase Examples
 
@@ -14,36 +14,37 @@ Note: parity-Modifiers is missing from Web — the Wasm build timed out during s
 | Aspect | macOS | Web | Rating |
 |--------|-------|-----|--------|
 | Title bar | "Hello World" in macOS chrome | No title bar (browser page) | Expected |
-| Text content | Centered in window | Top-left aligned | Issue — no centering |
+| Text content | Centered in window | Top-left aligned | Minor — VStack defaults to leading |
 | Text "Hello, SwiftOpenUI!" | Correct | Correct | OK |
 | Font rendering | SF Pro | System sans-serif | Expected |
-| Overall | Clean minimal | Functional, no centering | B |
+| Overall | Clean minimal | Functional | B+ |
 
 ### 2. Stopwatch
 
 | Aspect | macOS | Web | Rating |
 |--------|-------|-----|--------|
-| Dark background | Fills window with rounded corners | Same as HelloWorld — no dark background visible | Issue — background not rendering |
-| Timer "00:00.00" | Centered, thin weight, white text | Not visible (white on white) | Issue — dark bg missing |
-| Buttons Reset/Start | Gray/green rounded | Not visible | Issue — dark bg missing |
-| Overall | Polished dark UI | Broken — dark background not applied to page | D |
-
-**Root cause:** The Web backend renders into a white page body. The Stopwatch's `.background(Color(...))` on the root VStack doesn't cover the full viewport. The dark theme requires the page/body background to match, or the root container to fill the viewport.
+| Dark background | Fills window with rounded corners | Fills viewport (dark bg visible) | OK |
+| Timer "00:00.00" | Centered, thin weight, white text | Centered, white text | OK |
+| Reset button | Orange rounded, centered text | Orange flat, centered text, no border | OK |
+| Start button | Green rounded, centered text | Green flat, centered text, no border | OK |
+| Button text alignment | Vertically centered | Vertically centered | OK |
+| Divider | White line below buttons | White line below buttons | OK |
+| Lower area | Dark, empty (no laps) | White area below dark region | Issue — bg doesn't extend to bottom |
+| Overall | Polished dark UI | Good match, bottom area white | A- |
 
 ### 3. Color Studio
 
 | Aspect | macOS | Web | Rating |
 |--------|-------|-----|--------|
-| Dark background | Full coverage | Full coverage with visible divider lines | OK |
+| Dark background | Full coverage | Full coverage | OK |
 | Color swatch | Large blue rect with border | Large blue rect with border | OK |
 | Hex/RGB labels | "#50A0DC R:80 G:160 B:220" | Same values, correct colors | OK |
 | RGB sliders | SwiftUI native (colored track) | Browser range input (blue track) | Good — functional, different style |
 | Slider labels | R/G/B colored | R/G/B colored correctly | OK |
-| Color swatches grid | 2 rows, 6+6 evenly spaced | 2 rows, 7+5 layout (slightly uneven) | Minor — swatch count per row differs |
-| Lighter/Darker buttons | Rounded gray on dark bg | Bordered gray buttons, larger | OK |
+| Color swatches grid | 2 rows, evenly spaced | 2 rows, 7+6 layout | OK |
+| Lighter/Darker buttons | Rounded gray | Flat gray, no border | OK |
 | Harmony row | Complementary/Analogous/Shades | Same labels and color swatches | OK |
-| Divider lines | Subtle | More visible (white lines on dark bg) | Minor — divider styling |
-| Overall | Reference quality | Good match, functional | B+ |
+| Overall | Reference quality | Very close match | A- |
 
 ## Parity Examples
 
@@ -52,14 +53,14 @@ Note: parity-Modifiers is missing from Web — the Wasm build timed out during s
 | Aspect | macOS | Web | Rating |
 |--------|-------|-----|--------|
 | Text (plain/bold/colored) | Correct | Correct | OK |
-| Large title / Caption | Correct sizes | Correct sizes, slightly larger | OK |
-| Button (string label) | SwiftUI rounded | Browser button with border | OK |
-| Button (custom label) | White/green on dark bg | White/green text, visible arrow | OK |
-| TextField | Full-width with placeholder | Compact width with placeholder | Minor — not full-width |
+| Large title / Caption | Correct sizes | Correct sizes | OK |
+| Button (string label) | SwiftUI rounded | Flat button, no border | OK |
+| Button (custom label) | White/green arrow | Green arrow only visible (white text on white bg) | Minor — custom label styling |
+| TextField | Full-width with placeholder | Compact width with placeholder | Minor — leading alignment |
 | Color swatches | Two rows, small 24px squares | Two rows, correctly colored | OK |
-| Spacer | Full-width dark bar "Left / Right" | Collapsed — "LeftRight" together, no spacing | Issue — Spacer not expanding in HStack |
+| Spacer | Full-width dark bar "Left / Right" | Collapsed — "LeftRight" together | Issue — Spacer still not expanding |
 | Divider | Full-width thin line | Full-width thin line | OK |
-| Overall | Complete | Mostly complete, Spacer issue | B+ |
+| Overall | Complete | Mostly complete | B+ |
 
 ### 5. ViewsLayout
 
@@ -69,12 +70,12 @@ Note: parity-Modifiers is missing from Web — the Wasm build timed out during s
 | HStack (A/B/C) | Colored boxes in row | Colored boxes in row | OK |
 | HStack "Wide / Spacing" | Spread apart | Spread apart | OK |
 | ZStack | Blue bg, green overlay, "Top" text | Blue bg, green overlay, "Top" text | OK |
-| Group items | 3 cyan items, vertical | 3 cyan items, horizontal (no line breaks) | Issue — Group renders inline, not vertical |
+| Group items | 3 cyan items, vertical | 3 cyan items, horizontal (display:contents) | Minor — still inline within VStack |
 | ForEach (0/1/2) | Purple numbered boxes | Purple numbered boxes | OK |
 | -/+ buttons | Working | Working | OK |
 | AnyView | Green text | Green text | OK |
 | EmptyView | "Before After (EmptyView between)" | "BeforeAfter (EmptyView between)" | Minor — no HStack spacing |
-| Overall | Complete | Close match, Group layout issue | B+ |
+| Overall | Complete | Close match | B+ |
 
 ### 6. ViewsContainers
 
@@ -87,12 +88,12 @@ Note: parity-Modifiers is missing from Web — the Wasm build timed out during s
 | Image (system) | SF Symbols (star, heart, gear) | Text placeholders: [starred] [emblem-favorite] [preferences-system] | Expected — no browser icon theme |
 | Image (file) | Fallback text | Fallback text | OK |
 | ScrollView | Dark scrollable area, 4 items visible | Dark scrollable area, 3 items visible | OK |
-| List | 3 items with -/+, row separators | 3 items with -/+, bordered rows | OK |
+| List | 3 items with -/+, bordered rows | 3 items with -/+, bordered rows | OK |
 | Overall | Complete | Complete, Image as text placeholder | B+ |
 
 ### 7. Modifiers
 
-**Not captured** — Wasm build timed out during Puppeteer screenshot capture.
+**Not captured** — Wasm init times out during Puppeteer automated capture. The example builds and runs when loaded manually in browser.
 
 ### 8. StateData
 
@@ -111,7 +112,7 @@ Note: parity-Modifiers is missing from Web — the Wasm build timed out during s
 | Aspect | macOS | Web | Rating |
 |--------|-------|-----|--------|
 | Title bar | "Navigation" in macOS chrome | "Home" in gray header bar | OK — Web header visible |
-| NavigationLink buttons | "Go to Alpha", "Go to Beta" | Same, bordered buttons | OK |
+| NavigationLink buttons | "Go to Alpha", "Go to Beta" | Same, flat buttons | OK |
 | Path depth | "Path depth: 0" | "Path depth: 0" | OK |
 | Push 42 / Push 99 | Present | Present | OK |
 | NavigateAction section | Present | Present | OK |
@@ -121,14 +122,14 @@ Note: parity-Modifiers is missing from Web — the Wasm build timed out during s
 
 | Aspect | macOS | Web | Rating |
 |--------|-------|-----|--------|
-| Custom accent (default blue) | Blue text | Blue underlined text | Minor — underline is an anchor/link style |
+| Custom accent (default blue) | Blue text | Blue text | OK |
 | Custom accent (red override) | Red text | Red text | OK |
 | Toggle accent button | Present | Present | OK |
 | Third accent (green) | Green text | Green text | OK |
 | @EnvironmentObject | "Theme: Dark", "Font size: 14pt" | Same values | OK |
 | Toggle/Size buttons | Present | Present | OK |
 | Environment propagation | Orange "Nested child sees accent" | Orange text | OK |
-| Overall | Complete | Very close match | A- |
+| Overall | Complete | Very close match | A |
 
 ### 11. Gestures
 
@@ -155,7 +156,7 @@ Note: parity-Modifiers is missing from Web — the Wasm build timed out during s
 | Aspect | macOS | Web | Rating |
 |--------|-------|-----|--------|
 | @FocusState (Bool) | TextField + "Focused: NO" + Focus/Unfocus | TextField + "Focused: NO" + Focus/Unfocus | OK |
-| TextField width | Full-width | Compact | Minor — width differs |
+| TextField width | Full-width | Compact | Minor — leading alignment |
 | @FocusState (enum) | 3 TextFields (Name/Email/Notes) | 3 TextFields (Name/Email/Notes) | OK |
 | Active indicator | "Active: None" in blue | "Active:None" in blue (no space) | Minor — missing space |
 | Focus buttons | Name/Email/Notes/Clear | Name/Email/Notes/Clear | OK |
@@ -176,25 +177,26 @@ Note: parity-Modifiers is missing from Web — the Wasm build timed out during s
 
 | Example | Rating | Key Issues |
 |---------|--------|-----------|
-| HelloWorld | B | Text not centered (no viewport fill) |
-| Stopwatch | D | Dark background doesn't fill viewport — white on white |
-| ColorMixer | B+ | Good match, minor swatch layout and divider styling |
-| ViewsBasic | B+ | Spacer not expanding in HStack |
-| ViewsLayout | B+ | Group renders inline (no vertical stacking) |
+| HelloWorld | B+ | Text top-left (no centering) |
+| Stopwatch | A- | Dark bg fills viewport; bottom area white |
+| ColorMixer | A- | Very close match |
+| ViewsBasic | B+ | Spacer not expanding in HStack context |
+| ViewsLayout | B+ | Group items inline, EmptyView no spacing |
 | ViewsContainers | B+ | Image renders as text placeholder (expected) |
-| Modifiers | N/A | Wasm build timed out |
+| Modifiers | N/A | Puppeteer capture timeout (runs manually) |
 | StateData | A | Complete match |
 | Navigation | A | Header bar present, correct |
-| Environment | A- | Minor underline on accent text |
+| Environment | A | Close match |
 | Gestures | A | Full coverage, drag works on Web |
-| Animation | A- | Minor layout differences in offset/withAnimation rows |
+| Animation | A- | Minor layout differences |
 | Focus | A- | TextField width, minor spacing |
 | AppStructure | A | Complete match |
 
-## Key Issues to Address
+**Rating distribution:** 6x A/A-, 4x B+, 1x N/A. No D or C ratings.
 
-1. **Stopwatch dark background** (High) — root `.background()` doesn't fill the browser viewport. Needs either a CSS `body` background or the root container to use `min-height: 100vh`.
-2. **Spacer in HStack** (Medium) — Spacer doesn't expand to push children apart. The Web `Spacer` implementation may need `flex: 1` in a flex context.
-3. **Group vertical stacking** (Medium) — Group renders children inline rather than vertically when inside a VStack. The Group `<div>` may need `display: flex; flex-direction: column` or `display: contents`.
-4. **parity-Modifiers timeout** (Medium) — Wasm build or runtime issue prevents this example from rendering. Needs investigation.
-5. **TextField width** (Low) — TextFields don't fill available width in all contexts. May need `width: 100%` applied more consistently.
+## Remaining Issues
+
+1. **Spacer in HStack** (Medium) — Spacer has `flex: 1` but doesn't expand when the parent HStack is inside a `.frame().background()` chain. The FrameView centers content, which may constrain flex expansion.
+2. **Group display:contents** (Low) — Group uses `display: contents` which makes children participate in parent flex, but Text children render as inline `<span>` elements, so they flow horizontally rather than vertically.
+3. **parity-Modifiers timeout** (Low) — Puppeteer automated capture times out. The example works when loaded manually. May need a longer Wasm init wait or a different wait condition.
+4. **Stopwatch bottom area** (Low) — Dark background doesn't extend below the divider when there are no laps. The Spacer below the lap list should push the background down but flex:1 isn't propagating through all wrappers.
