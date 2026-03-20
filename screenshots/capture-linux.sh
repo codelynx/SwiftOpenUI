@@ -15,20 +15,36 @@ mkdir -p "$OUTDIR"
 DELAY=3  # seconds to wait for window to appear
 
 # Map of target name → screenshot filename
-declare -A EXAMPLES=(
-    [HelloWorld]="01-HelloWorld"
-    [TextStyles]="02-TextStyles"
-    [Buttons]="03-Buttons"
-    [StateDemo]="04-State"
-    [Layout]="05-Layout"
-    [Counter]="Counter"
-    [Showcase1]="Showcase1"
-    [Showcase2]="Showcase2"
+declare -A FILENAMES=(
+    # Showcase
+    [HelloWorld]="showcase-HelloWorld"
+    [Stopwatch]="showcase-Stopwatch"
+    [ColorMixer]="showcase-ColorMixer"
+    # Parity
+    [ParityViewsBasic]="parity-ViewsBasic"
+    [ParityViewsLayout]="parity-ViewsLayout"
+    [ParityViewsContainers]="parity-ViewsContainers"
+    [ParityModifiers]="parity-Modifiers"
+    [ParityStateData]="parity-StateData"
+    [ParityNavigation]="parity-Navigation"
+    [ParityEnvironment]="parity-Environment"
+    [ParityGestures]="parity-Gestures"
+    [ParityAnimation]="parity-Animation"
+    [ParityFocus]="parity-Focus"
+    [ParityAppStructure]="parity-AppStructure"
+)
+
+TARGETS=(
+    HelloWorld Stopwatch ColorMixer
+    ParityViewsBasic ParityViewsLayout ParityViewsContainers
+    ParityModifiers ParityStateData ParityNavigation
+    ParityEnvironment ParityGestures ParityAnimation
+    ParityFocus ParityAppStructure
 )
 
 capture_one() {
     local target="$1"
-    local filename="${EXAMPLES[$target]:-$target}"
+    local filename="${FILENAMES[$target]:-$target}"
     local outfile="$OUTDIR/${filename}.png"
 
     echo "==> Capturing $target → $outfile"
@@ -37,7 +53,9 @@ capture_one() {
     swift build --product "$target" 2>/dev/null
 
     # Launch in background
-    swift run "$target" &>/dev/null &
+    local bindir
+    bindir=$(swift build --product "$target" --show-bin-path 2>/dev/null)
+    "$bindir/$target" &>/dev/null &
     local pid=$!
 
     # Wait for window to appear and settle
@@ -58,11 +76,9 @@ capture_one() {
 }
 
 if [ -n "$1" ]; then
-    # Capture specific example
     capture_one "$1"
 else
-    # Capture all examples
-    for target in HelloWorld TextStyles Buttons StateDemo Layout; do
+    for target in "${TARGETS[@]}"; do
         capture_one "$target"
         sleep 1
     done
