@@ -24,7 +24,7 @@ The current `WebViewHost` clears `_webRetainedClosures` and wipes `container.inn
 
 This means `.onAppear()`, `.onDisappear()`, `.sheet()`, `.alert()`, and `.confirmationDialog()` cannot be implemented correctly without first addressing the rebuild model. Options:
 
-1. **Mount-tracking flag per host** — track whether a host has rendered before; `.onAppear()` fires only on first render, not rebuilds. Simplest but incomplete.
+1. **Mount-tracking flag per host** — track whether a host has rendered before; `.onAppear()` fires only on first host render, not rebuilds. **Host-level approximation only** — does not handle views that appear later inside an already-mounted host (e.g., conditional content introduced by state change). Correct per-view `.onAppear()` requires per-element identity tracking across rebuilds.
 2. **Stable-identity diffing** — instead of `innerHTML = ""`, diff the existing DOM against the new render tree and patch in place. Correct but complex (virtual DOM approach).
 3. **Dialog hoisting** — modal elements are appended to `document.body` outside the host's container, so they survive rebuilds. Closures retained in a separate collection keyed by dialog identity. Targeted fix for modals only.
 
@@ -63,7 +63,7 @@ No architectural prerequisites except `.onAppear()` which needs mount-tracking (
 | Picker | `<select>` + `<option>` | .segmented → row of `<button>` |
 | DatePicker | `<input type="date">` | DateComponents ↔ ISO date string |
 | .overlay() | `position: relative/absolute` | Alignment-based positioning |
-| .onAppear() | Fire on first mount only | Requires mount-tracking flag (see prerequisite) |
+| .onAppear() | Fire on first mount only | Host-level approximation only (see prerequisite); correct per-view semantics needs per-element identity tracking |
 | .searchable() | `<input type="search">` + content | Almost identical to TextField + VStack |
 | ConfirmationDialog | `<dialog>` modal | Requires dialog hoisting (see prerequisite) |
 | .pickerStyle() | Style selector for Picker | .automatic, .segmented, .palette |
