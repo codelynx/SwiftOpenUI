@@ -89,13 +89,13 @@ Requires dialog hoisting prerequisite for .sheet() and .alert().
 
 ## Phase D — Hard (architectural issues)
 
-| View/Modifier | Issue |
-|---|---|
-| GeometryReader | Needs `ResizeObserver` + async rebuild. Initial render uses zero proxy, observer triggers rebuild with actual dimensions. |
-| Canvas | `DrawingContext.cr` is `OpaquePointer` (Cairo). Cannot hold JS canvas 2D context. Needs core abstraction or stub. |
-| .toolbar() | Requires extending `WebNavigationContext` to accept toolbar items and render into header bar. |
-| .focused() | Currently no-op. Real implementation needs DOM `focus()`/`blur()` + `FocusState` binding wiring. |
-| .onDisappear() | No reliable DOM lifecycle hook. `MutationObserver` sees rebuild churn as removal. Needs stable-identity diffing or explicit unmount tracking. |
+| View/Modifier | Issue | Status |
+|---|---|---|
+| .focused() | DOM `focus()`/`blur()` + `FocusState` binding wiring | **Done** |
+| .toolbar() | Extend `WebNavigationContext` header with toolbar area | **Done** |
+| GeometryReader | Needs `ResizeObserver` + async rebuild. Initial render uses zero proxy, observer triggers rebuild with actual dimensions. | Remaining |
+| Canvas | `DrawingContext.cr` is `OpaquePointer` (Cairo). Cannot hold JS canvas 2D context. Needs core abstraction or stub. | Remaining |
+| .onDisappear() | No reliable DOM lifecycle hook. `MutationObserver` sees rebuild churn as removal. Needs stable-identity diffing or explicit unmount tracking. | Remaining |
 
 ## Architectural Blockers
 
@@ -135,10 +135,10 @@ These are in the GTK4/Win32 matrix but excluded from this plan due to low priori
 
 ## Priority
 
-1. **Phase A** (11 items) — closes the biggest visual gaps, all trivial, no prerequisites
-2. **Rebuild prerequisite** — mount-tracking flag + dialog hoisting (enables Phase B/C modal work)
-3. **Phase B** (14 items) — covers remaining common views and modifiers
-4. **Phase C** (11 items) — complex UI patterns including Lazy views and modals
-5. **Phase D** (5 items) — architectural work: GeometryReader, Canvas, toolbar, focused, onDisappear
+1. ~~**Phase A** (11 items)~~ — Done
+2. ~~**Phase B** (14 items)~~ — Done
+3. ~~**Phase C** (11 items)~~ — Done
+4. ~~**Phase D partial** (.focused, .toolbar)~~ — Done
+5. **Phase D remaining** (3 items) — GeometryReader, Canvas, .onDisappear() — architectural work needed
 
-Phase A alone brings Web from 34 to 45 implemented items. Phase A + B reaches ~59, near-parity with GTK4/Win32 for common views.
+38 of 41 items implemented. Web is at near-parity with GTK4/Win32 for views and modifiers.
