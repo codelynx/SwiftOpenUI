@@ -127,6 +127,11 @@ targets += [
         path: "Examples/Showcase/Stopwatch"
     ),
     .executableTarget(
+        name: "Calculator",
+        dependencies: exampleDeps,
+        path: "Examples/Showcase/Calculator"
+    ),
+    .executableTarget(
         name: "ColorMixer",
         dependencies: exampleDeps,
         path: "Examples/Showcase/ColorMixer"
