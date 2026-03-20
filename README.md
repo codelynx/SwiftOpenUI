@@ -21,7 +21,7 @@ A cross-platform SwiftUI framework that renders natively on macOS, Linux, Window
 | macOS | SwiftUI (native) | Reference | All | All |
 | Linux | GTK4 | Production | 43/44 | 36/38 |
 | Windows | Win32 + D2D | Production | 43/44 | 36/38 |
-| Web | Wasm + DOM | Near-parity | 40/44 | 36/38 |
+| Web | Wasm + DOM | Near-parity | 42/44 | 36/38 |
 | Android | Compose | Phase 2 | 14/44 | 22/38 |
 
 ## Quick Start
@@ -93,14 +93,14 @@ Text, Button, TextField, Toggle, Slider, Image, Color, Spacer, Divider, VStack, 
 +-----------------------------------------------------+
 |  SwiftOpenUI Core                                    |
 |  View, State, Layout, Modifiers, Environment         |
-+--------------+---------------+----------------------+
-|  BackendGTK4 |  BackendWin32 |  BackendWeb          |
-|  GTKRenderer |  WinRenderer  |  WebRenderer         |
-|  GTKViewHost |  Win32ViewHost|  WebViewHost         |
-+--------------+---------------+----------------------+
-|  CGTK        |  CWin32       |  JavaScriptKit       |
-|  CGTKBridge  |  CWin32Bridge |  (DOM API)           |
-+--------------+---------------+----------------------+
++--------------+---------------+---------------+-------------+
+|  BackendGTK4 |  BackendWin32 |  BackendWeb   | BackendDroid|
+|  GTKRenderer |  WinRenderer  |  WebRenderer  | AndroidRend.|
+|  GTKViewHost |  Win32ViewHost|  WebViewHost  | AndroidHost |
++--------------+---------------+---------------+-------------+
+|  CGTK        |  CWin32       |  JavaScriptKit|  JNI        |
+|  CGTKBridge  |  CWin32Bridge |  (DOM API)    |  Compose    |
++--------------+---------------+---------------+-------------+
 ```
 
 The core library (`Sources/SwiftOpenUI/`) is platform-independent with zero platform imports. All GTK/Win32/Web code lives in `Sources/Backend/`. Backends implement rendering via protocol extensions (`GTKRenderable`, `WinRenderable`, `WebRenderable`).
