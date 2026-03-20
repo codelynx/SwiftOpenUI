@@ -9,15 +9,6 @@ var targets: [Target] = [
         path: "Sources/SwiftOpenUI"
     ),
 
-    // Shared example views (imported by all runners and Android JNI)
-    // On macOS: #if canImport(SwiftUI) selects real SwiftUI
-    // On other platforms: imports SwiftOpenUI
-    .target(
-        name: "Examples",
-        dependencies: ["SwiftOpenUI"],
-        path: "Sources/Examples"
-    ),
-
     // Core tests
     .testTarget(
         name: "SwiftOpenUITests",
@@ -212,7 +203,6 @@ let package = Package(
     products: {
         var p: [Product] = [
             .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
-            .library(name: "Examples", targets: ["Examples"]),
         ]
         #if os(macOS)
         p.append(.library(name: "BackendAndroid", type: .dynamic, targets: ["BackendAndroid"]))

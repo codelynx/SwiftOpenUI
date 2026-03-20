@@ -9,7 +9,7 @@ DerivedData/
 *~
 
 .claude/
-.untracked/
+.untracked/**
 .vscode/
 
 # Java/Android artifacts
