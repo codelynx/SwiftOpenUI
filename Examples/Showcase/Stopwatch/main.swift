@@ -15,6 +15,9 @@ import BackendWeb
 #endif
 
 import Foundation
+#if canImport(JavaScriptKit)
+import JavaScriptKit
+#endif
 
 // MARK: - Timer Engine
 
@@ -25,8 +28,14 @@ class StopwatchEngine: ObservableObject {
 
     private var startDate: Date?
     private var accumulatedTime: TimeInterval = 0
-    private var timer: Timer?
     private var lapStartTime: TimeInterval = 0
+
+    #if canImport(JavaScriptKit)
+    private var intervalID: JSValue?
+    private var tickClosure: JSClosure?
+    #else
+    private var timer: Timer?
+    #endif
 
     func startStop() {
         if isRunning {
@@ -47,14 +56,33 @@ class StopwatchEngine: ObservableObject {
     private func start() {
         startDate = Date()
         isRunning = true
+
+        #if canImport(JavaScriptKit)
+        let closure = JSClosure { [weak self] _ in
+            self?.tick()
+            return .undefined
+        }
+        tickClosure = closure
+        intervalID = JSObject.global.setInterval!(closure, 33)
+        #else
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
+        #endif
     }
 
     private func stop() {
+        #if canImport(JavaScriptKit)
+        if let id = intervalID {
+            _ = JSObject.global.clearInterval!(id)
+            intervalID = nil
+        }
+        tickClosure = nil
+        #else
         timer?.invalidate()
         timer = nil
+        #endif
+
         accumulatedTime = elapsed
         startDate = nil
         isRunning = false
