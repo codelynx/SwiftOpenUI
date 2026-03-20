@@ -728,7 +728,7 @@ extension DragGestureView: WebRenderable {
 extension SwiftOpenUI.Button: WebRenderable {
     public func webCreateElement() -> JSValue {
         let button = document.createElement("button")
-        button.style = "padding: 6px 12px; cursor: pointer; border: none; background: none; color: inherit; font: inherit;"
+        button.style = "padding: 6px 12px; cursor: pointer; border: none; background: none; color: inherit; font: inherit; display: flex; align-items: center; justify-content: center;"
 
         // Render label content
         let labelElement = webRenderView(label)
