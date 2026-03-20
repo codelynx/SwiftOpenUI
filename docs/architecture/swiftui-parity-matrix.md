@@ -54,7 +54,7 @@ Last updated: 2026-03-19
 | LazyHGrid | Y | Y | Y | Y | Y | - | GTK: horizontal; Win32/Web: CSS grid |
 | Picker | Y | Y | Y | Y | Y | - | GTK: dropdown/segmented; Win32: ComboBox; Web: select |
 | DatePicker | Y | Y | Y | Y | Y | - | GTK: GtkCalendar; Win32: SysDateTimePick32; Web: date input |
-| GeometryReader | Y | Y | Y | Y | - | - | GTK: map+tick; Win32: parent rect |
+| GeometryReader | Y | Y | Y | Y | Y | - | GTK: map+tick; Win32: parent rect; Web: ResizeObserver |
 | Menu | Y | Y | Y | Y | Y | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu; Web: dropdown div |
 | ConfirmationDialog | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | Canvas | Y | Y | Y | ~ | - | - | GTK: Cairo; Win32: D2D subset (paths, transforms, alpha; no filters/symbols) |

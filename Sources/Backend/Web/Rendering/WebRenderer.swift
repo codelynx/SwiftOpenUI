@@ -2055,3 +2055,69 @@ extension ToolbarView: WebRenderable {
         return child
     }
 }
+
+// MARK: - GeometryReader
+
+/// Retains GeometryReader contexts so ResizeObserver callbacks survive.
+private var _webGeometryContexts: [WebGeometryContext] = []
+
+private class WebGeometryContext {
+    let container: JSValue
+    let contentBuilder: (GeometryProxy) -> JSValue
+    var lastWidth: Double = -1
+    var lastHeight: Double = -1
+
+    init(container: JSValue, contentBuilder: @escaping (GeometryProxy) -> JSValue) {
+        self.container = container
+        self.contentBuilder = contentBuilder
+    }
+
+    func renderWithSize(width: Double, height: Double) {
+        // Only re-render if size actually changed
+        guard width != lastWidth || height != lastHeight else { return }
+        lastWidth = width
+        lastHeight = height
+
+        let proxy = GeometryProxy(size: GeometrySize(width: width, height: height))
+        let child = contentBuilder(proxy)
+        container.innerHTML = ""
+        _ = container.appendChild(child)
+    }
+}
+
+extension GeometryReader: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let wrapper = document.createElement("div")
+        wrapper.style = "width: 100%; flex: 1; position: relative;"
+
+        let contentDiv = document.createElement("div")
+        _ = wrapper.appendChild(contentDiv)
+
+        // Capture the content builder as a function that returns JSValue
+        let builder = content
+        let ctx = WebGeometryContext(container: contentDiv) { proxy in
+            let view = builder(proxy)
+            return webRenderView(view)
+        }
+        _webGeometryContexts.append(ctx)
+
+        // Initial render with zero size — will be updated by ResizeObserver
+        ctx.renderWithSize(width: 0, height: 0)
+
+        // Set up ResizeObserver to detect actual dimensions
+        let observerCallback = JSClosure { entries in
+            guard let entry = entries.first?.object,
+                  let contentRect = entry.contentRect.object else { return .undefined }
+            let w = contentRect.width.number ?? 0
+            let h = contentRect.height.number ?? 0
+            ctx.renderWithSize(width: w, height: h)
+            return .undefined
+        }
+        webRetainClosure(observerCallback)
+
+        let observer = JSObject.global.ResizeObserver.function!.new(observerCallback)
+        _ = observer.observe!(wrapper)
+
+        return wrapper
+    }
+}

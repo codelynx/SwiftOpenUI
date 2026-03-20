@@ -93,7 +93,7 @@ Requires dialog hoisting prerequisite for .sheet() and .alert().
 |---|---|---|
 | .focused() | DOM `focus()`/`blur()` + `FocusState` binding wiring | **Done** |
 | .toolbar() | Extend `WebNavigationContext` header with toolbar area | **Done** |
-| GeometryReader | Needs `ResizeObserver` + async rebuild. Initial render uses zero proxy, observer triggers rebuild with actual dimensions. | Remaining |
+| GeometryReader | `ResizeObserver` + deferred re-render with actual dimensions. | **Done** |
 | Canvas | `DrawingContext.cr` is `OpaquePointer` (Cairo). Cannot hold JS canvas 2D context. Needs core abstraction or stub. | Remaining |
 | .onDisappear() | No reliable DOM lifecycle hook. `MutationObserver` sees rebuild churn as removal. Needs stable-identity diffing or explicit unmount tracking. | Remaining |
 
@@ -139,6 +139,6 @@ These are in the GTK4/Win32 matrix but excluded from this plan due to low priori
 2. ~~**Phase B** (14 items)~~ — Done
 3. ~~**Phase C** (11 items)~~ — Done
 4. ~~**Phase D partial** (.focused, .toolbar)~~ — Done
-5. **Phase D remaining** (3 items) — GeometryReader, Canvas, .onDisappear() — architectural work needed
+5. **Phase D remaining** (2 items) — Canvas, .onDisappear() — architectural work needed
 
-38 of 41 items implemented. Web is at near-parity with GTK4/Win32 for views and modifiers.
+39 of 41 items implemented. Web is at near-parity with GTK4/Win32 for views and modifiers.
