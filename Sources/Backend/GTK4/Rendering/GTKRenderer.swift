@@ -481,6 +481,15 @@ extension FrameView: GTKRenderable {
             else { css += "max-height: \(Int(xh))px; " }
         }
         if !css.isEmpty { applyCSSToWidget(wrapper, properties: css) }
+        // Propagate child expand flags to wrapper when the frame doesn't
+        // constrain that axis.  Without this, a Spacer inside an HStack
+        // inside .frame(height:) loses its horizontal expansion.
+        if width == nil && maxWidth == nil && gtk_widget_get_hexpand(child) != 0 {
+            gtk_widget_set_hexpand(wrapper, 1)
+        }
+        if height == nil && maxHeight == nil && gtk_widget_get_vexpand(child) != 0 {
+            gtk_widget_set_vexpand(wrapper, 1)
+        }
         gtk_box_append(boxPointer(wrapper), child)
         return opaqueFromWidget(wrapper)
     }
