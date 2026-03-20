@@ -99,8 +99,8 @@ Last updated: 2026-03-19
 | .searchable() | Y | Y | Y | Y | Y | - | GTK: SearchEntry; Win32: EDIT; Web: search input |
 | .toolbar() | Y | Y | Y | Y | - | - | GTK: header bar; Win32: nav header |
 | .gridCellColumns() | Y | Y | Y | Y | - | - | Column span in Grid/GridRow |
-| .pickerStyle() | Y | Y | Y | Y | - | - | .automatic, .segmented, .palette |
-| .navigationSplitViewColumnWidth() | Y | Y | Y | Y | - | - | min/ideal/max; divider stays resizable |
+| .pickerStyle() | Y | Y | Y | Y | Y | - | .automatic (select), .segmented (button row), .palette (alias) |
+| .navigationSplitViewColumnWidth() | Y | Y | Y | Y | Y | - | min/ideal/max; Web: pass-through (consumed by NavigationSplitView) |
 | .clipShape() | Y | - | - | - | - | - | |
 | .task() | Y | - | - | - | - | - | Needs async runtime |
 

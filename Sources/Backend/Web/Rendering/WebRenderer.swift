@@ -1130,6 +1130,13 @@ extension RotationView: WebRenderable {
 
 // MARK: - Phase B views
 
+extension NavigationSplitViewColumnWidthView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        // Renders content; width constraints are consumed by NavigationSplitView (Phase C).
+        webRenderView(content)
+    }
+}
+
 extension List: WebRenderable {
     public func webCreateElement() -> JSValue {
         let div = document.createElement("div")
@@ -1290,6 +1297,41 @@ extension Picker: WebRenderable {
             let labelEl = document.createElement("label")
             labelEl.textContent = .string(label)
             _ = container.appendChild(labelEl)
+        }
+
+        switch style {
+        case .segmented, .palette:
+            // Segmented control: row of buttons with active state
+            let row = document.createElement("div")
+            row.style = "display: flex; gap: 0;"
+            for (i, option) in options.enumerated() {
+                let btn = document.createElement("button")
+                btn.textContent = .string(option)
+                let isActive = i == selected
+                let bg = isActive ? "#0a84ff" : "#444"
+                let color = isActive ? "white" : "#ccc"
+                var btnStyle = "padding: 4px 12px; font-size: 13px; cursor: pointer; border: 1px solid #555; background: \(bg); color: \(color);"
+                if i == 0 { btnStyle += " border-radius: 4px 0 0 4px;" }
+                else if i == options.count - 1 { btnStyle += " border-radius: 0 4px 4px 0; border-left: none;" }
+                else { btnStyle += " border-radius: 0; border-left: none;" }
+                btn.style = .string(btnStyle)
+
+                if let callback = onChanged {
+                    let idx = i
+                    let handler = JSClosure { _ in
+                        callback(idx)
+                        return .undefined
+                    }
+                    webRetainClosure(handler)
+                    btn.onclick = .object(handler)
+                }
+                _ = row.appendChild(btn)
+            }
+            _ = container.appendChild(row)
+            return container
+
+        case .automatic:
+            break // fall through to <select> below
         }
 
         let select = document.createElement("select")
