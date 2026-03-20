@@ -53,6 +53,19 @@ extension WindowGroup: GTKWindowRenderable {
         if let titlebarWidget = findTitlebar(in: contentWidget) {
             gtk_window_set_titlebar(winPtr, titlebarWidget)
         }
+
+        // If the root content doesn't expand, center it in the window
+        // (matches SwiftUI where root views fill the proposed size and
+        // content like Text is centered by default).
+        if gtk_widget_get_hexpand(contentWidget) == 0 {
+            gtk_widget_set_halign(contentWidget, GTK_ALIGN_CENTER)
+            gtk_widget_set_hexpand(contentWidget, 1)
+        }
+        if gtk_widget_get_vexpand(contentWidget) == 0 {
+            gtk_widget_set_valign(contentWidget, GTK_ALIGN_CENTER)
+            gtk_widget_set_vexpand(contentWidget, 1)
+        }
+
         gtk_window_set_child(winPtr, contentWidget)
         gtk_window_present(winPtr)
     }

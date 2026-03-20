@@ -245,7 +245,14 @@ func getCurrentNavigationContext() -> GTKNavigationContext? {
 // MARK: - Title extraction
 
 /// Extract navigation title from a view via NavigationTitled conformance.
+/// Walks the view tree recursively so .navigationTitle() works regardless
+/// of modifier ordering or nesting depth.
 func gtkExtractTitle<V: View>(from view: V) -> String {
+    return gtkExtractTitleAny(from: view)
+}
+
+private func gtkExtractTitleAny(from view: Any, depth: Int = 0) -> String {
+    guard depth < 20 else { return "" }
     if let titled = view as? NavigationTitled {
         return titled.navigationTitle
     }
@@ -253,6 +260,12 @@ func gtkExtractTitle<V: View>(from view: V) -> String {
     for child in mirror.children {
         if let titled = child.value as? NavigationTitled {
             return titled.navigationTitle
+        }
+    }
+    for child in mirror.children {
+        if child.value is any View {
+            let result = gtkExtractTitleAny(from: child.value, depth: depth + 1)
+            if !result.isEmpty { return result }
         }
     }
     return ""
