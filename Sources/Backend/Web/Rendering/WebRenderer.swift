@@ -2056,6 +2056,116 @@ extension ToolbarView: WebRenderable {
     }
 }
 
+// MARK: - Canvas
+
+/// Wraps a JS CanvasRenderingContext2D for use as DrawingContext.cr
+private class WebCanvasContext {
+    let jsContext: JSValue
+    init(_ ctx: JSValue) { self.jsContext = ctx }
+}
+
+/// Retained Web canvas contexts (prevent deallocation during draw).
+private var _webCanvasContexts: [WebCanvasContext] = []
+
+extension DrawingContext {
+    /// Access the underlying JS Canvas 2D context.
+    fileprivate var jsCtx: JSValue {
+        Unmanaged<WebCanvasContext>.fromOpaque(UnsafeMutableRawPointer(cr)).takeUnretainedValue().jsContext
+    }
+
+    // MARK: - Color
+    public func setColor(r: Double, g: Double, b: Double) {
+        jsCtx.strokeStyle = .string("rgb(\(Int(r * 255)), \(Int(g * 255)), \(Int(b * 255)))")
+        jsCtx.fillStyle = .string("rgb(\(Int(r * 255)), \(Int(g * 255)), \(Int(b * 255)))")
+    }
+    public func setColor(r: Double, g: Double, b: Double, a: Double) {
+        jsCtx.strokeStyle = .string("rgba(\(Int(r * 255)), \(Int(g * 255)), \(Int(b * 255)), \(a))")
+        jsCtx.fillStyle = .string("rgba(\(Int(r * 255)), \(Int(g * 255)), \(Int(b * 255)), \(a))")
+    }
+
+    // MARK: - Line style
+    public func setLineWidth(_ width: Double) {
+        jsCtx.lineWidth = .number(width)
+    }
+    public func setLineCap(_ cap: LineCap) {
+        let v: String
+        switch cap {
+        case .butt: v = "butt"
+        case .round: v = "round"
+        case .square: v = "square"
+        }
+        jsCtx.lineCap = .string(v)
+    }
+    public func setLineJoin(_ join: LineJoin) {
+        let v: String
+        switch join {
+        case .miter: v = "miter"
+        case .round: v = "round"
+        case .bevel: v = "bevel"
+        }
+        jsCtx.lineJoin = .string(v)
+    }
+
+    // MARK: - Path operations
+    public func moveTo(x: Double, y: Double) {
+        _ = jsCtx.object!.moveTo!(x, y)
+    }
+    public func lineTo(x: Double, y: Double) {
+        _ = jsCtx.object!.lineTo!(x, y)
+    }
+    public func rectangle(x: Double, y: Double, width: Double, height: Double) {
+        _ = jsCtx.object!.rect!(x, y, width, height)
+    }
+    public func arc(centerX: Double, centerY: Double, radius: Double,
+                    startAngle: Double = 0, endAngle: Double = .pi * 2) {
+        _ = jsCtx.object!.arc!(centerX, centerY, radius, startAngle, endAngle)
+    }
+
+    // MARK: - Drawing
+    public func stroke() {
+        _ = jsCtx.object!.stroke!()
+    }
+    public func fill() {
+        _ = jsCtx.object!.fill!()
+    }
+    public func paint() {
+        let c = jsCtx.object!
+        let w = c.canvas.object!.width.number ?? 0
+        let h = c.canvas.object!.height.number ?? 0
+        _ = c.fillRect!(0, 0, w, h)
+    }
+
+    // MARK: - State
+    public func save() { _ = jsCtx.object!.save!() }
+    public func restore() { _ = jsCtx.object!.restore!() }
+    public func scale(x: Double, y: Double) { _ = jsCtx.object!.scale!(x, y) }
+}
+
+extension Canvas: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let canvas = document.createElement("canvas")
+        let w = width > 0 ? width : 300
+        let h = height > 0 ? height : 150
+        canvas.width = .number(Double(w))
+        canvas.height = .number(Double(h))
+        canvas.style = .string("width: \(w)px; height: \(h)px;")
+
+        // Get 2D context and wrap for DrawingContext
+        let jsCtx = canvas.object!.getContext!("2d")
+        let webCtx = WebCanvasContext(jsCtx)
+        _webCanvasContexts.append(webCtx)
+
+        let ptr = Unmanaged.passRetained(webCtx).toOpaque()
+        let drawCtx = DrawingContext(cr: OpaquePointer(ptr))
+
+        // Call the draw handler
+        _ = jsCtx.object!.beginPath!()
+        drawHandler(drawCtx, w, h)
+
+        return canvas
+    }
+}
+
 // MARK: - GeometryReader
 
 /// Retains GeometryReader contexts so ResizeObserver callbacks survive.
