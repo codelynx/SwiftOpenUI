@@ -2116,7 +2116,8 @@ extension List: WinRenderable {
 }
 
 /// Map SF Symbol names to Win32 stock icon resource IDs.
-private func winSystemIconID(_ name: String) -> LPCWSTR {
+/// Returns nil for unknown names so the caller can fall back to text.
+private func winSystemIconID(_ name: String) -> LPCWSTR? {
     switch name {
     case "info.circle", "info", "info.circle.fill":
         return win32_MAKEINTRESOURCEW(32516) // OIC_INFORMATION
@@ -2131,7 +2132,7 @@ private func winSystemIconID(_ name: String) -> LPCWSTR {
     case "app", "app.fill", "macwindow":
         return win32_MAKEINTRESOURCEW(32512) // IDI_APPLICATION
     default:
-        return win32_MAKEINTRESOURCEW(32516) // OIC_INFORMATION fallback
+        return nil
     }
 }
 
@@ -2158,17 +2159,20 @@ extension Image: WinRenderable {
 
     private func winCreateSystemIcon(name: String, in context: RenderContext) -> HWND? {
         let size = Int32(scale.pointSize)
-        let iconID = winSystemIconID(name)
 
-        let hIcon = LoadImageW(
-            nil, iconID,
-            UINT(IMAGE_ICON),
-            size, size,
-            UINT(LR_SHARED)
-        )
+        // Try to load a known stock icon; unknown names get text fallback
+        var hIcon: UnsafeMutableRawPointer? = nil
+        if let iconID = winSystemIconID(name) {
+            hIcon = LoadImageW(
+                nil, iconID,
+                UINT(IMAGE_ICON),
+                size, size,
+                UINT(LR_SHARED)
+            )
+        }
 
         guard let hIcon = hIcon else {
-            // Fallback to text label if icon not available
+            // Fallback to text label showing the requested symbol name
             let fallback = "[\(name)]"
             let measured = measureText(fallback, hwnd: context.parent)
             return fallback.withCString(encodedAs: UTF16.self) { wstr in
@@ -3894,7 +3898,7 @@ private let splitViewLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, u
                 state.sidebarWidth = max(state.sidebarMinWidth, x)
                 state.clampWidths()
             } else if state.draggingDivider == 2, state.hasContentColumn {
-                let contentStart = state.sidebarWidth + state.dividerWidth
+                let contentStart = state.layoutSidebarW + state.dividerWidth
                 state.contentWidth = max(state.contentMinWidth, x - contentStart)
                 state.clampWidths()
             }
