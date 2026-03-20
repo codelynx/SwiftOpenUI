@@ -21,7 +21,7 @@ Last updated: 2026-03-19
 | TextField | Y | Y | Y | Y | Y | Y | Single-line; Binding<String> |
 | Toggle | Y | Y | Y | Y | - | - | GtkCheckButton / Win32 checkbox |
 | Slider | Y | Y | Y | Y | - | - | Debounced on GTK4; container subclass on Win32 |
-| Image | Y | Y | Y | ~ | - | - | GTK icon theme + file; Win32: text fallback |
+| Image | Y | Y | Y | Y | - | - | GTK icon theme + file; Win32: WIC (PNG/JPEG/BMP/GIF) + stock icons |
 | Color | Y | Y | Y | Y | Y | Y | RGBA, hex, HSB constructors |
 | Spacer | Y | Y | Y | Y | Y | Y | |
 | Divider | Y | Y | Y | Y | Y | Y | |

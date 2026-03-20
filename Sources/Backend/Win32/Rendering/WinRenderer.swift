@@ -2115,32 +2115,165 @@ extension List: WinRenderable {
     }
 }
 
+/// Map SF Symbol names to Win32 stock icon resource IDs.
+private func winSystemIconID(_ name: String) -> LPCWSTR {
+    switch name {
+    case "info.circle", "info", "info.circle.fill":
+        return win32_MAKEINTRESOURCEW(32516) // OIC_INFORMATION
+    case "exclamationmark.triangle", "exclamationmark.triangle.fill", "warning":
+        return win32_MAKEINTRESOURCEW(32515) // OIC_WARNING
+    case "xmark.circle", "xmark.circle.fill", "xmark.octagon", "error":
+        return win32_MAKEINTRESOURCEW(32513) // OIC_ERROR
+    case "questionmark.circle", "questionmark.circle.fill", "questionmark":
+        return win32_MAKEINTRESOURCEW(32514) // OIC_QUES
+    case "shield", "shield.fill", "lock", "lock.fill":
+        return win32_MAKEINTRESOURCEW(32518) // OIC_SHIELD
+    case "app", "app.fill", "macwindow":
+        return win32_MAKEINTRESOURCEW(32512) // IDI_APPLICATION
+    default:
+        return win32_MAKEINTRESOURCEW(32516) // OIC_INFORMATION fallback
+    }
+}
+
+/// Subclass proc that frees an owned HBITMAP on window destruction.
+private let imageBitmapCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    if uMsg == UINT(WM_NCDESTROY) {
+        if dwRefData != 0, let handle = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData)) {
+            DeleteObject(handle.assumingMemoryBound(to: HBITMAP__.self))
+        }
+        RemoveWindowSubclass(hwnd, imageBitmapCleanupProc, uIdSubclass)
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
 extension Image: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Win32 doesn't have a built-in icon theme like GTK.
-        // Render as a text label showing the icon name as fallback.
-        let displayText: String
         switch source {
         case .systemName(let name):
-            displayText = "[\(name)]"
+            return winCreateSystemIcon(name: name, in: context)
         case .filePath(let path):
-            displayText = "[img: \(path)]"
+            return winCreateFileImage(path: path, in: context)
+        }
+    }
+
+    private func winCreateSystemIcon(name: String, in context: RenderContext) -> HWND? {
+        let size = Int32(scale.pointSize)
+        let iconID = winSystemIconID(name)
+
+        let hIcon = LoadImageW(
+            nil, iconID,
+            UINT(IMAGE_ICON),
+            size, size,
+            UINT(LR_SHARED)
+        )
+
+        guard let hIcon = hIcon else {
+            // Fallback to text label if icon not available
+            let fallback = "[\(name)]"
+            let measured = measureText(fallback, hwnd: context.parent)
+            return fallback.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_STATIC(), wstr,
+                    DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                    0, 0, measured.width + 4, measured.height + 2,
+                    context.parent, nil, context.hInstance
+                )
+            }
         }
 
-        let measured = measureText(displayText, hwnd: context.parent)
-        let hwnd = displayText.withCString(encodedAs: UTF16.self) { wstr in
+        // Wrap in fixed-size container to prevent layout stretch
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, size, size,
+            context.parent, nil, context.hInstance, nil
+        )
+        guard let container = container else { return nil }
+
+        let iconHwnd = win32_CreateChildWindow(
+            win32_WC_STATIC(), nil,
+            DWORD(SS_ICON | SS_REALSIZECONTROL | SS_NOTIFY),
+            0, 0, size, size,
+            container, nil, context.hInstance
+        )
+
+        if let iconHwnd = iconHwnd {
+            SendMessageW(iconHwnd, UINT(STM_SETICON),
+                         WPARAM(UInt(bitPattern: hIcon.assumingMemoryBound(to: HICON__.self))), 0)
+        }
+
+        return container
+    }
+
+    private func winCreateFileImage(path: String, in context: RenderContext) -> HWND? {
+        // Try WIC first (supports PNG, JPEG, BMP, GIF, TIFF)
+        if let imageData = D2DRenderer.shared.loadImageFile(path),
+           let hBitmap = D2DRenderer.shared.createHBitmap(
+               pixels: imageData.pixels, width: imageData.width, height: imageData.height) {
+            free(imageData.pixels)
+
+            let displayW = Int32(imageData.width)
+            let displayH = Int32(imageData.height)
+
+            let hwnd = win32_CreateChildWindow(
+                win32_WC_STATIC(), nil,
+                DWORD(SS_BITMAP | SS_REALSIZECONTROL | SS_NOTIFY),
+                0, 0, displayW, displayH,
+                context.parent, nil, context.hInstance
+            )
+
+            if let hwnd = hwnd {
+                SendMessageW(hwnd, UINT(STM_SETIMAGE), WPARAM(IMAGE_BITMAP),
+                             LPARAM(Int(bitPattern: OpaquePointer(hBitmap))))
+                // Attach cleanup subclass to free HBITMAP on destroy
+                SetWindowSubclass(hwnd, imageBitmapCleanupProc, 46,
+                                  DWORD_PTR(UInt(bitPattern: OpaquePointer(hBitmap))))
+            }
+
+            return hwnd
+        }
+
+        // Fallback: try Win32 LoadImageW for BMP/ICO
+        let hBitmap = path.withCString(encodedAs: UTF16.self) { wstr in
+            LoadImageW(nil, wstr, UINT(IMAGE_BITMAP), 0, 0, UINT(LR_LOADFROMFILE))
+        }
+
+        if let hBitmap = hBitmap {
+            var bm = BITMAP()
+            GetObjectW(hBitmap.assumingMemoryBound(to: HBITMAP__.self),
+                       Int32(MemoryLayout<BITMAP>.size), &bm)
+            let displayW = bm.bmWidth
+            let displayH = bm.bmHeight
+
+            let hwnd = win32_CreateChildWindow(
+                win32_WC_STATIC(), nil,
+                DWORD(SS_BITMAP | SS_REALSIZECONTROL | SS_NOTIFY),
+                0, 0, displayW, displayH,
+                context.parent, nil, context.hInstance
+            )
+
+            if let hwnd = hwnd {
+                SendMessageW(hwnd, UINT(STM_SETIMAGE), WPARAM(IMAGE_BITMAP),
+                             LPARAM(Int(bitPattern: hBitmap)))
+                SetWindowSubclass(hwnd, imageBitmapCleanupProc, 46,
+                                  DWORD_PTR(UInt(bitPattern: hBitmap)))
+            }
+
+            return hwnd
+        }
+
+        // Final fallback: text label
+        let fallback = "[img: \(path)]"
+        let measured = measureText(fallback, hwnd: context.parent)
+        return fallback.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
-                win32_WC_STATIC(),
-                wstr,
+                win32_WC_STATIC(), wstr,
                 DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
                 0, 0, measured.width + 4, measured.height + 2,
-                context.parent,
-                nil,
-                context.hInstance
+                context.parent, nil, context.hInstance
             )
         }
-
-        return hwnd
     }
 }
 

@@ -11,6 +11,8 @@
 #include <d2d1.h>
 #include <d2d1helper.h>
 #include <dwrite.h>
+#include <wincodec.h>
+#include <stdlib.h>
 #include "include/d2d1_shim.h"
 
 // Convenience macros for casting opaque handles to COM types
@@ -289,6 +291,89 @@ void d2d1_RenderTarget_DrawText(
         layoutRect,
         AS_BRUSH(brush)
     );
+}
+
+// --- WIC (Windows Imaging Component) ---
+
+#define AS_WIC_FACTORY(p) reinterpret_cast<IWICImagingFactory *>(p)
+
+HRESULT wic_CreateFactory(WICFactory *ppFactory) {
+    // Ensure COM is initialized (safe to call multiple times)
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+
+    return CoCreateInstance(
+        CLSID_WICImagingFactory,
+        NULL,
+        CLSCTX_INPROC_SERVER,
+        IID_IWICImagingFactory,
+        reinterpret_cast<void **>(ppFactory)
+    );
+}
+
+void wic_Factory_Release(WICFactory factory) {
+    AS_WIC_FACTORY(factory)->Release();
+}
+
+HRESULT wic_LoadImageFile(
+    WICFactory factory,
+    const WCHAR *filePath,
+    UINT32 *outWidth,
+    UINT32 *outHeight,
+    BYTE **ppPixels
+) {
+    IWICBitmapDecoder *decoder = NULL;
+    HRESULT hr = AS_WIC_FACTORY(factory)->CreateDecoderFromFilename(
+        filePath, NULL, GENERIC_READ,
+        WICDecodeMetadataCacheOnLoad, &decoder
+    );
+    if (FAILED(hr)) return hr;
+
+    IWICBitmapFrameDecode *frame = NULL;
+    hr = decoder->GetFrame(0, &frame);
+    if (FAILED(hr)) { decoder->Release(); return hr; }
+
+    // Convert to 32bpp BGRA
+    IWICFormatConverter *converter = NULL;
+    hr = AS_WIC_FACTORY(factory)->CreateFormatConverter(&converter);
+    if (FAILED(hr)) { frame->Release(); decoder->Release(); return hr; }
+
+    hr = converter->Initialize(
+        frame,
+        GUID_WICPixelFormat32bppBGRA,
+        WICBitmapDitherTypeNone,
+        NULL, 0.0,
+        WICBitmapPaletteTypeMedianCut
+    );
+    if (FAILED(hr)) {
+        converter->Release(); frame->Release(); decoder->Release();
+        return hr;
+    }
+
+    UINT w = 0, h = 0;
+    converter->GetSize(&w, &h);
+    *outWidth = w;
+    *outHeight = h;
+
+    UINT stride = w * 4;
+    UINT bufferSize = stride * h;
+    BYTE *pixels = (BYTE *)malloc(bufferSize);
+    if (!pixels) {
+        converter->Release(); frame->Release(); decoder->Release();
+        return E_OUTOFMEMORY;
+    }
+
+    hr = converter->CopyPixels(NULL, stride, bufferSize, pixels);
+    if (FAILED(hr)) {
+        free(pixels);
+        *ppPixels = NULL;
+    } else {
+        *ppPixels = pixels;
+    }
+
+    converter->Release();
+    frame->Release();
+    decoder->Release();
+    return hr;
 }
 
 // --- Line ---

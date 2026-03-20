@@ -863,15 +863,17 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(hwnd)
     }
 
-    func testImageCreatesStaticFallback() {
+    func testImageCreatesSystemIcon() {
         let ctx = testContext()
         let hwnd = winRenderView(Image(systemName: "gear"), in: ctx)
         XCTAssertNotNil(hwnd)
-        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
-        defer { buf.deallocate() }
-        GetWindowTextW(hwnd!, buf, 64)
-        let text = String(decodingCString: buf, as: UTF16.self)
-        XCTAssertEqual(text, "[gear]")
+        // System icon renders as a container with an icon child, not text fallback
+        var rect = RECT()
+        GetWindowRect(hwnd!, &rect)
+        let w = rect.right - rect.left
+        let h = rect.bottom - rect.top
+        XCTAssertGreaterThan(w, 0)
+        XCTAssertGreaterThan(h, 0)
     }
 
     // MARK: - Phase 4A views

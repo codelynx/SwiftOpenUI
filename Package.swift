@@ -67,6 +67,8 @@ targets += [
             .linkedLibrary("gdi32"),
             .linkedLibrary("d2d1"),
             .linkedLibrary("dwrite"),
+            .linkedLibrary("windowscodecs"),
+            .linkedLibrary("ole32"),
         ]
     ),
     .target(

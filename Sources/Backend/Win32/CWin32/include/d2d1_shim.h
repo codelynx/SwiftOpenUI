@@ -165,6 +165,26 @@ void d2d1_RenderTarget_DrawLine(
     float strokeWidth
 );
 
+// --- WIC (Windows Imaging Component) ---
+
+typedef struct WICFactoryImpl *WICFactory;
+typedef struct WICBitmapImpl *WICBitmap;
+
+// Create WIC imaging factory
+HRESULT wic_CreateFactory(WICFactory *ppFactory);
+void wic_Factory_Release(WICFactory factory);
+
+// Load an image file (PNG, JPEG, BMP, GIF, TIFF, ICO) and convert to
+// a 32bpp BGRA pixel buffer. Caller must free *ppPixels with free().
+// Returns image dimensions in *outWidth / *outHeight.
+HRESULT wic_LoadImageFile(
+    WICFactory factory,
+    const WCHAR *filePath,
+    UINT32 *outWidth,
+    UINT32 *outHeight,
+    BYTE **ppPixels
+);
+
 // Transform
 void d2d1_RenderTarget_SetTransform(
     D2DRenderTarget target,

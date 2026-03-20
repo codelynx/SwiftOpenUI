@@ -134,6 +134,56 @@ public class D2DRenderer {
                                         format, brush, x, y, width, height)
         }
     }
+
+    // MARK: - Image loading (WIC)
+
+    private var wicFactory: WICFactory?
+
+    /// Load an image file (PNG, JPEG, BMP, GIF, TIFF, ICO) via WIC.
+    /// Returns pixel data as 32bpp BGRA, along with dimensions.
+    /// Caller is responsible for freeing the returned pixel buffer.
+    public func loadImageFile(_ path: String) -> (pixels: UnsafeMutablePointer<UInt8>, width: UInt32, height: UInt32)? {
+        // Lazy-init WIC factory
+        if wicFactory == nil {
+            var f: WICFactory?
+            let hr = wic_CreateFactory(&f)
+            if hr >= 0 { wicFactory = f }
+        }
+        guard let wic = wicFactory else { return nil }
+
+        var w: UInt32 = 0
+        var h: UInt32 = 0
+        var pixels: UnsafeMutablePointer<UInt8>?
+
+        let hr = path.withCString(encodedAs: UTF16.self) { wstr in
+            wic_LoadImageFile(wic, wstr, &w, &h, &pixels)
+        }
+
+        guard hr >= 0, let px = pixels, w > 0, h > 0 else { return nil }
+        return (px, w, h)
+    }
+
+    /// Create an HBITMAP from 32bpp BGRA pixel data.
+    /// The returned HBITMAP must be freed with DeleteObject.
+    public func createHBitmap(pixels: UnsafeMutablePointer<UInt8>, width: UInt32, height: UInt32) -> HBITMAP? {
+        var bmi = BITMAPINFO()
+        bmi.bmiHeader.biSize = DWORD(MemoryLayout<BITMAPINFOHEADER>.size)
+        bmi.bmiHeader.biWidth = LONG(width)
+        bmi.bmiHeader.biHeight = -LONG(height)  // top-down
+        bmi.bmiHeader.biPlanes = 1
+        bmi.bmiHeader.biBitCount = 32
+        bmi.bmiHeader.biCompression = DWORD(BI_RGB)
+
+        var ppvBits: UnsafeMutableRawPointer?
+        let hBitmap = CreateDIBSection(nil, &bmi, UINT(DIB_RGB_COLORS), &ppvBits, nil, 0)
+
+        if let hBitmap = hBitmap, let dest = ppvBits {
+            let byteCount = Int(width) * Int(height) * 4
+            memcpy(dest, pixels, byteCount)
+        }
+
+        return hBitmap
+    }
 }
 
 // MARK: - Text format cache key
