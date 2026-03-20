@@ -338,10 +338,10 @@ extension Divider: WinRenderable {
 
         guard let hwnd = hwnd else { return nil }
 
-        let state = D2DViewState(hwnd: hwnd, r: 210.0/255, g: 210.0/255, b: 215.0/255)
+        let state = D2DViewState(hwnd: hwnd, r: 60.0/255, g: 60.0/255, b: 64.0/255)
         state.drawCallback = { rt, brush, w, h in
-            // Draw a 1px gray line centered in the area
-            d2d1_SolidColorBrush_SetColor(brush, 210.0/255, 210.0/255, 215.0/255, 1)
+            // Draw a subtle 1px separator centered in the area.
+            d2d1_SolidColorBrush_SetColor(brush, 60.0/255, 60.0/255, 64.0/255, 1)
             if w >= h {
                 let lineY = h / 2
                 d2d1_RenderTarget_FillRectangle(rt, brush, 0, lineY, w, 1)
@@ -352,6 +352,7 @@ extension Divider: WinRenderable {
         }
         let ptr = Unmanaged.passRetained(state).toOpaque()
         SetWindowSubclass(hwnd, d2dViewProc, 50, DWORD_PTR(UInt(bitPattern: ptr)))
+        markExpandWidth(hwnd)
 
         return hwnd
     }
@@ -594,8 +595,8 @@ private func createCustomLabelButton<Label: View>(label: Label, action: @escapin
     if let child = childHwnd {
         var childRect = RECT()
         GetWindowRect(child, &childRect)
-        naturalW = (childRect.right - childRect.left) + 16
-        naturalH = (childRect.bottom - childRect.top) + 8
+        naturalW = childRect.right - childRect.left
+        naturalH = childRect.bottom - childRect.top
     }
     SetWindowPos(container, nil, 0, 0, naturalW, naturalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
@@ -625,11 +626,23 @@ private func createCustomLabelButton<Label: View>(label: Label, action: @escapin
     return container
 }
 
-/// Recursively set WS_EX_TRANSPARENT on an HWND and all its descendants
-/// so mouse events pass through to the parent container.
+/// Subclass proc that returns HTTRANSPARENT for WM_NCHITTEST,
+/// making the HWND pass mouse events through to the parent.
+/// Unlike WS_EX_TRANSPARENT, this does NOT affect painting.
+private let mouseTransparentProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    if uMsg == UINT(WM_NCHITTEST) {
+        return LRESULT(HTTRANSPARENT)
+    }
+    if uMsg == UINT(WM_NCDESTROY) {
+        RemoveWindowSubclass(hwnd, mouseTransparentProc, uIdSubclass)
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
+/// Recursively make an HWND and all its descendants pass mouse events
+/// through to the parent container, without affecting painting.
 private func makeMouseTransparent(_ hwnd: HWND) {
-    let exStyle = win32_GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
-    win32_SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exStyle | LONG_PTR(WS_EX_TRANSPARENT))
+    SetWindowSubclass(hwnd, mouseTransparentProc, 31, 0)
 
     var child = GetWindow(hwnd, UINT(GW_CHILD))
     while let c = child {
@@ -669,7 +682,7 @@ private func registerCustomButtonClassIfNeeded(hInstance: HINSTANCE) {
     wc.lpfnWndProc = DefWindowProcW
     wc.hInstance = hInstance
     wc.hCursor = LoadCursorW(nil, win32_IDC_ARROW())
-    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE)
+    wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW)
     wc.lpszClassName = customButtonClassName
     RegisterClassExW(&wc)
 }
@@ -749,22 +762,14 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         var rect = RECT()
         GetClientRect(hwnd, &rect)
 
-        // Draw button face background
-        FillRect(hdc, &rect, GetSysColorBrush(info.pressed ? COLOR_BTNSHADOW : COLOR_BTNFACE))
-
-        // Draw 3D button edge (BF_RECT = BF_LEFT|BF_TOP|BF_RIGHT|BF_BOTTOM = 0xF)
-        DrawEdge(hdc, &rect, info.pressed ? UINT(BDR_SUNKEN) : UINT(BDR_RAISED), UINT(0x000F))
-
-        // Draw focus rectangle when focused
         if GetFocus() == hwnd {
             var focusRect = rect
-            focusRect.left += 3; focusRect.top += 3
-            focusRect.right -= 3; focusRect.bottom -= 3
+            focusRect.left += 2; focusRect.top += 2
+            focusRect.right -= 2; focusRect.bottom -= 2
             DrawFocusRect(hdc, &focusRect)
         }
 
         EndPaint(hwnd, &ps)
-        // Don't return 0 — let children paint on top via WS_CLIPCHILDREN
         return 0
 
     case UINT(WM_ERASEBKGND):
@@ -900,6 +905,9 @@ extension VStack: WinRenderable {
         let infoPtr = Unmanaged.passRetained(info).toOpaque()
         win32_SetWindowLongPtrW(container, GWLP_USERDATA, LONG_PTR(Int(bitPattern: infoPtr)))
         SetWindowSubclass(container, stackLayoutProc, 1, DWORD_PTR(UInt(bitPattern: infoPtr)))
+        if !flexibleIndices.isEmpty {
+            markExpandHeight(container)
+        }
 
         let naturalSize = computeNaturalSize(info: info)
         SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
@@ -955,6 +963,9 @@ extension HStack: WinRenderable {
         let infoPtr = Unmanaged.passRetained(info).toOpaque()
         win32_SetWindowLongPtrW(container, GWLP_USERDATA, LONG_PTR(Int(bitPattern: infoPtr)))
         SetWindowSubclass(container, stackLayoutProc, 1, DWORD_PTR(UInt(bitPattern: infoPtr)))
+        if !flexibleIndices.isEmpty {
+            markExpandWidth(container)
+        }
 
         let naturalSize = computeNaturalSize(info: info)
         SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
@@ -1159,6 +1170,9 @@ let paddingLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass
         }
         return 0
 
+    case UINT(WM_ERASEBKGND):
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
+
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         // Forward to parent so BackgroundView ancestors can set their brush.
         if let parent = GetParent(hwnd!) {
@@ -1219,13 +1233,20 @@ extension FrameView: WinRenderable {
 
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
-        // Frame subclass: child fills the container
-        let frameInfo = FrameLayoutInfo(child: child)
+        // Keep the child at its natural size and align it within the frame.
+        // Exception: space-filling views (Color) expand to fill the frame.
+        let isColorExpand = GetPropW(child, colorExpandPropName) != nil
+        let frameInfo = FrameLayoutInfo(
+            child: child,
+            alignment: alignment,
+            naturalWidth: isColorExpand ? w : (childRect.right - childRect.left),
+            naturalHeight: isColorExpand ? h : (childRect.bottom - childRect.top)
+        )
         let infoPtr = Unmanaged.passRetained(frameInfo).toOpaque()
         SetWindowSubclass(container, frameLayoutProc, 3, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
         // Initial layout
-        SetWindowPos(child, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+        layoutFrameChild(in: container, info: frameInfo)
 
         return container
     }
@@ -1233,7 +1254,50 @@ extension FrameView: WinRenderable {
 
 class FrameLayoutInfo {
     let child: HWND
-    init(child: HWND) { self.child = child }
+    let alignment: Alignment
+    let naturalWidth: Int32
+    let naturalHeight: Int32
+
+    init(child: HWND, alignment: Alignment, naturalWidth: Int32, naturalHeight: Int32) {
+        self.child = child
+        self.alignment = alignment
+        self.naturalWidth = naturalWidth
+        self.naturalHeight = naturalHeight
+    }
+}
+
+private func layoutFrameChild(in container: HWND, info: FrameLayoutInfo) {
+    var rect = RECT()
+    GetClientRect(container, &rect)
+    let containerW = rect.right - rect.left
+    let containerH = rect.bottom - rect.top
+    let childW = min(info.naturalWidth, containerW)
+    let childH = min(info.naturalHeight, containerH)
+
+    let childX: Int32
+    let childY: Int32
+    switch info.alignment {
+    case .topLeading:
+        childX = 0; childY = 0
+    case .top:
+        childX = (containerW - childW) / 2; childY = 0
+    case .topTrailing:
+        childX = containerW - childW; childY = 0
+    case .leading:
+        childX = 0; childY = (containerH - childH) / 2
+    case .center:
+        childX = (containerW - childW) / 2; childY = (containerH - childH) / 2
+    case .trailing:
+        childX = containerW - childW; childY = (containerH - childH) / 2
+    case .bottomLeading:
+        childX = 0; childY = containerH - childH
+    case .bottom:
+        childX = (containerW - childW) / 2; childY = containerH - childH
+    case .bottomTrailing:
+        childX = containerW - childW; childY = containerH - childH
+    }
+
+    SetWindowPos(info.child, nil, childX, childY, childW, childH, UINT(SWP_NOZORDER))
 }
 
 let frameLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
@@ -1243,12 +1307,12 @@ let frameLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, 
             let info = Unmanaged<FrameLayoutInfo>.fromOpaque(
                 UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
             ).takeUnretainedValue()
-            var rect = RECT()
-            GetClientRect(hwnd, &rect)
-            SetWindowPos(info.child, nil, 0, 0,
-                         rect.right - rect.left, rect.bottom - rect.top, UINT(SWP_NOZORDER))
+            layoutFrameChild(in: hwnd!, info: info)
         }
         return 0
+
+    case UINT(WM_ERASEBKGND):
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         // Forward to parent so BackgroundView ancestors can set their brush.
@@ -1423,6 +1487,10 @@ let foregroundColorProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcla
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetTextColor(hdc, info.colorRef)
         SetBkMode(hdc, TRANSPARENT)
+        // Forward to parent so BackgroundView can provide its brush
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
         return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
 
     case UINT(WM_DRAWITEM):
@@ -2360,7 +2428,7 @@ extension Stepper: WinRenderable {
 
         // Label
         let labelMeasured = measureText(label, hwnd: context.parent)
-        let labelHwnd = label.withCString(encodedAs: UTF16.self) { wstr in
+        _ = label.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
                 0, 0, labelMeasured.width + 4, 24,
@@ -2370,7 +2438,7 @@ extension Stepper: WinRenderable {
 
         // Value display
         let valText = "\(value.wrappedValue)"
-        let valHwnd = valText.withCString(encodedAs: UTF16.self) { wstr in
+        _ = valText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr, DWORD(SS_CENTER | SS_CENTERIMAGE),
                 labelMeasured.width + 8, 0, 40, 24,
@@ -2629,8 +2697,8 @@ extension AlertModifierView: WinRenderable {
             runOnMainThread(hwnd: root) {
                 guard binding.wrappedValue else { return }
                 binding.wrappedValue = false
-                alertTitle.withCString(encodedAs: UTF16.self) { titlePtr in
-                    alertMsg.withCString(encodedAs: UTF16.self) { msgPtr in
+                _ = alertTitle.withCString(encodedAs: UTF16.self) { titlePtr in
+                    _ = alertMsg.withCString(encodedAs: UTF16.self) { msgPtr in
                         MessageBoxW(root, msgPtr, titlePtr, UINT(MB_OK))
                     }
                 }
@@ -2938,7 +3006,7 @@ extension Picker: WinRenderable {
 
         // Populate combobox from options array
         for option in options {
-            option.withCString(encodedAs: UTF16.self) { wstr in
+            _ = option.withCString(encodedAs: UTF16.self) { wstr in
                 SendMessageW(comboHwnd, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: wstr)))
             }
         }
@@ -3171,7 +3239,7 @@ extension Menu: WinRenderable {
                     switch elem {
                     case .item(let label, let action):
                         let id = menuID; menuID += 1
-                        label.withCString(encodedAs: UTF16.self) { wstr in
+                        _ = label.withCString(encodedAs: UTF16.self) { wstr in
                             AppendMenuW(targetMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
                         }
                         menuActions[id] = action
@@ -3180,7 +3248,7 @@ extension Menu: WinRenderable {
                     case .submenu(let label, let children):
                         if let subMenu = CreatePopupMenu() {
                             addElementsTo(subMenu, children)
-                            label.withCString(encodedAs: UTF16.self) { wstr in
+                            _ = label.withCString(encodedAs: UTF16.self) { wstr in
                                 AppendMenuW(targetMenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: subMenu)), wstr)
                             }
                         }

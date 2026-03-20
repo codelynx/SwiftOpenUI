@@ -252,6 +252,9 @@ private let containerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         }
         return 0
 
+    case UINT(WM_ERASEBKGND):
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
+
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         // Forward to parent so BackgroundView ancestors can set brush
         if let parent = GetParent(hwnd!) {

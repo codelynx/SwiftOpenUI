@@ -177,7 +177,7 @@ public class D2DRenderer {
         var ppvBits: UnsafeMutableRawPointer?
         let hBitmap = CreateDIBSection(nil, &bmi, UINT(DIB_RGB_COLORS), &ppvBits, nil, 0)
 
-        if let hBitmap = hBitmap, let dest = ppvBits {
+        if hBitmap != nil, let dest = ppvBits {
             let byteCount = Int(width) * Int(height) * 4
             memcpy(dest, pixels, byteCount)
         }

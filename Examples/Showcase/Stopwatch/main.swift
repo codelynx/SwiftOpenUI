@@ -152,6 +152,7 @@ struct StopwatchView: View {
                 Spacer()
             }
         }
+        .frame(minWidth: 640, minHeight: 420)
         .padding()
         .background(Color(red: 0.08, green: 0.08, blue: 0.08))
     }

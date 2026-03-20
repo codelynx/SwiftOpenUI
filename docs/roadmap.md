@@ -3,7 +3,7 @@
 ## Completed
 
 - Core framework: View, State, Binding, ObservedObject, StateObject, EnvironmentObject, Environment
-- ViewBuilder (up to 12 children), App/Scene/WindowGroup
+- ViewBuilder (`buildPartialBlock` + `ViewList` accumulation, no fixed child-count ceiling), App/Scene/WindowGroup
 - Views: Text, Button, TextField, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView
 - Modifiers: padding, frame, foregroundColor, foregroundStyle, background, font, border
 - GTK4 backend (Linux) — full rendering + reactive rebuilds + focus preservation + navigation + gestures + animation (CSS transitions)

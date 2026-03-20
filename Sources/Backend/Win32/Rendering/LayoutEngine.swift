@@ -164,8 +164,8 @@ func performVerticalLayout(container: HWND, info: StackLayoutInfo) {
         let childWidth: Int32
         let childX: Int32
 
-        if isContainerHwnd(child) || naturalW == 0 || info.flexibleIndices.contains(i) {
-            // Containers and spacers fill the width
+        if shouldExpandWidth(child) || naturalW == 0 || info.flexibleIndices.contains(i) {
+            // Explicit width expanders and spacers fill the width
             childWidth = totalWidth
             childX = 0
         } else {
@@ -218,7 +218,7 @@ func performHorizontalLayout(container: HWND, info: StackLayoutInfo) {
         let childHeight: Int32
         let childY: Int32
 
-        if isContainerHwnd(child) || naturalH == 0 || info.flexibleIndices.contains(i) {
+        if shouldExpandHeight(child) || naturalH == 0 || info.flexibleIndices.contains(i) {
             childHeight = totalHeight
             childY = 0
         } else {
@@ -319,22 +319,63 @@ let spacerPropName: UnsafePointer<WCHAR> = {
     }
 }()
 
+let expandWidthPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIExpandWidth".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+let expandHeightPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIExpandHeight".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
 /// Check if an HWND is a Spacer.
 func isSpacerHwnd(_ hwnd: HWND) -> Bool {
     return GetPropW(hwnd, spacerPropName) != nil
 }
 
-/// Check if an HWND is a container (stack, viewhost, padding wrapper, etc.)
-/// that should expand to fill the cross-axis in stack layout.
-/// Leaf controls (Button, Static) keep their natural size.
-func isContainerHwnd(_ hwnd: HWND) -> Bool {
-    let buffer = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
-    defer { buffer.deallocate() }
-    let length = GetClassNameW(hwnd, buffer, 64)
-    guard length > 0 else { return false }
-    let cls = String(decodingCString: buffer, as: UTF16.self)
-    // Our custom container classes should expand; native controls should not
-    return cls.hasPrefix("SwiftUI") || cls.hasPrefix("SwiftOpenUI")
+func markExpandWidth(_ hwnd: HWND) {
+    SetPropW(hwnd, expandWidthPropName, HANDLE(bitPattern: 1))
+}
+
+func markExpandHeight(_ hwnd: HWND) {
+    SetPropW(hwnd, expandHeightPropName, HANDLE(bitPattern: 1))
+}
+
+func shouldExpandWidth(_ hwnd: HWND) -> Bool {
+    GetPropW(hwnd, expandWidthPropName) != nil
+}
+
+func shouldExpandHeight(_ hwnd: HWND) -> Bool {
+    GetPropW(hwnd, expandHeightPropName) != nil
+}
+
+/// Erase a wrapper/container HWND using the brush provided by its parent
+/// chain, falling back to the system window brush when no custom background
+/// is active. This keeps stretched layout wrappers visually transparent.
+func eraseWithInheritedBackground(hwnd: HWND, wParam: WPARAM) -> LRESULT {
+    let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+    var rect = RECT()
+    GetClientRect(hwnd, &rect)
+
+    if let parent = GetParent(hwnd) {
+        let brushResult = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC), wParam, LPARAM(Int(bitPattern: hwnd)))
+        if let brush = HBRUSH(bitPattern: Int(brushResult)) {
+            FillRect(hdc, &rect, brush)
+            return 1
+        }
+    }
+
+    FillRect(hdc, &rect, GetSysColorBrush(COLOR_WINDOW))
+    return 1
 }
 
 // MARK: - Stack container class
@@ -400,6 +441,9 @@ let stackLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, 
         }
         return 0
 
+    case UINT(WM_ERASEBKGND):
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
+
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         // Forward to parent so BackgroundView ancestors can set their brush.
         if let parent = GetParent(hwnd!) {
@@ -442,6 +486,9 @@ let zStackLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass,
             return SendMessageW(root, uMsg, wParam, lParam)
         }
         return 0
+
+    case UINT(WM_ERASEBKGND):
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         // Forward to parent so BackgroundView ancestors can set their brush.

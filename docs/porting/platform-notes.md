@@ -115,6 +115,9 @@ The workaround is `d2d1_shim.cpp`: a C++ file that wraps each COM call in a `ext
 
 ## Cross-Compilation Notes
 
+- `ViewBuilder` no longer has a fixed child-count ceiling. It now uses incremental `buildPartialBlock` accumulation into a flat `ViewList` (`MultiChildView`) instead of relying only on fixed-arity `buildBlock` overloads.
+- This was a **core framework issue, not a Win32-only issue**. Any backend using SwiftOpenUI's custom `ViewBuilder` could hit the old limit when examples or apps exceeded the supported tuple arity. macOS with real SwiftUI is unaffected because it does not use SwiftOpenUI rendering.
+- Backend note: renderers that recurse directly through `body` for primitive multi-child results must handle `MultiChildView` / `ViewList` explicitly. GTK4 and Android already do this in their main dispatch; Win32 and Web needed explicit top-level fallbacks.
 - `#if os()` in `Package.swift` checks the **host** platform, not the cross-compile target
 - Example dependencies always include `SwiftOpenUI` — source-level `#if os(macOS)` selects the import
 - Backend targets (GTK4, Win32) are still gated by `#if os()` since they require platform-specific system libraries
