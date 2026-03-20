@@ -94,7 +94,7 @@ struct CalculatorView: View {
             Text(label)
                 .font(.title)
                 .foregroundColor(fg)
-                .frame(minWidth: 48, minHeight: 52)
+                .frame(width: 64, height: 64)
                 .background(bg)
         }
     }
