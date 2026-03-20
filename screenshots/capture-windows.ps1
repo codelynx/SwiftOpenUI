@@ -1,5 +1,5 @@
 # Capture screenshots of all examples on Windows (Win32 backend).
-# Uses Win32 FindWindow + BitBlt + GDI+ to capture windows as PNG.
+# Uses Win32 FindWindow + GDI+ CopyFromScreen to capture windows as PNG.
 #
 # Usage:
 #   .\screenshots\capture-windows.ps1
@@ -40,22 +40,31 @@ public class Win32Window {
 }
 "@
 
-$repoRoot = (Get-Location).Path
+$repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $outDir = Join-Path $repoRoot "screenshots\windows"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 $delay = 5  # seconds to wait for window to appear
 
 # Map of target name -> (screenshot filename, window title)
-$examples = @{
-    "HelloWorld" = @{ File = "01-HelloWorld"; Title = "Hello World" }
-    "TextStyles" = @{ File = "02-TextStyles"; Title = "02 - Text Styles" }
-    "Buttons"    = @{ File = "03-Buttons";    Title = "03 - Buttons" }
-    "StateDemo"  = @{ File = "04-State";      Title = "04 - State" }
-    "Layout"     = @{ File = "05-Layout";     Title = "05 - Layout" }
-    "Counter"    = @{ File = "Counter";       Title = "Counter" }
-    "Showcase1"  = @{ File = "Showcase1";     Title = "Showcase 1" }
-    "Showcase2"  = @{ File = "Showcase2";     Title = "Showcase 2" }
+# Matches macOS capture-macos.sh naming convention
+$examples = [ordered]@{
+    # Showcase
+    "HelloWorld"  = @{ File = "showcase-HelloWorld";  Title = "Hello World" }
+    "Stopwatch"   = @{ File = "showcase-Stopwatch";   Title = "Stopwatch" }
+    "ColorMixer"  = @{ File = "showcase-ColorMixer";  Title = "Color Studio" }
+    # Parity
+    "ParityViewsBasic"      = @{ File = "parity-ViewsBasic";      Title = "Parity: Views Basic" }
+    "ParityViewsLayout"     = @{ File = "parity-ViewsLayout";     Title = "Parity: Views Layout" }
+    "ParityViewsContainers" = @{ File = "parity-ViewsContainers"; Title = "Parity: Views Containers" }
+    "ParityModifiers"       = @{ File = "parity-Modifiers";       Title = "Parity: Modifiers" }
+    "ParityStateData"       = @{ File = "parity-StateData";       Title = "Parity: State & Data" }
+    "ParityNavigation"      = @{ File = "parity-Navigation";      Title = "Parity: Navigation" }
+    "ParityEnvironment"     = @{ File = "parity-Environment";     Title = "Parity: Environment" }
+    "ParityGestures"        = @{ File = "parity-Gestures";        Title = "Parity: Gestures" }
+    "ParityAnimation"       = @{ File = "parity-Animation";       Title = "Parity: Animation" }
+    "ParityFocus"           = @{ File = "parity-Focus";           Title = "Parity: Focus" }
+    "ParityAppStructure"    = @{ File = "parity-AppStructure";    Title = "Parity: App Structure" }
 }
 
 function Capture-WindowToPng {
@@ -99,24 +108,35 @@ function Capture-One {
 
     # Build
     Write-Host "    Building..."
+    Push-Location $repoRoot
     & swift build --product $TargetName 2>&1 | Out-Null
+    Pop-Location
 
     # Launch the exe directly (swift run wraps it and delays window creation)
     Write-Host "    Launching..."
-    $exePath = Join-Path $repoRoot ".build\debug\$TargetName.exe"
+    $exePath = Join-Path $repoRoot ".build\aarch64-unknown-windows-msvc\debug\$TargetName.exe"
     if (-not (Test-Path $exePath)) {
-        $exePath = Join-Path $repoRoot ".build\aarch64-unknown-windows-msvc\debug\$TargetName.exe"
+        $exePath = Join-Path $repoRoot ".build\debug\$TargetName.exe"
+    }
+    if (-not (Test-Path $exePath)) {
+        Write-Host "    ERROR: Binary not found at $exePath" -ForegroundColor Red
+        return
     }
     $proc = Start-Process -FilePath $exePath -PassThru -WindowStyle Normal
 
     # Wait for window to appear
     Start-Sleep -Seconds $delay
 
-    # Find the window by title
-    $hwnd = [Win32Window]::FindWindow([NullString]::Value, $windowTitle)
+    # Find the window by class name + title (avoids matching VS Code tabs)
+    $hwnd = [Win32Window]::FindWindow("SwiftOpenUIMainWindow", $windowTitle)
     if ($hwnd -eq [IntPtr]::Zero) {
-        Write-Host "    Window '$windowTitle' not found, using foreground window" -ForegroundColor Yellow
-        $hwnd = [Win32Window]::GetForegroundWindow()
+        # Fallback: try by title only
+        $hwnd = [Win32Window]::FindWindow([NullString]::Value, $windowTitle)
+    }
+    if ($hwnd -eq [IntPtr]::Zero) {
+        Write-Host "    Window '$windowTitle' not found, trying process window" -ForegroundColor Yellow
+        $proc.Refresh()
+        $hwnd = $proc.MainWindowHandle
     }
 
     if ($hwnd -ne [IntPtr]::Zero) {
@@ -146,11 +166,11 @@ function Capture-One {
 if ($Target) {
     Capture-One $Target
 } else {
-    foreach ($name in @("HelloWorld", "TextStyles", "Buttons", "StateDemo", "Layout")) {
+    foreach ($name in $examples.Keys) {
         Capture-One $name
         Start-Sleep -Seconds 1
     }
     Write-Host ""
     Write-Host "Done. Screenshots saved to $outDir\"
-    Get-ChildItem $outDir | Format-Table Name, @{N="Size";E={"{0:N1} KB" -f ($_.Length/1KB)}}
+    Get-ChildItem $outDir -Filter "*.png" | Format-Table Name, @{N="Size";E={"{0:N1} KB" -f ($_.Length/1KB)}}
 }

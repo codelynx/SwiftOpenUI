@@ -113,7 +113,7 @@ struct StopwatchView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.white)
                         .frame(width: 80, height: 40)
-                        .background(Color(red: 0.25, green: 0.25, blue: 0.25))
+                        .background(Color(red: 1.0, green: 0.58, blue: 0.0))
                 }
 
                 // Right button: Start / Stop

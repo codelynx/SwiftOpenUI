@@ -835,17 +835,16 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertTrue(value, "Toggle click should set binding to true")
     }
 
-    func testSliderCreatesTrackbar() {
+    func testSliderCreatesD2DSurface() {
         let ctx = testContext()
         let binding = Binding<Double>(get: { 0.5 }, set: { _ in })
         let hwnd = winRenderView(Slider(value: binding), in: ctx)
         XCTAssertNotNil(hwnd)
-        // Slider wraps in a container — find the trackbar child
-        let child = GetWindow(hwnd!, UINT(GW_CHILD))
-        XCTAssertNotNil(child)
-        if let child = child {
-            XCTAssertEqual(className(of: child), "msctls_trackbar32")
-        }
+        // D2D slider renders as a SwiftUID2DSurface HWND
+        XCTAssertEqual(className(of: hwnd!), "SwiftUID2DSurface")
+        var rect = RECT()
+        GetWindowRect(hwnd!, &rect)
+        XCTAssertGreaterThan(rect.right - rect.left, 0)
     }
 
     func testScrollViewCreatesContainer() {

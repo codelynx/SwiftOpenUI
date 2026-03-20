@@ -1871,116 +1871,236 @@ extension Toggle: WinRenderable {
     }
 }
 
-extension Slider: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        registerStackClassIfNeeded(hInstance: context.hInstance)
+// MARK: - D2D Custom Slider
 
-        // Wrap trackbar in a container so we receive WM_HSCROLL directly
-        // (Win32 sends WM_HSCROLL to the trackbar's parent, not the trackbar)
-        let container = CreateWindowExW(
-            0, stackContainerClassName, nil,
-            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
-            0, 0, 200, 30,
-            context.parent, nil, context.hInstance, nil
-        )!
+/// State for a D2D-rendered slider.
+private class D2DSliderState {
+    let hwnd: HWND
+    let binding: Binding<Double>
+    let rangeMin: Double
+    let rangeMax: Double
+    let step: Double
+    var currentValue: Double
+    var dragging: Bool = false
 
-        let trackbarClass: [WCHAR] = Array("msctls_trackbar32".utf16) + [0]
-        let trackbar = trackbarClass.withUnsafeBufferPointer { ptr in
-            CreateWindowExW(
-                0, ptr.baseAddress!, nil,
-                DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_HORZ | TBS_AUTOTICKS),
-                0, 0, 200, 30,
-                container, nil, context.hInstance, nil
-            )
+    var renderTarget: D2DRenderTarget?
+    var brush: D2DBrush?
+
+    // Layout constants
+    let trackHeight: Float = 4
+    let thumbRadius: Float = 8
+    let trackInset: Float = 10  // horizontal padding for thumb overhang
+
+    init(hwnd: HWND, binding: Binding<Double>, range: ClosedRange<Double>, step: Double) {
+        self.hwnd = hwnd
+        self.binding = binding
+        self.rangeMin = range.lowerBound
+        self.rangeMax = range.upperBound
+        self.step = step
+        self.currentValue = binding.wrappedValue
+    }
+
+    func ensureTarget(width: UInt32, height: UInt32) {
+        if renderTarget == nil && width > 0 && height > 0 {
+            renderTarget = D2DRenderer.shared.createRenderTarget(for: hwnd, width: width, height: height)
+            if let rt = renderTarget {
+                brush = D2DRenderer.shared.createBrush(rt, r: 0, g: 0, b: 0)
+            }
+        }
+    }
+
+    func resize(width: UInt32, height: UInt32) {
+        if let rt = renderTarget, width > 0, height > 0 {
+            D2DRenderer.shared.resize(rt, width: width, height: height)
+        }
+    }
+
+    /// Fraction of the slider position (0.0 to 1.0).
+    var fraction: Float {
+        guard rangeMax > rangeMin else { return 0 }
+        return Float((currentValue - rangeMin) / (rangeMax - rangeMin))
+    }
+
+    /// X position of the thumb center.
+    func thumbX(trackWidth: Float) -> Float {
+        let usable = trackWidth - trackInset * 2
+        return trackInset + fraction * usable
+    }
+
+    /// Convert an x position to a value, snapped to step.
+    func valueFromX(_ x: Float, trackWidth: Float) -> Double {
+        let usable = trackWidth - trackInset * 2
+        let frac = Double(max(0, min(1, (x - trackInset) / usable)))
+        let raw = rangeMin + frac * (rangeMax - rangeMin)
+        // Snap to step
+        let stepped = (raw / step).rounded() * step
+        return max(rangeMin, min(rangeMax, stepped))
+    }
+
+    func paint() {
+        if renderTarget == nil {
+            var r = RECT()
+            GetClientRect(hwnd, &r)
+            ensureTarget(width: UInt32(r.right), height: UInt32(r.bottom))
+        }
+        guard let rt = renderTarget, let brush = brush else { return }
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let w = Float(rect.right)
+        let h = Float(rect.bottom)
+        guard w > 0, h > 0 else { return }
+
+        d2d1_RenderTarget_BeginDraw(rt)
+
+        // Clear with inherited background from parent chain
+        var bgR: Float = Float(win32_GetRValue(GetSysColor(COLOR_WINDOW))) / 255.0
+        var bgG: Float = Float(win32_GetGValue(GetSysColor(COLOR_WINDOW))) / 255.0
+        var bgB: Float = Float(win32_GetBValue(GetSysColor(COLOR_WINDOW))) / 255.0
+        if let parent = GetParent(hwnd) {
+            // Create a temporary memory DC to query the brush color
+            let hdc = GetDC(hwnd)
+            let brushResult = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC),
+                                            WPARAM(UInt(bitPattern: hdc)), LPARAM(Int(bitPattern: hwnd)))
+            if brushResult != 0, let brush = HBRUSH(bitPattern: Int(brushResult)) {
+                var logBrush = LOGBRUSH()
+                GetObjectW(brush, Int32(MemoryLayout<LOGBRUSH>.size), &logBrush)
+                bgR = Float(win32_GetRValue(logBrush.lbColor)) / 255.0
+                bgG = Float(win32_GetGValue(logBrush.lbColor)) / 255.0
+                bgB = Float(win32_GetBValue(logBrush.lbColor)) / 255.0
+            }
+            ReleaseDC(hwnd, hdc)
+        }
+        d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
+
+        let centerY = h / 2
+        let tx = thumbX(trackWidth: w)
+
+        // Track background (inactive portion) — dark gray
+        d2d1_SolidColorBrush_SetColor(brush, 0.35, 0.35, 0.38, 1)
+        d2d1_RenderTarget_FillRoundedRectangle(rt, brush,
+            trackInset, centerY - trackHeight / 2,
+            w - trackInset * 2, trackHeight,
+            trackHeight / 2, trackHeight / 2)
+
+        // Track active portion (left of thumb) — accent blue
+        if tx > trackInset {
+            d2d1_SolidColorBrush_SetColor(brush, 0.0, 0.48, 1.0, 1)
+            d2d1_RenderTarget_FillRoundedRectangle(rt, brush,
+                trackInset, centerY - trackHeight / 2,
+                tx - trackInset, trackHeight,
+                trackHeight / 2, trackHeight / 2)
         }
 
-        guard let trackbar = trackbar else { return container }
+        // Thumb — white circle with subtle shadow
+        d2d1_SolidColorBrush_SetColor(brush, 0.2, 0.2, 0.2, 0.3)
+        d2d1_RenderTarget_FillEllipse(rt, brush,
+            tx, centerY + 1, thumbRadius, thumbRadius)
+        d2d1_SolidColorBrush_SetColor(brush, 1.0, 1.0, 1.0, 1.0)
+        d2d1_RenderTarget_FillEllipse(rt, brush,
+            tx, centerY, thumbRadius, thumbRadius)
 
-        let precision = 1.0 / step
-        let rangeMin = Int32(range.lowerBound * precision)
-        let rangeMax = Int32(range.upperBound * precision)
-        let pos = Int32(value.wrappedValue * precision)
-
-        SendMessageW(trackbar, UINT(TBM_SETRANGEMIN), 0, LPARAM(rangeMin))
-        SendMessageW(trackbar, UINT(TBM_SETRANGEMAX), 1, LPARAM(rangeMax))
-        SendMessageW(trackbar, UINT(TBM_SETPOS), 1, LPARAM(pos))
-
-        let tickFreq = max(1, Int32((range.upperBound - range.lowerBound) / (step * 10)))
-        SendMessageW(trackbar, UINT(TBM_SETTICFREQ), WPARAM(tickFreq), 0)
-        SendMessageW(trackbar, UINT(TBM_SETLINESIZE), 0, 1)
-        SendMessageW(trackbar, UINT(TBM_SETPAGESIZE), 0, LPARAM(Int32(precision)))
-
-        // Subclass the CONTAINER (not trackbar) to receive WM_HSCROLL
-        let binding = value
-        let sliderInfo = SliderInfo(binding: binding, precision: precision, trackbar: trackbar)
-        let infoPtr = Unmanaged.passRetained(sliderInfo).toOpaque()
-        SetWindowSubclass(container, sliderContainerProc, 42, DWORD_PTR(UInt(bitPattern: infoPtr)))
-
-        return container
+        _ = d2d1_RenderTarget_EndDraw(rt)
     }
+
+    func cleanup() {
+        if let b = brush { D2DRenderer.shared.releaseBrush(b); brush = nil }
+        if let rt = renderTarget { D2DRenderer.shared.releaseRenderTarget(rt); renderTarget = nil }
+    }
+
+    deinit { cleanup() }
 }
 
-private class SliderInfo {
-    let binding: Binding<Double>
-    let precision: Double
-    let trackbar: HWND
+/// Subclass proc for the D2D slider HWND.
+private let d2dSliderProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
 
-    init(binding: Binding<Double>, precision: Double, trackbar: HWND) {
-        self.binding = binding
-        self.precision = precision
-        self.trackbar = trackbar
-    }
-}
+    let state = Unmanaged<D2DSliderState>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
 
-/// Subclass on the slider's CONTAINER — receives WM_HSCROLL from the trackbar child.
-private let sliderContainerProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
     switch uMsg {
-    case UINT(WM_HSCROLL):
-        if dwRefData != 0 {
-            let scrollCode = win32_LOWORD(DWORD_PTR(wParam))
-            let info = Unmanaged<SliderInfo>.fromOpaque(
-                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-            ).takeUnretainedValue()
+    case UINT(WM_PAINT):
+        state.paint()
+        _ = ValidateRect(hwnd, nil)
+        return 0
 
-            // Only update binding on TB_ENDTRACK or discrete steps.
-            // TB_THUMBTRACK fires during drag — updating @State would
-            // rebuild and destroy the trackbar mid-drag.
-            if scrollCode != WORD(TB_THUMBTRACK) {
-                let pos = SendMessageW(info.trackbar, UINT(TBM_GETPOS), 0, 0)
-                let newValue = Double(pos) / info.precision
-                if abs(newValue - info.binding.wrappedValue) > (1.0 / info.precision) * 0.01 {
-                    info.binding.wrappedValue = newValue
-                }
+    case UINT(WM_SIZE):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        state.ensureTarget(width: UInt32(rect.right), height: UInt32(rect.bottom))
+        state.resize(width: UInt32(rect.right), height: UInt32(rect.bottom))
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_ERASEBKGND):
+        return 1
+
+    case UINT(WM_LBUTTONDOWN):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let x = Float(Int16(truncatingIfNeeded: win32_LOWORD(DWORD_PTR(lParam))))
+        let newValue = state.valueFromX(x, trackWidth: Float(rect.right))
+        state.currentValue = newValue
+        state.binding.wrappedValue = newValue
+        state.dragging = true
+        SetCapture(hwnd)
+        InvalidateRect(hwnd, nil, false)
+        return 0
+
+    case UINT(WM_MOUSEMOVE):
+        if state.dragging {
+            var rect = RECT()
+            GetClientRect(hwnd, &rect)
+            let x = Float(Int16(truncatingIfNeeded: win32_LOWORD(DWORD_PTR(lParam))))
+            let newValue = state.valueFromX(x, trackWidth: Float(rect.right))
+            if newValue != state.currentValue {
+                state.currentValue = newValue
+                state.binding.wrappedValue = newValue
+                InvalidateRect(hwnd, nil, false)
             }
         }
         return 0
 
-    case UINT(WM_SIZE):
-        // Size trackbar to fill container
-        if dwRefData != 0 {
-            let info = Unmanaged<SliderInfo>.fromOpaque(
-                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-            ).takeUnretainedValue()
-            var rect = RECT()
-            GetClientRect(hwnd, &rect)
-            SetWindowPos(info.trackbar, nil, 0, 0,
-                         rect.right - rect.left, rect.bottom - rect.top, UINT(SWP_NOZORDER))
+    case UINT(WM_LBUTTONUP):
+        if state.dragging {
+            state.dragging = false
+            ReleaseCapture()
         }
         return 0
 
     case UINT(WM_NCDESTROY):
-        if dwRefData != 0 {
-            Unmanaged<SliderInfo>.fromOpaque(
-                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-            ).release()
-        }
-        RemoveWindowSubclass(hwnd, sliderContainerProc, uIdSubclass)
+        Unmanaged<D2DSliderState>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, d2dSliderProc, uIdSubclass)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     default:
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
+
+extension Slider: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
+
+        let hwnd = CreateWindowExW(
+            0, d2dSurfaceClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE),
+            0, 0, 200, 24,
+            context.parent, nil, context.hInstance, nil
+        )
+
+        guard let hwnd = hwnd else { return nil }
+
+        let state = D2DSliderState(hwnd: hwnd, binding: value, range: range, step: step)
+        let ptr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(hwnd, d2dSliderProc, 47, DWORD_PTR(UInt(bitPattern: ptr)))
+
+        return hwnd
+    }
+}
+
 
 extension ScrollView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {

@@ -2,6 +2,7 @@ import WinSDK
 import CWin32
 import CWin32Bridge
 import SwiftOpenUI
+import Foundation
 
 /// Protocol for scenes that can render onto a Win32 window.
 protocol Win32WindowRenderable {
@@ -167,11 +168,25 @@ public struct Win32Backend: RenderBackend {
         let scene = instance.body
         win32RenderScene(scene, hInstance: hInstance)
 
-        // Win32 message loop
+        // Hybrid Win32 + Foundation run loop.
+        // Swift/Foundation timers (e.g. Timer.scheduledTimer) need the main
+        // RunLoop to spin, while Win32 UI needs its message queue dispatched.
         var msg = MSG()
-        while GetMessageW(&msg, nil, 0, 0) {
-            TranslateMessage(&msg)
-            DispatchMessageW(&msg)
+        while true {
+            while PeekMessageW(&msg, nil, 0, 0, UINT(PM_REMOVE)) {
+                if msg.message == UINT(WM_QUIT) {
+                    return
+                }
+                TranslateMessage(&msg)
+                DispatchMessageW(&msg)
+            }
+
+            // Pump Foundation sources (Timer, etc.) on the main RunLoop.
+            // Use RunLoop.main explicitly and pump both .default and .common modes
+            // so Timer.scheduledTimer callbacks fire reliably on Windows.
+            let limit = Date(timeIntervalSinceNow: 0.005)
+            _ = RunLoop.main.run(mode: .default, before: limit)
+            _ = RunLoop.main.run(mode: .common, before: limit)
         }
     }
 }
