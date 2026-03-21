@@ -1339,24 +1339,23 @@ class FrameLayoutInfo {
 }
 
 /// Recompute frame child placement on resize using shared layout.
-/// Uses the original frame constraints (width/height/min/max) so the
-/// child placement respects the same rules as the initial pass.
+/// On resize, the parent has already decided the container's actual size.
+/// We place the child within that actual size, using the shared placement
+/// math (alignment + expand flags). The original min/max constraints were
+/// applied during initial sizing — they don't re-clamp on parent-driven resize.
 private func layoutFrameChild(in container: HWND, info: FrameLayoutInfo) {
     var rect = RECT()
     GetClientRect(container, &rect)
     let containerW = Double(rect.right - rect.left)
     let containerH = Double(rect.bottom - rect.top)
 
-    // On resize, use the original constraints but override with the
-    // container's current size when no explicit width/height was set.
+    // Place child within the actual container size.
+    // Use the actual container as the frame (width/height) so placement
+    // is always relative to the real HWND, not a phantom clamped size.
     let result = computeFrameLayout(
         childNaturalSize: info.childNaturalSize,
-        width: info.frameWidth ?? containerW,
-        height: info.frameHeight ?? containerH,
-        minWidth: info.frameMinWidth,
-        minHeight: info.frameMinHeight,
-        maxWidth: info.frameMaxWidth,
-        maxHeight: info.frameMaxHeight,
+        width: containerW,
+        height: containerH,
         alignment: info.alignment,
         expandsToFillWidth: info.expandsToFillWidth,
         expandsToFillHeight: info.expandsToFillHeight
