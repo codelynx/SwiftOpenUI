@@ -1293,6 +1293,13 @@ extension FrameView: WinRenderable {
         let h = Int32(result.containerSize.height)
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
+        // Propagate expand flags to the FrameView container when
+        // the FrameView has no explicit constraint on that axis.
+        // This lets parent layouts (VStack/HStack) know that this
+        // FrameView should fill available space on unconstrained axes.
+        if expandsWidth && width == nil && minWidth == nil { markExpandWidth(container) }
+        if expandsHeight && height == nil && minHeight == nil { markExpandHeight(container) }
+
         // Store info for resize-time recomputation via shared layout
         // (includes original constraints so resize reapplies min/max clamping)
         let frameInfo = FrameLayoutInfo(
