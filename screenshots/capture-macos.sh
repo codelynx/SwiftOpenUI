@@ -19,7 +19,7 @@ DELAY=3
 
 TARGETS=(
     # Showcase
-    HelloWorld Stopwatch ColorMixer
+    HelloWorld Stopwatch ColorMixer Calculator
     # Parity
     ParityViewsBasic ParityViewsLayout ParityViewsContainers
     ParityModifiers ParityStateData ParityNavigation
@@ -32,6 +32,7 @@ FILENAMES=(
     HelloWorld          "showcase-HelloWorld"
     Stopwatch           "showcase-Stopwatch"
     ColorMixer          "showcase-ColorMixer"
+    Calculator          "showcase-Calculator"
     # Parity
     ParityViewsBasic       "parity-ViewsBasic"
     ParityViewsLayout      "parity-ViewsLayout"

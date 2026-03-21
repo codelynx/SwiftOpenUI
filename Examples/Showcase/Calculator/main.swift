@@ -35,70 +35,77 @@ struct CalculatorView: View {
     let digitBg = Color(red: 0.2, green: 0.2, blue: 0.2)
     let opBg = Color(red: 1.0, green: 0.62, blue: 0.04)
     let fnBg = Color(red: 0.65, green: 0.65, blue: 0.65)
+    let buttonSize = 56.0
+    let gridSpacing = 1.0
+
+    var calculatorWidth: Double { buttonSize * 4 + gridSpacing * 3 }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Display
-            HStack {
-                Spacer()
-                Text(display)
-                    .font(.system(size: 48, weight: .light))
-                    .foregroundColor(.white)
-                    .padding()
-            }
-            .frame(minHeight: 88)
-            .background(Color.black)
+        // Outer container — fills window with black, centers calculator
+        ZStack {
+            Color.black
 
-            // Button grid
-            Grid(horizontalSpacing: 1, verticalSpacing: 1) {
-                GridRow {
-                    calcBtn("AC", bg: fnBg, fg: .black) { clear() }
-                    calcBtn("+/-", bg: fnBg, fg: .black) { toggleSign() }
-                    calcBtn("%", bg: fnBg, fg: .black) { percent() }
-                    calcBtn("/", bg: opBg, fg: .white) { setOperation(.divide) }
+            // Calculator box — fixed size
+            VStack(spacing: 0) {
+                // Display
+                HStack {
+                    Spacer()
+                    Text(display)
+                        .font(.system(size: 40, weight: .light))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                 }
-                GridRow {
-                    calcBtn("7", bg: digitBg, fg: .white) { appendDigit("7") }
-                    calcBtn("8", bg: digitBg, fg: .white) { appendDigit("8") }
-                    calcBtn("9", bg: digitBg, fg: .white) { appendDigit("9") }
-                    calcBtn("x", bg: opBg, fg: .white) { setOperation(.multiply) }
-                }
-                GridRow {
-                    calcBtn("4", bg: digitBg, fg: .white) { appendDigit("4") }
-                    calcBtn("5", bg: digitBg, fg: .white) { appendDigit("5") }
-                    calcBtn("6", bg: digitBg, fg: .white) { appendDigit("6") }
-                    calcBtn("-", bg: opBg, fg: .white) { setOperation(.subtract) }
-                }
-                GridRow {
-                    calcBtn("1", bg: digitBg, fg: .white) { appendDigit("1") }
-                    calcBtn("2", bg: digitBg, fg: .white) { appendDigit("2") }
-                    calcBtn("3", bg: digitBg, fg: .white) { appendDigit("3") }
-                    calcBtn("+", bg: opBg, fg: .white) { setOperation(.add) }
-                }
-                GridRow {
-                    calcBtn("0", bg: digitBg, fg: .white) { appendDigit("0") }
-                        .gridCellColumns(2)
-                    calcBtn(".", bg: digitBg, fg: .white) { appendDot() }
-                    calcBtn("=", bg: opBg, fg: .white) { evaluate() }
+
+                // Button grid
+                Grid(horizontalSpacing: 1, verticalSpacing: 1) {
+                    GridRow {
+                        calcBtn("AC", bg: fnBg, fg: .black) { clear() }
+                        calcBtn("+/-", bg: fnBg, fg: .black) { toggleSign() }
+                        calcBtn("%", bg: fnBg, fg: .black) { percent() }
+                        calcBtn("/", bg: opBg, fg: .white) { setOperation(.divide) }
+                    }
+                    GridRow {
+                        calcBtn("7", bg: digitBg, fg: .white) { appendDigit("7") }
+                        calcBtn("8", bg: digitBg, fg: .white) { appendDigit("8") }
+                        calcBtn("9", bg: digitBg, fg: .white) { appendDigit("9") }
+                        calcBtn("x", bg: opBg, fg: .white) { setOperation(.multiply) }
+                    }
+                    GridRow {
+                        calcBtn("4", bg: digitBg, fg: .white) { appendDigit("4") }
+                        calcBtn("5", bg: digitBg, fg: .white) { appendDigit("5") }
+                        calcBtn("6", bg: digitBg, fg: .white) { appendDigit("6") }
+                        calcBtn("-", bg: opBg, fg: .white) { setOperation(.subtract) }
+                    }
+                    GridRow {
+                        calcBtn("1", bg: digitBg, fg: .white) { appendDigit("1") }
+                        calcBtn("2", bg: digitBg, fg: .white) { appendDigit("2") }
+                        calcBtn("3", bg: digitBg, fg: .white) { appendDigit("3") }
+                        calcBtn("+", bg: opBg, fg: .white) { setOperation(.add) }
+                    }
+                    GridRow {
+                        calcBtn("0", bg: digitBg, fg: .white) { appendDigit("0") }
+                        calcBtn("00", bg: digitBg, fg: .white) { appendDigit("00") }
+                        calcBtn(".", bg: digitBg, fg: .white) { appendDot() }
+                        calcBtn("=", bg: opBg, fg: .white) { evaluate() }
+                    }
                 }
             }
+            .frame(width: calculatorWidth)
+            .background(Color.black)
         }
-        .background(Color.black)
     }
 
     // MARK: - Styled button
 
     func calcBtn(_ label: String, bg: Color, fg: Color,
                   action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            ZStack {
-                bg
-                Text(label)
-                    .font(.title)
-                    .foregroundColor(fg)
-            }
-            .frame(minHeight: 72)
-        }
+        Text(label)
+            .font(.system(size: 20, weight: .regular))
+            .foregroundColor(fg)
+            .frame(width: 56, height: 56)
+            .background(bg)
+            .onTapGesture { action() }
     }
 
     // MARK: - Calculator actions
@@ -188,9 +195,16 @@ struct CalculatorView: View {
 
 struct CalculatorApp: App {
     var body: some Scene {
+        #if os(macOS)
         WindowGroup("Calculator") {
             CalculatorView()
         }
+        .windowResizability(.contentSize)
+        #else
+        WindowGroup("Calculator") {
+            CalculatorView()
+        }
+        #endif
     }
 }
 
