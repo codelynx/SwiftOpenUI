@@ -96,11 +96,12 @@ extension Text: WinRenderable {
 
         // SS_LEFTNOWORDWRAP prevents wrapping (matches single-line measurement).
         // SS_NOTIFY enables WM_LBUTTONDOWN/UP delivery so gesture subclasses work.
+        // SS_NOPREFIX prevents & from being interpreted as accelerator prefix.
         let hwnd = content.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(),
                 wstr,
-                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                 0, 0, measured.width + 4, measured.height + 2,
                 context.parent,
                 nil,
@@ -2451,7 +2452,7 @@ extension Image: WinRenderable {
             return fallback.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
                     win32_WC_STATIC(), wstr,
-                    DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                    DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                     0, 0, measured.width + 4, measured.height + 2,
                     context.parent, nil, context.hInstance
                 )
@@ -2546,7 +2547,7 @@ extension Image: WinRenderable {
         return fallback.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr,
-                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                 0, 0, measured.width + 4, measured.height + 2,
                 context.parent, nil, context.hInstance
             )
@@ -2635,7 +2636,7 @@ extension Stepper: WinRenderable {
         let labelMeasured = measureText(label, hwnd: context.parent)
         _ = label.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
-                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                 0, 0, labelMeasured.width + 4, 24,
                 container, nil, context.hInstance
             )
@@ -2724,7 +2725,7 @@ extension Label: WinRenderable {
         let measured = measureText(displayText, hwnd: context.parent)
         return displayText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
-                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                 0, 0, measured.width + 4, measured.height + 2,
                 context.parent, nil, context.hInstance
             )
@@ -3192,7 +3193,7 @@ extension Picker: WinRenderable {
         let labelMeasured = measureText(label, hwnd: context.parent)
         _ = label.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
-                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                 0, 2, labelMeasured.width + 4, 20,
                 container, nil, context.hInstance
             )
@@ -3253,7 +3254,7 @@ extension Picker: WinRenderable {
             let labelMeasured = measureText(label, hwnd: context.parent)
             _ = label.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
-                    win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                    win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                     x, 2, labelMeasured.width + 4, 20,
                     container, nil, context.hInstance
                 )
@@ -3543,7 +3544,7 @@ extension DatePicker: WinRenderable {
         let labelMeasured = measureText(labelText, hwnd: context.parent)
         _ = labelText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
-                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY),
+                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                 0, 2, labelMeasured.width + 4, 20,
                 container, nil, context.hInstance
             )
