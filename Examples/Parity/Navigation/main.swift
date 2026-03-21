@@ -5,7 +5,7 @@
 
 #if os(macOS)
 import SwiftUI
-import AppKit
+import MacExampleSupport
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -135,9 +135,7 @@ struct ParityNavigationApp: App {
 }
 
 #if os(macOS)
-NSApplication.shared.setActivationPolicy(.regular)
-NSApplication.shared.activate(ignoringOtherApps: true)
-ParityNavigationApp.main()
+MacAppLauncher.run(ParityNavigationApp.self)
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(ParityNavigationApp.self)
 #elseif canImport(BackendWin32)

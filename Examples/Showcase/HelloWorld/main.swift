@@ -1,6 +1,6 @@
 #if os(macOS)
 import SwiftUI
-import AppKit
+import MacExampleSupport
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -24,9 +24,7 @@ struct HelloWorldApp: App {
 }
 
 #if os(macOS)
-NSApplication.shared.setActivationPolicy(.regular)
-NSApplication.shared.activate(ignoringOtherApps: true)
-HelloWorldApp.main()
+MacAppLauncher.run(HelloWorldApp.self)
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(HelloWorldApp.self)
 #elseif canImport(BackendWin32)

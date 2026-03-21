@@ -1,6 +1,6 @@
 #if os(macOS)
 import SwiftUI
-import AppKit
+import MacExampleSupport
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -276,9 +276,7 @@ struct ColorMixerApp: App {
 }
 
 #if os(macOS)
-NSApplication.shared.setActivationPolicy(.regular)
-NSApplication.shared.activate(ignoringOtherApps: true)
-ColorMixerApp.main()
+MacAppLauncher.run(ColorMixerApp.self)
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(ColorMixerApp.self)
 #elseif canImport(BackendWin32)

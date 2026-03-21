@@ -1,6 +1,6 @@
 #if os(macOS)
 import SwiftUI
-import AppKit
+import MacExampleSupport
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -195,9 +195,7 @@ struct StopwatchApp: App {
 }
 
 #if os(macOS)
-NSApplication.shared.setActivationPolicy(.regular)
-NSApplication.shared.activate(ignoringOtherApps: true)
-StopwatchApp.main()
+MacAppLauncher.run(StopwatchApp.self)
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(StopwatchApp.self)
 #elseif canImport(BackendWin32)

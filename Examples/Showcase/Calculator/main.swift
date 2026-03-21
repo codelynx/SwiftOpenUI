@@ -5,7 +5,7 @@
 
 #if os(macOS)
 import SwiftUI
-import AppKit
+import MacExampleSupport
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -37,8 +37,10 @@ struct CalculatorView: View {
     let fnBg = Color(red: 0.65, green: 0.65, blue: 0.65)
     let buttonSize = 56.0
     let gridSpacing = 1.0
+    let displayHeight = 96.0
 
     var calculatorWidth: Double { buttonSize * 4 + gridSpacing * 3 }
+    var calculatorHeight: Double { displayHeight + buttonSize * 5 + gridSpacing * 4 }
 
     var body: some View {
         // Outer container — fills window with black, centers calculator
@@ -56,6 +58,7 @@ struct CalculatorView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                 }
+                .frame(height: displayHeight)
 
                 // Button grid
                 Grid(horizontalSpacing: 1, verticalSpacing: 1) {
@@ -94,6 +97,7 @@ struct CalculatorView: View {
             .frame(width: calculatorWidth)
             .background(Color.black)
         }
+        .frame(width: calculatorWidth, height: calculatorHeight)
     }
 
     // MARK: - Styled button
@@ -209,9 +213,7 @@ struct CalculatorApp: App {
 }
 
 #if os(macOS)
-NSApplication.shared.setActivationPolicy(.regular)
-NSApplication.shared.activate(ignoringOtherApps: true)
-CalculatorApp.main()
+MacAppLauncher.run(CalculatorApp.self)
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(CalculatorApp.self)
 #elseif canImport(BackendWin32)

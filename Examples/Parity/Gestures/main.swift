@@ -4,7 +4,7 @@
 
 #if os(macOS)
 import SwiftUI
-import AppKit
+import MacExampleSupport
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -130,9 +130,7 @@ struct ParityGesturesApp: App {
 }
 
 #if os(macOS)
-NSApplication.shared.setActivationPolicy(.regular)
-NSApplication.shared.activate(ignoringOtherApps: true)
-ParityGesturesApp.main()
+MacAppLauncher.run(ParityGesturesApp.self)
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(ParityGesturesApp.self)
 #elseif canImport(BackendWin32)

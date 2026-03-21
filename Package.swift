@@ -9,6 +9,12 @@ var targets: [Target] = [
         path: "Sources/SwiftOpenUI"
     ),
 
+    // Small helper module for macOS example launch boilerplate.
+    .target(
+        name: "MacExampleSupport",
+        path: "Sources/MacExampleSupport"
+    ),
+
     // Core tests
     .testTarget(
         name: "SwiftOpenUITests",
@@ -20,7 +26,7 @@ var targets: [Target] = [
 // Example runner dependencies:
 // - SwiftOpenUI for the core framework
 // - Backend libraries on their native platforms
-var exampleDeps: [Target.Dependency] = ["SwiftOpenUI"]
+var exampleDeps: [Target.Dependency] = ["SwiftOpenUI", "MacExampleSupport"]
 
 // GTK4 backend (Linux)
 #if os(Linux)

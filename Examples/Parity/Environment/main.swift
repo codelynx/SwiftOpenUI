@@ -5,7 +5,7 @@
 
 #if os(macOS)
 import SwiftUI
-import AppKit
+import MacExampleSupport
 #else
 import SwiftOpenUI
 #if canImport(BackendGTK4)
@@ -172,9 +172,7 @@ struct ParityEnvironmentApp: App {
 }
 
 #if os(macOS)
-NSApplication.shared.setActivationPolicy(.regular)
-NSApplication.shared.activate(ignoringOtherApps: true)
-ParityEnvironmentApp.main()
+MacAppLauncher.run(ParityEnvironmentApp.self)
 #elseif canImport(BackendGTK4)
 GTK4Backend().run(ParityEnvironmentApp.self)
 #elseif canImport(BackendWin32)

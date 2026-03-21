@@ -7,6 +7,60 @@
 - **Namespace conflict**: `ObservableObject` and `Published` clash with Foundation/Combine — tests use `SwiftOpenUI.ObservableObject` and `@SwiftOpenUI.Published` prefixes (see `docs/issues/observable-namespace-conflict.md`)
 - Package minimum: macOS 13 (required by JavaScriptKit dependency)
 
+### Launch and frontmost behavior
+
+SwiftUI example apps launched via `swift run` can start in the background or create their first
+window slightly after `App.main()` enters the Cocoa lifecycle. The working rule on macOS is:
+front the app only after the app has finished launching and a real `NSWindow` exists.
+
+Mechanism used by `MacExampleSupport`:
+
+1. Call `NSApplication.shared.setActivationPolicy(.regular)` before `App.main()`
+2. Do **not** replace `NSApplication.shared.delegate`
+3. Install passive observers for app and window notifications
+4. Wait for `NSApplication.didFinishLaunchingNotification`
+5. Retry briefly on the main queue because SwiftUI may create the first window a moment later
+6. When a usable `NSWindow` exists, call:
+   - `NSApplication.shared.activate(ignoringOtherApps: true)`
+   - `window.makeKeyAndOrderFront(nil)`
+   - `window.orderFrontRegardless()`
+
+What we learned:
+
+- Setting focus policy too early is ineffective; there is no real window to front yet
+- Owning the global app delegate is too invasive; SwiftUI needs to control its own lifecycle
+- A small retry loop is acceptable for example apps because window creation is asynchronous
+- Logging app and window notifications is much more informative than guessing from launch timing
+
+### Window sizing semantics
+
+macOS window sizing has a few separate concerns that should not be collapsed into one flag:
+
+- **Default size**: the initial size when the window is first created
+- **Minimum size**: the smallest user-resizable size
+- **Maximum size**: the largest user-resizable size
+- **Resizable or fixed**: whether the user can drag-resize at all
+- **Content-driven size**: whether the window should follow its content's ideal size
+
+Practical guidance:
+
+- Treat default size as an initial suggestion, not as a permanent clamp
+- Treat min and max as persistent constraints
+- For fixed-content examples such as Calculator, content-sized behavior is often the cleanest fit
+- If a window should not resize, express that explicitly instead of faking it with `min == max`
+- Keep launch/fronting logic separate from sizing logic; they are different responsibilities
+
+On native macOS implementations, typical knobs are:
+
+- SwiftUI: `WindowGroup`, `.windowResizability(...)`, and scene/window sizing modifiers
+- AppKit: `setContentSize`, `minSize`, `maxSize`, and the `resizable` style mask
+
+### Example-app quit behavior
+
+For `swift run` showcase apps, "quit when the last window closes" is reasonable and feels native.
+That policy belongs in the example-launch helper, not in shared view code. It should remain a thin
+example-runner behavior, not a global framework rule.
+
 ## Linux (GTK4)
 
 - Backend: `BackendGTK4` → renders to GtkWidgets
@@ -122,3 +176,34 @@ The workaround is `d2d1_shim.cpp`: a C++ file that wraps each COM call in a `ext
 - Example dependencies always include `SwiftOpenUI` — source-level `#if os(macOS)` selects the import
 - Backend targets (GTK4, Win32) are still gated by `#if os()` since they require platform-specific system libraries
 - Web backend and JavaScriptKit are always declared in the manifest to support cross-compilation from macOS to Wasm
+
+## Cross-Platform Guidance From macOS
+
+The macOS launch fix is mostly about lifecycle discipline, and that lesson carries well to GTK4,
+Win32, and other native backends:
+
+- Do not try to front a window before the platform has created and shown a real top-level window
+- Keep the "bring app frontmost" helper passive; avoid taking ownership of the platform's primary app lifecycle if the toolkit already has one
+- Separate these concerns in backend design:
+  - app activation / focus
+  - initial window show timing
+  - window sizing policy
+  - process termination on last-window-close
+- Model size policy as independent fields:
+  - default width/height
+  - min width/height
+  - max width/height
+  - resizable enabled/disabled
+  - content-sized behavior where the platform supports it
+- Expect platform policy limits:
+  - macOS may refuse focus changes until the app is eligible
+  - Linux window managers may ignore or reinterpret aggressive activation requests
+  - Windows generally allows more explicit foreground control, but only after a real HWND exists
+- Add platform-native lifecycle logging before changing behavior; notification traces are usually more useful than speculation
+
+Suggestion for Linux and Windows agents:
+
+- Reuse the macOS mental model, not the exact API sequence
+- Front only after the first mapped GTK window or shown HWND exists
+- Prefer a small, local example-runner helper over embedding launch hacks in core rendering code
+- Keep fixed-size and content-sized example windows as explicit backend policy, not accidental side effects
