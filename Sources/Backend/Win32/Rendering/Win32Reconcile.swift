@@ -16,15 +16,18 @@ import SwiftOpenUI
 // This avoids needing a "describe without creating" path while still
 // proving the reconciliation concept for ColorMixer.
 
-/// Safe-to-reconcile class names. Only nodes where we know how to
-/// transfer all relevant state are allowed. Everything else forces
-/// a full rebuild fallback.
+/// Safe-to-reconcile class names. Only truly self-describing leaf
+/// nodes where we know how to transfer all relevant state.
+/// SwiftUIStack is NOT safe — it's shared by FrameView, BackgroundView,
+/// ForegroundColorView, PaddingView, etc. which all hang stateful info
+/// off the same HWND class. Reconciling them preserves stale wrapper state.
+/// SwiftUIContainer is NOT safe — it's the ViewHost container.
+/// Wrapper preservation requires backend node identity (retained tree),
+/// not raw HWND class names.
 private let reconcilableClasses: Set<String> = [
     "Static",              // Text labels — SetWindowTextW
     "SwiftUID2DView",      // Color/Divider — drawCallback transfer
-    "SwiftUID2DSurface",   // Canvas/Slider D2D surfaces
-    "SwiftUIStack",        // Container/wrapper — no own state, recurse children
-    "SwiftUIContainer",    // ViewHost container — recurse
+    "SwiftUID2DSurface",   // Slider D2D surfaces
 ]
 
 /// Compare two HWND subtrees structurally (class name + child count).
