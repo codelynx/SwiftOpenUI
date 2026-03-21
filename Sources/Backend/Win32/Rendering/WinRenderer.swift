@@ -4604,7 +4604,6 @@ extension OffsetView: WinRenderable {
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         guard let child = winRenderView(content, in: childContext) else { return container }
-        guard x != 0 || y != 0 else { return child }
 
         var childRect = RECT()
         GetWindowRect(child, &childRect)
