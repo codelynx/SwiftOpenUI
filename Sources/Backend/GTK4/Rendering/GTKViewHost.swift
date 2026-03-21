@@ -33,6 +33,8 @@ public class GTKViewHost: AnyViewHost {
         self.container = box
         gtk_widget_set_hexpand(box, 0)
         gtk_widget_set_vexpand(box, 0)
+        // Transparent so content backgrounds fill edge-to-edge
+        applyCSSToWidget(box, properties: "background: transparent;")
 
         // Attach self to the GTK widget for lifetime management.
         let retained = Unmanaged.passRetained(self).toOpaque()

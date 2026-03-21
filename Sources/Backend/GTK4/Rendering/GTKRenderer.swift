@@ -394,6 +394,13 @@ extension ZStack: GTKRenderable {
             let widget = widgetFromOpaque(child)
             if first {
                 gtk_overlay_set_child(OpaquePointer(overlay), widget)
+                // Propagate first child's expand to the overlay
+                if gtk_widget_get_hexpand(widget) != 0 {
+                    gtk_widget_set_hexpand(overlay, 1)
+                }
+                if gtk_widget_get_vexpand(widget) != 0 {
+                    gtk_widget_set_vexpand(overlay, 1)
+                }
                 first = false
             } else {
                 // Center overlay children (matches SwiftUI ZStack default)

@@ -48,7 +48,8 @@ extension WindowGroup: GTKWindowRenderable {
         let window = gtk_application_window_new(gtkApplicationPointer(app))!
         let winPtr = windowPointer(window)
         gtk_window_set_title(winPtr, title)
-        gtk_window_set_default_size(winPtr, 400, 600)
+        // No hardcoded window size — GTK4 auto-sizes to content.
+        // Apps control their size via .frame(minWidth:minHeight:) in the view.
 
         let contentWidget = widgetFromOpaque(gtkRenderView(content))
         if let titlebarWidget = findTitlebar(in: contentWidget) {
@@ -66,6 +67,10 @@ extension WindowGroup: GTKWindowRenderable {
             gtk_widget_set_valign(contentWidget, GTK_ALIGN_CENTER)
             gtk_widget_set_vexpand(contentWidget, 1)
         }
+
+        // Transparent window background so content Color views fill
+        // edge-to-edge without the default GTK theme showing through.
+        applyCSSToWidget(window, properties: "background: transparent;")
 
         gtk_window_set_child(winPtr, contentWidget)
         gtk_window_present(winPtr)
