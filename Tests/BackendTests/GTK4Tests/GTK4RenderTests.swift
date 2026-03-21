@@ -1,1 +1,357 @@
-// GTK4 backend rendering tests (Linux only)
+import XCTest
+import SwiftOpenUI
+import BackendGTK4
+import CGTK
+import CGTKBridge
+
+final class GTK4RenderTests: XCTestCase {
+    override class func setUp() {
+        super.setUp()
+        if gtk_is_initialized() == 0 {
+            _ = gtk_init_check()
+        }
+    }
+
+    func testFrameViewCentersTextUsingFixedChildPosition() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(Text("Hi").frame(width: 56, height: 56)))
+        let child = try unwrapFirstChild(of: wrapper)
+
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+        let childSize = allocatedSize(of: child)
+        let childOrigin = translatedChildOrigin(child: child, in: wrapper)
+
+        XCTAssertEqual(wrapperSize.width, 56, accuracy: 0.01)
+        XCTAssertEqual(wrapperSize.height, 56, accuracy: 0.01)
+        XCTAssertEqual(childOrigin.x, (56 - childSize.width) / 2, accuracy: 0.01)
+        XCTAssertEqual(childOrigin.y, (56 - childSize.height) / 2, accuracy: 0.01)
+    }
+
+    func testFrameViewExpandsColorToFillFixedFrame() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(Color.red.frame(width: 50, height: 24)))
+        let child = try unwrapFirstChild(of: wrapper)
+
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+        let childSize = allocatedSize(of: child)
+        let childOrigin = translatedChildOrigin(child: child, in: wrapper)
+
+        XCTAssertEqual(wrapperSize.width, 50, accuracy: 0.01)
+        XCTAssertEqual(wrapperSize.height, 24, accuracy: 0.01)
+        XCTAssertEqual(childSize.width, 50, accuracy: 0.01)
+        XCTAssertEqual(childSize.height, 24, accuracy: 0.01)
+        XCTAssertEqual(childOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(childOrigin.y, 0, accuracy: 0.01)
+    }
+
+    func testFrameViewClampsOversizedChildHeight() throws {
+        try requireGTK()
+
+        let childText = Text("Tall")
+        let naturalChild = widgetFromOpaque(gtkRenderView(childText))
+        let naturalSize = measuredSize(of: naturalChild)
+        XCTAssertGreaterThan(naturalSize.height, 8)
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            childText.frame(minWidth: 60, maxHeight: 8, alignment: .leading)
+        ))
+        let slot = try unwrapFirstChild(of: wrapper)
+        let innerText = try unwrapFirstDescendant(
+            ofType: "GtkLabel",
+            in: slot
+        )
+
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+        let slotSize = allocatedSize(of: slot)
+        let innerTextSize = allocatedSize(of: innerText)
+        let slotOrigin = translatedChildOrigin(child: slot, in: wrapper)
+
+        XCTAssertEqual(wrapperSize.width, 60, accuracy: 0.01)
+        XCTAssertEqual(wrapperSize.height, 8, accuracy: 0.01)
+        XCTAssertEqual(slotSize.height, 8, accuracy: 0.01)
+        XCTAssertGreaterThan(innerTextSize.height, 8)
+        XCTAssertEqual(slotOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(slotOrigin.y, 0, accuracy: 0.01)
+        XCTAssertEqual(gtk_widget_get_overflow(wrapper), GTK_OVERFLOW_HIDDEN)
+    }
+
+    func testVStackSharedLayoutAppliesTrailingAlignmentAndSpacing() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("WWWWWW")
+                Text("I")
+            }
+        ))
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+
+        let firstSize = allocatedSize(of: first)
+        let secondSize = allocatedSize(of: second)
+        let firstOrigin = translatedChildOrigin(child: first, in: wrapper)
+        let secondOrigin = translatedChildOrigin(child: second, in: wrapper)
+
+        XCTAssertEqual(firstOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(firstOrigin.y, 0, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.x, wrapperSize.width - secondSize.width, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.y, firstSize.height + 4, accuracy: 0.01)
+    }
+
+    func testHStackSharedLayoutAppliesBottomAlignmentAndSpacing() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            HStack(alignment: .bottom, spacing: 6) {
+                Text("Tall")
+                Text("I")
+            }
+        ))
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+
+        let firstSize = allocatedSize(of: first)
+        let secondSize = allocatedSize(of: second)
+        let firstOrigin = translatedChildOrigin(child: first, in: wrapper)
+        let secondOrigin = translatedChildOrigin(child: second, in: wrapper)
+
+        XCTAssertEqual(firstOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(firstOrigin.y, 0, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.x, firstSize.width + 6, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.y, wrapperSize.height - secondSize.height, accuracy: 0.01)
+    }
+
+    func testZStackSharedLayoutAppliesBottomTrailingAlignment() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            ZStack(alignment: .bottomTrailing) {
+                Text("WWWWWW")
+                Text("I")
+            }
+        ))
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+
+        let firstOrigin = translatedChildOrigin(child: first, in: wrapper)
+        let secondSize = allocatedSize(of: second)
+        let secondOrigin = translatedChildOrigin(child: second, in: wrapper)
+
+        XCTAssertEqual(firstOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(firstOrigin.y, 0, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.x, wrapperSize.width - secondSize.width, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.y, wrapperSize.height - secondSize.height, accuracy: 0.01)
+    }
+
+    func testZStackFallbackAppliesBottomTrailingAlignment() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            ZStack(alignment: .bottomTrailing) {
+                Text("WWWWWW")
+                Color.red
+                Text("I")
+            }
+        ))
+        let base = try unwrapFirstChild(of: wrapper)
+        let colorOverlay = try unwrapNextSibling(of: base)
+        let trailingOverlay = try unwrapNextSibling(of: colorOverlay)
+
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+
+        let baseOrigin = translatedChildOrigin(child: base, in: wrapper)
+        let trailingSize = allocatedSize(of: trailingOverlay)
+        let trailingOrigin = translatedChildOrigin(child: trailingOverlay, in: wrapper)
+
+        XCTAssertEqual(gtkWidgetTypeName(wrapper), "GtkOverlay")
+        XCTAssertEqual(baseOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(baseOrigin.y, 0, accuracy: 0.01)
+        XCTAssertEqual(trailingOrigin.x, wrapperSize.width - trailingSize.width, accuracy: 0.01)
+        XCTAssertEqual(trailingOrigin.y, wrapperSize.height - trailingSize.height, accuracy: 0.01)
+    }
+
+    func testGridSharedLayoutWrapsRowsUsingSharedPlacements() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            Grid(columns: 2, spacing: 5) {
+                Text("WWWWWW")
+                Text("I")
+                Text("I")
+            }
+        ))
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+        let third = try unwrapNextSibling(of: second)
+
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+
+        let firstSize = allocatedSize(of: first)
+        let secondSize = allocatedSize(of: second)
+        let firstOrigin = translatedChildOrigin(child: first, in: wrapper)
+        let secondOrigin = translatedChildOrigin(child: second, in: wrapper)
+        let thirdOrigin = translatedChildOrigin(child: third, in: wrapper)
+
+        XCTAssertEqual(gtkWidgetTypeName(wrapper), "GtkFixed")
+        XCTAssertEqual(firstOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(firstOrigin.y, 0, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.x, firstSize.width + 5, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.y, 0, accuracy: 0.01)
+        XCTAssertEqual(thirdOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(thirdOrigin.y, max(firstSize.height, secondSize.height) + 5, accuracy: 0.01)
+    }
+
+    func testExplicitGridSharedLayoutAppliesHomogeneousSpanPlacements() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            Grid(horizontalSpacing: 4, verticalSpacing: 5) {
+                GridRow {
+                    Text("WWWWWW").gridCellColumns(2)
+                    Text("I")
+                }
+                GridRow {
+                    Text("I")
+                    Text("I")
+                    Text("I")
+                }
+            }
+        ))
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+        let third = try unwrapNextSibling(of: second)
+        let fourth = try unwrapNextSibling(of: third)
+        let fifth = try unwrapNextSibling(of: fourth)
+
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+
+        let firstSize = allocatedSize(of: first)
+        let thirdSize = allocatedSize(of: third)
+        let firstOrigin = translatedChildOrigin(child: first, in: wrapper)
+        let secondOrigin = translatedChildOrigin(child: second, in: wrapper)
+        let thirdOrigin = translatedChildOrigin(child: third, in: wrapper)
+        let fourthOrigin = translatedChildOrigin(child: fourth, in: wrapper)
+        let fifthOrigin = translatedChildOrigin(child: fifth, in: wrapper)
+
+        XCTAssertEqual(gtkWidgetTypeName(wrapper), "GtkFixed")
+        XCTAssertEqual(firstOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(firstOrigin.y, 0, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.y, 0, accuracy: 0.01)
+        XCTAssertEqual(thirdOrigin.x, 0, accuracy: 0.01)
+        XCTAssertEqual(fourthOrigin.x, thirdSize.width + 4, accuracy: 0.01)
+        XCTAssertEqual(secondOrigin.x, fifthOrigin.x, accuracy: 0.01)
+        XCTAssertEqual(firstSize.width, fifthOrigin.x - 4, accuracy: 0.01)
+        XCTAssertEqual(thirdOrigin.y, max(firstSize.height, allocatedSize(of: second).height) + 5, accuracy: 0.01)
+    }
+}
+
+private func requireGTK(
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws {
+    guard gtk_is_initialized() != 0 else {
+        throw XCTSkip("GTK could not initialize in this environment.", file: file, line: line)
+    }
+}
+
+private func unwrapFirstChild(
+    of widget: UnsafeMutablePointer<GtkWidget>,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws -> UnsafeMutablePointer<GtkWidget> {
+    guard let child = gtk_widget_get_first_child(widget) else {
+        XCTFail("Expected widget to have a child.", file: file, line: line)
+        throw XCTSkip()
+    }
+    return child
+}
+
+private func unwrapFirstDescendant(
+    ofType typeName: String,
+    in widget: UnsafeMutablePointer<GtkWidget>,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws -> UnsafeMutablePointer<GtkWidget> {
+    if gtkWidgetTypeName(widget) == typeName {
+        return widget
+    }
+
+    var child = gtk_widget_get_first_child(widget)
+    while let current = child {
+        if let found = try? unwrapFirstDescendant(ofType: typeName, in: current, file: file, line: line) {
+            return found
+        }
+        child = gtk_widget_get_next_sibling(current)
+    }
+
+    XCTFail("Expected widget tree to contain \(typeName).", file: file, line: line)
+    throw XCTSkip()
+}
+
+private func unwrapNextSibling(
+    of widget: UnsafeMutablePointer<GtkWidget>,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws -> UnsafeMutablePointer<GtkWidget> {
+    guard let sibling = gtk_widget_get_next_sibling(widget) else {
+        XCTFail("Expected widget to have a next sibling.", file: file, line: line)
+        throw XCTSkip()
+    }
+    return sibling
+}
+
+private func measuredSize(of widget: UnsafeMutablePointer<GtkWidget>) -> ViewSize {
+    var widthMin: Int32 = 0
+    var widthNat: Int32 = 0
+    var heightMin: Int32 = 0
+    var heightNat: Int32 = 0
+    gtk_swift_widget_measure(widget, GTK_ORIENTATION_HORIZONTAL, -1, &widthMin, &widthNat)
+    gtk_swift_widget_measure(widget, GTK_ORIENTATION_VERTICAL, -1, &heightMin, &heightNat)
+    return ViewSize(
+        width: Double(max(widthMin, widthNat)),
+        height: Double(max(heightMin, heightNat))
+    )
+}
+
+private func allocate(widget: UnsafeMutablePointer<GtkWidget>, size: ViewSize) {
+    gtk_widget_allocate(widget, Int32(size.width), Int32(size.height), -1, nil)
+}
+
+private func allocatedSize(of widget: UnsafeMutablePointer<GtkWidget>) -> ViewSize {
+    ViewSize(
+        width: Double(gtk_widget_get_width(widget)),
+        height: Double(gtk_widget_get_height(widget))
+    )
+}
+
+private func translatedChildOrigin(
+    child: UnsafeMutablePointer<GtkWidget>,
+    in wrapper: UnsafeMutablePointer<GtkWidget>
+) -> ViewPoint {
+    var sourcePoint = graphene_point_t()
+    graphene_point_init(&sourcePoint, 0, 0)
+    var translatedPoint = graphene_point_t()
+    _ = gtk_widget_compute_point(child, wrapper, &sourcePoint, &translatedPoint)
+    return ViewPoint(x: Double(translatedPoint.x), y: Double(translatedPoint.y))
+}
+
+private func gtkWidgetTypeName(_ widget: UnsafeMutablePointer<GtkWidget>) -> String {
+    String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
+}

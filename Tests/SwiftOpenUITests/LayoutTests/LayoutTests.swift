@@ -143,4 +143,409 @@ final class LayoutTests: XCTestCase {
         XCTAssertNil(size.width)
         XCTAssertNil(size.height)
     }
+
+    func testComputeFrameLayoutCentersChildInFixedFrame() {
+        let result = computeFrameLayout(
+            childNaturalSize: ViewSize(width: 20, height: 10),
+            width: 56,
+            height: 56,
+            alignment: .center
+        )
+
+        XCTAssertEqual(result.containerSize, ViewSize(width: 56, height: 56))
+        XCTAssertEqual(result.childPlacement.size, ViewSize(width: 20, height: 10))
+        XCTAssertEqual(result.childPlacement.origin, ViewPoint(x: 18, y: 23))
+    }
+
+    func testComputeFrameLayoutAppliesMinAndMaxConstraints() {
+        let result = computeFrameLayout(
+            childNaturalSize: ViewSize(width: 40, height: 10),
+            minWidth: 60,
+            maxHeight: 8,
+            alignment: .leading
+        )
+
+        XCTAssertEqual(result.containerSize, ViewSize(width: 60, height: 8))
+        XCTAssertEqual(result.childPlacement.size, ViewSize(width: 40, height: 8))
+        XCTAssertEqual(result.childPlacement.origin, ViewPoint(x: 0, y: 0))
+    }
+
+    func testComputeFrameLayoutExpandsChildWhenRequested() {
+        let result = computeFrameLayout(
+            childNaturalSize: ViewSize(width: 10, height: 12),
+            width: 50,
+            height: 24,
+            alignment: .bottomTrailing,
+            expandsToFillWidth: true,
+            expandsToFillHeight: true
+        )
+
+        XCTAssertEqual(result.containerSize, ViewSize(width: 50, height: 24))
+        XCTAssertEqual(result.childPlacement.size, ViewSize(width: 50, height: 24))
+        XCTAssertEqual(result.childPlacement.origin, .zero)
+    }
+
+    func testComputeVStackLayoutTrailingAlignmentAndSpacing() {
+        let result = computeVStackLayout(
+            childSizes: [
+                ViewSize(width: 40, height: 10),
+                ViewSize(width: 20, height: 8),
+            ],
+            spacing: 4,
+            alignment: .trailing
+        )
+
+        XCTAssertEqual(result.containerSize, ViewSize(width: 40, height: 22))
+        XCTAssertEqual(result.childPlacements[0].origin, ViewPoint(x: 0, y: 0))
+        XCTAssertEqual(result.childPlacements[1].origin, ViewPoint(x: 20, y: 14))
+        XCTAssertEqual(result.childPlacements[1].size, ViewSize(width: 20, height: 8))
+    }
+
+    func testComputeVStackLayoutMeasuresSubviewsThroughContext() {
+        var measuredSubviews: [LayoutSubview] = []
+        var measuredProposals: [ProposedViewSize] = []
+        let context = MockLayoutMeasureContext { subview, proposal in
+            measuredSubviews.append(subview)
+            measuredProposals.append(proposal)
+            switch subview.index {
+            case 0:
+                return LayoutMeasurement(size: ViewSize(width: 40, height: 10))
+            case 1:
+                return LayoutMeasurement(size: ViewSize(width: 20, height: 8))
+            default:
+                XCTFail("Unexpected subview index \(subview.index)")
+                return LayoutMeasurement(size: .zero)
+            }
+        }
+
+        let result = computeVStackLayout(
+            subviews: [LayoutSubview(index: 0), LayoutSubview(index: 1)],
+            context: context,
+            spacing: 4,
+            alignment: .trailing
+        )
+
+        XCTAssertEqual(measuredSubviews, [LayoutSubview(index: 0), LayoutSubview(index: 1)])
+        XCTAssertEqual(measuredProposals, [.unspecified, .unspecified])
+        XCTAssertEqual(result.containerSize, ViewSize(width: 40, height: 22))
+        XCTAssertEqual(result.childPlacements[1].origin, ViewPoint(x: 20, y: 14))
+    }
+
+    func testComputeHStackLayoutBottomAlignmentAndSpacing() {
+        let result = computeHStackLayout(
+            childSizes: [
+                ViewSize(width: 10, height: 24),
+                ViewSize(width: 8, height: 12),
+            ],
+            spacing: 6,
+            alignment: .bottom
+        )
+
+        XCTAssertEqual(result.containerSize, ViewSize(width: 24, height: 24))
+        XCTAssertEqual(result.childPlacements[0].origin, ViewPoint(x: 0, y: 0))
+        XCTAssertEqual(result.childPlacements[1].origin, ViewPoint(x: 16, y: 12))
+        XCTAssertEqual(result.childPlacements[1].size, ViewSize(width: 8, height: 12))
+    }
+
+    func testComputeHStackLayoutMeasuresSubviewsThroughContext() {
+        var measuredSubviews: [LayoutSubview] = []
+        var measuredProposals: [ProposedViewSize] = []
+        let context = MockLayoutMeasureContext { subview, proposal in
+            measuredSubviews.append(subview)
+            measuredProposals.append(proposal)
+            switch subview.index {
+            case 0:
+                return LayoutMeasurement(size: ViewSize(width: 10, height: 24))
+            case 1:
+                return LayoutMeasurement(size: ViewSize(width: 8, height: 12))
+            default:
+                XCTFail("Unexpected subview index \(subview.index)")
+                return LayoutMeasurement(size: .zero)
+            }
+        }
+
+        let result = computeHStackLayout(
+            subviews: [LayoutSubview(index: 0), LayoutSubview(index: 1)],
+            context: context,
+            spacing: 6,
+            alignment: .bottom
+        )
+
+        XCTAssertEqual(measuredSubviews, [LayoutSubview(index: 0), LayoutSubview(index: 1)])
+        XCTAssertEqual(measuredProposals, [.unspecified, .unspecified])
+        XCTAssertEqual(result.containerSize, ViewSize(width: 24, height: 24))
+        XCTAssertEqual(result.childPlacements[1].origin, ViewPoint(x: 16, y: 12))
+    }
+
+    func testComputeZStackLayoutBottomTrailingAlignment() {
+        let result = computeZStackLayout(
+            childSizes: [
+                ViewSize(width: 40, height: 24),
+                ViewSize(width: 12, height: 10),
+            ],
+            alignment: .bottomTrailing
+        )
+
+        XCTAssertEqual(result.containerSize, ViewSize(width: 40, height: 24))
+        XCTAssertEqual(result.childPlacements[0].origin, ViewPoint(x: 0, y: 0))
+        XCTAssertEqual(result.childPlacements[1].origin, ViewPoint(x: 28, y: 14))
+        XCTAssertEqual(result.childPlacements[1].size, ViewSize(width: 12, height: 10))
+    }
+
+    func testComputeZStackLayoutMeasuresSubviewsThroughContext() {
+        var measuredSubviews: [LayoutSubview] = []
+        var measuredProposals: [ProposedViewSize] = []
+        let context = MockLayoutMeasureContext { subview, proposal in
+            measuredSubviews.append(subview)
+            measuredProposals.append(proposal)
+            switch subview.index {
+            case 0:
+                return LayoutMeasurement(size: ViewSize(width: 40, height: 24))
+            case 1:
+                return LayoutMeasurement(size: ViewSize(width: 12, height: 10))
+            default:
+                XCTFail("Unexpected subview index \(subview.index)")
+                return LayoutMeasurement(size: .zero)
+            }
+        }
+
+        let result = computeZStackLayout(
+            subviews: [LayoutSubview(index: 0), LayoutSubview(index: 1)],
+            context: context,
+            alignment: .bottomTrailing
+        )
+
+        XCTAssertEqual(measuredSubviews, [LayoutSubview(index: 0), LayoutSubview(index: 1)])
+        XCTAssertEqual(measuredProposals, [.unspecified, .unspecified])
+        XCTAssertEqual(result.containerSize, ViewSize(width: 40, height: 24))
+        XCTAssertEqual(result.childPlacements[1].origin, ViewPoint(x: 28, y: 14))
+    }
+
+    func testComputeGridLayoutWrapsRowsUsingColumnWidthsAndRowHeights() {
+        let result = computeGridLayout(
+            childSizes: [
+                ViewSize(width: 40, height: 10),
+                ViewSize(width: 8, height: 12),
+                ViewSize(width: 20, height: 6),
+            ],
+            columns: 2,
+            hSpacing: 5,
+            vSpacing: 4
+        )
+
+        XCTAssertEqual(result.containerSize, ViewSize(width: 53, height: 22))
+        XCTAssertEqual(result.childPlacements[0].origin, ViewPoint(x: 0, y: 0))
+        XCTAssertEqual(result.childPlacements[1].origin, ViewPoint(x: 45, y: 0))
+        XCTAssertEqual(result.childPlacements[2].origin, ViewPoint(x: 0, y: 16))
+        XCTAssertEqual(result.childPlacements[2].size, ViewSize(width: 20, height: 6))
+    }
+
+    func testComputeGridLayoutMeasuresSubviewsThroughContext() {
+        var measuredSubviews: [LayoutSubview] = []
+        var measuredProposals: [ProposedViewSize] = []
+        let context = MockLayoutMeasureContext { subview, proposal in
+            measuredSubviews.append(subview)
+            measuredProposals.append(proposal)
+            switch subview.index {
+            case 0:
+                return LayoutMeasurement(size: ViewSize(width: 40, height: 10))
+            case 1:
+                return LayoutMeasurement(size: ViewSize(width: 8, height: 12))
+            case 2:
+                return LayoutMeasurement(size: ViewSize(width: 20, height: 6))
+            default:
+                XCTFail("Unexpected subview index \(subview.index)")
+                return LayoutMeasurement(size: .zero)
+            }
+        }
+
+        let result = computeGridLayout(
+            subviews: [
+                LayoutSubview(index: 0),
+                LayoutSubview(index: 1),
+                LayoutSubview(index: 2),
+            ],
+            context: context,
+            columns: 2,
+            hSpacing: 5,
+            vSpacing: 4
+        )
+
+        XCTAssertEqual(
+            measuredSubviews,
+            [LayoutSubview(index: 0), LayoutSubview(index: 1), LayoutSubview(index: 2)]
+        )
+        XCTAssertEqual(measuredProposals, [.unspecified, .unspecified, .unspecified])
+        XCTAssertEqual(result.containerSize, ViewSize(width: 53, height: 22))
+        XCTAssertEqual(result.childPlacements[2].origin, ViewPoint(x: 0, y: 16))
+    }
+
+    func testComputeExplicitGridLayoutUsesHomogeneousColumnsAndSpans() {
+        let result = computeExplicitGridLayout(
+            rows: [
+                [
+                    (size: ViewSize(width: 55, height: 10), columnSpan: 2),
+                    (size: ViewSize(width: 18, height: 8), columnSpan: 1),
+                ],
+                [
+                    (size: ViewSize(width: 20, height: 12), columnSpan: 1),
+                    (size: ViewSize(width: 20, height: 6), columnSpan: 1),
+                    (size: ViewSize(width: 20, height: 7), columnSpan: 1),
+                ],
+            ],
+            hSpacing: 4,
+            vSpacing: 5
+        )
+
+        XCTAssertEqual(result.containerSize, ViewSize(width: 84.5, height: 27))
+        XCTAssertEqual(result.childPlacements[0].origin, ViewPoint(x: 0, y: 0))
+        XCTAssertEqual(result.childPlacements[0].size, ViewSize(width: 55, height: 10))
+        XCTAssertEqual(result.childPlacements[1].origin, ViewPoint(x: 59, y: 0))
+        XCTAssertEqual(result.childPlacements[2].origin, ViewPoint(x: 0, y: 15))
+        XCTAssertEqual(result.childPlacements[3].origin, ViewPoint(x: 29.5, y: 15))
+        XCTAssertEqual(result.childPlacements[4].origin, ViewPoint(x: 59, y: 15))
+    }
+
+    func testComputeExplicitGridLayoutMeasuresSubviewsThroughContext() {
+        var measuredSubviews: [LayoutSubview] = []
+        var measuredProposals: [ProposedViewSize] = []
+        let context = MockLayoutMeasureContext { subview, proposal in
+            measuredSubviews.append(subview)
+            measuredProposals.append(proposal)
+            switch subview.index {
+            case 0:
+                return LayoutMeasurement(size: ViewSize(width: 55, height: 10))
+            case 1:
+                return LayoutMeasurement(size: ViewSize(width: 18, height: 8))
+            case 2:
+                return LayoutMeasurement(size: ViewSize(width: 20, height: 12))
+            case 3:
+                return LayoutMeasurement(size: ViewSize(width: 20, height: 6))
+            case 4:
+                return LayoutMeasurement(size: ViewSize(width: 20, height: 7))
+            default:
+                XCTFail("Unexpected subview index \(subview.index)")
+                return LayoutMeasurement(size: .zero)
+            }
+        }
+
+        let result = computeExplicitGridLayout(
+            rows: [
+                [
+                    (subview: LayoutSubview(index: 0), columnSpan: 2),
+                    (subview: LayoutSubview(index: 1), columnSpan: 1),
+                ],
+                [
+                    (subview: LayoutSubview(index: 2), columnSpan: 1),
+                    (subview: LayoutSubview(index: 3), columnSpan: 1),
+                    (subview: LayoutSubview(index: 4), columnSpan: 1),
+                ],
+            ],
+            context: context,
+            hSpacing: 4,
+            vSpacing: 5
+        )
+
+        XCTAssertEqual(
+            measuredSubviews,
+            [
+                LayoutSubview(index: 0),
+                LayoutSubview(index: 1),
+                LayoutSubview(index: 2),
+                LayoutSubview(index: 3),
+                LayoutSubview(index: 4),
+            ]
+        )
+        XCTAssertEqual(
+            measuredProposals,
+            [.unspecified, .unspecified, .unspecified, .unspecified, .unspecified]
+        )
+        XCTAssertEqual(result.containerSize, ViewSize(width: 84.5, height: 27))
+        XCTAssertEqual(result.childPlacements[0].size, ViewSize(width: 55, height: 10))
+        XCTAssertEqual(result.childPlacements[4].origin, ViewPoint(x: 59, y: 15))
+    }
+
+    func testComputeLazyGridConfigurationDefaultsWhenEmpty() {
+        let result = computeLazyGridConfiguration(gridItems: [])
+
+        XCTAssertEqual(
+            result,
+            LazyGridConfiguration(minColumns: 1, maxColumns: 7, adaptiveMinimum: 0)
+        )
+    }
+
+    func testComputeLazyGridConfigurationUsesFixedCountForNonAdaptiveItems() {
+        let result = computeLazyGridConfiguration(
+            gridItems: [GridItem(.fixed), GridItem(.flexible), GridItem(.fixed)]
+        )
+
+        XCTAssertEqual(
+            result,
+            LazyGridConfiguration(minColumns: 3, maxColumns: 3, adaptiveMinimum: 0)
+        )
+    }
+
+    func testComputeLazyGridConfigurationUsesAdaptiveBoundsAndMinimum() {
+        let result = computeLazyGridConfiguration(
+            gridItems: [GridItem(.fixed), GridItem(.adaptive(minimum: 80))]
+        )
+
+        XCTAssertEqual(
+            result,
+            LazyGridConfiguration(minColumns: 1, maxColumns: 100, adaptiveMinimum: 80)
+        )
+    }
+
+    func testLayoutSubviewIsHashableByIndex() {
+        let subviews: Set<LayoutSubview> = [LayoutSubview(index: 0), LayoutSubview(index: 1)]
+
+        XCTAssertTrue(subviews.contains(LayoutSubview(index: 0)))
+        XCTAssertEqual(subviews.count, 2)
+    }
+
+    func testLayoutMeasurementCapturesSizeAndFillFlags() {
+        let measurement = LayoutMeasurement(
+            size: ViewSize(width: 40, height: 12),
+            expandsToFillWidth: true,
+            expandsToFillHeight: false
+        )
+
+        XCTAssertEqual(measurement.size, ViewSize(width: 40, height: 12))
+        XCTAssertTrue(measurement.expandsToFillWidth)
+        XCTAssertFalse(measurement.expandsToFillHeight)
+    }
+
+    func testLayoutMeasureContextReceivesSubviewAndProposal() {
+        let context = MockLayoutMeasureContext { subview, proposal in
+            XCTAssertEqual(subview, LayoutSubview(index: 2))
+            XCTAssertEqual(proposal, ProposedViewSize(width: 80, height: nil))
+            return LayoutMeasurement(
+                size: ViewSize(width: 12, height: 6),
+                expandsToFillWidth: false,
+                expandsToFillHeight: true
+            )
+        }
+
+        let measurement = context.measure(
+            LayoutSubview(index: 2),
+            proposal: ProposedViewSize(width: 80, height: nil)
+        )
+
+        XCTAssertEqual(
+            measurement,
+            LayoutMeasurement(
+                size: ViewSize(width: 12, height: 6),
+                expandsToFillWidth: false,
+                expandsToFillHeight: true
+            )
+        )
+    }
+}
+
+private struct MockLayoutMeasureContext: LayoutMeasureContext {
+    var measureImpl: (LayoutSubview, ProposedViewSize) -> LayoutMeasurement
+
+    func measure(_ subview: LayoutSubview, proposal: ProposedViewSize) -> LayoutMeasurement {
+        measureImpl(subview, proposal)
+    }
 }

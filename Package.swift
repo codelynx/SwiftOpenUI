@@ -47,6 +47,11 @@ targets += [
         dependencies: ["SwiftOpenUI", "CGTK", "CGTKBridge"],
         path: "Sources/Backend/GTK4/Rendering"
     ),
+    .testTarget(
+        name: "GTK4RenderTests",
+        dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK", "CGTKBridge"],
+        path: "Tests/BackendTests/GTK4Tests"
+    ),
 ]
 exampleDeps.append("BackendGTK4")
 #endif

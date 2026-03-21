@@ -33,6 +33,11 @@ gtk_swift_label_set_xalign(GtkWidget *label, float xalign) {
     gtk_label_set_xalign(GTK_LABEL(label), xalign);
 }
 
+static inline void
+gtk_swift_label_set_yalign(GtkWidget *label, float yalign) {
+    gtk_label_set_yalign(GTK_LABEL(label), yalign);
+}
+
 // --- Widget type shims ---
 
 static inline gboolean
@@ -43,6 +48,71 @@ gtk_swift_is_widget(GtkWidget *widget) {
 static inline GType
 gtk_swift_get_widget_type(GtkWidget *widget) {
     return G_OBJECT_TYPE(widget);
+}
+
+static inline void
+gtk_swift_widget_measure(GtkWidget *widget,
+                         GtkOrientation orientation,
+                         int for_size,
+                         int *minimum,
+                         int *natural) {
+    int min = 0;
+    int nat = 0;
+    gtk_widget_measure(widget, orientation, for_size, &min, &nat, NULL, NULL);
+    if (minimum) *minimum = min;
+    if (natural) *natural = nat;
+}
+
+static inline GtkWidget *
+gtk_swift_fixed_new(void) {
+    return gtk_fixed_new();
+}
+
+static inline void
+gtk_swift_fixed_put(GtkWidget *fixed, GtkWidget *child, double x, double y) {
+    gtk_fixed_put(GTK_FIXED(fixed), child, x, y);
+}
+
+static inline void
+gtk_swift_fixed_move(GtkWidget *fixed, GtkWidget *child, double x, double y) {
+    gtk_fixed_move(GTK_FIXED(fixed), child, x, y);
+}
+
+static inline void
+gtk_swift_fixed_get_child_position(GtkWidget *fixed,
+                                   GtkWidget *child,
+                                   double *x,
+                                   double *y) {
+    double child_x = 0;
+    double child_y = 0;
+    gtk_fixed_get_child_position(GTK_FIXED(fixed), child, &child_x, &child_y);
+    if (x) *x = child_x;
+    if (y) *y = child_y;
+}
+
+static inline GtkWidget *
+gtk_swift_scrolled_window_new(void) {
+    return gtk_scrolled_window_new();
+}
+
+static inline void
+gtk_swift_scrolled_window_configure_clip(GtkWidget *scrolled,
+                                         int width,
+                                         int height) {
+    GtkScrolledWindow *window = GTK_SCROLLED_WINDOW(scrolled);
+    gtk_scrolled_window_set_policy(window, GTK_POLICY_EXTERNAL, GTK_POLICY_EXTERNAL);
+    gtk_scrolled_window_set_has_frame(window, FALSE);
+    gtk_scrolled_window_set_min_content_width(window, width);
+    gtk_scrolled_window_set_min_content_height(window, height);
+    gtk_scrolled_window_set_max_content_width(window, width);
+    gtk_scrolled_window_set_max_content_height(window, height);
+    gtk_scrolled_window_set_propagate_natural_width(window, FALSE);
+    gtk_scrolled_window_set_propagate_natural_height(window, FALSE);
+}
+
+static inline void
+gtk_swift_scrolled_window_set_child(GtkWidget *scrolled, GtkWidget *child) {
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), child);
 }
 
 // --- Focus shims ---

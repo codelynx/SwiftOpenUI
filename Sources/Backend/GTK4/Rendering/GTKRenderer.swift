@@ -69,12 +69,35 @@ public func gtkRenderAnyView(_ view: any View) -> OpaquePointer {
     return render(view)
 }
 
+private struct GTKLayoutMeasureContext: LayoutMeasureContext {
+    let widgets: [UnsafeMutablePointer<GtkWidget>]
+
+    func measure(_ subview: LayoutSubview, proposal: ProposedViewSize) -> LayoutMeasurement {
+        let widget = widgets[subview.index]
+        return LayoutMeasurement(
+            size: gtkMeasureWidgetNaturalSize(widget),
+            expandsToFillWidth: gtk_widget_get_hexpand(widget) != 0,
+            expandsToFillHeight: gtk_widget_get_vexpand(widget) != 0
+        )
+    }
+}
+
+private func gtkMeasureLayoutSubviews(
+    _ widgets: [UnsafeMutablePointer<GtkWidget>]
+) -> [LayoutMeasurement] {
+    let context = GTKLayoutMeasureContext(widgets: widgets)
+    return widgets.indices.map { index in
+        context.measure(LayoutSubview(index: index), proposal: .unspecified)
+    }
+}
+
 // MARK: - View GTK extensions
 
 extension Text: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let label = gtk_label_new(content)!
         gtk_swift_label_set_xalign(label, 0)
+        gtk_swift_label_set_yalign(label, 0.5)
         return opaqueFromWidget(label)
     }
 }
@@ -318,103 +341,263 @@ extension Button: GTKRenderable {
 
 extension VStack: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, gint(spacing))!
-        var needsHExpand = false
-        var needsVExpand = false
-
-        let gtkAlign: GtkAlign
-        switch alignment {
-        case .leading:  gtkAlign = GTK_ALIGN_START
-        case .center:   gtkAlign = GTK_ALIGN_CENTER
-        case .trailing: gtkAlign = GTK_ALIGN_END
+        let children = gtkRenderChildren(content).map(widgetFromOpaque)
+        if gtkCanUseSharedVStackLayout(children) {
+            return gtkRenderSharedVStack(children, spacing: spacing, alignment: alignment)
         }
 
-        for child in gtkRenderChildren(content) {
-            let widget = widgetFromOpaque(child)
-            let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
-            if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
-                gtk_widget_set_hexpand(widget, 0)
-                gtk_widget_set_vexpand(widget, 1)
-            }
-            if gtk_widget_get_hexpand(widget) != 0 {
-                needsHExpand = true
-                gtk_widget_set_halign(widget, GTK_ALIGN_FILL)
-            } else {
-                gtk_widget_set_halign(widget, gtkAlign)
-            }
-            if gtk_widget_get_vexpand(widget) != 0 { needsVExpand = true }
-            gtk_box_append(boxPointer(box), widget)
-        }
-        if needsHExpand { gtk_widget_set_hexpand(box, 1) }
-        if needsVExpand { gtk_widget_set_vexpand(box, 1) }
-        return opaqueFromWidget(box)
+        return gtkRenderFallbackVStack(children, spacing: spacing, alignment: alignment)
     }
+}
+
+private func gtkCanUseSharedVStackLayout(_ children: [UnsafeMutablePointer<GtkWidget>]) -> Bool {
+    for widget in children {
+        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+        if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
+            return false
+        }
+        if gtk_widget_get_hexpand(widget) != 0 || gtk_widget_get_vexpand(widget) != 0 {
+            return false
+        }
+    }
+    return true
+}
+
+private func gtkRenderSharedVStack(
+    _ children: [UnsafeMutablePointer<GtkWidget>],
+    spacing: Int,
+    alignment: HorizontalAlignment
+) -> OpaquePointer {
+    let wrapper = gtk_swift_fixed_new()!
+    let context = GTKLayoutMeasureContext(widgets: children)
+    let layout = computeVStackLayout(
+        subviews: children.indices.map(LayoutSubview.init(index:)),
+        context: context,
+        spacing: Double(spacing),
+        alignment: alignment
+    )
+
+    gtk_widget_set_size_request(
+        wrapper,
+        gint(layout.containerSize.width),
+        gint(layout.containerSize.height)
+    )
+
+    for (widget, placement) in zip(children, layout.childPlacements) {
+        gtk_widget_set_halign(widget, GTK_ALIGN_START)
+        gtk_widget_set_valign(widget, GTK_ALIGN_START)
+        gtk_swift_fixed_put(wrapper, widget, placement.origin.x, placement.origin.y)
+    }
+
+    return opaqueFromWidget(wrapper)
+}
+
+private func gtkRenderFallbackVStack(
+    _ children: [UnsafeMutablePointer<GtkWidget>],
+    spacing: Int,
+    alignment: HorizontalAlignment
+) -> OpaquePointer {
+    let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, gint(spacing))!
+    var needsHExpand = false
+    var needsVExpand = false
+
+    let gtkAlign: GtkAlign
+    switch alignment {
+    case .leading:  gtkAlign = GTK_ALIGN_START
+    case .center:   gtkAlign = GTK_ALIGN_CENTER
+    case .trailing: gtkAlign = GTK_ALIGN_END
+    }
+
+    for widget in children {
+        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+        if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
+            gtk_widget_set_hexpand(widget, 0)
+            gtk_widget_set_vexpand(widget, 1)
+        }
+        if gtk_widget_get_hexpand(widget) != 0 {
+            needsHExpand = true
+            gtk_widget_set_halign(widget, GTK_ALIGN_FILL)
+        } else {
+            gtk_widget_set_halign(widget, gtkAlign)
+        }
+        if gtk_widget_get_vexpand(widget) != 0 { needsVExpand = true }
+        gtk_box_append(boxPointer(box), widget)
+    }
+    if needsHExpand { gtk_widget_set_hexpand(box, 1) }
+    if needsVExpand { gtk_widget_set_vexpand(box, 1) }
+    return opaqueFromWidget(box)
 }
 
 extension HStack: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, gint(spacing))!
-        var needsHExpand = false
-        var needsVExpand = false
-
-        let gtkAlign: GtkAlign
-        switch alignment {
-        case .top:    gtkAlign = GTK_ALIGN_START
-        case .center: gtkAlign = GTK_ALIGN_CENTER
-        case .bottom: gtkAlign = GTK_ALIGN_END
+        let children = gtkRenderChildren(content).map(widgetFromOpaque)
+        if gtkCanUseSharedHStackLayout(children) {
+            return gtkRenderSharedHStack(children, spacing: spacing, alignment: alignment)
         }
 
-        for child in gtkRenderChildren(content) {
-            let widget = widgetFromOpaque(child)
-            let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
-            if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
-                gtk_widget_set_hexpand(widget, 1)
-                gtk_widget_set_vexpand(widget, 0)
-            }
-            if gtk_widget_get_hexpand(widget) != 0 { needsHExpand = true }
-            if gtk_widget_get_vexpand(widget) != 0 {
-                needsVExpand = true
-                gtk_widget_set_valign(widget, GTK_ALIGN_FILL)
-            } else {
-                gtk_widget_set_valign(widget, gtkAlign)
-            }
-            gtk_box_append(boxPointer(box), widget)
-        }
-        if needsHExpand { gtk_widget_set_hexpand(box, 1) }
-        if needsVExpand { gtk_widget_set_vexpand(box, 1) }
-        return opaqueFromWidget(box)
+        return gtkRenderFallbackHStack(children, spacing: spacing, alignment: alignment)
     }
+}
+
+private func gtkCanUseSharedHStackLayout(_ children: [UnsafeMutablePointer<GtkWidget>]) -> Bool {
+    for widget in children {
+        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+        if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
+            return false
+        }
+        if gtk_widget_get_hexpand(widget) != 0 || gtk_widget_get_vexpand(widget) != 0 {
+            return false
+        }
+    }
+    return true
+}
+
+private func gtkRenderSharedHStack(
+    _ children: [UnsafeMutablePointer<GtkWidget>],
+    spacing: Int,
+    alignment: VerticalAlignment
+) -> OpaquePointer {
+    let wrapper = gtk_swift_fixed_new()!
+    let context = GTKLayoutMeasureContext(widgets: children)
+    let layout = computeHStackLayout(
+        subviews: children.indices.map(LayoutSubview.init(index:)),
+        context: context,
+        spacing: Double(spacing),
+        alignment: alignment
+    )
+
+    gtk_widget_set_size_request(
+        wrapper,
+        gint(layout.containerSize.width),
+        gint(layout.containerSize.height)
+    )
+
+    for (widget, placement) in zip(children, layout.childPlacements) {
+        gtk_widget_set_halign(widget, GTK_ALIGN_START)
+        gtk_widget_set_valign(widget, GTK_ALIGN_START)
+        gtk_swift_fixed_put(wrapper, widget, placement.origin.x, placement.origin.y)
+    }
+
+    return opaqueFromWidget(wrapper)
+}
+
+private func gtkRenderFallbackHStack(
+    _ children: [UnsafeMutablePointer<GtkWidget>],
+    spacing: Int,
+    alignment: VerticalAlignment
+) -> OpaquePointer {
+    let box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, gint(spacing))!
+    var needsHExpand = false
+    var needsVExpand = false
+
+    let gtkAlign: GtkAlign
+    switch alignment {
+    case .top:    gtkAlign = GTK_ALIGN_START
+    case .center: gtkAlign = GTK_ALIGN_CENTER
+    case .bottom: gtkAlign = GTK_ALIGN_END
+    }
+
+    for widget in children {
+        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+        if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
+            gtk_widget_set_hexpand(widget, 1)
+            gtk_widget_set_vexpand(widget, 0)
+        }
+        if gtk_widget_get_hexpand(widget) != 0 { needsHExpand = true }
+        if gtk_widget_get_vexpand(widget) != 0 {
+            needsVExpand = true
+            gtk_widget_set_valign(widget, GTK_ALIGN_FILL)
+        } else {
+            gtk_widget_set_valign(widget, gtkAlign)
+        }
+        gtk_box_append(boxPointer(box), widget)
+    }
+    if needsHExpand { gtk_widget_set_hexpand(box, 1) }
+    if needsVExpand { gtk_widget_set_vexpand(box, 1) }
+    return opaqueFromWidget(box)
 }
 
 extension ZStack: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let overlay = gtk_overlay_new()!
-        var first = true
-        for child in gtkRenderChildren(content) {
-            let widget = widgetFromOpaque(child)
-            if first {
-                gtk_overlay_set_child(OpaquePointer(overlay), widget)
-                // Propagate first child's expand to the overlay
-                if gtk_widget_get_hexpand(widget) != 0 {
-                    gtk_widget_set_hexpand(overlay, 1)
-                }
-                if gtk_widget_get_vexpand(widget) != 0 {
-                    gtk_widget_set_vexpand(overlay, 1)
-                }
-                first = false
-            } else {
-                // Center overlay children (matches SwiftUI ZStack default)
-                if gtk_widget_get_hexpand(widget) == 0 {
-                    gtk_widget_set_halign(widget, GTK_ALIGN_CENTER)
-                }
-                if gtk_widget_get_vexpand(widget) == 0 {
-                    gtk_widget_set_valign(widget, GTK_ALIGN_CENTER)
-                }
-                gtk_overlay_add_overlay(OpaquePointer(overlay), widget)
-            }
+        let children = gtkRenderChildren(content).map(widgetFromOpaque)
+        if gtkCanUseSharedZStackLayout(children) {
+            return gtkRenderSharedZStack(children, alignment: alignment)
         }
-        return opaqueFromWidget(overlay)
+
+        return gtkRenderFallbackZStack(children, alignment: alignment)
     }
+}
+
+private func gtkCanUseSharedZStackLayout(_ children: [UnsafeMutablePointer<GtkWidget>]) -> Bool {
+    for widget in children {
+        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+        if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
+            return false
+        }
+        if gtk_widget_get_hexpand(widget) != 0 || gtk_widget_get_vexpand(widget) != 0 {
+            return false
+        }
+    }
+    return true
+}
+
+private func gtkRenderSharedZStack(
+    _ children: [UnsafeMutablePointer<GtkWidget>],
+    alignment: Alignment
+) -> OpaquePointer {
+    let wrapper = gtk_swift_fixed_new()!
+    let context = GTKLayoutMeasureContext(widgets: children)
+    let layout = computeZStackLayout(
+        subviews: children.indices.map(LayoutSubview.init(index:)),
+        context: context,
+        alignment: alignment
+    )
+
+    gtk_widget_set_size_request(
+        wrapper,
+        gint(layout.containerSize.width),
+        gint(layout.containerSize.height)
+    )
+
+    for (widget, placement) in zip(children, layout.childPlacements) {
+        gtk_widget_set_halign(widget, GTK_ALIGN_START)
+        gtk_widget_set_valign(widget, GTK_ALIGN_START)
+        gtk_swift_fixed_put(wrapper, widget, placement.origin.x, placement.origin.y)
+    }
+
+    return opaqueFromWidget(wrapper)
+}
+
+private func gtkRenderFallbackZStack(
+    _ children: [UnsafeMutablePointer<GtkWidget>],
+    alignment: Alignment
+) -> OpaquePointer {
+    let overlay = gtk_overlay_new()!
+    let (hAlign, vAlign) = gtkAlignFromAlignment(alignment)
+    var first = true
+    for widget in children {
+        if first {
+            gtk_overlay_set_child(OpaquePointer(overlay), widget)
+            // Propagate first child's expand to the overlay
+            if gtk_widget_get_hexpand(widget) != 0 {
+                gtk_widget_set_hexpand(overlay, 1)
+            }
+            if gtk_widget_get_vexpand(widget) != 0 {
+                gtk_widget_set_vexpand(overlay, 1)
+            }
+            first = false
+        } else {
+            // Align non-expanding overlays according to the ZStack alignment.
+            if gtk_widget_get_hexpand(widget) == 0 {
+                gtk_widget_set_halign(widget, hAlign)
+            }
+            if gtk_widget_get_vexpand(widget) == 0 {
+                gtk_widget_set_valign(widget, vAlign)
+            }
+            gtk_overlay_add_overlay(OpaquePointer(overlay), widget)
+        }
+    }
+    return opaqueFromWidget(overlay)
 }
 
 extension Group: GTKRenderable {
@@ -485,45 +668,62 @@ extension PaddedView: GTKRenderable {
 extension FrameView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let child = widgetFromOpaque(gtkRenderView(content))
-        let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        // SwiftUI .frame() centers non-expanding content by default.
-        // Center the child inside the wrapper when the frame has an
-        // explicit size on that axis.  Only set alignment — do NOT
-        // set expand on the child, as that would interfere with
-        // parent VStack/HStack alignment logic.
-        if width != nil && gtk_widget_get_hexpand(child) == 0 {
-            gtk_widget_set_halign(child, GTK_ALIGN_CENTER)
-        }
-        if height != nil && gtk_widget_get_vexpand(child) == 0 {
-            gtk_widget_set_valign(child, GTK_ALIGN_CENTER)
-        }
-        // Use gtk_widget_set_size_request for dimensions.
-        // GTK4 CSS does not support max-width/max-height.
-        var reqW: gint = -1
-        var reqH: gint = -1
+        let wrapper = gtk_swift_fixed_new()!
+        let naturalSize = gtkMeasureWidgetNaturalSize(child)
+        let layout = computeFrameLayout(
+            childNaturalSize: naturalSize,
+            width: width,
+            height: height,
+            minWidth: minWidth,
+            minHeight: minHeight,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            alignment: alignment,
+            expandsToFillWidth: gtk_widget_get_hexpand(child) != 0,
+            expandsToFillHeight: gtk_widget_get_vexpand(child) != 0
+        )
+        let clampsChild =
+            layout.childPlacement.size.width < naturalSize.width
+            || layout.childPlacement.size.height < naturalSize.height
+        let slot: UnsafeMutablePointer<GtkWidget> = clampsChild
+            ? gtk_swift_scrolled_window_new()!
+            : gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
 
-        if let w = width {
-            reqW = gint(w)
+        gtk_widget_set_halign(child, GTK_ALIGN_START)
+        gtk_widget_set_valign(child, GTK_ALIGN_START)
+        gtk_widget_set_halign(slot, GTK_ALIGN_START)
+        gtk_widget_set_valign(slot, GTK_ALIGN_START)
+        if clampsChild {
+            gtk_widget_set_overflow(wrapper, GTK_OVERFLOW_HIDDEN)
+            gtk_swift_scrolled_window_configure_clip(
+                slot,
+                gint(layout.childPlacement.size.width),
+                gint(layout.childPlacement.size.height)
+            )
+            gtk_swift_scrolled_window_set_child(slot, child)
+        }
+        gtk_widget_set_size_request(
+            slot,
+            gint(layout.childPlacement.size.width),
+            gint(layout.childPlacement.size.height)
+        )
+        gtk_widget_set_size_request(
+            wrapper,
+            gint(layout.containerSize.width),
+            gint(layout.containerSize.height)
+        )
+
+        if width != nil {
             gtk_widget_set_hexpand(wrapper, 0)
         }
-        if let h = height {
-            reqH = gint(h)
+        if height != nil {
             gtk_widget_set_vexpand(wrapper, 0)
         }
-        if let mw = minWidth {
-            if reqW < gint(mw) { reqW = gint(mw) }
+        if let xw = maxWidth, xw == .infinity {
+            gtk_widget_set_hexpand(wrapper, 1)
         }
-        if let mh = minHeight {
-            if reqH < gint(mh) { reqH = gint(mh) }
-        }
-        if let xw = maxWidth {
-            if xw == .infinity { gtk_widget_set_hexpand(wrapper, 1) }
-        }
-        if let xh = maxHeight {
-            if xh == .infinity { gtk_widget_set_vexpand(wrapper, 1) }
-        }
-        if reqW != -1 || reqH != -1 {
-            gtk_widget_set_size_request(wrapper, reqW, reqH)
+        if let xh = maxHeight, xh == .infinity {
+            gtk_widget_set_vexpand(wrapper, 1)
         }
         // Propagate child expand flags to wrapper when the frame doesn't
         // constrain that axis.  Without this, a Spacer inside an HStack
@@ -534,9 +734,35 @@ extension FrameView: GTKRenderable {
         if height == nil && maxHeight == nil && gtk_widget_get_vexpand(child) != 0 {
             gtk_widget_set_vexpand(wrapper, 1)
         }
-        gtk_box_append(boxPointer(wrapper), child)
+        if !clampsChild {
+            gtk_box_append(boxPointer(slot), child)
+        }
+        gtk_swift_fixed_put(
+            wrapper,
+            slot,
+            layout.childPlacement.origin.x,
+            layout.childPlacement.origin.y
+        )
+        gtk_swift_fixed_move(
+            wrapper,
+            slot,
+            layout.childPlacement.origin.x,
+            layout.childPlacement.origin.y
+        )
         return opaqueFromWidget(wrapper)
     }
+}
+
+private func gtkMeasureWidgetNaturalSize(_ widget: UnsafeMutablePointer<GtkWidget>) -> ViewSize {
+    var widthMin: Int32 = 0
+    var widthNat: Int32 = 0
+    var heightMin: Int32 = 0
+    var heightNat: Int32 = 0
+    gtk_swift_widget_measure(widget, GTK_ORIENTATION_HORIZONTAL, -1, &widthMin, &widthNat)
+    gtk_swift_widget_measure(widget, GTK_ORIENTATION_VERTICAL, -1, &heightMin, &heightNat)
+    let width = max(widthMin, widthNat)
+    let height = max(heightMin, heightNat)
+    return ViewSize(width: Double(width), height: Double(height))
 }
 
 extension ForegroundColorView: GTKRenderable {
@@ -1811,6 +2037,27 @@ extension TabView: GTKRenderable {
 
 extension Grid: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
+        if useExplicitRows {
+            let rows = gtkCollectGridRows(content)
+            if gtkCanUseSharedExplicitGridLayout(rows) {
+                return gtkRenderSharedExplicitGrid(
+                    rows,
+                    hSpacing: hSpacing,
+                    vSpacing: vSpacing
+                )
+            }
+        } else {
+            let children = gtkRenderChildren(content).map(widgetFromOpaque)
+            if gtkCanUseSharedGridLayout(children) {
+                return gtkRenderSharedAutoGrid(
+                    children,
+                    columns: columns,
+                    hSpacing: hSpacing,
+                    vSpacing: vSpacing
+                )
+            }
+        }
+
         let grid = gtk_grid_new()!
         gtk_swift_grid_set_row_spacing(grid, guint(vSpacing))
         gtk_swift_grid_set_column_spacing(grid, guint(hSpacing))
@@ -1848,6 +2095,114 @@ extension Grid: GTKRenderable {
             row += 1
         }
     }
+}
+
+private func gtkCanUseSharedGridLayout(_ children: [UnsafeMutablePointer<GtkWidget>]) -> Bool {
+    for widget in children {
+        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+        if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
+            return false
+        }
+        if gtk_widget_get_hexpand(widget) != 0 || gtk_widget_get_vexpand(widget) != 0 {
+            return false
+        }
+    }
+    return true
+}
+
+private func gtkRenderSharedAutoGrid(
+    _ children: [UnsafeMutablePointer<GtkWidget>],
+    columns: Int,
+    hSpacing: Int,
+    vSpacing: Int
+) -> OpaquePointer {
+    let wrapper = gtk_swift_fixed_new()!
+    let subviews = children.indices.map(LayoutSubview.init(index:))
+    let context = GTKLayoutMeasureContext(widgets: children)
+    let layout = computeGridLayout(
+        subviews: subviews,
+        context: context,
+        columns: columns,
+        hSpacing: Double(hSpacing),
+        vSpacing: Double(vSpacing)
+    )
+
+    gtk_widget_set_size_request(
+        wrapper,
+        gint(layout.containerSize.width),
+        gint(layout.containerSize.height)
+    )
+
+    for (widget, placement) in zip(children, layout.childPlacements) {
+        gtk_widget_set_halign(widget, GTK_ALIGN_START)
+        gtk_widget_set_valign(widget, GTK_ALIGN_START)
+        gtk_swift_fixed_put(wrapper, widget, placement.origin.x, placement.origin.y)
+    }
+
+    return opaqueFromWidget(wrapper)
+}
+
+private func gtkCanUseSharedExplicitGridLayout(_ rows: [[GTKGridCell]]) -> Bool {
+    for row in rows {
+        for cell in row {
+            let widget = widgetFromOpaque(cell.widget)
+            let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+            if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
+                return false
+            }
+            if gtk_widget_get_hexpand(widget) != 0 || gtk_widget_get_vexpand(widget) != 0 {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+private func gtkRenderSharedExplicitGrid(
+    _ rows: [[GTKGridCell]],
+    hSpacing: Int,
+    vSpacing: Int
+) -> OpaquePointer {
+    let wrapper = gtk_swift_fixed_new()!
+    let flattenedCells = rows.flatMap { $0 }
+    let widgets = flattenedCells.map { widgetFromOpaque($0.widget) }
+    let context = GTKLayoutMeasureContext(widgets: widgets)
+    var subviewIndex = 0
+    let layout = computeExplicitGridLayout(
+        rows: rows.map { row in
+            row.map { cell in
+                let subview = LayoutSubview(index: subviewIndex)
+                subviewIndex += 1
+                return (
+                    subview: subview,
+                    columnSpan: cell.columnSpan
+                )
+            }
+        },
+        context: context,
+        hSpacing: Double(hSpacing),
+        vSpacing: Double(vSpacing)
+    )
+
+    gtk_widget_set_size_request(
+        wrapper,
+        gint(layout.containerSize.width),
+        gint(layout.containerSize.height)
+    )
+
+    for (cell, placement) in zip(flattenedCells, layout.childPlacements) {
+        let widget = widgetFromOpaque(cell.widget)
+        gtk_widget_set_halign(widget, GTK_ALIGN_START)
+        gtk_widget_set_valign(widget, GTK_ALIGN_START)
+        gtk_widget_set_size_request(
+            widget,
+            gint(placement.size.width),
+            gint(placement.size.height)
+        )
+        gtk_swift_fixed_put(wrapper, widget, placement.origin.x, placement.origin.y)
+    }
+
+    return opaqueFromWidget(wrapper)
 }
 
 /// Grid cell info for layout.
@@ -2206,25 +2561,6 @@ private class LazyGridContext {
     }
 }
 
-/// Derive min/max column counts from the GridItem array.
-private func deriveColumnBounds(from gridItems: [GridItem]) -> (min: Int, max: Int) {
-    guard !gridItems.isEmpty else { return (1, 7) }
-    for item in gridItems {
-        if case .adaptive = item.size { return (1, 100) }
-    }
-    return (gridItems.count, gridItems.count)
-}
-
-/// Extract the adaptive minimum width from GridItem array.
-private func extractAdaptiveMinimum(from gridItems: [GridItem]) -> Int {
-    for item in gridItems {
-        if case .adaptive(let minimum) = item.size, minimum > 0 {
-            return Int(minimum)
-        }
-    }
-    return 0
-}
-
 /// Create a GtkGridView-based lazy grid widget.
 private func gtkCreateLazyGridWidget<Data, Content: View>(
     items: [Data],
@@ -2240,7 +2576,8 @@ private func gtkCreateLazyGridWidget<Data, Content: View>(
     let noSelection = gtk_swift_no_selection_new(stringList)
     let factory = gtk_swift_signal_list_item_factory_new()!
 
-    let cellMinWidth = extractAdaptiveMinimum(from: gridItems)
+    let configuration = computeLazyGridConfiguration(gridItems: gridItems)
+    let cellMinWidth = configuration.adaptiveMinimum
     let context = LazyGridContext(items: items, contentBuilder: contentBuilder,
                                   cellMinWidth: cellMinWidth)
     let contextPtr = Unmanaged.passRetained(context).toOpaque()
@@ -2264,9 +2601,8 @@ private func gtkCreateLazyGridWidget<Data, Content: View>(
     let gridView = gtk_swift_grid_view_new(noSelection, factory)!
     gtk_swift_orientable_set_orientation(gridView, orientation)
 
-    let (minCols, maxCols) = deriveColumnBounds(from: gridItems)
-    gtk_swift_grid_view_set_min_columns(gridView, guint(minCols))
-    gtk_swift_grid_view_set_max_columns(gridView, guint(maxCols))
+    gtk_swift_grid_view_set_min_columns(gridView, guint(configuration.minColumns))
+    gtk_swift_grid_view_set_max_columns(gridView, guint(configuration.maxColumns))
 
     gtk_widget_set_vexpand(gridView, 1)
     gtk_widget_set_hexpand(gridView, 1)
