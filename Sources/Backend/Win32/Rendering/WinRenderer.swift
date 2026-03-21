@@ -909,11 +909,25 @@ extension VStack: WinRenderable {
             markExpandHeight(container)
         }
 
-        let naturalSize = computeNaturalSize(info: info)
-        SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
-                     UINT(SWP_NOZORDER | SWP_NOMOVE))
-
-        performVerticalLayout(container: container, info: info)
+        if flexibleIndices.isEmpty {
+            // No Spacers — use shared layout for initial sizing and placement
+            let childSizes = info.naturalSizes.map { ViewSize(width: Double($0.width), height: Double($0.height)) }
+            let result = computeVStackLayout(childSizes: childSizes, spacing: Double(spacing), alignment: alignment)
+            SetWindowPos(container, nil, 0, 0,
+                         Int32(result.containerSize.width), Int32(result.containerSize.height),
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+            for (i, child) in childHwnds.enumerated() {
+                let p = result.childPlacements[i]
+                SetWindowPos(child, nil, Int32(p.origin.x), Int32(p.origin.y),
+                             Int32(p.size.width), Int32(p.size.height), UINT(SWP_NOZORDER))
+            }
+        } else {
+            // Has Spacers — use native Win32 layout (handles flex distribution on resize)
+            let naturalSize = computeNaturalSize(info: info)
+            SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+            performVerticalLayout(container: container, info: info)
+        }
 
         return container
     }
@@ -967,11 +981,25 @@ extension HStack: WinRenderable {
             markExpandWidth(container)
         }
 
-        let naturalSize = computeNaturalSize(info: info)
-        SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
-                     UINT(SWP_NOZORDER | SWP_NOMOVE))
-
-        performHorizontalLayout(container: container, info: info)
+        if flexibleIndices.isEmpty {
+            // No Spacers — use shared layout for initial sizing and placement
+            let childSizes = info.naturalSizes.map { ViewSize(width: Double($0.width), height: Double($0.height)) }
+            let result = computeHStackLayout(childSizes: childSizes, spacing: Double(spacing), alignment: alignment)
+            SetWindowPos(container, nil, 0, 0,
+                         Int32(result.containerSize.width), Int32(result.containerSize.height),
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+            for (i, child) in childHwnds.enumerated() {
+                let p = result.childPlacements[i]
+                SetWindowPos(child, nil, Int32(p.origin.x), Int32(p.origin.y),
+                             Int32(p.size.width), Int32(p.size.height), UINT(SWP_NOZORDER))
+            }
+        } else {
+            // Has Spacers — use native Win32 layout (handles flex distribution on resize)
+            let naturalSize = computeNaturalSize(info: info)
+            SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+            performHorizontalLayout(container: container, info: info)
+        }
 
         return container
     }
@@ -1003,11 +1031,21 @@ extension ZStack: WinRenderable {
         let infoPtr = Unmanaged.passRetained(info).toOpaque()
         SetWindowSubclass(container, zStackLayoutProc, 1, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
-        let naturalSize = computeZStackNaturalSize(info: info)
-        SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
+        // Use shared layout for initial sizing and placement
+        let childSizes = childHwnds.map { child -> ViewSize in
+            var r = RECT()
+            GetWindowRect(child, &r)
+            return ViewSize(width: Double(r.right - r.left), height: Double(r.bottom - r.top))
+        }
+        let result = computeZStackLayout(childSizes: childSizes, alignment: alignment)
+        SetWindowPos(container, nil, 0, 0,
+                     Int32(result.containerSize.width), Int32(result.containerSize.height),
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
-
-        performZStackLayout(container: container, info: info)
+        for (i, child) in childHwnds.enumerated() {
+            let p = result.childPlacements[i]
+            SetWindowPos(child, nil, Int32(p.origin.x), Int32(p.origin.y),
+                         Int32(p.size.width), Int32(p.size.height), UINT(SWP_NOZORDER))
+        }
 
         return container
     }
@@ -1218,35 +1256,46 @@ extension FrameView: WinRenderable {
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         guard let child = winRenderView(content, in: childContext) else { return container }
 
-        // Apply size constraints
+        // Measure child natural size
         var childRect = RECT()
         GetWindowRect(child, &childRect)
-        var w = childRect.right - childRect.left
-        var h = childRect.bottom - childRect.top
+        let naturalW = Double(childRect.right - childRect.left)
+        let naturalH = Double(childRect.bottom - childRect.top)
 
-        if let fw = width { w = Int32(fw) }
-        if let fh = height { h = Int32(fh) }
-        if let mw = minWidth { w = max(w, Int32(mw)) }
-        if let mh = minHeight { h = max(h, Int32(mh)) }
-        if let xw = maxWidth, xw != .infinity { w = min(w, Int32(xw)) }
-        if let xh = maxHeight, xh != .infinity { h = min(h, Int32(xh)) }
+        // Space-filling views (Color) expand to fill the frame
+        let expandsWidth = GetPropW(child, colorExpandPropName) != nil || shouldExpandWidth(child)
+        let expandsHeight = GetPropW(child, colorExpandPropName) != nil || shouldExpandHeight(child)
 
+        // Use shared layout computation for initial sizing
+        let result = computeFrameLayout(
+            childNaturalSize: ViewSize(width: naturalW, height: naturalH),
+            width: width, height: height,
+            minWidth: minWidth, minHeight: minHeight,
+            maxWidth: maxWidth, maxHeight: maxHeight,
+            alignment: alignment,
+            expandsToFillWidth: expandsWidth,
+            expandsToFillHeight: expandsHeight
+        )
+
+        let w = Int32(result.containerSize.width)
+        let h = Int32(result.containerSize.height)
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
-        // Keep the child at its natural size and align it within the frame.
-        // Exception: space-filling views (Color) expand to fill the frame.
-        let isColorExpand = GetPropW(child, colorExpandPropName) != nil
+        // Store info for resize-time recomputation via shared layout
         let frameInfo = FrameLayoutInfo(
             child: child,
             alignment: alignment,
-            naturalWidth: isColorExpand ? w : (childRect.right - childRect.left),
-            naturalHeight: isColorExpand ? h : (childRect.bottom - childRect.top)
+            childNaturalSize: ViewSize(width: naturalW, height: naturalH),
+            expandsToFillWidth: expandsWidth,
+            expandsToFillHeight: expandsHeight
         )
         let infoPtr = Unmanaged.passRetained(frameInfo).toOpaque()
         SetWindowSubclass(container, frameLayoutProc, 3, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
-        // Initial layout
-        layoutFrameChild(in: container, info: frameInfo)
+        // Initial placement
+        let p = result.childPlacement
+        SetWindowPos(child, nil, Int32(p.origin.x), Int32(p.origin.y),
+                     Int32(p.size.width), Int32(p.size.height), UINT(SWP_NOZORDER))
 
         return container
     }
@@ -1255,49 +1304,39 @@ extension FrameView: WinRenderable {
 class FrameLayoutInfo {
     let child: HWND
     let alignment: Alignment
-    let naturalWidth: Int32
-    let naturalHeight: Int32
+    let childNaturalSize: ViewSize
+    let expandsToFillWidth: Bool
+    let expandsToFillHeight: Bool
 
-    init(child: HWND, alignment: Alignment, naturalWidth: Int32, naturalHeight: Int32) {
+    init(child: HWND, alignment: Alignment, childNaturalSize: ViewSize,
+         expandsToFillWidth: Bool, expandsToFillHeight: Bool) {
         self.child = child
         self.alignment = alignment
-        self.naturalWidth = naturalWidth
-        self.naturalHeight = naturalHeight
+        self.childNaturalSize = childNaturalSize
+        self.expandsToFillWidth = expandsToFillWidth
+        self.expandsToFillHeight = expandsToFillHeight
     }
 }
 
+/// Recompute frame child placement on resize using shared layout.
 private func layoutFrameChild(in container: HWND, info: FrameLayoutInfo) {
     var rect = RECT()
     GetClientRect(container, &rect)
-    let containerW = rect.right - rect.left
-    let containerH = rect.bottom - rect.top
-    let childW = min(info.naturalWidth, containerW)
-    let childH = min(info.naturalHeight, containerH)
+    let containerW = Double(rect.right - rect.left)
+    let containerH = Double(rect.bottom - rect.top)
 
-    let childX: Int32
-    let childY: Int32
-    switch info.alignment {
-    case .topLeading:
-        childX = 0; childY = 0
-    case .top:
-        childX = (containerW - childW) / 2; childY = 0
-    case .topTrailing:
-        childX = containerW - childW; childY = 0
-    case .leading:
-        childX = 0; childY = (containerH - childH) / 2
-    case .center:
-        childX = (containerW - childW) / 2; childY = (containerH - childH) / 2
-    case .trailing:
-        childX = containerW - childW; childY = (containerH - childH) / 2
-    case .bottomLeading:
-        childX = 0; childY = containerH - childH
-    case .bottom:
-        childX = (containerW - childW) / 2; childY = containerH - childH
-    case .bottomTrailing:
-        childX = containerW - childW; childY = containerH - childH
-    }
+    // Use shared layout with the container's current size as fixed frame
+    let result = computeFrameLayout(
+        childNaturalSize: info.childNaturalSize,
+        width: containerW, height: containerH,
+        alignment: info.alignment,
+        expandsToFillWidth: info.expandsToFillWidth,
+        expandsToFillHeight: info.expandsToFillHeight
+    )
 
-    SetWindowPos(info.child, nil, childX, childY, childW, childH, UINT(SWP_NOZORDER))
+    let p = result.childPlacement
+    SetWindowPos(info.child, nil, Int32(p.origin.x), Int32(p.origin.y),
+                 Int32(p.size.width), Int32(p.size.height), UINT(SWP_NOZORDER))
 }
 
 let frameLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
