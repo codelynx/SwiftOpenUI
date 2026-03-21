@@ -909,8 +909,10 @@ extension VStack: WinRenderable {
             markExpandHeight(container)
         }
 
-        if flexibleIndices.isEmpty {
-            // No Spacers — use shared layout for initial sizing and placement
+        // Use shared layout only when no children need flex expansion
+        // (matches GTK4 eligibility: no Spacers AND no expanding widgets)
+        let hasExpandingChild = childHwnds.contains { shouldExpandWidth($0) || shouldExpandHeight($0) }
+        if flexibleIndices.isEmpty && !hasExpandingChild {
             let childSizes = info.naturalSizes.map { ViewSize(width: Double($0.width), height: Double($0.height)) }
             let result = computeVStackLayout(childSizes: childSizes, spacing: Double(spacing), alignment: alignment)
             SetWindowPos(container, nil, 0, 0,
@@ -922,7 +924,7 @@ extension VStack: WinRenderable {
                              Int32(p.size.width), Int32(p.size.height), UINT(SWP_NOZORDER))
             }
         } else {
-            // Has Spacers — use native Win32 layout (handles flex distribution on resize)
+            // Has Spacers or expanding children — native Win32 layout
             let naturalSize = computeNaturalSize(info: info)
             SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
                          UINT(SWP_NOZORDER | SWP_NOMOVE))
@@ -981,8 +983,9 @@ extension HStack: WinRenderable {
             markExpandWidth(container)
         }
 
-        if flexibleIndices.isEmpty {
-            // No Spacers — use shared layout for initial sizing and placement
+        // Use shared layout only when no children need flex expansion
+        let hasExpandingChild = childHwnds.contains { shouldExpandWidth($0) || shouldExpandHeight($0) }
+        if flexibleIndices.isEmpty && !hasExpandingChild {
             let childSizes = info.naturalSizes.map { ViewSize(width: Double($0.width), height: Double($0.height)) }
             let result = computeHStackLayout(childSizes: childSizes, spacing: Double(spacing), alignment: alignment)
             SetWindowPos(container, nil, 0, 0,
@@ -994,7 +997,7 @@ extension HStack: WinRenderable {
                              Int32(p.size.width), Int32(p.size.height), UINT(SWP_NOZORDER))
             }
         } else {
-            // Has Spacers — use native Win32 layout (handles flex distribution on resize)
+            // Has Spacers or expanding children — native Win32 layout
             let naturalSize = computeNaturalSize(info: info)
             SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
                          UINT(SWP_NOZORDER | SWP_NOMOVE))
@@ -1031,20 +1034,29 @@ extension ZStack: WinRenderable {
         let infoPtr = Unmanaged.passRetained(info).toOpaque()
         SetWindowSubclass(container, zStackLayoutProc, 1, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
-        // Use shared layout for initial sizing and placement
-        let childSizes = childHwnds.map { child -> ViewSize in
-            var r = RECT()
-            GetWindowRect(child, &r)
-            return ViewSize(width: Double(r.right - r.left), height: Double(r.bottom - r.top))
-        }
-        let result = computeZStackLayout(childSizes: childSizes, alignment: alignment)
-        SetWindowPos(container, nil, 0, 0,
-                     Int32(result.containerSize.width), Int32(result.containerSize.height),
-                     UINT(SWP_NOZORDER | SWP_NOMOVE))
-        for (i, child) in childHwnds.enumerated() {
-            let p = result.childPlacements[i]
-            SetWindowPos(child, nil, Int32(p.origin.x), Int32(p.origin.y),
-                         Int32(p.size.width), Int32(p.size.height), UINT(SWP_NOZORDER))
+        // Use shared layout only when no children need expansion
+        let hasExpandingChild = childHwnds.contains { shouldExpandWidth($0) || shouldExpandHeight($0) }
+        if !hasExpandingChild {
+            let childSizes = childHwnds.map { child -> ViewSize in
+                var r = RECT()
+                GetWindowRect(child, &r)
+                return ViewSize(width: Double(r.right - r.left), height: Double(r.bottom - r.top))
+            }
+            let result = computeZStackLayout(childSizes: childSizes, alignment: alignment)
+            SetWindowPos(container, nil, 0, 0,
+                         Int32(result.containerSize.width), Int32(result.containerSize.height),
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+            for (i, child) in childHwnds.enumerated() {
+                let p = result.childPlacements[i]
+                SetWindowPos(child, nil, Int32(p.origin.x), Int32(p.origin.y),
+                             Int32(p.size.width), Int32(p.size.height), UINT(SWP_NOZORDER))
+            }
+        } else {
+            // Has expanding children — fall back to native ZStack layout
+            let naturalSize = computeZStackNaturalSize(info: info)
+            SetWindowPos(container, nil, 0, 0, naturalSize.width, naturalSize.height,
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+            performZStackLayout(container: container, info: info)
         }
 
         return container
