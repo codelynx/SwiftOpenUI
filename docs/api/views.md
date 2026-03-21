@@ -63,4 +63,5 @@ All view structs live in `Sources/SwiftOpenUI/Views/` and `Sources/SwiftOpenUI/N
 
 - **GTK4**: GtkStack + GtkHeaderBar with back button and slide transitions.
 - **macOS**: Uses real SwiftUI's NavigationStack.
-- **Win32 / Web**: Core types compile; backend rendering not yet implemented.
+- **Win32**: Show/hide HWND stack with header bar (back button + title), thread-local navigation context. NavigationLink supports both destination-based and value-based (via destination registry). NavigationSplitView with 2/3-column, draggable divider, visibility control.
+- **Web**: DOM stack with show/hide, NavigationLink, NavigationPath. NavigationSplitView not yet implemented.

@@ -8,7 +8,7 @@ Plan to bring Win32 NavigationSplitView to parity with GTK4.
 
 **GTK4**: Complete — nested `GtkPaned` for 3-column, visibility control, column width constraints, toolbar.
 
-**Win32 (current)**: Minimal stub — hard-coded 200px sidebar, no 3-column, no visibility, no column widths, no resize divider.
+**Win32 (current)**: Complete — 2/3-column layout, sidebarWidth property, `.navigationSplitViewColumnWidth()` modifier with min/ideal/max constraints via Mirror-walking extraction, column visibility binding (.automatic/.all/.doubleColumn/.detailOnly), draggable divider with mouse capture and resize cursor, visible divider lines via WM_PAINT, WM_SIZE responsive layout.
 
 **SwiftWindowsUI reference**: Has a proper `SplitViewState` + subclass proc for WM_SIZE handling, but only 2-column.
 

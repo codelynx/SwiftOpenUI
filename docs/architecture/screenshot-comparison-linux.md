@@ -206,10 +206,10 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/linux/` (SwiftOpe
 
 The GTK4 backend achieves **A or higher on 15 of 15 examples** (vs Win32's 3 A-rated). Key strengths:
 - Native GTK widgets (checkbox, scale, text entry) look polished and consistent
-- All 4 animations render correctly (Win32 only showed 2 of 4)
+- All 4 animations render correctly (Win32 also shows all 4 after OffsetView fix)
 - Full gesture support including drag (unavailable on macOS SwiftUI)
 - Focus management works with native GTK focus rings
-- System icon theme provides real icons (vs Win32 text fallbacks)
+- System icon theme provides real icons (Win32 uses WIC + stock icons)
 - Foundation Timer works via RunLoop pump integration
 - Frame centering matches SwiftUI behavior
 
