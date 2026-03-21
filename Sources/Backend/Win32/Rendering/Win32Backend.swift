@@ -255,6 +255,14 @@ public struct Win32Backend: RenderBackend {
         // Enable per-monitor DPI awareness
         win32_SetProcessDpiAwarenessContextPerMonitorV2()
 
+        // Runtime workaround: enable ComCtl32 v6 visual styles via activation context.
+        // Required for EM_SETCUEBANNER (TextField placeholder text).
+        // Uses undocumented shell32.dll resource 124 — see shim.h for details.
+        if !win32_EnableVisualStyles() {
+            // Non-fatal: controls render in classic style, placeholders won't show.
+            debugPrint("SwiftOpenUI: ComCtl32 v6 visual styles activation failed")
+        }
+
         // Initialize common controls (for modern visual styles)
         win32_InitCommonControlsEx(DWORD(ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES))
 

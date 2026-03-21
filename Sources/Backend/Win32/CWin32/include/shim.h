@@ -123,6 +123,38 @@ static inline BOOL win32_InitCommonControlsEx(DWORD dwICC) {
     return InitCommonControlsEx(&icc);
 }
 
+// --- Visual styles activation (ComCtl32 v6) ---
+// Runtime workaround to enable ComCtl32 v6 without an embedded manifest.
+// Uses shell32.dll resource 124 (undocumented but widely used compatibility
+// hack — the proper solution is an application manifest, which SwiftPM
+// doesn't support easily). Required for EM_SETCUEBANNER (placeholder text).
+// Returns TRUE on success, FALSE if activation context could not be created.
+static inline BOOL win32_EnableVisualStyles(void) {
+    ACTCTXW actCtx = {0};
+    actCtx.cbSize = sizeof(actCtx);
+    actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID
+                   | ACTCTX_FLAG_SET_PROCESS_DEFAULT
+                   | ACTCTX_FLAG_ASSEMBLY_DIRECTORY_VALID;
+
+    WCHAR sysDir[MAX_PATH];
+    GetSystemDirectoryW(sysDir, MAX_PATH);
+    actCtx.lpAssemblyDirectory = sysDir;
+    actCtx.lpSource = L"shell32.dll";
+    actCtx.lpResourceName = MAKEINTRESOURCEW(124);
+
+    HANDLE hActCtx = CreateActCtxW(&actCtx);
+    if (hActCtx == INVALID_HANDLE_VALUE) return FALSE;
+
+    // ACTCTX_FLAG_SET_PROCESS_DEFAULT makes this process-wide.
+    // We intentionally do not deactivate — the activation lives for
+    // the process lifetime (same as a manifest). The creation handle
+    // is released; the activated context stays alive independently.
+    ULONG_PTR cookie = 0;
+    BOOL ok = ActivateActCtx(hActCtx, &cookie);
+    ReleaseActCtx(hActCtx);
+    return ok;
+}
+
 // --- DPI awareness ---
 
 static inline BOOL win32_SetProcessDpiAwarenessContextPerMonitorV2(void) {
