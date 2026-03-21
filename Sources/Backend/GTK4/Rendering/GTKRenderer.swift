@@ -1812,7 +1812,6 @@ extension Grid: GTKRenderable {
         if useExplicitRows {
             gtkLayoutExplicitRows(grid: grid)
             gtk_widget_set_hexpand(grid, 1)
-            gtk_widget_set_vexpand(grid, 1)
         } else {
             let children = gtkRenderChildren(content)
             for (index, child) in children.enumerated() {
