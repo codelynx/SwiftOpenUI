@@ -490,14 +490,19 @@ let zStackLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass,
     case UINT(WM_ERASEBKGND):
         return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
 
-    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
-        // Forward to parent so BackgroundView ancestors can set their brush.
+    case UINT(WM_CTLCOLORSTATIC):
+        // ZStack children overlap — STATIC controls must have transparent
+        // backgrounds so underlying Color/Image views show through.
+        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        SetBkMode(hdc, TRANSPARENT)
+        return LRESULT(Int(bitPattern: GetStockObject(HOLLOW_BRUSH)))
+
+    case UINT(WM_CTLCOLORBTN):
+        // Buttons keep normal background; forward to parent for BackgroundView.
         if let parent = GetParent(hwnd!) {
             return SendMessageW(parent, uMsg, wParam, lParam)
         }
-        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
-        SetBkMode(hdc, TRANSPARENT)
-        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_NCDESTROY):
         if dwRefData != 0 {
