@@ -29,9 +29,15 @@ public class Win32ViewHost: AnyViewHost {
     private var scheduled = false
     private var isContainerAlive = true
     private var suppressFocusRestoreOnce = false
+    private var interactiveUpdateDepth = 0
+    private var rebuildDeferredDuringInteraction = false
 
     /// Current child HWND inside the container.
     private var currentChild: HWND?
+
+    /// Retained tree for incremental reconciliation (Phase 0+).
+    var retainedRoot: Win32HostedNode?
+
 
     /// The root window to post rebuild messages to.
     private var rootWindow: HWND?
@@ -89,10 +95,50 @@ public class Win32ViewHost: AnyViewHost {
         lock.lock()
         defer { lock.unlock() }
         guard isContainerAlive else { return }
+        if interactiveUpdateDepth > 0 {
+            rebuildDeferredDuringInteraction = true
+            return
+        }
         guard !scheduled else { return }
         scheduled = true
 
         if let root = rootWindow {
+            let ptr = Unmanaged.passRetained(self).toOpaque()
+            PostMessageW(root, WM_SWIFTUI_REBUILD, 0, LPARAM(Int(bitPattern: ptr)))
+        }
+    }
+
+    /// Defer coalesced rebuilds while an interactive control owns pointer capture.
+    /// Controls still repaint locally; one rebuild is posted when interaction ends.
+    public func beginInteractiveUpdate() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard isContainerAlive else { return }
+        interactiveUpdateDepth += 1
+    }
+
+    public func endInteractiveUpdate() {
+        lock.lock()
+        guard interactiveUpdateDepth > 0 else {
+            lock.unlock()
+            return
+        }
+
+        interactiveUpdateDepth -= 1
+        guard interactiveUpdateDepth == 0,
+              rebuildDeferredDuringInteraction,
+              isContainerAlive,
+              !scheduled else {
+            lock.unlock()
+            return
+        }
+
+        rebuildDeferredDuringInteraction = false
+        scheduled = true
+        let root = rootWindow
+        lock.unlock()
+
+        if let root = root {
             let ptr = Unmanaged.passRetained(self).toOpaque()
             PostMessageW(root, WM_SWIFTUI_REBUILD, 0, LPARAM(Int(bitPattern: ptr)))
         }
@@ -144,24 +190,58 @@ public class Win32ViewHost: AnyViewHost {
         // Focus restoration is separate and can be suppressed by @FocusState.
         let inputState = saveInputState(in: container)
 
-        // Build the replacement subtree
-        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
-
-        if let old = currentChild {
-            DestroyWindow(old)
-            currentChild = nil
-        }
-
+        // Build the replacement subtree into a temporary off-screen parent.
+        // Then compare against the existing subtree to decide: reconcile or replace.
         let previousEnv = getCurrentEnvironment()
         defer { setCurrentEnvironment(previousEnv) }
         if let captured = capturedEnvironment {
             setCurrentEnvironment(captured)
         }
-        let newChild = buildBodyWithTracking(childContext)
 
-        if let newChild = newChild {
-            currentChild = newChild
-            layoutChild()
+        if let oldChild = currentChild {
+            // Create a temporary invisible container for the new subtree
+            let tempParent = CreateWindowExW(
+                0, Win32ViewHost.containerClassName, nil,
+                DWORD(WS_CHILD | WS_CLIPCHILDREN),  // not WS_VISIBLE
+                0, 0, 0, 0,
+                container, nil, context.hInstance, nil
+            )!
+
+            let tempContext = RenderContext(parent: tempParent, hInstance: context.hInstance)
+            let newChild = buildBodyWithTracking(tempContext)
+
+            // Always validate structure — canReconcile also checks that
+            // every node is a type we know how to safely update in place.
+            let structureMatches = newChild.map { canReconcile(oldHwnd: oldChild, newHwnd: $0) } ?? false
+
+            if structureMatches, let newChild = newChild {
+                // Structure matches and all nodes are reconcilable —
+                // update old tree in place, discard new
+                reconcileInPlace(oldHwnd: oldChild, newHwnd: newChild)
+                DestroyWindow(tempParent)
+                // Repaint the preserved tree
+                InvalidateRect(oldChild, nil, false)
+            } else {
+                // Structure mismatch or unreconcilable nodes — full rebuild
+                DestroyWindow(oldChild)
+                currentChild = nil
+
+                if let newChild = newChild {
+                    // Re-parent from temp to real container
+                    SetParent(newChild, container)
+                    currentChild = newChild
+                    layoutChild()
+                }
+                DestroyWindow(tempParent)
+            }
+        } else {
+            // No existing child — first render
+            let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+            let newChild = buildBodyWithTracking(childContext)
+            if let newChild = newChild {
+                currentChild = newChild
+                layoutChild()
+            }
         }
 
         // Always restore Edit cursor/selection state
@@ -191,6 +271,8 @@ public class Win32ViewHost: AnyViewHost {
         lock.lock()
         isContainerAlive = false
         scheduled = false
+        interactiveUpdateDepth = 0
+        rebuildDeferredDuringInteraction = false
         lock.unlock()
     }
 
@@ -224,6 +306,22 @@ public class Win32ViewHost: AnyViewHost {
 
         RegisterClassExW(&wc)
     }
+}
+
+func findContainingViewHost(from hwnd: HWND?) -> Win32ViewHost? {
+    var current = hwnd
+    while let window = current {
+        if getWindowClassName(window) == "SwiftUIContainer" {
+            let userData = win32_GetWindowLongPtrW(window, GWLP_USERDATA)
+            if userData != 0 {
+                return Unmanaged<Win32ViewHost>.fromOpaque(
+                    UnsafeMutableRawPointer(bitPattern: Int(userData))!
+                ).takeUnretainedValue()
+            }
+        }
+        current = GetParent(window)
+    }
+    return nil
 }
 
 /// WndProc for ViewHost container windows.

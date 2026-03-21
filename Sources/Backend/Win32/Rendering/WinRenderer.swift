@@ -401,6 +401,26 @@ extension Color: WinRenderable {
         let ptr = Unmanaged.passRetained(state).toOpaque()
         SetWindowSubclass(container, d2dViewProc, 50, DWORD_PTR(UInt(bitPattern: ptr)))
 
+        // Store reconcile closure for incremental updates.
+        // When reconciling, this closure updates the target HWND's
+        // D2DViewState draw callback with the new color values.
+        let reconcileBox = D2DReconcileBox { targetHwnd in
+            // Find the D2DViewState on the target via its subclass dwRefData
+            var refData: DWORD_PTR = 0
+            if GetWindowSubclass(targetHwnd, d2dViewProc, 50, &refData),
+               refData != 0 {
+                let targetState = Unmanaged<D2DViewState>.fromOpaque(
+                    UnsafeMutableRawPointer(bitPattern: UInt(refData))!
+                ).takeUnretainedValue()
+                targetState.drawCallback = { rt, brush, w, h in
+                    d2d1_SolidColorBrush_SetColor(brush, cr, cg, cb, ca)
+                    d2d1_RenderTarget_FillRectangle(rt, brush, 0, 0, w, h)
+                }
+            }
+        }
+        let reconcilePtr = Unmanaged.passRetained(reconcileBox).toOpaque()
+        SetPropW(container, d2dReconcilePropName, HANDLE(reconcilePtr))
+
         return container
     }
 }
@@ -498,7 +518,7 @@ private class D2DViewState {
 }
 
 /// Subclass proc for D2D-rendered views — handles WM_PAINT, WM_SIZE, WM_ERASEBKGND.
-private let d2dViewProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+let d2dViewProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
     guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
 
     let state = Unmanaged<D2DViewState>.fromOpaque(
@@ -522,6 +542,11 @@ private let d2dViewProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcla
         Unmanaged<D2DViewState>.fromOpaque(
             UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
         ).release()
+        // Clean up reconcile closure if present
+        if let reconcilePtr = GetPropW(hwnd, d2dReconcilePropName) {
+            Unmanaged<D2DReconcileBox>.fromOpaque(reconcilePtr).release()
+            RemovePropW(hwnd, d2dReconcilePropName)
+        }
         RemoveWindowSubclass(hwnd, d2dViewProc, uIdSubclass)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     default:
@@ -2125,6 +2150,7 @@ private let d2dSliderProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubc
         GetClientRect(hwnd, &rect)
         let x = Float(Int16(truncatingIfNeeded: win32_LOWORD(DWORD_PTR(lParam))))
         let newValue = state.valueFromX(x, trackWidth: Float(rect.right))
+        findContainingViewHost(from: hwnd)?.beginInteractiveUpdate()
         state.currentValue = newValue
         state.binding.wrappedValue = newValue
         state.dragging = true
@@ -2150,10 +2176,14 @@ private let d2dSliderProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubc
         if state.dragging {
             state.dragging = false
             ReleaseCapture()
+            findContainingViewHost(from: hwnd)?.endInteractiveUpdate()
         }
         return 0
 
     case UINT(WM_NCDESTROY):
+        if state.dragging {
+            findContainingViewHost(from: hwnd)?.endInteractiveUpdate()
+        }
         Unmanaged<D2DSliderState>.fromOpaque(
             UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
         ).release()
