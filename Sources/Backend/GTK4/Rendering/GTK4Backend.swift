@@ -48,7 +48,7 @@ extension WindowGroup: GTKWindowRenderable {
         let window = gtk_application_window_new(gtkApplicationPointer(app))!
         let winPtr = windowPointer(window)
         gtk_window_set_title(winPtr, title)
-        gtk_window_set_default_size(winPtr, 400, 300)
+        gtk_window_set_default_size(winPtr, 400, 600)
 
         let contentWidget = widgetFromOpaque(gtkRenderView(content))
         if let titlebarWidget = findTitlebar(in: contentWidget) {
