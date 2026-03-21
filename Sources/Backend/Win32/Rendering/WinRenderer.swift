@@ -1282,12 +1282,16 @@ extension FrameView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         // Store info for resize-time recomputation via shared layout
+        // (includes original constraints so resize reapplies min/max clamping)
         let frameInfo = FrameLayoutInfo(
             child: child,
             alignment: alignment,
             childNaturalSize: ViewSize(width: naturalW, height: naturalH),
             expandsToFillWidth: expandsWidth,
-            expandsToFillHeight: expandsHeight
+            expandsToFillHeight: expandsHeight,
+            frameWidth: width, frameHeight: height,
+            frameMinWidth: minWidth, frameMinHeight: minHeight,
+            frameMaxWidth: maxWidth, frameMaxHeight: maxHeight
         )
         let infoPtr = Unmanaged.passRetained(frameInfo).toOpaque()
         SetWindowSubclass(container, frameLayoutProc, 3, DWORD_PTR(UInt(bitPattern: infoPtr)))
@@ -1307,28 +1311,52 @@ class FrameLayoutInfo {
     let childNaturalSize: ViewSize
     let expandsToFillWidth: Bool
     let expandsToFillHeight: Bool
+    // Original constraints for resize-time recomputation
+    let frameWidth: Double?
+    let frameHeight: Double?
+    let frameMinWidth: Double?
+    let frameMinHeight: Double?
+    let frameMaxWidth: Double?
+    let frameMaxHeight: Double?
 
     init(child: HWND, alignment: Alignment, childNaturalSize: ViewSize,
-         expandsToFillWidth: Bool, expandsToFillHeight: Bool) {
+         expandsToFillWidth: Bool, expandsToFillHeight: Bool,
+         frameWidth: Double? = nil, frameHeight: Double? = nil,
+         frameMinWidth: Double? = nil, frameMinHeight: Double? = nil,
+         frameMaxWidth: Double? = nil, frameMaxHeight: Double? = nil) {
         self.child = child
         self.alignment = alignment
         self.childNaturalSize = childNaturalSize
         self.expandsToFillWidth = expandsToFillWidth
         self.expandsToFillHeight = expandsToFillHeight
+        self.frameWidth = frameWidth
+        self.frameHeight = frameHeight
+        self.frameMinWidth = frameMinWidth
+        self.frameMinHeight = frameMinHeight
+        self.frameMaxWidth = frameMaxWidth
+        self.frameMaxHeight = frameMaxHeight
     }
 }
 
 /// Recompute frame child placement on resize using shared layout.
+/// Uses the original frame constraints (width/height/min/max) so the
+/// child placement respects the same rules as the initial pass.
 private func layoutFrameChild(in container: HWND, info: FrameLayoutInfo) {
     var rect = RECT()
     GetClientRect(container, &rect)
     let containerW = Double(rect.right - rect.left)
     let containerH = Double(rect.bottom - rect.top)
 
-    // Use shared layout with the container's current size as fixed frame
+    // On resize, use the original constraints but override with the
+    // container's current size when no explicit width/height was set.
     let result = computeFrameLayout(
         childNaturalSize: info.childNaturalSize,
-        width: containerW, height: containerH,
+        width: info.frameWidth ?? containerW,
+        height: info.frameHeight ?? containerH,
+        minWidth: info.frameMinWidth,
+        minHeight: info.frameMinHeight,
+        maxWidth: info.frameMaxWidth,
+        maxHeight: info.frameMaxHeight,
         alignment: info.alignment,
         expandsToFillWidth: info.expandsToFillWidth,
         expandsToFillHeight: info.expandsToFillHeight
