@@ -72,6 +72,15 @@ struct ParityViewsContainersView: View {
                     Image(systemName: "heart.fill")
                     Image(systemName: "gear")
                 }
+                #elseif canImport(BackendWin32)
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                    Image(systemName: "exclamationmark.triangle")
+                    Image(systemName: "shield")
+                }
+                Text("(Win32 stock icons)")
+                    .font(.caption)
+                    .foregroundColor(Color(red: 0.5, green: 0.5, blue: 0.5))
                 #else
                 HStack(spacing: 8) {
                     Image(systemName: "starred")
