@@ -48,12 +48,38 @@ extension WindowGroup: GTKWindowRenderable {
         let window = gtk_application_window_new(gtkApplicationPointer(app))!
         let winPtr = windowPointer(window)
         gtk_window_set_title(winPtr, title)
-        // No hardcoded window size — GTK4 auto-sizes to content.
-        // Apps control their size via .frame(minWidth:minHeight:) in the view.
 
         let contentWidget = widgetFromOpaque(gtkRenderView(content))
         if let titlebarWidget = findTitlebar(in: contentWidget) {
             gtk_window_set_titlebar(winPtr, titlebarWidget)
+        }
+
+        // Apply minimum content size where configured. GTK4 window sizing is
+        // largely content-driven, so min constraints are expressed on the root.
+        let minReqW = minWindowWidth.map { Int32($0) } ?? -1
+        let minReqH = minWindowHeight.map { Int32($0) } ?? -1
+        if minReqW >= 0 || minReqH >= 0 {
+            gtk_widget_set_size_request(contentWidget, minReqW, minReqH)
+        }
+
+        switch windowSizing ?? .automatic {
+        case .automatic, .content:
+            if let w = defaultWindowWidth, let h = defaultWindowHeight {
+                gtk_window_set_default_size(winPtr, gint(w), gint(h))
+            }
+        case .contentFixed:
+            gtk_window_set_resizable(winPtr, 0)
+        case .size(let width, let height):
+            gtk_window_set_default_size(winPtr, gint(width), gint(height))
+        }
+
+        switch windowResizeBehavior ?? .automatic {
+        case .automatic:
+            break
+        case .fixed:
+            gtk_window_set_resizable(winPtr, 0)
+        case .resizable:
+            gtk_window_set_resizable(winPtr, 1)
         }
 
         // If the root content doesn't expand, center it in the window

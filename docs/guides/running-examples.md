@@ -164,7 +164,7 @@ See [android-setup.md](android-setup.md) for full setup instructions.
 | Gestures | `ParityGestures` | onTapGesture, onLongPressGesture, onDrag |
 | Animation | `ParityAnimation` | .animation(), withAnimation() |
 | Focus | `ParityFocus` | @FocusState (bool + enum), .focused() |
-| AppStructure | `ParityAppStructure` | App, Scene, WindowGroup, @ViewBuilder |
+| AppStructure | `ParityAppStructure` | App, Scene, WindowGroup, @ViewBuilder, window sizing APIs |
 
 
 ## Platform Support Matrix

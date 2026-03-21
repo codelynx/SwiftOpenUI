@@ -147,6 +147,10 @@ Last updated: 2026-03-19
 | WindowGroup | Y | Y | Title + content |
 | @SceneBuilder | Y | Y | Single scene only |
 | @ViewBuilder | Y | Y | Up to 12 children |
+| .defaultWindowSize() | Y | ~ | GTK4 + Win32 implemented; maps to native initial size |
+| .windowSizeConstraints() | Y | ~ | Win32 min/max; GTK4 min only in first pass |
+| .windowSizing() | Y | ~ | GTK4 + Win32: automatic/content/contentFixed/explicit size |
+| .windowResizeBehavior() | Y | ~ | GTK4 + Win32: automatic/fixed/resizable |
 | @main | Y | - | Platform-specific entry points instead |
 | DocumentGroup | Y | - | |
 | Settings | Y | - | macOS only in SwiftUI |

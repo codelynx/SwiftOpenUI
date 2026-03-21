@@ -26,6 +26,12 @@ enum Operation {
 }
 
 struct CalculatorView: View {
+    static let buttonSize = 56.0
+    static let gridSpacing = 1.0
+    static let displayHeight = 96.0
+    static let windowWidth = buttonSize * 4 + gridSpacing * 3
+    static let windowHeight = displayHeight + buttonSize * 5 + gridSpacing * 4
+
     @State var display = "0"
     @State var currentValue: Double = 0
     @State var pendingOperation: Operation = .none
@@ -35,12 +41,12 @@ struct CalculatorView: View {
     let digitBg = Color(red: 0.2, green: 0.2, blue: 0.2)
     let opBg = Color(red: 1.0, green: 0.62, blue: 0.04)
     let fnBg = Color(red: 0.65, green: 0.65, blue: 0.65)
-    let buttonSize = 56.0
-    let gridSpacing = 1.0
-    let displayHeight = 96.0
+    let buttonSize = CalculatorView.buttonSize
+    let gridSpacing = CalculatorView.gridSpacing
+    let displayHeight = CalculatorView.displayHeight
 
-    var calculatorWidth: Double { buttonSize * 4 + gridSpacing * 3 }
-    var calculatorHeight: Double { displayHeight + buttonSize * 5 + gridSpacing * 4 }
+    var calculatorWidth: Double { CalculatorView.windowWidth }
+    var calculatorHeight: Double { CalculatorView.windowHeight }
 
     var body: some View {
         // Outer container — fills window with black, centers calculator
@@ -208,6 +214,11 @@ struct CalculatorApp: App {
         WindowGroup("Calculator") {
             CalculatorView()
         }
+        .defaultWindowSize(
+            width: CalculatorView.windowWidth,
+            height: CalculatorView.windowHeight
+        )
+        .windowSizing(.contentFixed)
         #endif
     }
 }

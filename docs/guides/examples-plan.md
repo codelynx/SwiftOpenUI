@@ -132,7 +132,7 @@ Each matrix row has exactly one **primary owner** (bold). Cross-cutting parity f
 | **ParityModifiers** | Modifiers | .padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .imageScale(), .modifier() |
 | **ParityStateData** | State & Data | @State, @Binding, @ObservedObject, @StateObject, @Published, ObservableObject |
 | **ParityEnvironment** | State & Data + Modifiers | @Environment, @EnvironmentObject, .environmentObject(), .environment(), custom EnvironmentKey |
-| **ParityAppStructure** | App Structure | App, Scene, WindowGroup, @SceneBuilder, @ViewBuilder |
+| **ParityAppStructure** | App Structure | App, Scene, WindowGroup, @SceneBuilder, @ViewBuilder, window sizing / resize behavior |
 | **ParityGestures** | Modifiers | .onTapGesture(), .onLongPressGesture(), .onDrag() |
 | **ParityAnimation** | Modifiers | .animation(), withAnimation() |
 | **ParityFocus** | State & Data + Modifiers | @FocusState, .focused() |

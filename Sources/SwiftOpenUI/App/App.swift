@@ -23,10 +23,41 @@ public struct WindowGroup<Content: View>: Scene {
 
     public let title: String
     public let content: Content
+    public let defaultWindowWidth: Double?
+    public let defaultWindowHeight: Double?
+    public let minWindowWidth: Double?
+    public let minWindowHeight: Double?
+    public let maxWindowWidth: Double?
+    public let maxWindowHeight: Double?
+    public let windowSizing: WindowSizing?
+    public let windowResizeBehavior: WindowResizeBehavior?
 
     public init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.init(title: title, content: content())
+    }
+
+    init(
+        title: String,
+        content: Content,
+        defaultWindowWidth: Double? = nil,
+        defaultWindowHeight: Double? = nil,
+        minWindowWidth: Double? = nil,
+        minWindowHeight: Double? = nil,
+        maxWindowWidth: Double? = nil,
+        maxWindowHeight: Double? = nil,
+        windowSizing: WindowSizing? = nil,
+        windowResizeBehavior: WindowResizeBehavior? = nil
+    ) {
         self.title = title
-        self.content = content()
+        self.content = content
+        self.defaultWindowWidth = defaultWindowWidth
+        self.defaultWindowHeight = defaultWindowHeight
+        self.minWindowWidth = minWindowWidth
+        self.minWindowHeight = minWindowHeight
+        self.maxWindowWidth = maxWindowWidth
+        self.maxWindowHeight = maxWindowHeight
+        self.windowSizing = windowSizing
+        self.windowResizeBehavior = windowResizeBehavior
     }
 
     public var body: Never { fatalError("WindowGroup is a primitive scene") }

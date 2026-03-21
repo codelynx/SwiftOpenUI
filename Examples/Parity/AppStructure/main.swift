@@ -1,5 +1,6 @@
 // Parity: App Structure
-// Owner: App, Scene, WindowGroup, @SceneBuilder, @ViewBuilder
+// Owner: App, Scene, WindowGroup, @SceneBuilder, @ViewBuilder,
+//        window sizing / resize behavior
 // See: docs/architecture/swiftui-parity-matrix.md § App Structure
 //
 // Note: Every parity example implicitly validates App, Scene, WindowGroup,
