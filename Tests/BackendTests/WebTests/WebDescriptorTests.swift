@@ -440,4 +440,138 @@ final class WebDescriptorTests: XCTestCase {
         XCTAssertEqual(result.updateIntent, .sliderValue)
         XCTAssertTrue(result.mutationSucceeded)
     }
+
+    // MARK: - Wrapper mutation tests
+
+    func testPlanBackgroundColorChange() {
+        let oldDesc = WebDescriptorNode(kind: .background, typeName: "BackgroundView",
+                                         props: .background(WebColorDescriptor(red: 1, green: 0, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let newDesc = WebDescriptorNode(kind: .background, typeName: "BackgroundView",
+                                         props: .background(WebColorDescriptor(red: 0, green: 1, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let plan = webPlanDescriptorTree(
+            old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldDesc)),
+            new: webIdentifyDescriptorTree(newDesc))
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .backgroundColor)
+    }
+
+    func testPlanForegroundColorChange() {
+        let oldDesc = WebDescriptorNode(kind: .foregroundColor, typeName: "ForegroundColorView",
+                                         props: .foregroundColor(WebColorDescriptor(red: 0, green: 0, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let newDesc = WebDescriptorNode(kind: .foregroundColor, typeName: "ForegroundColorView",
+                                         props: .foregroundColor(WebColorDescriptor(red: 1, green: 0, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let plan = webPlanDescriptorTree(
+            old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldDesc)),
+            new: webIdentifyDescriptorTree(newDesc))
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .foregroundColor)
+    }
+
+    func testPlanPaddingChange() {
+        let oldDesc = WebDescriptorNode(kind: .padding, typeName: "PaddedView",
+                                         props: .padding(WebPaddingDescriptor(top: 8, bottom: 8, leading: 8, trailing: 8)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let newDesc = WebDescriptorNode(kind: .padding, typeName: "PaddedView",
+                                         props: .padding(WebPaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let plan = webPlanDescriptorTree(
+            old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldDesc)),
+            new: webIdentifyDescriptorTree(newDesc))
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .paddingLayout)
+    }
+
+    func testCanApplyBackgroundColorMutation() {
+        let oldDesc = WebDescriptorNode(kind: .background, typeName: "BackgroundView",
+                                         props: .background(WebColorDescriptor(red: 1, green: 0, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let newDesc = WebDescriptorNode(kind: .background, typeName: "BackgroundView",
+                                         props: .background(WebColorDescriptor(red: 0, green: 1, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let plan = webPlanDescriptorTree(
+            old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldDesc)),
+            new: webIdentifyDescriptorTree(newDesc))
+        XCTAssertTrue(webCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testCanApplyForegroundColorMutation() {
+        let oldDesc = WebDescriptorNode(kind: .foregroundColor, typeName: "ForegroundColorView",
+                                         props: .foregroundColor(WebColorDescriptor(red: 0, green: 0, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let newDesc = WebDescriptorNode(kind: .foregroundColor, typeName: "ForegroundColorView",
+                                         props: .foregroundColor(WebColorDescriptor(red: 1, green: 0, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let plan = webPlanDescriptorTree(
+            old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldDesc)),
+            new: webIdentifyDescriptorTree(newDesc))
+        XCTAssertTrue(webCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testCanApplyPaddingMutation() {
+        let oldDesc = WebDescriptorNode(kind: .padding, typeName: "PaddedView",
+                                         props: .padding(WebPaddingDescriptor(top: 8, bottom: 8, leading: 8, trailing: 8)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let newDesc = WebDescriptorNode(kind: .padding, typeName: "PaddedView",
+                                         props: .padding(WebPaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let plan = webPlanDescriptorTree(
+            old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldDesc)),
+            new: webIdentifyDescriptorTree(newDesc))
+        XCTAssertTrue(webCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testWrapperSlotSurvivesUpdate() {
+        let oldDesc = WebDescriptorNode(kind: .background, typeName: "BackgroundView",
+                                         props: .background(WebColorDescriptor(red: 1, green: 0, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let newDesc = WebDescriptorNode(kind: .background, typeName: "BackgroundView",
+                                         props: .background(WebColorDescriptor(red: 0, green: 1, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let oldId = webIdentifyDescriptorTree(oldDesc)
+        let newId = webIdentifyDescriptorTree(newDesc)
+        var executor = webMakeExecutorTree(from: oldId)
+        executor = webAssignNativeSlots(executor, slotsByIdentity: [
+            WebDescriptorIdentity(path: []): 60,
+            WebDescriptorIdentity(path: [0]): 61,
+        ])
+
+        let plan = webPlanDescriptorTree(old: webRetainDescriptorTree(oldId), new: newId)
+        let action = webExecuteDescriptorPlan(old: executor, plan: plan)
+
+        XCTAssertEqual(action.resultingNode.nativeSlotID, 60)
+        XCTAssertEqual(action.resultingNode.children[0].nativeSlotID, 61)
+    }
+
+    func testMixedWrapperAndLeafMutation() {
+        let oldDesc = WebDescriptorNode(kind: .background, typeName: "BackgroundView",
+                                         props: .background(WebColorDescriptor(red: 1, green: 0, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "Old")))])
+        let newDesc = WebDescriptorNode(kind: .background, typeName: "BackgroundView",
+                                         props: .background(WebColorDescriptor(red: 0, green: 1, blue: 0, opacity: 1)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "New")))])
+        let plan = webPlanDescriptorTree(
+            old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldDesc)),
+            new: webIdentifyDescriptorTree(newDesc))
+        XCTAssertTrue(webCanApplyTextColorHostMutation(plan: plan))
+    }
 }

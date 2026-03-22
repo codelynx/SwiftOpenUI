@@ -676,7 +676,15 @@ extension Optional: GTKRenderable where Wrapped: View {
 
 // MARK: - Modifier GTK extensions
 
-extension PaddedView: GTKRenderable {
+extension PaddedView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .padding, typeName: "PaddedView",
+            props: .padding(GTK4PaddingDescriptor(
+                top: top, bottom: bottom, leading: leading, trailing: trailing)),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let child = widgetFromOpaque(gtkRenderView(content))
         let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
@@ -688,6 +696,7 @@ extension PaddedView: GTKRenderable {
             """)
         if gtk_widget_get_hexpand(child) != 0 { gtk_widget_set_hexpand(wrapper, 1) }
         if gtk_widget_get_vexpand(child) != 0 { gtk_widget_set_vexpand(wrapper, 1) }
+        gtkMarkHostedNodeKind(wrapper, kind: .padding)
         gtk_box_append(boxPointer(wrapper), child)
         return opaqueFromWidget(wrapper)
     }

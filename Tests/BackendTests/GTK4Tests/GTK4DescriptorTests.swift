@@ -355,4 +355,95 @@ final class GTK4DescriptorTests: XCTestCase {
         XCTAssertEqual(result.updateIntent, .sliderValue)
         XCTAssertTrue(result.mutationSucceeded)
     }
+
+    // MARK: - Wrapper mutation tests (padding only on GTK4)
+
+    func testDescribePaddedView() {
+        let node = gtkDescribeView(Text("Hello").padding(12))
+        XCTAssertEqual(node.kind, .padding)
+        if case let .padding(desc) = node.props {
+            XCTAssertEqual(desc.top, 12)
+            XCTAssertEqual(desc.bottom, 12)
+            XCTAssertEqual(desc.leading, 12)
+            XCTAssertEqual(desc.trailing, 12)
+        } else {
+            XCTFail("Expected padding props")
+        }
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].kind, .text)
+    }
+
+    func testPlanPaddingChange() {
+        let oldDesc = GTK4DescriptorNode(kind: .padding, typeName: "PaddedView",
+                                          props: .padding(GTK4PaddingDescriptor(top: 8, bottom: 8, leading: 8, trailing: 8)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "A")))])
+        let newDesc = GTK4DescriptorNode(kind: .padding, typeName: "PaddedView",
+                                          props: .padding(GTK4PaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "A")))])
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldDesc)),
+            new: gtkIdentifyDescriptorTree(newDesc)
+        )
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .paddingLayout)
+    }
+
+    func testCanApplyPaddingMutation() {
+        let oldDesc = GTK4DescriptorNode(kind: .padding, typeName: "PaddedView",
+                                          props: .padding(GTK4PaddingDescriptor(top: 8, bottom: 8, leading: 8, trailing: 8)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "A")))])
+        let newDesc = GTK4DescriptorNode(kind: .padding, typeName: "PaddedView",
+                                          props: .padding(GTK4PaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "A")))])
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldDesc)),
+            new: gtkIdentifyDescriptorTree(newDesc)
+        )
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testMixedPaddingAndTextMutation() {
+        let oldDesc = GTK4DescriptorNode(kind: .padding, typeName: "PaddedView",
+                                          props: .padding(GTK4PaddingDescriptor(top: 8, bottom: 8, leading: 8, trailing: 8)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "Old")))])
+        let newDesc = GTK4DescriptorNode(kind: .padding, typeName: "PaddedView",
+                                          props: .padding(GTK4PaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "New")))])
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldDesc)),
+            new: gtkIdentifyDescriptorTree(newDesc)
+        )
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testPaddingSlotSurvivesUpdate() {
+        let oldDesc = GTK4DescriptorNode(kind: .padding, typeName: "PaddedView",
+                                          props: .padding(GTK4PaddingDescriptor(top: 8, bottom: 8, leading: 8, trailing: 8)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "A")))])
+        let newDesc = GTK4DescriptorNode(kind: .padding, typeName: "PaddedView",
+                                          props: .padding(GTK4PaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "A")))])
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+        var executor = gtkMakeExecutorTree(from: oldId)
+        let slotsByIdentity: [GTK4DescriptorIdentity: Int] = [
+            GTK4DescriptorIdentity(path: []): 50,
+            GTK4DescriptorIdentity(path: [0]): 51,
+        ]
+        executor = gtkAssignNativeSlots(executor, slotsByIdentity: slotsByIdentity)
+
+        let plan = gtkPlanDescriptorTree(old: gtkRetainDescriptorTree(oldId), new: newId)
+        let action = gtkExecuteDescriptorPlan(old: executor, plan: plan)
+
+        XCTAssertEqual(action.resultingNode.nativeSlotID, 50)
+        XCTAssertEqual(action.resultingNode.children[0].nativeSlotID, 51)
+    }
 }

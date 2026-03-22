@@ -75,7 +75,8 @@ private func webCollectSupportedHostedElements(
     into result: inout [JSValue]
 ) {
     let kind = webHostedNodeKind(of: element)
-    if kind == .text || kind == .color || kind == .slider {
+    if kind == .text || kind == .color || kind == .slider
+        || kind == .background || kind == .foregroundColor || kind == .padding {
         result.append(element)
     }
 
@@ -94,7 +95,10 @@ public func webAllSlotsValid(action: WebExecutorAction) -> Bool {
     switch action.kind {
     case .update:
         if action.updateIntent == .textContent || action.updateIntent == .colorFill
-            || action.updateIntent == .sliderValue {
+            || action.updateIntent == .sliderValue
+            || action.updateIntent == .backgroundColor
+            || action.updateIntent == .foregroundColor
+            || action.updateIntent == .paddingLayout {
             guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
                   let element = webResolveSlot(slotID) else {
                 return false
@@ -154,6 +158,42 @@ func webSetSliderValueDOM(slotID: Int, value: Double) -> Bool {
     return true
 }
 
+/// Set background color on a hosted BackgroundView wrapper DOM element.
+/// Updates only backgroundColor, preserving other inline styles (display, flex).
+func webSetBackgroundColorDOM(slotID: Int, color: WebColorDescriptor) -> Bool {
+    guard let element = webResolveSlot(slotID),
+          let obj = element.object else { return false }
+    let parent = obj.parentNode
+    guard !parent.isNull && !parent.isUndefined else { return false }
+    let rgba = "rgba(\(Int(color.red * 255)), \(Int(color.green * 255)), \(Int(color.blue * 255)), \(color.opacity))"
+    guard let style = obj.style.object else { return false }
+    style.backgroundColor = .string(rgba)
+    return true
+}
+
+/// Set foreground color on a hosted ForegroundColorView wrapper DOM element.
+func webSetForegroundColorDOM(slotID: Int, color: WebColorDescriptor) -> Bool {
+    guard let element = webResolveSlot(slotID),
+          let obj = element.object else { return false }
+    let parent = obj.parentNode
+    guard !parent.isNull && !parent.isUndefined else { return false }
+    let rgba = "rgba(\(Int(color.red * 255)), \(Int(color.green * 255)), \(Int(color.blue * 255)), \(color.opacity))"
+    guard let style = obj.style.object else { return false }
+    style.color = .string(rgba)
+    return true
+}
+
+/// Set padding on a hosted PaddedView wrapper DOM element.
+func webSetPaddingDOM(slotID: Int, padding: WebPaddingDescriptor) -> Bool {
+    guard let element = webResolveSlot(slotID),
+          let obj = element.object else { return false }
+    let parent = obj.parentNode
+    guard !parent.isNull && !parent.isUndefined else { return false }
+    guard let style = obj.style.object else { return false }
+    style.padding = .string("\(padding.top)px \(padding.trailing)px \(padding.bottom)px \(padding.leading)px")
+    return true
+}
+
 // MARK: - Wire mutation implementations
 
 /// Call this once at startup to wire the real DOM mutation functions
@@ -162,4 +202,7 @@ func webInstallMutationHooks() {
     _webSetTextContentImpl = webSetTextContentDOM
     _webSetColorFillImpl = webSetColorFillDOM
     _webSetSliderValueImpl = webSetSliderValueDOM
+    _webSetBackgroundColorImpl = webSetBackgroundColorDOM
+    _webSetForegroundColorImpl = webSetForegroundColorDOM
+    _webSetPaddingImpl = webSetPaddingDOM
 }

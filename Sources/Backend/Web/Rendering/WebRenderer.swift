@@ -925,6 +925,7 @@ extension PaddedView: WebRenderable, WebDescribable {
         let padding = "padding: \(top)px \(trailing)px \(bottom)px \(leading)px;"
         let wrapper = document.createElement("div")
         wrapper.style = .string(padding)
+        webMarkHostedNodeKind(wrapper, kind: .padding)
         _ = wrapper.appendChild(child)
         return wrapper
     }
@@ -979,6 +980,7 @@ extension ForegroundColorView: WebRenderable, WebDescribable {
         let css = "color: \(color.cssColor);"
         let wrapper = document.createElement("div")
         wrapper.style = .string(css)
+        webMarkHostedNodeKind(wrapper, kind: .foregroundColor)
         _ = wrapper.appendChild(child)
         return wrapper
     }
@@ -997,6 +999,7 @@ extension BackgroundView: WebRenderable, WebDescribable {
         let css = "background-color: \(color.cssColor); display: flex; flex-direction: column; flex: 1;"
         let wrapper = document.createElement("div")
         wrapper.style = .string(css)
+        webMarkHostedNodeKind(wrapper, kind: .background)
         _ = wrapper.appendChild(child)
         return wrapper
     }

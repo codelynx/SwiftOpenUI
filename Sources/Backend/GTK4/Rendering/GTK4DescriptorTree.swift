@@ -572,7 +572,8 @@ public func gtkCanApplyTextColorHostMutation(plan: GTK4DescriptorPlan) -> Bool {
         return plan.children.allSatisfy(gtkCanApplyTextColorHostMutation)
     case .update:
         guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill
-                || plan.updateIntent == .sliderValue else {
+                || plan.updateIntent == .sliderValue
+                || plan.updateIntent == .paddingLayout else {
             return false
         }
         return plan.children.allSatisfy(gtkCanApplyTextColorHostMutation)
@@ -602,8 +603,10 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
         return gtkColorFillHook(action: action, performMutation: performMutation)
     case .sliderValue:
         return gtkSliderValueHook(action: action, performMutation: performMutation)
+    case .paddingLayout:
+        return gtkPaddingLayoutHook(action: action, performMutation: performMutation)
     case .backgroundColor, .borderStyle, .frameLayout, .foregroundColor,
-         .hStackLayout, .paddingLayout, .sliderConfiguration,
+         .hStackLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet
         return gtkUpdatedHookResult(action: action, intent: action.updateIntent,
@@ -654,6 +657,26 @@ private func gtkSliderValueHook(action: GTK4ExecutorAction,
     return gtkUpdatedHookResult(action: action, intent: .sliderValue,
                                  performMutation: performMutation,
                                  mutationSucceeded: mutationSucceeded)
+}
+
+private func gtkPaddingLayoutHook(action: GTK4ExecutorAction,
+                                   performMutation: Bool) -> GTK4HookResult {
+    var mutationSucceeded = true
+    if performMutation,
+       case let .padding(paddingDesc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = gtkSetPadding(slotID: slotID, padding: paddingDesc)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
+    let childResults = action.children.map { gtkApplyHookInternal(action: $0, performMutation: performMutation) }
+    return GTK4HookResult(
+        identity: action.identity, kind: .updated,
+        updateIntent: .paddingLayout,
+        currentDescriptor: action.currentDescriptor,
+        previousDescriptor: action.previousDescriptor,
+        mutationSucceeded: mutationSucceeded && childResults.allSatisfy(gtkHookMutationSucceeded),
+        children: childResults)
 }
 
 private func gtkCreateHook(action: GTK4ExecutorAction,
@@ -745,6 +768,7 @@ public enum GTK4HostedNodeKind: String {
     case text
     case color
     case slider
+    case padding
     case unknown
 }
 
@@ -762,6 +786,8 @@ public func gtkMarkHostedNodeKind(_ widget: UnsafeMutablePointer<GtkWidget>,
         g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr))
     case .slider:
         g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindSliderPtr))
+    case .padding:
+        g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindPaddingPtr))
     case .unknown:
         break
     }
@@ -774,6 +800,7 @@ public func gtkHostedNodeKind(of widget: UnsafeMutablePointer<GtkWidget>) -> GTK
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindTextPtr) { return .text }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr) { return .color }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindSliderPtr) { return .slider }
+    if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindPaddingPtr) { return .padding }
     return .unknown
 }
 
@@ -796,12 +823,19 @@ private let gtkHostedKindSliderPtr: UnsafePointer<CChar> = {
     return UnsafePointer(p)
 }()
 
+private let gtkHostedKindPaddingPtr: UnsafePointer<CChar> = {
+    let p = UnsafeMutablePointer<CChar>.allocate(capacity: 1)
+    p.pointee = 4
+    return UnsafePointer(p)
+}()
+
 /// Map descriptor kind to hosted kind (nil = not supported for mutation).
 public func gtkHostedKindForDescriptor(_ kind: GTK4DescriptorKind) -> GTK4HostedNodeKind? {
     switch kind {
     case .text: return .text
     case .color: return .color
     case .slider: return .slider
+    case .padding: return .padding
     default: return nil
     }
 }
@@ -866,7 +900,7 @@ private func gtkCollectSupportedHostedWidgets(
     into result: inout [UnsafeMutablePointer<GtkWidget>]
 ) {
     let kind = gtkHostedNodeKind(of: widget)
-    if kind == .text || kind == .color || kind == .slider {
+    if kind == .text || kind == .color || kind == .slider || kind == .padding {
         result.append(widget)
     }
     var child = gtk_widget_get_first_child(widget)
@@ -898,7 +932,8 @@ public func gtkAllSlotsValid(action: GTK4ExecutorAction) -> Bool {
     switch action.kind {
     case .update:
         if action.updateIntent == .textContent || action.updateIntent == .colorFill
-            || action.updateIntent == .sliderValue {
+            || action.updateIntent == .sliderValue
+            || action.updateIntent == .paddingLayout {
             guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
                   let widget = gtkWidgetFromSlotID(slotID),
                   gtk_swift_is_widget(widget) != 0 else {
@@ -964,5 +999,43 @@ public func gtkSetSliderValue(slotID: Int, value: Double) -> Bool {
     guard gtk_swift_is_widget(widget) != 0 else { return false }
     let range = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GtkRange.self)
     gtk_range_set_value(range, value)
+    return true
+}
+
+/// Update CSS padding on a hosted PaddedView wrapper widget in place.
+private let gtkPaddingProviderKey = "gtk-swift-padding-provider"
+
+public func gtkSetPadding(slotID: Int, padding: GTK4PaddingDescriptor) -> Bool {
+    guard let widget = gtkWidgetFromSlotID(slotID) else { return false }
+    guard gtk_swift_is_widget(widget) != 0 else { return false }
+
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    let className = "gtk-swift-padding-\(gtkNativeSlotID(for: widget))"
+    let css = """
+        .\(className) {
+            padding-top: \(padding.top)px;
+            padding-bottom: \(padding.bottom)px;
+            padding-left: \(padding.leading)px;
+            padding-right: \(padding.trailing)px;
+        }
+        """
+
+    if let existingRaw = g_object_get_data(gobject, gtkPaddingProviderKey) {
+        let provider = UnsafeMutableRawPointer(existingRaw)
+            .assumingMemoryBound(to: GtkCssProvider.self)
+        gtk_css_provider_load_from_string(provider, css)
+    } else {
+        gtk_widget_add_css_class(widget, className)
+
+        let provider = gtk_css_provider_new()!
+        gtk_css_provider_load_from_string(provider, css)
+        let display = gtk_widget_get_display(widget)!
+        gtk_swift_add_css_provider_to_display(display, provider, UInt32(GTK_STYLE_PROVIDER_PRIORITY_USER))
+
+        g_object_set_data_full(gobject, gtkPaddingProviderKey, gpointer(provider), { userData in
+            g_object_unref(userData)
+        })
+    }
+
     return true
 }

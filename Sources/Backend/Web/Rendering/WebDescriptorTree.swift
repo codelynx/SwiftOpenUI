@@ -567,7 +567,10 @@ public func webCanApplyTextColorHostMutation(plan: WebDescriptorPlan) -> Bool {
         return plan.children.allSatisfy(webCanApplyTextColorHostMutation)
     case .update:
         guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill
-                || plan.updateIntent == .sliderValue else {
+                || plan.updateIntent == .sliderValue
+                || plan.updateIntent == .backgroundColor
+                || plan.updateIntent == .foregroundColor
+                || plan.updateIntent == .paddingLayout else {
             return false
         }
         return plan.children.allSatisfy(webCanApplyTextColorHostMutation)
@@ -597,8 +600,14 @@ private func webUpdateHook(action: WebExecutorAction,
         return webColorFillHook(action: action, performMutation: performMutation)
     case .sliderValue:
         return webSliderValueHook(action: action, performMutation: performMutation)
-    case .backgroundColor, .borderStyle, .frameLayout, .foregroundColor,
-         .hStackLayout, .paddingLayout, .sliderConfiguration,
+    case .backgroundColor:
+        return webBackgroundColorHook(action: action, performMutation: performMutation)
+    case .foregroundColor:
+        return webForegroundColorHook(action: action, performMutation: performMutation)
+    case .paddingLayout:
+        return webPaddingLayoutHook(action: action, performMutation: performMutation)
+    case .borderStyle, .frameLayout,
+         .hStackLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet
         return webUpdatedHookResult(action: action, intent: action.updateIntent,
@@ -649,6 +658,66 @@ private func webSliderValueHook(action: WebExecutorAction,
     return webUpdatedHookResult(action: action, intent: .sliderValue,
                                  performMutation: performMutation,
                                  mutationSucceeded: mutationSucceeded)
+}
+
+private func webBackgroundColorHook(action: WebExecutorAction,
+                                     performMutation: Bool) -> WebHookResult {
+    var mutationSucceeded = true
+    if performMutation,
+       case let .background(colorDesc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = webSetBackgroundColor(slotID: slotID, color: colorDesc)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
+    let childResults = action.children.map { webApplyHookInternal(action: $0, performMutation: performMutation) }
+    return WebHookResult(
+        identity: action.identity, kind: .updated,
+        updateIntent: .backgroundColor,
+        currentDescriptor: action.currentDescriptor,
+        previousDescriptor: action.previousDescriptor,
+        mutationSucceeded: mutationSucceeded && childResults.allSatisfy(webHookMutationSucceeded),
+        children: childResults)
+}
+
+private func webForegroundColorHook(action: WebExecutorAction,
+                                     performMutation: Bool) -> WebHookResult {
+    var mutationSucceeded = true
+    if performMutation,
+       case let .foregroundColor(colorDesc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = webSetForegroundColor(slotID: slotID, color: colorDesc)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
+    let childResults = action.children.map { webApplyHookInternal(action: $0, performMutation: performMutation) }
+    return WebHookResult(
+        identity: action.identity, kind: .updated,
+        updateIntent: .foregroundColor,
+        currentDescriptor: action.currentDescriptor,
+        previousDescriptor: action.previousDescriptor,
+        mutationSucceeded: mutationSucceeded && childResults.allSatisfy(webHookMutationSucceeded),
+        children: childResults)
+}
+
+private func webPaddingLayoutHook(action: WebExecutorAction,
+                                   performMutation: Bool) -> WebHookResult {
+    var mutationSucceeded = true
+    if performMutation,
+       case let .padding(paddingDesc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = webSetPadding(slotID: slotID, padding: paddingDesc)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
+    let childResults = action.children.map { webApplyHookInternal(action: $0, performMutation: performMutation) }
+    return WebHookResult(
+        identity: action.identity, kind: .updated,
+        updateIntent: .paddingLayout,
+        currentDescriptor: action.currentDescriptor,
+        previousDescriptor: action.previousDescriptor,
+        mutationSucceeded: mutationSucceeded && childResults.allSatisfy(webHookMutationSucceeded),
+        children: childResults)
 }
 
 private func webCreateHook(action: WebExecutorAction,
@@ -740,6 +809,9 @@ public enum WebHostedNodeKind: String {
     case text
     case color
     case slider
+    case background
+    case foregroundColor
+    case padding
     case unknown
 }
 
@@ -749,6 +821,9 @@ public func webHostedKindForDescriptor(_ kind: WebDescriptorKind) -> WebHostedNo
     case .text: return .text
     case .color: return .color
     case .slider: return .slider
+    case .background: return .background
+    case .foregroundColor: return .foregroundColor
+    case .padding: return .padding
     default: return nil
     }
 }
@@ -805,4 +880,25 @@ var _webSetSliderValueImpl: (Int, Double) -> Bool = { _, _ in false }
 
 func webSetSliderValue(slotID: Int, value: Double) -> Bool {
     _webSetSliderValueImpl(slotID, value)
+}
+
+/// Set background color on a hosted wrapper DOM element. Default stub returns false.
+var _webSetBackgroundColorImpl: (Int, WebColorDescriptor) -> Bool = { _, _ in false }
+
+func webSetBackgroundColor(slotID: Int, color: WebColorDescriptor) -> Bool {
+    _webSetBackgroundColorImpl(slotID, color)
+}
+
+/// Set foreground color on a hosted wrapper DOM element. Default stub returns false.
+var _webSetForegroundColorImpl: (Int, WebColorDescriptor) -> Bool = { _, _ in false }
+
+func webSetForegroundColor(slotID: Int, color: WebColorDescriptor) -> Bool {
+    _webSetForegroundColorImpl(slotID, color)
+}
+
+/// Set padding on a hosted wrapper DOM element. Default stub returns false.
+var _webSetPaddingImpl: (Int, WebPaddingDescriptor) -> Bool = { _, _ in false }
+
+func webSetPadding(slotID: Int, padding: WebPaddingDescriptor) -> Bool {
+    _webSetPaddingImpl(slotID, padding)
 }
