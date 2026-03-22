@@ -29,6 +29,10 @@ public struct GTK4ColorDescriptor: Equatable {
     public let green: Double
     public let blue: Double
     public let opacity: Double
+
+    public init(red: Double, green: Double, blue: Double, opacity: Double) {
+        self.red = red; self.green = green; self.blue = blue; self.opacity = opacity
+    }
 }
 
 public struct GTK4SliderDescriptor: Equatable {
@@ -601,18 +605,32 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
 
 private func gtkTextContentHook(action: GTK4ExecutorAction,
                                  performMutation: Bool) -> GTK4HookResult {
-    // Real GTK mutation will be wired in step 5 (host integration).
-    // For now, descriptive only.
+    var mutationSucceeded = true
+    if performMutation,
+       case let .text(textDesc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = gtkSetTextContent(slotID: slotID, text: textDesc.content)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
     return gtkUpdatedHookResult(action: action, intent: .textContent,
-                                 performMutation: performMutation)
+                                 performMutation: performMutation,
+                                 mutationSucceeded: mutationSucceeded)
 }
 
 private func gtkColorFillHook(action: GTK4ExecutorAction,
                                performMutation: Bool) -> GTK4HookResult {
-    // Real GTK mutation will be wired in step 5 (host integration).
-    // For now, descriptive only.
+    var mutationSucceeded = true
+    if performMutation,
+       case let .color(colorDesc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = gtkSetColorFill(slotID: slotID, color: colorDesc)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
     return gtkUpdatedHookResult(action: action, intent: .colorFill,
-                                 performMutation: performMutation)
+                                 performMutation: performMutation,
+                                 mutationSucceeded: mutationSucceeded)
 }
 
 private func gtkCreateHook(action: GTK4ExecutorAction,

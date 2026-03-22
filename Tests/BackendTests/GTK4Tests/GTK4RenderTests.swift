@@ -260,6 +260,79 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(firstSize.width, fifthOrigin.x - 4, accuracy: 0.01)
         XCTAssertEqual(thirdOrigin.y, max(firstSize.height, allocatedSize(of: second).height) + 5, accuracy: 0.01)
     }
+
+    // MARK: - Descriptor mutation hooks
+
+    func testTextMutationHookChangesLabelContent() throws {
+        try requireGTK()
+
+        // Render initial text and capture slot
+        let label = widgetFromOpaque(gtkRenderView(Text("Old")))
+        XCTAssertEqual(gtkHostedNodeKind(of: label), .text)
+
+        let slotID = gtkNativeSlotID(for: label)
+
+        // Mutate via hook helper
+        let success = gtkSetTextContent(slotID: slotID, text: "New")
+        XCTAssertTrue(success)
+
+        // Verify the label text changed
+        let cStr = gtk_label_get_text(OpaquePointer(label))!
+        XCTAssertEqual(String(cString: cStr), "New")
+    }
+
+    func testColorMutationHookChangesBackground() throws {
+        try requireGTK()
+
+        // Render initial color and capture slot
+        let box = widgetFromOpaque(gtkRenderView(Color.red))
+        XCTAssertEqual(gtkHostedNodeKind(of: box), .color)
+
+        let slotID = gtkNativeSlotID(for: box)
+
+        // Mutate via hook helper
+        let newColor = GTK4ColorDescriptor(red: 0, green: 1, blue: 0, opacity: 1)
+        let success = gtkSetColorFill(slotID: slotID, color: newColor)
+        XCTAssertTrue(success)
+
+        // Verify the CSS provider was installed (widget should have the class)
+        let className = "gtk-swift-color-\(slotID)"
+        XCTAssertTrue(gtk_widget_has_css_class(box, className) != 0)
+    }
+
+    func testTextMutationFailsWithInvalidSlot() throws {
+        try requireGTK()
+        let success = gtkSetTextContent(slotID: 0, text: "Nope")
+        XCTAssertFalse(success)
+    }
+
+    func testFullPipelineTextMutation() throws {
+        try requireGTK()
+
+        // Render and describe old state
+        let label = widgetFromOpaque(gtkRenderView(Text("Old")))
+        let slotID = gtkNativeSlotID(for: label)
+
+        let oldDesc = gtkDescribeView(Text("Old"))
+        let newDesc = gtkDescribeView(Text("New"))
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+        let retained = gtkRetainDescriptorTree(oldId)
+        let executor = gtkMakeExecutorTree(from: oldId, nativeSlotID: slotID)
+
+        // Plan
+        let plan = gtkPlanDescriptorTree(old: retained, new: newId)
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+
+        // Execute + mutate
+        let action = gtkExecuteDescriptorPlan(old: executor, plan: plan)
+        let result = gtkApplyHookMutation(action: action)
+        XCTAssertTrue(gtkHookMutationSucceeded(result))
+
+        // Verify label changed
+        let cStr = gtk_label_get_text(OpaquePointer(label))!
+        XCTAssertEqual(String(cString: cStr), "New")
+    }
 }
 
 private func requireGTK(
