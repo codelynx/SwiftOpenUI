@@ -228,4 +228,131 @@ final class GTK4DescriptorTests: XCTestCase {
         )
         XCTAssertFalse(gtkCanApplyTextColorHostMutation(plan: plan))
     }
+
+    // MARK: - Slider descriptor tests
+
+    func testDescribeSlider() {
+        let slider = Slider(value: .constant(0.5), in: 0...1, step: 0.1)
+        let node = gtkDescribeView(slider)
+        XCTAssertEqual(node.kind, .slider)
+        if case let .slider(desc) = node.props {
+            XCTAssertEqual(desc.value, 0.5)
+            XCTAssertEqual(desc.range, 0...1)
+            XCTAssertEqual(desc.step, 0.1)
+        } else {
+            XCTFail("Expected slider props")
+        }
+    }
+
+    func testPlanSliderValueChange() {
+        let oldDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.3, range: 0...1, step: 0.01)))
+        let newDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.7, range: 0...1, step: 0.01)))
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldDesc)),
+            new: gtkIdentifyDescriptorTree(newDesc)
+        )
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .sliderValue)
+    }
+
+    func testPlanSliderConfigurationChange() {
+        let oldDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.5, range: 0...1, step: 0.01)))
+        let newDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.5, range: 0...10, step: 0.1)))
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldDesc)),
+            new: gtkIdentifyDescriptorTree(newDesc)
+        )
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .sliderConfiguration)
+    }
+
+    func testCanApplySliderValueMutation() {
+        let oldDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.3, range: 0...1, step: 0.01)))
+        let newDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.7, range: 0...1, step: 0.01)))
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldDesc)),
+            new: gtkIdentifyDescriptorTree(newDesc)
+        )
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testCannotApplySliderConfigurationMutation() {
+        let oldDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.5, range: 0...1, step: 0.01)))
+        let newDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.5, range: 0...10, step: 0.1)))
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldDesc)),
+            new: gtkIdentifyDescriptorTree(newDesc)
+        )
+        XCTAssertFalse(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testMixedTextSliderMutation() {
+        let oldDesc = GTK4DescriptorNode(kind: .vStack, typeName: "VStack", children: [
+            GTK4DescriptorNode(kind: .text, typeName: "Text",
+                               props: .text(GTK4TextDescriptor(content: "Old"))),
+            GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                               props: .slider(GTK4SliderDescriptor(value: 0.3, range: 0...1, step: 0.01))),
+        ])
+        let newDesc = GTK4DescriptorNode(kind: .vStack, typeName: "VStack", children: [
+            GTK4DescriptorNode(kind: .text, typeName: "Text",
+                               props: .text(GTK4TextDescriptor(content: "New"))),
+            GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                               props: .slider(GTK4SliderDescriptor(value: 0.7, range: 0...1, step: 0.01))),
+        ])
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldDesc)),
+            new: gtkIdentifyDescriptorTree(newDesc)
+        )
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testSliderSlotSurvivesValueUpdate() {
+        let oldDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.3, range: 0...1, step: 0.01)))
+        let newDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.7, range: 0...1, step: 0.01)))
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+
+        // Create executor with a pre-assigned slider slot
+        var executor = gtkMakeExecutorTree(from: oldId)
+        executor = GTK4RetainedExecutorNode(
+            identity: executor.identity, kind: executor.kind,
+            lastDescriptor: executor.lastDescriptor, nativeSlotID: 42)
+
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(oldId), new: newId)
+        let action = gtkExecuteDescriptorPlan(old: executor, plan: plan)
+
+        // Slot should propagate through to resulting node
+        XCTAssertEqual(action.resultingNode.nativeSlotID, 42)
+        XCTAssertEqual(action.kind, .update)
+        XCTAssertEqual(action.updateIntent, .sliderValue)
+    }
+
+    func testSliderHookMutationWithSlot() {
+        let oldDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.3, range: 0...1, step: 0.01)))
+        let newDesc = GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                          props: .slider(GTK4SliderDescriptor(value: 0.7, range: 0...1, step: 0.01)))
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+        let executor = gtkMakeExecutorTree(from: oldId)
+        let plan = gtkPlanDescriptorTree(old: gtkRetainDescriptorTree(oldId), new: newId)
+        let action = gtkExecuteDescriptorPlan(old: executor, plan: plan)
+
+        // Descriptive hook (no live widget) should succeed
+        let result = gtkApplyHook(action: action)
+        XCTAssertEqual(result.kind, .updated)
+        XCTAssertEqual(result.updateIntent, .sliderValue)
+        XCTAssertTrue(result.mutationSucceeded)
+    }
 }

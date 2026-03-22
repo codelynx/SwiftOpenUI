@@ -1203,6 +1203,7 @@ extension Slider: WebRenderable, WebDescribable {
         }
         webRetainClosure(handler)
         _ = input.addEventListener("input", handler)
+        webMarkHostedNodeKind(input, kind: .slider)
 
         return input
     }

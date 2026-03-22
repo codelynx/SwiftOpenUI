@@ -552,7 +552,8 @@ public func webHookMutationSucceeded(_ result: WebHookResult) -> Bool {
     result.mutationSucceeded && result.children.allSatisfy(webHookMutationSucceeded)
 }
 
-/// Check if a plan tree contains only reuse + textContent/colorFill updates.
+/// Check if a plan tree contains only reuse + supported in-place updates
+/// (textContent, colorFill, sliderValue).
 public func webCanApplyTextColorHostMutation(plan: WebDescriptorPlan) -> Bool {
     switch plan.kind {
     case .create, .replace:
@@ -565,7 +566,8 @@ public func webCanApplyTextColorHostMutation(plan: WebDescriptorPlan) -> Bool {
         }
         return plan.children.allSatisfy(webCanApplyTextColorHostMutation)
     case .update:
-        guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill else {
+        guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill
+                || plan.updateIntent == .sliderValue else {
             return false
         }
         return plan.children.allSatisfy(webCanApplyTextColorHostMutation)
@@ -593,8 +595,10 @@ private func webUpdateHook(action: WebExecutorAction,
         return webTextContentHook(action: action, performMutation: performMutation)
     case .colorFill:
         return webColorFillHook(action: action, performMutation: performMutation)
+    case .sliderValue:
+        return webSliderValueHook(action: action, performMutation: performMutation)
     case .backgroundColor, .borderStyle, .frameLayout, .foregroundColor,
-         .hStackLayout, .paddingLayout, .sliderConfiguration, .sliderValue,
+         .hStackLayout, .paddingLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet
         return webUpdatedHookResult(action: action, intent: action.updateIntent,
@@ -628,6 +632,21 @@ private func webColorFillHook(action: WebExecutorAction,
         mutationSucceeded = false
     }
     return webUpdatedHookResult(action: action, intent: .colorFill,
+                                 performMutation: performMutation,
+                                 mutationSucceeded: mutationSucceeded)
+}
+
+private func webSliderValueHook(action: WebExecutorAction,
+                                 performMutation: Bool) -> WebHookResult {
+    var mutationSucceeded = true
+    if performMutation,
+       case let .slider(sliderDesc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = webSetSliderValue(slotID: slotID, value: sliderDesc.value)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
+    return webUpdatedHookResult(action: action, intent: .sliderValue,
                                  performMutation: performMutation,
                                  mutationSucceeded: mutationSucceeded)
 }
@@ -720,6 +739,7 @@ public func webColorDescriptor(_ color: Color) -> WebColorDescriptor {
 public enum WebHostedNodeKind: String {
     case text
     case color
+    case slider
     case unknown
 }
 
@@ -728,6 +748,7 @@ public func webHostedKindForDescriptor(_ kind: WebDescriptorKind) -> WebHostedNo
     switch kind {
     case .text: return .text
     case .color: return .color
+    case .slider: return .slider
     default: return nil
     }
 }
@@ -777,4 +798,11 @@ func webSetTextContent(slotID: Int, text: String) -> Bool {
 
 func webSetColorFill(slotID: Int, color: WebColorDescriptor) -> Bool {
     _webSetColorFillImpl(slotID, color)
+}
+
+/// Set slider value on a hosted DOM element. Default stub returns false.
+var _webSetSliderValueImpl: (Int, Double) -> Bool = { _, _ in false }
+
+func webSetSliderValue(slotID: Int, value: Double) -> Bool {
+    _webSetSliderValueImpl(slotID, value)
 }

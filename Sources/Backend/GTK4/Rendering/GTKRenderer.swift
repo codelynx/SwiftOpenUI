@@ -1814,7 +1814,14 @@ private class SliderState {
     }
 }
 
-extension Slider: GTKRenderable {
+extension Slider: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .slider, typeName: "Slider",
+            props: .slider(GTK4SliderDescriptor(
+                value: value.wrappedValue, range: range, step: step)))
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let scale = gtk_scale_new_with_range(
             GTK_ORIENTATION_HORIZONTAL,
@@ -1825,6 +1832,7 @@ extension Slider: GTKRenderable {
 
         gtk_widget_set_hexpand(scale, 1)
         gtk_range_set_value(rangePointer(scale), value.wrappedValue)
+        gtkMarkHostedNodeKind(scale, kind: .slider)
 
         let binding = value
         let stepVal = step

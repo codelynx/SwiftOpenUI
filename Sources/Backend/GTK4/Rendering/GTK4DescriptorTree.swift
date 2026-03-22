@@ -571,7 +571,8 @@ public func gtkCanApplyTextColorHostMutation(plan: GTK4DescriptorPlan) -> Bool {
         }
         return plan.children.allSatisfy(gtkCanApplyTextColorHostMutation)
     case .update:
-        guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill else {
+        guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill
+                || plan.updateIntent == .sliderValue else {
             return false
         }
         return plan.children.allSatisfy(gtkCanApplyTextColorHostMutation)
@@ -599,8 +600,10 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
         return gtkTextContentHook(action: action, performMutation: performMutation)
     case .colorFill:
         return gtkColorFillHook(action: action, performMutation: performMutation)
+    case .sliderValue:
+        return gtkSliderValueHook(action: action, performMutation: performMutation)
     case .backgroundColor, .borderStyle, .frameLayout, .foregroundColor,
-         .hStackLayout, .paddingLayout, .sliderConfiguration, .sliderValue,
+         .hStackLayout, .paddingLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet
         return gtkUpdatedHookResult(action: action, intent: action.updateIntent,
@@ -634,6 +637,21 @@ private func gtkColorFillHook(action: GTK4ExecutorAction,
         mutationSucceeded = false
     }
     return gtkUpdatedHookResult(action: action, intent: .colorFill,
+                                 performMutation: performMutation,
+                                 mutationSucceeded: mutationSucceeded)
+}
+
+private func gtkSliderValueHook(action: GTK4ExecutorAction,
+                                 performMutation: Bool) -> GTK4HookResult {
+    var mutationSucceeded = true
+    if performMutation,
+       case let .slider(sliderDesc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = gtkSetSliderValue(slotID: slotID, value: sliderDesc.value)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
+    return gtkUpdatedHookResult(action: action, intent: .sliderValue,
                                  performMutation: performMutation,
                                  mutationSucceeded: mutationSucceeded)
 }
@@ -726,6 +744,7 @@ public func gtkColorDescriptor(_ color: Color) -> GTK4ColorDescriptor {
 public enum GTK4HostedNodeKind: String {
     case text
     case color
+    case slider
     case unknown
 }
 
@@ -741,6 +760,8 @@ public func gtkMarkHostedNodeKind(_ widget: UnsafeMutablePointer<GtkWidget>,
         g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindTextPtr))
     case .color:
         g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr))
+    case .slider:
+        g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindSliderPtr))
     case .unknown:
         break
     }
@@ -752,6 +773,7 @@ public func gtkHostedNodeKind(of widget: UnsafeMutablePointer<GtkWidget>) -> GTK
     guard let raw = g_object_get_data(gobject, gtkHostedKindKey) else { return .unknown }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindTextPtr) { return .text }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr) { return .color }
+    if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindSliderPtr) { return .slider }
     return .unknown
 }
 
@@ -768,11 +790,18 @@ private let gtkHostedKindColorPtr: UnsafePointer<CChar> = {
     return UnsafePointer(p)
 }()
 
+private let gtkHostedKindSliderPtr: UnsafePointer<CChar> = {
+    let p = UnsafeMutablePointer<CChar>.allocate(capacity: 1)
+    p.pointee = 3
+    return UnsafePointer(p)
+}()
+
 /// Map descriptor kind to hosted kind (nil = not supported for mutation).
 public func gtkHostedKindForDescriptor(_ kind: GTK4DescriptorKind) -> GTK4HostedNodeKind? {
     switch kind {
     case .text: return .text
     case .color: return .color
+    case .slider: return .slider
     default: return nil
     }
 }
@@ -837,7 +866,7 @@ private func gtkCollectSupportedHostedWidgets(
     into result: inout [UnsafeMutablePointer<GtkWidget>]
 ) {
     let kind = gtkHostedNodeKind(of: widget)
-    if kind == .text || kind == .color {
+    if kind == .text || kind == .color || kind == .slider {
         result.append(widget)
     }
     var child = gtk_widget_get_first_child(widget)
@@ -863,12 +892,13 @@ private func gtkAssignNativeSlots(
 // MARK: - Slot validation
 
 /// Check that all update/keep actions in the tree have valid native slots
-/// for supported kinds (text/color). Returns false if any supported leaf
+/// for supported kinds (text/color/slider). Returns false if any supported leaf
 /// has a nil or dead slot.
 public func gtkAllSlotsValid(action: GTK4ExecutorAction) -> Bool {
     switch action.kind {
     case .update:
-        if action.updateIntent == .textContent || action.updateIntent == .colorFill {
+        if action.updateIntent == .textContent || action.updateIntent == .colorFill
+            || action.updateIntent == .sliderValue {
             guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
                   let widget = gtkWidgetFromSlotID(slotID),
                   gtk_swift_is_widget(widget) != 0 else {
@@ -925,5 +955,14 @@ public func gtkSetColorFill(slotID: Int, color: GTK4ColorDescriptor) -> Bool {
         })
     }
 
+    return true
+}
+
+/// Set slider value on a hosted GtkScale widget in place.
+public func gtkSetSliderValue(slotID: Int, value: Double) -> Bool {
+    guard let widget = gtkWidgetFromSlotID(slotID) else { return false }
+    guard gtk_swift_is_widget(widget) != 0 else { return false }
+    let range = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GtkRange.self)
+    gtk_range_set_value(range, value)
     return true
 }

@@ -75,7 +75,7 @@ private func webCollectSupportedHostedElements(
     into result: inout [JSValue]
 ) {
     let kind = webHostedNodeKind(of: element)
-    if kind == .text || kind == .color {
+    if kind == .text || kind == .color || kind == .slider {
         result.append(element)
     }
 
@@ -89,11 +89,12 @@ private func webCollectSupportedHostedElements(
 
 // MARK: - Slot validation
 
-/// Check that all update actions with text/color intent have valid, live slots.
+/// Check that all update actions with supported intents have valid, live slots.
 public func webAllSlotsValid(action: WebExecutorAction) -> Bool {
     switch action.kind {
     case .update:
-        if action.updateIntent == .textContent || action.updateIntent == .colorFill {
+        if action.updateIntent == .textContent || action.updateIntent == .colorFill
+            || action.updateIntent == .sliderValue {
             guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
                   let element = webResolveSlot(slotID) else {
                 return false
@@ -143,6 +144,16 @@ func webSetColorFillDOM(slotID: Int, color: WebColorDescriptor) -> Bool {
     return true
 }
 
+/// Set slider value on a hosted input[range] DOM element in place.
+func webSetSliderValueDOM(slotID: Int, value: Double) -> Bool {
+    guard let element = webResolveSlot(slotID),
+          let obj = element.object else { return false }
+    let parent = obj.parentNode
+    guard !parent.isNull && !parent.isUndefined else { return false }
+    obj.value = .string("\(value)")
+    return true
+}
+
 // MARK: - Wire mutation implementations
 
 /// Call this once at startup to wire the real DOM mutation functions
@@ -150,4 +161,5 @@ func webSetColorFillDOM(slotID: Int, color: WebColorDescriptor) -> Bool {
 func webInstallMutationHooks() {
     _webSetTextContentImpl = webSetTextContentDOM
     _webSetColorFillImpl = webSetColorFillDOM
+    _webSetSliderValueImpl = webSetSliderValueDOM
 }
