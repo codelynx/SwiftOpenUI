@@ -564,6 +564,11 @@ public func gtkCanApplyTextColorHostMutation(plan: GTK4DescriptorPlan) -> Bool {
     case .create, .replace:
         return false
     case .reuse:
+        // A composite node with no described children is opaque — we can't
+        // prove nothing changed inside, so reject the narrow path.
+        if plan.newDescriptor.kind == .composite && plan.children.isEmpty {
+            return false
+        }
         return plan.children.allSatisfy(gtkCanApplyTextColorHostMutation)
     case .update:
         guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill else {

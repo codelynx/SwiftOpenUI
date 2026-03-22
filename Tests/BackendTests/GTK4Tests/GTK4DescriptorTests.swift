@@ -201,4 +201,31 @@ final class GTK4DescriptorTests: XCTestCase {
         )
         XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
     }
+
+    func testOpaqueCompositeRejectsNarrowPath() {
+        // A composite node with no described children is opaque —
+        // we can't prove nothing changed inside, so the narrow path
+        // must reject it and fall back to full rebuild.
+        let desc = GTK4DescriptorNode(kind: .composite, typeName: "TextField")
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(desc)),
+            new: gtkIdentifyDescriptorTree(desc)
+        )
+        XCTAssertEqual(plan.kind, .reuse)
+        XCTAssertFalse(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testOpaqueCompositeInsideVStackRejectsNarrowPath() {
+        // A VStack with an opaque composite child should also reject.
+        let desc = GTK4DescriptorNode(kind: .vStack, typeName: "VStack", children: [
+            GTK4DescriptorNode(kind: .text, typeName: "Text",
+                               props: .text(GTK4TextDescriptor(content: "Hello"))),
+            GTK4DescriptorNode(kind: .composite, typeName: "TextField"),
+        ])
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(desc)),
+            new: gtkIdentifyDescriptorTree(desc)
+        )
+        XCTAssertFalse(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
 }
