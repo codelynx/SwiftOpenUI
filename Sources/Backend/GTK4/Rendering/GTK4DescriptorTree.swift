@@ -855,6 +855,27 @@ private func gtkAssignNativeSlots(
     )
 }
 
+// MARK: - Slot validation
+
+/// Check that all update/keep actions in the tree have valid native slots
+/// for supported kinds (text/color). Returns false if any supported leaf
+/// has a nil or dead slot.
+public func gtkAllSlotsValid(action: GTK4ExecutorAction) -> Bool {
+    switch action.kind {
+    case .update:
+        if action.updateIntent == .textContent || action.updateIntent == .colorFill {
+            guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
+                  let widget = gtkWidgetFromSlotID(slotID),
+                  gtk_swift_is_widget(widget) != 0 else {
+                return false
+            }
+        }
+    case .keep, .create, .replace:
+        break
+    }
+    return action.children.allSatisfy(gtkAllSlotsValid)
+}
+
 // MARK: - GTK mutation helpers
 
 /// Set text content on a hosted GtkLabel widget in place.

@@ -19,6 +19,11 @@ private var rebuildingViewHostKey: pthread_key_t = {
 public class GTKViewHost: AnyViewHost {
     public let container: UnsafeMutablePointer<GtkWidget>
     let buildBody: () -> OpaquePointer
+    /// Describes the body as a descriptor tree without creating widgets.
+    var describeBody: (() -> GTK4DescriptorNode)?
+    /// Retained descriptor state for narrow mutation path.
+    var lastRetainedDescriptor: GTK4RetainedDescriptorNode?
+    var retainedExecutor: GTK4RetainedExecutorNode?
     private let lock = NSLock()
     private var scheduled = false
     private var isContainerAlive = true
@@ -112,6 +117,37 @@ public class GTKViewHost: AnyViewHost {
         pendingAnimation = nil
         suppressFocusRestoreOnce = false
         lock.unlock()
+
+        // --- Narrow mutation path: try text/color in-place update ---
+        if let describeBody = describeBody,
+           let oldRetained = lastRetainedDescriptor,
+           let oldExecutor = retainedExecutor {
+
+            let previousEnv = getCurrentEnvironment()
+            setCurrentEnvironment(capturedEnvironment)
+            let newDescriptor = describeBody()
+            setCurrentEnvironment(previousEnv)
+
+            let newIdentified = gtkIdentifyDescriptorTree(newDescriptor)
+            let plan = gtkPlanDescriptorTree(old: oldRetained, new: newIdentified)
+
+            if gtkCanApplyTextColorHostMutation(plan: plan) {
+                let action = gtkExecuteDescriptorPlan(old: oldExecutor, plan: plan)
+
+                // Verify all slots are still valid before mutating
+                let allSlotsValid = gtkAllSlotsValid(action: action)
+                if allSlotsValid {
+                    let result = gtkApplyHookMutation(action: action)
+                    if gtkHookMutationSucceeded(result) {
+                        // Success — update retained state, skip full rebuild
+                        lastRetainedDescriptor = gtkRetainDescriptorTree(newIdentified)
+                        retainedExecutor = action.resultingNode
+                        return
+                    }
+                }
+            }
+            // Fall through to full rebuild
+        }
 
         g_object_ref(gpointer(container))
         defer { g_object_unref(gpointer(container)) }
@@ -231,6 +267,24 @@ public class GTKViewHost: AnyViewHost {
         // Restore focus to the matching input after rebuild
         if let info = focusInfo {
             restoreFocusInfo(info, in: newChild)
+        }
+
+        // Capture descriptor state for next rebuild's narrow mutation path
+        if let describeBody = describeBody {
+            let previousEnvForDesc = getCurrentEnvironment()
+            setCurrentEnvironment(capturedEnvironment)
+            let descriptor = describeBody()
+            setCurrentEnvironment(previousEnvForDesc)
+
+            let identified = gtkIdentifyDescriptorTree(descriptor)
+            lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+            var executor = gtkMakeExecutorTree(from: identified)
+            executor = gtkCaptureSupportedNativeSlots(
+                from: newChild,
+                descriptorRoot: identified,
+                executorRoot: executor
+            )
+            retainedExecutor = executor
         }
     }
 

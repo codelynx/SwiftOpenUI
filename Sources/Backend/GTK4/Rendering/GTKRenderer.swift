@@ -3496,6 +3496,9 @@ private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {
     let host = GTKViewHost(buildBody: {
         gtkRenderView(view.body)
     })
+    host.describeBody = {
+        gtkDescribeView(view.body)
+    }
 
     installState(view, host: host)
 
