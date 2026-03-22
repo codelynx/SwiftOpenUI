@@ -7,6 +7,8 @@ public enum WebDescriptorKind: Equatable {
     case background
     case border
     case composite
+    case divider
+    case font
     case text
     case color
     case frame
@@ -14,6 +16,7 @@ public enum WebDescriptorKind: Equatable {
     case hStack
     case padding
     case slider
+    case spacer
     case vStack
     case zStack
 }
@@ -89,12 +92,17 @@ public struct WebZStackDescriptor: Equatable {
     public let alignment: WebAlignmentDescriptor
 }
 
+public struct WebFontDescriptor: Equatable {
+    public let font: Font
+}
+
 // MARK: - Descriptor props and node
 
 public enum WebDescriptorProps: Equatable {
     case none
     case background(WebColorDescriptor)
     case border(WebBorderDescriptor)
+    case font(WebFontDescriptor)
     case text(WebTextDescriptor)
     case color(WebColorDescriptor)
     case frame(WebFrameDescriptor)
@@ -227,6 +235,7 @@ public enum WebDescriptorUpdateIntent: Equatable {
     case backgroundColor
     case borderStyle
     case colorFill
+    case fontStyle
     case frameLayout
     case foregroundColor
     case hStackLayout
@@ -495,6 +504,9 @@ private func webUpdateIntent(old: WebDescriptorNode,
     case .text:          return .textContent
     case .vStack:        return .vStackLayout
     case .zStack:        return .zStackLayout
+    case .divider:       return .none
+    case .font:          return .fontStyle
+    case .spacer:        return .none
     case .composite:     return .none
     }
 }
@@ -552,15 +564,15 @@ public func webHookMutationSucceeded(_ result: WebHookResult) -> Bool {
     result.mutationSucceeded && result.children.allSatisfy(webHookMutationSucceeded)
 }
 
-/// Check if a plan tree contains only reuse + supported in-place updates
-/// (textContent, colorFill, sliderValue).
+/// Check if a plan tree contains only reuse + supported in-place updates.
+/// Opaque composites (Body = Never, no describable conformance) with no
+/// described children are rejected — their child content is not captured
+/// in the descriptor, so we can't prove nothing changed inside.
 public func webCanApplyTextColorHostMutation(plan: WebDescriptorPlan) -> Bool {
     switch plan.kind {
     case .create, .replace:
         return false
     case .reuse:
-        // A composite node with no described children is opaque — we can't
-        // prove nothing changed inside, so reject the narrow path.
         if plan.newDescriptor.kind == .composite && plan.children.isEmpty {
             return false
         }
@@ -606,7 +618,7 @@ private func webUpdateHook(action: WebExecutorAction,
         return webForegroundColorHook(action: action, performMutation: performMutation)
     case .paddingLayout:
         return webPaddingLayoutHook(action: action, performMutation: performMutation)
-    case .borderStyle, .frameLayout,
+    case .borderStyle, .fontStyle, .frameLayout,
          .hStackLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet

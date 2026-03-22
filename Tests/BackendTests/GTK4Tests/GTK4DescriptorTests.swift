@@ -446,4 +446,116 @@ final class GTK4DescriptorTests: XCTestCase {
         XCTAssertEqual(action.resultingNode.nativeSlotID, 50)
         XCTAssertEqual(action.resultingNode.children[0].nativeSlotID, 51)
     }
+
+    // MARK: - Phase 9: ColorMixer proof tests
+
+    func testDescribeHStack() {
+        let node = gtkDescribeView(HStack {
+            Text("A")
+            Text("B")
+        })
+        XCTAssertEqual(node.kind, .hStack)
+        XCTAssertEqual(node.children.count, 2)
+        XCTAssertEqual(node.children[0].kind, .text)
+        XCTAssertEqual(node.children[1].kind, .text)
+    }
+
+    func testDescribeFontModifiedView() {
+        let node = gtkDescribeView(Text("Hello").font(.title))
+        XCTAssertEqual(node.kind, .font)
+        if case let .font(desc) = node.props {
+            XCTAssertEqual(desc.font, .title)
+        } else {
+            XCTFail("Expected font props")
+        }
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].kind, .text)
+    }
+
+    func testDescribeDivider() {
+        let node = gtkDescribeView(SwiftOpenUI.Divider())
+        XCTAssertEqual(node.kind, .divider)
+    }
+
+    func testDescribeSpacer() {
+        let node = gtkDescribeView(Spacer())
+        XCTAssertEqual(node.kind, .spacer)
+    }
+
+    func testFontChangeRejectsNarrowPath() {
+        let oldDesc = GTK4DescriptorNode(kind: .font, typeName: "FontModifiedView",
+                                          props: .font(GTK4FontDescriptor(font: .title)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "A")))])
+        let newDesc = GTK4DescriptorNode(kind: .font, typeName: "FontModifiedView",
+                                          props: .font(GTK4FontDescriptor(font: .body)),
+                                          children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                                                         props: .text(GTK4TextDescriptor(content: "A")))])
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldDesc)),
+            new: gtkIdentifyDescriptorTree(newDesc))
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .fontStyle)
+        XCTAssertFalse(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testColorMixerSliderSubtreeEligible() {
+        func text(_ s: String) -> GTK4DescriptorNode {
+            GTK4DescriptorNode(kind: .text, typeName: "Text", props: .text(GTK4TextDescriptor(content: s)))
+        }
+        func color(_ r: Double, _ g: Double, _ b: Double) -> GTK4DescriptorNode {
+            GTK4DescriptorNode(kind: .color, typeName: "Color",
+                                props: .color(GTK4ColorDescriptor(red: r, green: g, blue: b, opacity: 1)))
+        }
+        func font(_ child: GTK4DescriptorNode) -> GTK4DescriptorNode {
+            GTK4DescriptorNode(kind: .font, typeName: "FontModifiedView",
+                                props: .font(GTK4FontDescriptor(font: .headline)), children: [child])
+        }
+        func fg(_ child: GTK4DescriptorNode) -> GTK4DescriptorNode {
+            GTK4DescriptorNode(kind: .foregroundColor, typeName: "ForegroundColorView",
+                                props: .foregroundColor(GTK4ColorDescriptor(red: 0.5, green: 0.5, blue: 0.5, opacity: 1)),
+                                children: [child])
+        }
+        func slider(_ val: Double) -> GTK4DescriptorNode {
+            GTK4DescriptorNode(kind: .slider, typeName: "Slider",
+                                props: .slider(GTK4SliderDescriptor(value: val, range: 0...255, step: 1)))
+        }
+
+        func tree(hex: String, rgb: String, r: Double, g: Double, b: Double) -> GTK4DescriptorNode {
+            GTK4DescriptorNode(kind: .vStack, typeName: "VStack", children: [
+                fg(font(text("Color Studio"))),
+                GTK4DescriptorNode(kind: .hStack, typeName: "HStack", children: [
+                    color(r / 255, g / 255, b / 255),
+                    GTK4DescriptorNode(kind: .vStack, typeName: "VStack", children: [
+                        fg(font(text(hex))),
+                        fg(font(text(rgb))),
+                    ]),
+                    GTK4DescriptorNode(kind: .spacer, typeName: "Spacer"),
+                ]),
+                GTK4DescriptorNode(kind: .divider, typeName: "Divider"),
+                GTK4DescriptorNode(kind: .vStack, typeName: "VStack", children: [
+                    GTK4DescriptorNode(kind: .hStack, typeName: "HStack", children: [
+                        fg(font(text("R"))), slider(r), fg(font(text("\(Int(r))"))),
+                    ]),
+                    GTK4DescriptorNode(kind: .hStack, typeName: "HStack", children: [
+                        fg(font(text("G"))), slider(g), fg(font(text("\(Int(g))"))),
+                    ]),
+                    GTK4DescriptorNode(kind: .hStack, typeName: "HStack", children: [
+                        fg(font(text("B"))), slider(b), fg(font(text("\(Int(b))"))),
+                    ]),
+                ]),
+                GTK4DescriptorNode(kind: .divider, typeName: "Divider"),
+                GTK4DescriptorNode(kind: .spacer, typeName: "Spacer"),
+            ])
+        }
+
+        let oldTree = tree(hex: "#5080DC", rgb: "R: 80  G: 128  B: 220", r: 80, g: 128, b: 220)
+        let newTree = tree(hex: "#5082DC", rgb: "R: 80  G: 130  B: 220", r: 80, g: 130, b: 220)
+
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(oldTree)),
+            new: gtkIdentifyDescriptorTree(newTree))
+
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
 }

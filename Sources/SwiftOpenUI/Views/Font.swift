@@ -1,5 +1,5 @@
 /// Font weight for custom fonts.
-public enum FontWeight {
+public enum FontWeight: Equatable {
     case ultraLight
     case thin
     case light
@@ -12,7 +12,7 @@ public enum FontWeight {
 }
 
 /// Font design (typeface family).
-public enum FontDesign {
+public enum FontDesign: Equatable {
     case `default`
     case monospaced
     case rounded
@@ -20,7 +20,7 @@ public enum FontDesign {
 }
 
 /// Font presets matching SwiftUI's font system.
-public enum Font {
+public enum Font: Equatable {
     case largeTitle
     case title
     case title2

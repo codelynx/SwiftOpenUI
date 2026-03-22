@@ -113,7 +113,11 @@ extension EmptyView: WebRenderable {
     }
 }
 
-extension Spacer: WebRenderable {
+extension Spacer: WebRenderable, WebDescribable {
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(kind: .spacer, typeName: "Spacer")
+    }
+
     public func webCreateElement() -> JSValue {
         let div = document.createElement("div")
         div.style = "flex: 1;"
@@ -121,7 +125,11 @@ extension Spacer: WebRenderable {
     }
 }
 
-extension SwiftOpenUI.Divider: WebRenderable {
+extension SwiftOpenUI.Divider: WebRenderable, WebDescribable {
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(kind: .divider, typeName: "Divider")
+    }
+
     public func webCreateElement() -> JSValue {
         let hr = document.createElement("hr")
         hr.style = "border: none; border-top: 1px solid #ccc; margin: 4px 0; width: 100%;"
@@ -1012,7 +1020,14 @@ extension BackgroundView: WebRenderable, WebDescribable {
     }
 }
 
-extension FontModifiedView: WebRenderable {
+extension FontModifiedView: WebRenderable, WebDescribable {
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(
+            kind: .font, typeName: "FontModifiedView",
+            props: .font(WebFontDescriptor(font: font)),
+            children: [webDescribeView(content)])
+    }
+
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let css: String

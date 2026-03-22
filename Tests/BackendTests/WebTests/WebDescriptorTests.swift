@@ -203,9 +203,9 @@ final class WebDescriptorTests: XCTestCase {
     }
 
     func testOpaqueCompositeRejectsNarrowPath() {
-        // A composite node with no described children is opaque —
-        // we can't prove nothing changed inside, so the narrow path
-        // must reject it and fall back to full rebuild.
+        // An opaque composite (Body = Never, no describable conformance) with
+        // no described children is rejected — child content is not captured
+        // in the descriptor, so we can't prove nothing changed inside.
         let desc = WebDescriptorNode(kind: .composite, typeName: "TextField")
         let plan = webPlanDescriptorTree(
             old: webRetainDescriptorTree(webIdentifyDescriptorTree(desc)),
@@ -293,26 +293,25 @@ final class WebDescriptorTests: XCTestCase {
         XCTAssertFalse(webAllSlotsValid(action: action))
     }
 
-    func testOpaqueWrapperBlocksNarrowPath() {
-        // FontModifiedView is not WebDescribable, so webDescribeView falls through
-        // to the Body == Never case and produces an opaque composite.
+    func testFontModifiedViewDescribedAsFont() {
+        // FontModifiedView now has WebDescribable — produces .font kind with child.
         let node = webDescribeView(
             VStack {
                 Text("Hello").font(.title)
             }
         )
-        // The VStack should be described, but FontModifiedView becomes opaque
         XCTAssertEqual(node.kind, .vStack)
         XCTAssertEqual(node.children.count, 1)
-        XCTAssertEqual(node.children[0].kind, .composite)
-        XCTAssertEqual(node.children[0].typeName, "FontModifiedView<Text>")
+        XCTAssertEqual(node.children[0].kind, .font)
+        XCTAssertEqual(node.children[0].children.count, 1)
+        XCTAssertEqual(node.children[0].children[0].kind, .text)
 
-        // Plan against itself — reuse, but opaque composite blocks narrow path
+        // Plan against itself — reuse, font wrapper is transparent → passes
         let plan = webPlanDescriptorTree(
             old: webRetainDescriptorTree(webIdentifyDescriptorTree(node)),
             new: webIdentifyDescriptorTree(node)
         )
-        XCTAssertFalse(webCanApplyTextColorHostMutation(plan: plan))
+        XCTAssertTrue(webCanApplyTextColorHostMutation(plan: plan))
     }
 
     // MARK: - Slider descriptor tests
@@ -572,6 +571,117 @@ final class WebDescriptorTests: XCTestCase {
         let plan = webPlanDescriptorTree(
             old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldDesc)),
             new: webIdentifyDescriptorTree(newDesc))
+        XCTAssertTrue(webCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    // MARK: - Phase 9: ColorMixer proof tests
+
+    func testDescribeFontModifiedView() {
+        let node = webDescribeView(Text("Hello").font(.title))
+        XCTAssertEqual(node.kind, .font)
+        if case let .font(desc) = node.props {
+            XCTAssertEqual(desc.font, .title)
+        } else {
+            XCTFail("Expected font props")
+        }
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].kind, .text)
+    }
+
+    func testDescribeDivider() {
+        let node = webDescribeView(SwiftOpenUI.Divider())
+        XCTAssertEqual(node.kind, .divider)
+        XCTAssertTrue(node.children.isEmpty)
+    }
+
+    func testDescribeSpacer() {
+        let node = webDescribeView(Spacer())
+        XCTAssertEqual(node.kind, .spacer)
+        XCTAssertTrue(node.children.isEmpty)
+    }
+
+    func testFontChangeRejectsNarrowPath() {
+        let oldDesc = WebDescriptorNode(kind: .font, typeName: "FontModifiedView",
+                                         props: .font(WebFontDescriptor(font: .title)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let newDesc = WebDescriptorNode(kind: .font, typeName: "FontModifiedView",
+                                         props: .font(WebFontDescriptor(font: .body)),
+                                         children: [WebDescriptorNode(kind: .text, typeName: "Text",
+                                                                       props: .text(WebTextDescriptor(content: "A")))])
+        let plan = webPlanDescriptorTree(
+            old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldDesc)),
+            new: webIdentifyDescriptorTree(newDesc))
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .fontStyle)
+        XCTAssertFalse(webCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testColorMixerSliderSubtreeEligible() {
+        // Model the ColorMixer slider-dependent subtree (header, swatch, sliders).
+        // Excludes opaque siblings (Button, TapGestureView+ForEach swatches)
+        // which still block the narrow path and require full describability.
+        func text(_ s: String) -> WebDescriptorNode {
+            WebDescriptorNode(kind: .text, typeName: "Text", props: .text(WebTextDescriptor(content: s)))
+        }
+        func color(_ r: Double, _ g: Double, _ b: Double) -> WebDescriptorNode {
+            WebDescriptorNode(kind: .color, typeName: "Color",
+                              props: .color(WebColorDescriptor(red: r, green: g, blue: b, opacity: 1)))
+        }
+        func font(_ child: WebDescriptorNode) -> WebDescriptorNode {
+            WebDescriptorNode(kind: .font, typeName: "FontModifiedView",
+                              props: .font(WebFontDescriptor(font: .headline)), children: [child])
+        }
+        func fg(_ child: WebDescriptorNode) -> WebDescriptorNode {
+            WebDescriptorNode(kind: .foregroundColor, typeName: "ForegroundColorView",
+                              props: .foregroundColor(WebColorDescriptor(red: 0.5, green: 0.5, blue: 0.5, opacity: 1)),
+                              children: [child])
+        }
+        func slider(_ val: Double) -> WebDescriptorNode {
+            WebDescriptorNode(kind: .slider, typeName: "Slider",
+                              props: .slider(WebSliderDescriptor(value: val, range: 0...255, step: 1)))
+        }
+
+        func tree(hex: String, rgb: String, r: Double, g: Double, b: Double) -> WebDescriptorNode {
+            WebDescriptorNode(kind: .vStack, typeName: "VStack", children: [
+                // Header
+                fg(font(text("Color Studio"))),
+                // Swatch + values
+                WebDescriptorNode(kind: .hStack, typeName: "HStack", children: [
+                    color(r / 255, g / 255, b / 255),
+                    WebDescriptorNode(kind: .vStack, typeName: "VStack", children: [
+                        fg(font(text(hex))),
+                        fg(font(text(rgb))),
+                    ]),
+                    WebDescriptorNode(kind: .spacer, typeName: "Spacer"),
+                ]),
+                WebDescriptorNode(kind: .divider, typeName: "Divider"),
+                // Sliders
+                WebDescriptorNode(kind: .vStack, typeName: "VStack", children: [
+                    WebDescriptorNode(kind: .hStack, typeName: "HStack", children: [
+                        fg(font(text("R"))), slider(r), fg(font(text("\(Int(r))"))),
+                    ]),
+                    WebDescriptorNode(kind: .hStack, typeName: "HStack", children: [
+                        fg(font(text("G"))), slider(g), fg(font(text("\(Int(g))"))),
+                    ]),
+                    WebDescriptorNode(kind: .hStack, typeName: "HStack", children: [
+                        fg(font(text("B"))), slider(b), fg(font(text("\(Int(b))"))),
+                    ]),
+                ]),
+                WebDescriptorNode(kind: .divider, typeName: "Divider"),
+                WebDescriptorNode(kind: .spacer, typeName: "Spacer"),
+            ])
+        }
+
+        let oldTree = tree(hex: "#5080DC", rgb: "R: 80  G: 128  B: 220", r: 80, g: 128, b: 220)
+        let newTree = tree(hex: "#5082DC", rgb: "R: 80  G: 130  B: 220", r: 80, g: 130, b: 220)
+
+        let plan = webPlanDescriptorTree(
+            old: webRetainDescriptorTree(webIdentifyDescriptorTree(oldTree)),
+            new: webIdentifyDescriptorTree(newTree))
+
+        // The narrow path should pass: only text content, color fill, and slider value changed.
+        // Font, divider, spacer, and button nodes are all reused.
         XCTAssertTrue(webCanApplyTextColorHostMutation(plan: plan))
     }
 }

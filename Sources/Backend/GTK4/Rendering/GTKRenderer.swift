@@ -114,7 +114,11 @@ extension EmptyView: GTKRenderable {
     }
 }
 
-extension Spacer: GTKRenderable {
+extension Spacer: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(kind: .spacer, typeName: "Spacer")
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let label = gtk_label_new(nil)!
         let gobject = UnsafeMutableRawPointer(label).assumingMemoryBound(to: GObject.self)
@@ -123,7 +127,11 @@ extension Spacer: GTKRenderable {
     }
 }
 
-extension Divider: GTKRenderable {
+extension Divider: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(kind: .divider, typeName: "Divider")
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)!
         gtk_widget_set_hexpand(sep, 1)
@@ -456,7 +464,22 @@ private func gtkRenderFallbackVStack(
     return opaqueFromWidget(box)
 }
 
-extension HStack: GTKRenderable {
+extension HStack: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        let childDescs: [GTK4DescriptorNode]
+        if let multi = content as? MultiChildView {
+            childDescs = multi.children.map(gtkDescribeAnyView)
+        } else {
+            childDescs = [gtkDescribeView(content)]
+        }
+        return GTK4DescriptorNode(
+            kind: .hStack, typeName: "HStack",
+            props: .hStack(GTK4HStackDescriptor(
+                spacing: spacing,
+                alignment: gtkVerticalAlignmentDescriptor(alignment))),
+            children: childDescs)
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let children = gtkRenderChildren(content).map(widgetFromOpaque)
         if gtkCanUseSharedHStackLayout(children) {
@@ -545,7 +568,21 @@ private func gtkRenderFallbackHStack(
     return opaqueFromWidget(box)
 }
 
-extension ZStack: GTKRenderable {
+extension ZStack: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        let childDescs: [GTK4DescriptorNode]
+        if let multi = content as? MultiChildView {
+            childDescs = multi.children.map(gtkDescribeAnyView)
+        } else {
+            childDescs = [gtkDescribeView(content)]
+        }
+        return GTK4DescriptorNode(
+            kind: .zStack, typeName: "ZStack",
+            props: .zStack(GTK4ZStackDescriptor(
+                alignment: gtkAlignmentDescriptor(alignment))),
+            children: childDescs)
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let children = gtkRenderChildren(content).map(widgetFromOpaque)
         if gtkCanUseSharedZStackLayout(children) {
@@ -702,7 +739,18 @@ extension PaddedView: GTKRenderable, GTKDescribable {
     }
 }
 
-extension FrameView: GTKRenderable {
+extension FrameView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .frame, typeName: "FrameView",
+            props: .frame(GTK4FrameDescriptor(
+                width: width, height: height,
+                minWidth: minWidth, minHeight: minHeight,
+                maxWidth: maxWidth, maxHeight: maxHeight,
+                alignment: gtkAlignmentDescriptor(alignment))),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let child = widgetFromOpaque(gtkRenderView(content))
         let wrapper = gtk_swift_fixed_new()!
@@ -806,7 +854,14 @@ private func gtkMeasureWidgetNaturalSize(_ widget: UnsafeMutablePointer<GtkWidge
     return ViewSize(width: Double(width), height: Double(height))
 }
 
-extension ForegroundColorView: GTKRenderable {
+extension ForegroundColorView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .foregroundColor, typeName: "ForegroundColorView",
+            props: .foregroundColor(gtkColorDescriptor(color)),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         applyCSSToWidget(widget, properties: "color: \(color.hex);")
@@ -814,7 +869,14 @@ extension ForegroundColorView: GTKRenderable {
     }
 }
 
-extension BackgroundView: GTKRenderable {
+extension BackgroundView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .background, typeName: "BackgroundView",
+            props: .background(gtkColorDescriptor(color)),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         applyCSSToWidget(widget, properties: "background-color: \(color.hex);")
@@ -822,7 +884,14 @@ extension BackgroundView: GTKRenderable {
     }
 }
 
-extension FontModifiedView: GTKRenderable {
+extension FontModifiedView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .font, typeName: "FontModifiedView",
+            props: .font(GTK4FontDescriptor(font: font)),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         let css: String
@@ -845,7 +914,15 @@ extension FontModifiedView: GTKRenderable {
     }
 }
 
-extension BorderView: GTKRenderable {
+extension BorderView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .border, typeName: "BorderView",
+            props: .border(GTK4BorderDescriptor(
+                color: gtkColorDescriptor(color), width: width)),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         applyCSSToWidget(widget, properties: "border: \(width)px solid \(color.hex);")

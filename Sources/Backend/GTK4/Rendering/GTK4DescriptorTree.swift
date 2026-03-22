@@ -9,6 +9,8 @@ public enum GTK4DescriptorKind: Equatable {
     case background
     case border
     case composite
+    case divider
+    case font
     case text
     case color
     case frame
@@ -16,6 +18,7 @@ public enum GTK4DescriptorKind: Equatable {
     case hStack
     case padding
     case slider
+    case spacer
     case vStack
     case zStack
 }
@@ -91,12 +94,17 @@ public struct GTK4ZStackDescriptor: Equatable {
     public let alignment: GTK4AlignmentDescriptor
 }
 
+public struct GTK4FontDescriptor: Equatable {
+    public let font: Font
+}
+
 // MARK: - Descriptor props and node
 
 public enum GTK4DescriptorProps: Equatable {
     case none
     case background(GTK4ColorDescriptor)
     case border(GTK4BorderDescriptor)
+    case font(GTK4FontDescriptor)
     case text(GTK4TextDescriptor)
     case color(GTK4ColorDescriptor)
     case frame(GTK4FrameDescriptor)
@@ -229,6 +237,7 @@ public enum GTK4DescriptorUpdateIntent: Equatable {
     case backgroundColor
     case borderStyle
     case colorFill
+    case fontStyle
     case frameLayout
     case foregroundColor
     case hStackLayout
@@ -497,6 +506,9 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
     case .text:          return .textContent
     case .vStack:        return .vStackLayout
     case .zStack:        return .zStackLayout
+    case .divider:       return .none
+    case .font:          return .fontStyle
+    case .spacer:        return .none
     case .composite:     return .none
     }
 }
@@ -558,14 +570,15 @@ public func gtkHookMutationSucceeded(_ result: GTK4HookResult) -> Bool {
     result.mutationSucceeded && result.children.allSatisfy(gtkHookMutationSucceeded)
 }
 
-/// Check if a plan tree contains only reuse + textContent/colorFill updates.
+/// Check if a plan tree contains only reuse + supported in-place updates.
+/// Opaque composites (Body = Never, no describable conformance) with no
+/// described children are rejected — their child content is not captured
+/// in the descriptor, so we can't prove nothing changed inside.
 public func gtkCanApplyTextColorHostMutation(plan: GTK4DescriptorPlan) -> Bool {
     switch plan.kind {
     case .create, .replace:
         return false
     case .reuse:
-        // A composite node with no described children is opaque — we can't
-        // prove nothing changed inside, so reject the narrow path.
         if plan.newDescriptor.kind == .composite && plan.children.isEmpty {
             return false
         }
@@ -605,7 +618,7 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
         return gtkSliderValueHook(action: action, performMutation: performMutation)
     case .paddingLayout:
         return gtkPaddingLayoutHook(action: action, performMutation: performMutation)
-    case .backgroundColor, .borderStyle, .frameLayout, .foregroundColor,
+    case .backgroundColor, .borderStyle, .fontStyle, .frameLayout, .foregroundColor,
          .hStackLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet
