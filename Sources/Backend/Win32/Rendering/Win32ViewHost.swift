@@ -8,7 +8,7 @@ import Observation
 #endif
 
 /// Hosts a stateful view's Win32 HWND subtree. The container HWND
-/// is stable across re-renders — only its children are replaced.
+/// is stable across re-renders; only its children are replaced.
 ///
 /// Uses PostMessage(WM_SWIFTUI_REBUILD) for coalesced scheduling
 /// instead of GTK's g_idle_add.
@@ -18,6 +18,9 @@ public class Win32ViewHost: AnyViewHost {
 
     /// Closure that builds the view body and returns the root child HWND.
     public let buildBody: (RenderContext) -> HWND?
+
+    /// Closure that describes the current view body without creating HWNDs.
+    public let describeBody: () -> Win32DescriptorNode
 
     /// The render context for creating child windows.
     private let context: RenderContext
@@ -35,18 +38,20 @@ public class Win32ViewHost: AnyViewHost {
     /// Current child HWND inside the container.
     private var currentChild: HWND?
 
-    /// Retained tree for incremental reconciliation (Phase 0+).
-    var retainedRoot: Win32HostedNode?
-
+    /// Descriptor/executor bookkeeping for narrow text/color host integration.
+    private(set) var retainedDescriptorRoot: Win32RetainedDescriptorNode?
+    private(set) var retainedExecutorRoot: Win32RetainedExecutorNode?
 
     /// The root window to post rebuild messages to.
     private var rootWindow: HWND?
 
-    public init(context: RenderContext, buildBody: @escaping (RenderContext) -> HWND?) {
+    public init(context: RenderContext,
+                buildBody: @escaping (RenderContext) -> HWND?,
+                describeBody: @escaping () -> Win32DescriptorNode) {
         self.context = context
         self.buildBody = buildBody
+        self.describeBody = describeBody
 
-        // Register the container window class once.
         Win32ViewHost.registerContainerClass(hInstance: context.hInstance)
 
         let containerHwnd = CreateWindowExW(
@@ -62,24 +67,20 @@ public class Win32ViewHost: AnyViewHost {
         )!
 
         self.container = containerHwnd
+        markHostedNodeKind(containerHwnd, .hostContainer)
 
-        // Store self in the container's user data for retrieval in WndProc
         let retained = Unmanaged.passRetained(self).toOpaque()
         win32_SetWindowLongPtrW(containerHwnd, GWLP_USERDATA, LONG_PTR(Int(bitPattern: retained)))
 
-        // Find the root window for PostMessage
         self.rootWindow = findRootWindow(from: context.parent)
     }
 
     /// Add the initial child HWND to the container.
-    /// Sizes the container to match the child's natural size (not the other way around).
-    /// This is critical: the container starts at 0x0, so layoutChild() would crush
-    /// the child to zero if we didn't size the container first.
+    /// Sizes the container to match the child's natural size.
     public func addChild(_ child: HWND) {
         currentChild = child
         SetParent(child, container)
 
-        // Propagate child's natural size up to the container
         var childRect = RECT()
         GetWindowRect(child, &childRect)
         let w = childRect.right - childRect.left
@@ -88,19 +89,27 @@ public class Win32ViewHost: AnyViewHost {
             SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
         }
         layoutChild()
+        captureRetainedDescriptorState()
     }
 
     /// Schedule a coalesced rebuild via PostMessage.
     public func scheduleRebuild() {
         lock.lock()
-        defer { lock.unlock() }
-        guard isContainerAlive else { return }
-        if interactiveUpdateDepth > 0 {
-            rebuildDeferredDuringInteraction = true
+        guard isContainerAlive else {
+            lock.unlock()
             return
         }
-        guard !scheduled else { return }
+        if interactiveUpdateDepth > 0 {
+            rebuildDeferredDuringInteraction = true
+            lock.unlock()
+            return
+        }
+        guard !scheduled else {
+            lock.unlock()
+            return
+        }
         scheduled = true
+        lock.unlock()
 
         if let root = rootWindow {
             let ptr = Unmanaged.passRetained(self).toOpaque()
@@ -166,6 +175,22 @@ public class Win32ViewHost: AnyViewHost {
         return buildBody(context)
     }
 
+    /// Describe the body with observation tracking for @Observable support.
+    public func buildDescriptorWithTracking() -> Win32DescriptorNode {
+        #if canImport(Observation)
+        if #available(macOS 14.0, iOS 17.0, *) {
+            var result: Win32DescriptorNode?
+            withObservationTracking {
+                result = describeBody()
+            } onChange: { [weak self] in
+                self?.scheduleRebuild()
+            }
+            return result ?? Win32DescriptorNode(kind: .composite, typeName: "EmptyDescriptor")
+        }
+        #endif
+        return describeBody()
+    }
+
     /// Capture the current environment.
     public func captureEnvironment() {
         capturedEnvironment = getCurrentEnvironment()
@@ -183,79 +208,48 @@ public class Win32ViewHost: AnyViewHost {
         suppressFocusRestoreOnce = false
         lock.unlock()
 
-        // Suppress painting during rebuild
         SendMessageW(container, UINT(WM_SETREDRAW), 0, 0)
 
-        // Always save Edit cursor/selection state for all Edit controls.
-        // Focus restoration is separate and can be suppressed by @FocusState.
         let inputState = saveInputState(in: container)
 
-        // Build the replacement subtree into a temporary off-screen parent.
-        // Then compare against the existing subtree to decide: reconcile or replace.
         let previousEnv = getCurrentEnvironment()
         defer { setCurrentEnvironment(previousEnv) }
         if let captured = capturedEnvironment {
             setCurrentEnvironment(captured)
         }
 
+        defer {
+            restoreEditStates(inputState.editStates, in: container)
+
+            if !shouldSuppressFocus {
+                restoreFocus(inputState.focus, in: container)
+            }
+
+            SendMessageW(container, UINT(WM_SETREDRAW), 1, 0)
+            RedrawWindow(container, nil, nil,
+                         UINT(RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN))
+        }
+
+        if tryTextColorMutationRebuild() {
+            return
+        }
+
         if let oldChild = currentChild {
-            // Create a temporary invisible container for the new subtree
-            let tempParent = CreateWindowExW(
-                0, Win32ViewHost.containerClassName, nil,
-                DWORD(WS_CHILD | WS_CLIPCHILDREN),  // not WS_VISIBLE
-                0, 0, 0, 0,
-                container, nil, context.hInstance, nil
-            )!
+            DestroyWindow(oldChild)
+            currentChild = nil
+        }
 
-            let tempContext = RenderContext(parent: tempParent, hInstance: context.hInstance)
-            let newChild = buildBodyWithTracking(tempContext)
-
-            // Always validate structure — canReconcile also checks that
-            // every node is a type we know how to safely update in place.
-            let structureMatches = newChild.map { canReconcile(oldHwnd: oldChild, newHwnd: $0) } ?? false
-
-            if structureMatches, let newChild = newChild {
-                // Structure matches and all nodes are reconcilable —
-                // update old tree in place, discard new
-                reconcileInPlace(oldHwnd: oldChild, newHwnd: newChild)
-                DestroyWindow(tempParent)
-                // Repaint the preserved tree
-                InvalidateRect(oldChild, nil, false)
-            } else {
-                // Structure mismatch or unreconcilable nodes — full rebuild
-                DestroyWindow(oldChild)
-                currentChild = nil
-
-                if let newChild = newChild {
-                    // Re-parent from temp to real container
-                    SetParent(newChild, container)
-                    currentChild = newChild
-                    layoutChild()
-                }
-                DestroyWindow(tempParent)
-            }
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        let newChild = buildBodyWithTracking(childContext)
+        if let newChild = newChild {
+            currentChild = newChild
+            layoutChild()
+            captureRetainedDescriptorState()
         } else {
-            // No existing child — first render
-            let childContext = RenderContext(parent: container, hInstance: context.hInstance)
-            let newChild = buildBodyWithTracking(childContext)
-            if let newChild = newChild {
-                currentChild = newChild
-                layoutChild()
-            }
+            retainedDescriptorRoot = nil
+            retainedExecutorRoot = nil
         }
 
-        // Always restore Edit cursor/selection state
-        restoreEditStates(inputState.editStates, in: container)
-
-        // Restore focus (unless suppressed by @FocusState clearing to nil)
-        if !shouldSuppressFocus {
-            restoreFocus(inputState.focus, in: container)
-        }
-
-        // Re-enable painting
-        SendMessageW(container, UINT(WM_SETREDRAW), 1, 0)
-        RedrawWindow(container, nil, nil,
-                     UINT(RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN))
     }
 
     /// Layout the current child to fill the container.
@@ -264,6 +258,46 @@ public class Win32ViewHost: AnyViewHost {
         var rect = RECT()
         GetClientRect(container, &rect)
         SetWindowPos(child, nil, 0, 0, rect.right - rect.left, rect.bottom - rect.top, UINT(SWP_NOZORDER))
+    }
+
+    private func captureRetainedDescriptorState() {
+        guard let child = currentChild else {
+            retainedDescriptorRoot = nil
+            retainedExecutorRoot = nil
+            return
+        }
+
+        let identified = winIdentifyDescriptorTree(describeBody())
+        retainedDescriptorRoot = winRetainDescriptorTree(identified)
+        let executorRoot = winMakeExecutorTree(from: identified)
+        retainedExecutorRoot = winCaptureSupportedNativeSlots(
+            from: child,
+            descriptorRoot: identified,
+            executorRoot: executorRoot
+        )
+    }
+
+    private func tryTextColorMutationRebuild() -> Bool {
+        guard currentChild != nil,
+              let retainedDescriptorRoot,
+              let retainedExecutorRoot else {
+            return false
+        }
+
+        let identified = winIdentifyDescriptorTree(buildDescriptorWithTracking())
+        let plan = winPlanDescriptorTree(old: retainedDescriptorRoot, new: identified)
+        guard winCanApplyTextColorHostMutation(plan: plan) else {
+            return false
+        }
+
+        let action = winExecuteDescriptorPlan(old: retainedExecutorRoot, plan: plan)
+        let hookResult = winApplyHookMutation(action: action)
+        guard winHookMutationSucceeded(hookResult) else {
+            return false
+        }
+        self.retainedDescriptorRoot = winRetainDescriptorTree(identified)
+        self.retainedExecutorRoot = action.resultingNode
+        return true
     }
 
     /// Called when the container is about to be destroyed.
@@ -275,8 +309,6 @@ public class Win32ViewHost: AnyViewHost {
         rebuildDeferredDuringInteraction = false
         lock.unlock()
     }
-
-    // MARK: - Container window class
 
     private static let containerClassName: UnsafePointer<WCHAR> = {
         "SwiftUIContainer".withCString(encodedAs: UTF16.self) { ptr in
@@ -324,15 +356,10 @@ func findContainingViewHost(from hwnd: HWND?) -> Win32ViewHost? {
     return nil
 }
 
-/// WndProc for ViewHost container windows.
 private let containerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
     switch uMsg {
     case UINT(WM_SIZE):
-        let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
-        if userData != 0 {
-            let host = Unmanaged<Win32ViewHost>.fromOpaque(
-                UnsafeMutableRawPointer(bitPattern: Int(userData))!
-            ).takeUnretainedValue()
+        if let host = findContainingViewHost(from: hwnd) {
             host.layoutChild()
         }
         return 0
@@ -354,7 +381,6 @@ private let containerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
-        // Forward to parent so BackgroundView ancestors can set brush
         if let parent = GetParent(hwnd!) {
             return SendMessageW(parent, uMsg, wParam, lParam)
         }
@@ -367,9 +393,9 @@ private let containerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         if userData != 0 {
             let host = Unmanaged<Win32ViewHost>.fromOpaque(
                 UnsafeMutableRawPointer(bitPattern: Int(userData))!
-            )
-            host.takeUnretainedValue().markDestroyed()
-            host.release()
+            ).takeRetainedValue()
+            host.markDestroyed()
+            win32_SetWindowLongPtrW(hwnd!, GWLP_USERDATA, 0)
         }
         return DefWindowProcW(hwnd, uMsg, wParam, lParam)
 
@@ -380,7 +406,6 @@ private let containerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
 
 // MARK: - Input state save/restore across rebuilds
 
-/// Captured state of the focused control before a rebuild.
 struct FocusSnapshot {
     let className: String
     let classIndex: Int
@@ -389,14 +414,10 @@ struct FocusSnapshot {
     let hasFocus: Bool
 }
 
-/// Captured state of an Edit control (cursor position / selection range).
-/// Restored after rebuild so typing in TextFields doesn't lose cursor position.
-/// For single-line ES_AUTOHSCROLL edits, EM_SETSEL implicitly scrolls to the
-/// caret, so no separate scroll save/restore is needed.
 struct EditControlSnapshot {
-    let index: Int       // nth Edit control in DFS order
-    let selStart: Int    // cursor / selection start
-    let selEnd: Int      // cursor / selection end
+    let index: Int
+    let selStart: Int
+    let selEnd: Int
 }
 
 struct InputStateSnapshot {
@@ -405,7 +426,6 @@ struct InputStateSnapshot {
 }
 
 func saveInputState(in container: HWND) -> InputStateSnapshot {
-    // Save focus
     let focus: FocusSnapshot
     if let focused = GetFocus(), IsChild(container, focused) {
         let className = getWindowClassName(focused)
@@ -424,7 +444,6 @@ func saveInputState(in container: HWND) -> InputStateSnapshot {
         focus = FocusSnapshot(className: "", classIndex: 0, selStart: 0, selEnd: 0, hasFocus: false)
     }
 
-    // Save all Edit controls' cursor/selection state
     var editControls: [HWND] = []
     collectControlsByClass(parent: container, className: "Edit", into: &editControls)
 
@@ -439,8 +458,6 @@ func saveInputState(in container: HWND) -> InputStateSnapshot {
     return InputStateSnapshot(focus: focus, editStates: editStates)
 }
 
-/// Restore all Edit controls' cursor/selection and scroll state.
-/// Called unconditionally — edit state should survive even when focus is suppressed.
 func restoreEditStates(_ editStates: [EditControlSnapshot], in parent: HWND) {
     var editControls: [HWND] = []
     collectControlsByClass(parent: parent, className: "Edit", into: &editControls)
@@ -453,11 +470,10 @@ func restoreEditStates(_ editStates: [EditControlSnapshot], in parent: HWND) {
     }
 }
 
-/// Restore focus to the control that had it before rebuild.
 func restoreFocus(_ snapshot: FocusSnapshot, in parent: HWND) {
     guard snapshot.hasFocus else { return }
     if let target = findNthControlByClass(className: snapshot.className,
-                                           index: snapshot.classIndex, in: parent) {
+                                          index: snapshot.classIndex, in: parent) {
         SetFocus(target)
         if snapshot.className == "Edit" {
             SendMessageW(target, UINT(EM_SETSEL),

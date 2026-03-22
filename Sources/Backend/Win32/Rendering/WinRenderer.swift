@@ -70,9 +70,15 @@ public func winRenderAnyView(_ view: any View, in context: RenderContext) -> HWN
 // MARK: - Stateful view rendering
 
 private func winRenderStatefulView<V: View>(_ view: V, in context: RenderContext) -> HWND? {
-    let host = Win32ViewHost(context: context, buildBody: { ctx in
-        winRenderView(view.body, in: ctx)
-    })
+    let host = Win32ViewHost(
+        context: context,
+        buildBody: { ctx in
+            winRenderView(view.body, in: ctx)
+        },
+        describeBody: {
+            winDescribeAnyView(view.body)
+        }
+    )
 
     host.captureEnvironment()
     installState(view, host: host)
@@ -108,7 +114,21 @@ extension Text: WinRenderable {
             )
         }
 
+        if let hwnd {
+            markHostedNodeKind(hwnd, .text)
+        }
+
         return hwnd
+    }
+}
+
+extension Text: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .text,
+            typeName: String(describing: Self.self),
+            props: .text(Win32TextDescriptor(content: content))
+        )
     }
 }
 
@@ -394,34 +414,32 @@ extension Color: WinRenderable {
         let cb = Float(self.blue)
         let ca = Float(self.alpha)
         let state = D2DViewState(hwnd: container, r: cr, g: cg, b: cb)
+        state.currentFillColor = Win32ColorDescriptor(
+            red: self.red,
+            green: self.green,
+            blue: self.blue,
+            opacity: self.alpha
+        )
         state.drawCallback = { rt, brush, w, h in
             d2d1_SolidColorBrush_SetColor(brush, cr, cg, cb, ca)
             d2d1_RenderTarget_FillRectangle(rt, brush, 0, 0, w, h)
         }
         let ptr = Unmanaged.passRetained(state).toOpaque()
+        SetPropW(container, d2dViewStatePropName, HANDLE(ptr))
         SetWindowSubclass(container, d2dViewProc, 50, DWORD_PTR(UInt(bitPattern: ptr)))
-
-        // Store reconcile closure for incremental updates.
-        // When reconciling, this closure updates the target HWND's
-        // D2DViewState draw callback with the new color values.
-        let reconcileBox = D2DReconcileBox { targetHwnd in
-            // Find the D2DViewState on the target via its subclass dwRefData
-            var refData: DWORD_PTR = 0
-            if GetWindowSubclass(targetHwnd, d2dViewProc, 50, &refData),
-               refData != 0 {
-                let targetState = Unmanaged<D2DViewState>.fromOpaque(
-                    UnsafeMutableRawPointer(bitPattern: UInt(refData))!
-                ).takeUnretainedValue()
-                targetState.drawCallback = { rt, brush, w, h in
-                    d2d1_SolidColorBrush_SetColor(brush, cr, cg, cb, ca)
-                    d2d1_RenderTarget_FillRectangle(rt, brush, 0, 0, w, h)
-                }
-            }
-        }
-        let reconcilePtr = Unmanaged.passRetained(reconcileBox).toOpaque()
-        SetPropW(container, d2dReconcilePropName, HANDLE(reconcilePtr))
+        markHostedNodeKind(container, .color)
 
         return container
+    }
+}
+
+extension Color: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .color,
+            typeName: String(describing: Self.self),
+            props: .color(winColorDescriptor(self))
+        )
     }
 }
 
@@ -430,6 +448,15 @@ extension Color: WinRenderable {
 /// Shared window class for D2D-rendered views (Color, Divider, etc.)
 private let d2dViewClassName: UnsafePointer<WCHAR> = {
     "SwiftUID2DView".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+private let d2dViewStatePropName: UnsafePointer<WCHAR> = {
+    "SwiftUID2DViewState".withCString(encodedAs: UTF16.self) { ptr in
         let len = wcslen(ptr) + 1
         let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
         buf.initialize(from: ptr, count: len)
@@ -459,6 +486,7 @@ private class D2DViewState {
     var renderTarget: D2DRenderTarget?
     var brush: D2DBrush?
     var drawCallback: ((D2DRenderTarget, D2DBrush, Float, Float) -> Void)?
+    var currentFillColor: Win32ColorDescriptor?
 
     init(hwnd: HWND, r: Float, g: Float, b: Float) {
         self.hwnd = hwnd
@@ -539,19 +567,44 @@ let d2dViewProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRe
     case UINT(WM_ERASEBKGND):
         return 1
     case UINT(WM_NCDESTROY):
+        RemovePropW(hwnd, d2dViewStatePropName)
         Unmanaged<D2DViewState>.fromOpaque(
             UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
         ).release()
-        // Clean up reconcile closure if present
-        if let reconcilePtr = GetPropW(hwnd, d2dReconcilePropName) {
-            Unmanaged<D2DReconcileBox>.fromOpaque(reconcilePtr).release()
-            RemovePropW(hwnd, d2dReconcilePropName)
-        }
         RemoveWindowSubclass(hwnd, d2dViewProc, uIdSubclass)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     default:
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
+}
+
+func winSetColorFill(nativeSlotID: Int, color: Win32ColorDescriptor) -> Bool {
+    guard let hwnd = HWND(bitPattern: nativeSlotID) else { return false }
+    guard hostedNodeKind(of: hwnd) == .color else { return false }
+    guard getWindowClassName(hwnd) == "SwiftUID2DView" else { return false }
+    guard let rawState = GetPropW(hwnd, d2dViewStatePropName) else { return false }
+
+    let state = Unmanaged<D2DViewState>.fromOpaque(UnsafeMutableRawPointer(rawState)).takeUnretainedValue()
+    state.currentFillColor = color
+
+    let cr = Float(color.red)
+    let cg = Float(color.green)
+    let cb = Float(color.blue)
+    let ca = Float(color.opacity)
+    state.drawCallback = { rt, brush, w, h in
+        d2d1_SolidColorBrush_SetColor(brush, cr, cg, cb, ca)
+        d2d1_RenderTarget_FillRectangle(rt, brush, 0, 0, w, h)
+    }
+
+    InvalidateRect(hwnd, nil, false)
+    return true
+}
+
+func winCurrentColorFill(nativeSlotID: Int) -> Win32ColorDescriptor? {
+    guard let hwnd = HWND(bitPattern: nativeSlotID) else { return nil }
+    guard let rawState = GetPropW(hwnd, d2dViewStatePropName) else { return nil }
+    let state = Unmanaged<D2DViewState>.fromOpaque(UnsafeMutableRawPointer(rawState)).takeUnretainedValue()
+    return state.currentFillColor
 }
 
 extension Button: WinRenderable {
@@ -901,6 +954,7 @@ extension VStack: WinRenderable {
             context.hInstance,
             nil
         )!
+        markHostedNodeKind(container, .vStack)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         let childHwnds = winRenderChildren(content, in: childContext)
@@ -975,6 +1029,7 @@ extension HStack: WinRenderable {
             context.hInstance,
             nil
         )!
+        markHostedNodeKind(container, .hStack)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         let childHwnds = winRenderChildren(content, in: childContext)
@@ -1048,6 +1103,7 @@ extension ZStack: WinRenderable {
             context.hInstance,
             nil
         )!
+        markHostedNodeKind(container, .zStack)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         let childHwnds = winRenderChildren(content, in: childContext)
@@ -1184,6 +1240,7 @@ extension PaddedView: WinRenderable {
             0, 0, 0, 0,
             context.parent, nil, context.hInstance, nil
         )!
+        markHostedNodeKind(container, .padding)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         guard let child = winRenderView(content, in: childContext) else { return container }
@@ -1289,6 +1346,7 @@ extension FrameView: WinRenderable {
             0, 0, 0, 0,
             context.parent, nil, context.hInstance, nil
         )!
+        markHostedNodeKind(container, .frame)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         guard let child = winRenderView(content, in: childContext) else { return container }
@@ -1387,7 +1445,7 @@ class FrameLayoutInfo {
 /// We place the child within that actual size, using the shared placement
 /// math (alignment + expand flags). The original min/max constraints were
 /// applied during initial sizing — they don't re-clamp on parent-driven resize.
-private func layoutFrameChild(in container: HWND, info: FrameLayoutInfo) {
+func layoutFrameChild(in container: HWND, info: FrameLayoutInfo) {
     var rect = RECT()
     GetClientRect(container, &rect)
     let containerW = Double(rect.right - rect.left)
@@ -1468,6 +1526,7 @@ extension ForegroundColorView: WinRenderable {
             0, 0, 0, 0,
             context.parent, nil, context.hInstance, nil
         )!
+        markHostedNodeKind(container, .foregroundColor)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         guard let child = winRenderView(content, in: childContext) else { return container }
@@ -1514,7 +1573,7 @@ private func getWindowClassName(_ hwnd: HWND) -> String {
     return String(decodingCString: buffer, as: UTF16.self)
 }
 
-private func configureForegroundColorChild(_ child: HWND) {
+func configureForegroundColorChild(_ child: HWND) {
     guard getWindowClassName(child) == "Button" else { return }
 
     let style = win32_GetWindowLongPtrW(child, GWL_STYLE)
@@ -1643,6 +1702,7 @@ extension BackgroundView: WinRenderable {
             0, 0, 0, 0,
             context.parent, nil, context.hInstance, nil
         )!
+        markHostedNodeKind(container, .background)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         guard let child = winRenderView(content, in: childContext) else { return container }
@@ -2207,12 +2267,153 @@ extension Slider: WinRenderable {
         )
 
         guard let hwnd = hwnd else { return nil }
+        markHostedNodeKind(hwnd, .slider)
 
         let state = D2DSliderState(hwnd: hwnd, binding: value, range: range, step: step)
         let ptr = Unmanaged.passRetained(state).toOpaque()
         SetWindowSubclass(hwnd, d2dSliderProc, 47, DWORD_PTR(UInt(bitPattern: ptr)))
 
         return hwnd
+    }
+}
+
+extension Slider: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .slider,
+            typeName: String(describing: Self.self),
+            props: .slider(
+                Win32SliderDescriptor(
+                    value: value.wrappedValue,
+                    range: range,
+                    step: step
+                )
+            )
+        )
+    }
+}
+
+extension VStack: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .vStack,
+            typeName: String(describing: Self.self),
+            props: .vStack(
+                Win32VStackDescriptor(
+                    spacing: spacing,
+                    alignment: winHorizontalAlignmentDescriptor(alignment)
+                )
+            ),
+            children: children.map(winDescribeAnyView)
+        )
+    }
+}
+
+extension HStack: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .hStack,
+            typeName: String(describing: Self.self),
+            props: .hStack(
+                Win32HStackDescriptor(
+                    spacing: spacing,
+                    alignment: winVerticalAlignmentDescriptor(alignment)
+                )
+            ),
+            children: children.map(winDescribeAnyView)
+        )
+    }
+}
+
+extension ZStack: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .zStack,
+            typeName: String(describing: Self.self),
+            props: .zStack(
+                Win32ZStackDescriptor(
+                    alignment: winAlignmentDescriptor(alignment)
+                )
+            ),
+            children: children.map(winDescribeAnyView)
+        )
+    }
+}
+
+extension PaddedView: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .padding,
+            typeName: String(describing: Self.self),
+            props: .padding(
+                Win32PaddingDescriptor(
+                    top: top,
+                    bottom: bottom,
+                    leading: leading,
+                    trailing: trailing
+                )
+            ),
+            children: [winDescribeView(content)]
+        )
+    }
+}
+
+extension FrameView: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .frame,
+            typeName: String(describing: Self.self),
+            props: .frame(
+                Win32FrameDescriptor(
+                    width: width,
+                    height: height,
+                    minWidth: minWidth,
+                    minHeight: minHeight,
+                    maxWidth: maxWidth,
+                    maxHeight: maxHeight,
+                    alignment: winAlignmentDescriptor(alignment)
+                )
+            ),
+            children: [winDescribeView(content)]
+        )
+    }
+}
+
+extension ForegroundColorView: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .foregroundColor,
+            typeName: String(describing: Self.self),
+            props: .foregroundColor(winColorDescriptor(color)),
+            children: [winDescribeView(content)]
+        )
+    }
+}
+
+extension BackgroundView: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .background,
+            typeName: String(describing: Self.self),
+            props: .background(winColorDescriptor(color)),
+            children: [winDescribeView(content)]
+        )
+    }
+}
+
+extension BorderView: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .border,
+            typeName: String(describing: Self.self),
+            props: .border(
+                Win32BorderDescriptor(
+                    color: winColorDescriptor(color),
+                    width: width
+                )
+            ),
+            children: [winDescribeView(content)]
+        )
     }
 }
 

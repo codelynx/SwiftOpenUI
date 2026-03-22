@@ -87,6 +87,881 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(text, "Hello")
     }
 
+    func testDescribeTextNode() {
+        let node = winDescribeView(Text("Hello"))
+        XCTAssertEqual(node.kind, .text)
+        XCTAssertEqual(node.typeName, "Text")
+        XCTAssertEqual(node.props, .text(Win32TextDescriptor(content: "Hello")))
+        XCTAssertTrue(node.children.isEmpty)
+    }
+
+    func testDescribeColorNode() {
+        let node = winDescribeView(Color(red: 0.25, green: 0.5, blue: 0.75, opacity: 0.8))
+        XCTAssertEqual(node.kind, .color)
+        XCTAssertEqual(
+            node.props,
+            .color(Win32ColorDescriptor(red: 0.25, green: 0.5, blue: 0.75, opacity: 0.8))
+        )
+        XCTAssertTrue(node.children.isEmpty)
+    }
+
+    func testDescribeSliderNode() {
+        let binding = Binding<Double>(
+            get: { 42.0 },
+            set: { _ in }
+        )
+        let node = winDescribeView(Slider(value: binding, in: 0...255, step: 5))
+        XCTAssertEqual(node.kind, .slider)
+        XCTAssertEqual(
+            node.props,
+            .slider(Win32SliderDescriptor(value: 42.0, range: 0...255, step: 5))
+        )
+        XCTAssertTrue(node.children.isEmpty)
+    }
+
+    func testDescribeCompositeLeafSubtree() {
+        let binding = Binding<Double>(
+            get: { 128.0 },
+            set: { _ in }
+        )
+
+        let node = winDescribeView(VStack {
+            Text("Hex")
+            Color(red: 1, green: 0, blue: 0)
+            Slider(value: binding, in: 0...255, step: 1)
+        })
+
+        XCTAssertEqual(node.kind, .vStack)
+        XCTAssertEqual(
+            node.props,
+            .vStack(Win32VStackDescriptor(spacing: 0, alignment: .center))
+        )
+        XCTAssertEqual(node.children.map(\.kind), [.text, .color, .slider])
+    }
+
+    func testDescribeVStackCarriesSpacingAndAlignment() {
+        let node = winDescribeView(VStack(alignment: .leading, spacing: 12) {
+            Text("A")
+            Text("B")
+        })
+
+        XCTAssertEqual(node.kind, .vStack)
+        XCTAssertEqual(
+            node.props,
+            .vStack(Win32VStackDescriptor(spacing: 12, alignment: .leading))
+        )
+        XCTAssertEqual(node.children.map(\.kind), [.text, .text])
+    }
+
+    func testDescribeHStackCarriesSpacingAndAlignment() {
+        let node = winDescribeView(HStack(alignment: .bottom, spacing: 7) {
+            Text("A")
+            Text("B")
+        })
+
+        XCTAssertEqual(node.kind, .hStack)
+        XCTAssertEqual(
+            node.props,
+            .hStack(Win32HStackDescriptor(spacing: 7, alignment: .bottom))
+        )
+    }
+
+    func testDescribeZStackCarriesAlignment() {
+        let node = winDescribeView(ZStack(alignment: .topTrailing) {
+            Text("A")
+            Color(red: 1, green: 0, blue: 0)
+        })
+
+        XCTAssertEqual(node.kind, .zStack)
+        XCTAssertEqual(
+            node.props,
+            .zStack(Win32ZStackDescriptor(alignment: .topTrailing))
+        )
+    }
+
+    func testDescribePaddingWrapsChild() {
+        let node = winDescribeView(Text("pad").padding(top: 1, bottom: 2, leading: 3, trailing: 4))
+        XCTAssertEqual(node.kind, .padding)
+        XCTAssertEqual(
+            node.props,
+            .padding(Win32PaddingDescriptor(top: 1, bottom: 2, leading: 3, trailing: 4))
+        )
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].kind, .text)
+    }
+
+    func testDescribeFrameWrapsChild() {
+        let node = winDescribeView(Color(red: 1, green: 0, blue: 0).frame(width: 120, height: 80))
+        XCTAssertEqual(node.kind, .frame)
+        XCTAssertEqual(
+            node.props,
+            .frame(
+                Win32FrameDescriptor(
+                    width: 120,
+                    height: 80,
+                    minWidth: nil,
+                    minHeight: nil,
+                    maxWidth: nil,
+                    maxHeight: nil,
+                    alignment: .center
+                )
+            )
+        )
+        XCTAssertEqual(node.children.map(\.kind), [.color])
+    }
+
+    func testDescribeBackgroundWrapsChild() {
+        let node = winDescribeView(Text("bg").background(.red))
+        XCTAssertEqual(node.kind, .background)
+        XCTAssertEqual(
+            node.props,
+            .background(Win32ColorDescriptor(red: 1.0, green: 0.0, blue: 0.0, opacity: 1.0))
+        )
+        XCTAssertEqual(node.children.map(\.kind), [.text])
+    }
+
+    func testDescribeForegroundColorWrapsChild() {
+        let node = winDescribeView(Text("fg").foregroundColor(.blue))
+        XCTAssertEqual(node.kind, .foregroundColor)
+        XCTAssertEqual(
+            node.props,
+            .foregroundColor(Win32ColorDescriptor(red: 0.0, green: 0.0, blue: 1.0, opacity: 1.0))
+        )
+        XCTAssertEqual(node.children.map(\.kind), [.text])
+    }
+
+    func testDescribeBorderWrapsChild() {
+        let node = winDescribeView(
+            Color(red: 0.2, green: 0.4, blue: 0.6).border(Color(red: 0.3, green: 0.3, blue: 0.3), width: 2)
+        )
+        XCTAssertEqual(node.kind, .border)
+        XCTAssertEqual(
+            node.props,
+            .border(
+                Win32BorderDescriptor(
+                    color: Win32ColorDescriptor(red: 0.3, green: 0.3, blue: 0.3, opacity: 1.0),
+                    width: 2
+                )
+            )
+        )
+        XCTAssertEqual(node.children.map(\.kind), [.color])
+    }
+
+    func testDescribeColorMixerStyleSwatchChain() {
+        let node = winDescribeView(
+            Color(red: 0.2, green: 0.4, blue: 0.6)
+                .frame(width: 120, height: 80)
+                .border(Color(red: 0.3, green: 0.3, blue: 0.3))
+        )
+
+        XCTAssertEqual(node.kind, .border)
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].kind, .frame)
+        XCTAssertEqual(node.children[0].children.map(\.kind), [.color])
+    }
+
+    func testIdentifyDescriptorTreeAssignsStructuralPaths() {
+        let descriptor = winDescribeView(VStack {
+            Text("A")
+            Color(red: 1, green: 0, blue: 0)
+        }.padding(6))
+
+        let identified = winIdentifyDescriptorTree(descriptor)
+        XCTAssertEqual(identified.identity.path, [])
+        XCTAssertEqual(identified.children.map(\.identity.path), [[0]])
+        XCTAssertEqual(identified.children[0].descriptor.kind, .vStack)
+        XCTAssertEqual(identified.children[0].children.map(\.identity.path), [[0, 0], [0, 1]])
+    }
+
+    func testMatchDescriptorTreeReusesSameStructure() {
+        let oldDescriptor = winDescribeView(
+            Color(red: 0.2, green: 0.4, blue: 0.6)
+                .frame(width: 120, height: 80)
+                .border(Color(red: 0.3, green: 0.3, blue: 0.3))
+        )
+        let newDescriptor = winDescribeView(
+            Color(red: 0.4, green: 0.5, blue: 0.7)
+                .frame(width: 120, height: 80)
+                .border(Color(red: 0.3, green: 0.3, blue: 0.3))
+        )
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let match = winMatchDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(match.kind, .reuse)
+        XCTAssertEqual(match.children.count, 1)
+        XCTAssertEqual(match.children[0].kind, .reuse)
+        XCTAssertEqual(match.children[0].children[0].kind, .reuse)
+    }
+
+    func testMatchDescriptorTreeReusesVStackWhenOnlyPropsChange() {
+        let oldDescriptor = winDescribeView(VStack(alignment: .leading, spacing: 4) {
+            Text("A")
+            Text("B")
+        })
+        let newDescriptor = winDescribeView(VStack(alignment: .trailing, spacing: 12) {
+            Text("A")
+            Text("B")
+        })
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let match = winMatchDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(match.kind, .reuse)
+        XCTAssertEqual(match.oldDescriptor?.props, .vStack(Win32VStackDescriptor(spacing: 4, alignment: .leading)))
+        XCTAssertEqual(match.newDescriptor.props, .vStack(Win32VStackDescriptor(spacing: 12, alignment: .trailing)))
+    }
+
+    func testMatchDescriptorTreeReplacesOnStackKindChangeAtSamePath() {
+        let oldDescriptor = winDescribeView(VStack {
+            Text("A")
+            Text("B")
+        })
+        let newDescriptor = winDescribeView(HStack {
+            Text("A")
+            Text("B")
+        })
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let match = winMatchDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(match.kind, .replace)
+    }
+
+    func testMatchDescriptorTreeReplacesOnChildCountChange() {
+        let oldDescriptor = winDescribeView(VStack {
+            Text("A")
+            Text("B")
+        })
+        let newDescriptor = winDescribeView(VStack {
+            Text("A")
+        })
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let match = winMatchDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(match.kind, .replace)
+    }
+
+    func testMatchDescriptorTreeReplacesOnKindChangeAtPosition() {
+        let oldDescriptor = winDescribeView(VStack {
+            Text("A")
+            Color(red: 1, green: 0, blue: 0)
+        })
+        let newDescriptor = winDescribeView(VStack {
+            Text("A")
+            Slider(value: Binding<Double>(get: { 0.5 }, set: { _ in }))
+        })
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let match = winMatchDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(match.kind, .reuse)
+        XCTAssertEqual(match.children.count, 2)
+        XCTAssertEqual(match.children[0].kind, .reuse)
+        XCTAssertEqual(match.children[1].kind, .replace)
+    }
+
+    func testPlanDescriptorTreeCreatesWhenNoRetainedTreeExists() {
+        let descriptor = winDescribeView(Text("Hello"))
+        let plan = winPlanDescriptorTree(old: nil, new: winIdentifyDescriptorTree(descriptor))
+
+        XCTAssertEqual(plan.kind, .create)
+        XCTAssertEqual(plan.updateIntent, .none)
+        XCTAssertNil(plan.oldDescriptor)
+        XCTAssertEqual(plan.newDescriptor.kind, .text)
+    }
+
+    func testPlanDescriptorTreeReusesWhenPropsAreEqual() {
+        let oldDescriptor = winDescribeView(Text("Same"))
+        let newDescriptor = winDescribeView(Text("Same"))
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .reuse)
+        XCTAssertEqual(plan.updateIntent, .none)
+        XCTAssertEqual(plan.oldDescriptor?.props, plan.newDescriptor.props)
+    }
+
+    func testPlanDescriptorTreeUpdatesWhenLeafPropsChange() {
+        let oldDescriptor = winDescribeView(Text("Old"))
+        let newDescriptor = winDescribeView(Text("New"))
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .textContent)
+        XCTAssertEqual(plan.oldDescriptor?.props, .text(Win32TextDescriptor(content: "Old")))
+        XCTAssertEqual(plan.newDescriptor.props, .text(Win32TextDescriptor(content: "New")))
+    }
+
+    func testPlanDescriptorTreeUsesColorFillIntentForColorPropChange() {
+        let oldDescriptor = winDescribeView(Color(red: 0.2, green: 0.4, blue: 0.6))
+        let newDescriptor = winDescribeView(Color(red: 0.8, green: 0.1, blue: 0.3))
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .colorFill)
+    }
+
+    func testPlanDescriptorTreeUsesSliderValueIntentForValueOnlyChange() {
+        let oldDescriptor = winDescribeView(Slider(
+            value: Binding<Double>(get: { 10 }, set: { _ in }),
+            in: 0...255,
+            step: 1
+        ))
+        let newDescriptor = winDescribeView(Slider(
+            value: Binding<Double>(get: { 42 }, set: { _ in }),
+            in: 0...255,
+            step: 1
+        ))
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .sliderValue)
+    }
+
+    func testPlanDescriptorTreeUsesSliderConfigurationIntentForRangeChange() {
+        let oldDescriptor = winDescribeView(Slider(
+            value: Binding<Double>(get: { 10 }, set: { _ in }),
+            in: 0...100,
+            step: 1
+        ))
+        let newDescriptor = winDescribeView(Slider(
+            value: Binding<Double>(get: { 10 }, set: { _ in }),
+            in: 0...255,
+            step: 1
+        ))
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .sliderConfiguration)
+    }
+
+    func testPlanDescriptorTreeUsesSliderConfigurationIntentForStepChange() {
+        let oldDescriptor = winDescribeView(Slider(
+            value: Binding<Double>(get: { 10 }, set: { _ in }),
+            in: 0...255,
+            step: 1
+        ))
+        let newDescriptor = winDescribeView(Slider(
+            value: Binding<Double>(get: { 10 }, set: { _ in }),
+            in: 0...255,
+            step: 5
+        ))
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .sliderConfiguration)
+    }
+
+    func testPlanDescriptorTreeUpdatesWhenStackPropsChange() {
+        let oldDescriptor = winDescribeView(VStack(alignment: .leading, spacing: 4) {
+            Text("A")
+            Text("B")
+        })
+        let newDescriptor = winDescribeView(VStack(alignment: .trailing, spacing: 12) {
+            Text("A")
+            Text("B")
+        })
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .vStackLayout)
+        XCTAssertEqual(plan.children.map(\.kind), [.reuse, .reuse])
+    }
+
+    func testPlanDescriptorTreeUsesFrameLayoutIntentForFramePropChange() {
+        let oldDescriptor = winDescribeView(Text("A").frame(width: 100, height: 40))
+        let newDescriptor = winDescribeView(Text("A").frame(width: 140, height: 60))
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .frameLayout)
+        XCTAssertEqual(plan.children.map(\.kind), [.reuse])
+    }
+
+    func testPlanDescriptorTreeKeepsParentReuseWhenOnlyChildPropsChange() {
+        let oldDescriptor = winDescribeView(VStack {
+            Text("A")
+            Text("B")
+        })
+        let newDescriptor = winDescribeView(VStack {
+            Text("A")
+            Text("C")
+        })
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .reuse)
+        XCTAssertEqual(plan.updateIntent, .none)
+        XCTAssertEqual(plan.children.count, 2)
+        XCTAssertEqual(plan.children[0].kind, .reuse)
+        XCTAssertEqual(plan.children[1].kind, .update)
+        XCTAssertEqual(plan.children[1].updateIntent, .textContent)
+    }
+
+    func testPlanDescriptorTreeReplacesWhenKindChangesAtSamePath() {
+        let oldDescriptor = winDescribeView(VStack {
+            Text("A")
+            Text("B")
+        })
+        let newDescriptor = winDescribeView(HStack {
+            Text("A")
+            Text("B")
+        })
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .replace)
+        XCTAssertEqual(plan.updateIntent, .none)
+        XCTAssertEqual(plan.oldDescriptor?.kind, .vStack)
+        XCTAssertEqual(plan.newDescriptor.kind, .hStack)
+    }
+
+    func testPlanDescriptorTreeReusesGenericWrapperWhenOnlyChildKindChanges() {
+        let oldDescriptor = winDescribeView(Text("A").padding(8))
+        let newDescriptor = winDescribeView(Color(red: 1, green: 0, blue: 0).padding(8))
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .reuse)
+        XCTAssertEqual(plan.updateIntent, .none)
+        XCTAssertEqual(plan.newDescriptor.kind, .padding)
+        XCTAssertEqual(plan.children.count, 1)
+        XCTAssertEqual(plan.children[0].kind, .replace)
+        XCTAssertEqual(plan.children[0].updateIntent, .none)
+        XCTAssertEqual(plan.children[0].oldDescriptor?.kind, .text)
+        XCTAssertEqual(plan.children[0].newDescriptor.kind, .color)
+    }
+
+    func testPlanDescriptorTreeUsesHStackLayoutIntentForHStackPropChange() {
+        let oldDescriptor = winDescribeView(HStack(alignment: .top, spacing: 2) {
+            Text("A")
+            Text("B")
+        })
+        let newDescriptor = winDescribeView(HStack(alignment: .bottom, spacing: 8) {
+            Text("A")
+            Text("B")
+        })
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .hStackLayout)
+    }
+
+    func testPlanDescriptorTreeUsesZStackLayoutIntentForAlignmentChange() {
+        let oldDescriptor = winDescribeView(ZStack(alignment: .center) {
+            Text("A")
+            Color(red: 1, green: 0, blue: 0)
+        })
+        let newDescriptor = winDescribeView(ZStack(alignment: .topLeading) {
+            Text("A")
+            Color(red: 1, green: 0, blue: 0)
+        })
+
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDescriptor))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDescriptor))
+
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .zStackLayout)
+    }
+
+    func testExecuteDescriptorPlanCreatesExecutorNodeTree() {
+        let identified = winIdentifyDescriptorTree(winDescribeView(VStack {
+            Text("A")
+            Text("B")
+        }))
+        let plan = winPlanDescriptorTree(old: nil, new: identified)
+        let action = winExecuteDescriptorPlan(old: nil, plan: plan)
+
+        XCTAssertEqual(action.kind, .create)
+        XCTAssertEqual(action.updateIntent, .none)
+        XCTAssertEqual(action.resultingNode.kind, .vStack)
+        XCTAssertEqual(action.resultingNode.children.map(\.kind), [.text, .text])
+        XCTAssertEqual(action.children.map(\.kind), [.create, .create])
+    }
+
+    func testExecuteDescriptorPlanUpdatesLeafAndRewritesRetainedMetadata() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Text("Old")))
+        let oldExecutor = winMakeExecutorTree(from: oldIdentified, nativeSlotID: 42)
+        let newPlan = winPlanDescriptorTree(
+            old: winRetainDescriptorTree(oldIdentified),
+            new: winIdentifyDescriptorTree(winDescribeView(Text("New")))
+        )
+        let action = winExecuteDescriptorPlan(old: oldExecutor, plan: newPlan)
+
+        XCTAssertEqual(action.kind, .update)
+        XCTAssertEqual(action.updateIntent, .textContent)
+        XCTAssertEqual(action.previousNode?.nativeSlotID, 42)
+        XCTAssertEqual(action.resultingNode.nativeSlotID, 42)
+        XCTAssertEqual(action.resultingNode.lastDescriptor.props, .text(Win32TextDescriptor(content: "New")))
+    }
+
+    func testExecuteDescriptorPlanKeepsParentAndReplacesChildUnderWrapper() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Text("A").padding(8)))
+        let oldExecutor = winMakeExecutorTree(from: oldIdentified, nativeSlotID: 7)
+        let newPlan = winPlanDescriptorTree(
+            old: winRetainDescriptorTree(oldIdentified),
+            new: winIdentifyDescriptorTree(winDescribeView(Color(red: 1, green: 0, blue: 0).padding(8)))
+        )
+        let action = winExecuteDescriptorPlan(old: oldExecutor, plan: newPlan)
+
+        XCTAssertEqual(action.kind, .keep)
+        XCTAssertEqual(action.updateIntent, .none)
+        XCTAssertEqual(action.resultingNode.nativeSlotID, 7)
+        XCTAssertEqual(action.children.count, 1)
+        XCTAssertEqual(action.children[0].kind, .replace)
+        XCTAssertEqual(action.children[0].previousNode?.kind, .text)
+        XCTAssertEqual(action.children[0].resultingNode.kind, .color)
+    }
+
+    func testExecuteDescriptorPlanUsesFrameLayoutUpdateIntent() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Text("A").frame(width: 100, height: 40)))
+        let oldExecutor = winMakeExecutorTree(from: oldIdentified, nativeSlotID: 3)
+        let newPlan = winPlanDescriptorTree(
+            old: winRetainDescriptorTree(oldIdentified),
+            new: winIdentifyDescriptorTree(winDescribeView(Text("A").frame(width: 140, height: 60)))
+        )
+        let action = winExecuteDescriptorPlan(old: oldExecutor, plan: newPlan)
+
+        XCTAssertEqual(action.kind, .update)
+        XCTAssertEqual(action.updateIntent, .frameLayout)
+        XCTAssertEqual(action.children.map(\.kind), [.keep])
+        XCTAssertEqual(action.resultingNode.lastDescriptor.props, .frame(
+            Win32FrameDescriptor(
+                width: 140,
+                height: 60,
+                minWidth: nil,
+                minHeight: nil,
+                maxWidth: nil,
+                maxHeight: nil,
+                alignment: .center
+            )
+        ))
+    }
+
+    func testExecuteDescriptorPlanPreservesSliderIntentDistinction() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Slider(
+            value: Binding<Double>(get: { 10 }, set: { _ in }),
+            in: 0...255,
+            step: 1
+        )))
+        let oldExecutor = winMakeExecutorTree(from: oldIdentified, nativeSlotID: 9)
+
+        let valuePlan = winPlanDescriptorTree(
+            old: winRetainDescriptorTree(oldIdentified),
+            new: winIdentifyDescriptorTree(winDescribeView(Slider(
+                value: Binding<Double>(get: { 20 }, set: { _ in }),
+                in: 0...255,
+                step: 1
+            )))
+        )
+        let configPlan = winPlanDescriptorTree(
+            old: winRetainDescriptorTree(oldIdentified),
+            new: winIdentifyDescriptorTree(winDescribeView(Slider(
+                value: Binding<Double>(get: { 10 }, set: { _ in }),
+                in: 0...100,
+                step: 5
+            )))
+        )
+
+        let valueAction = winExecuteDescriptorPlan(old: oldExecutor, plan: valuePlan)
+        let configAction = winExecuteDescriptorPlan(old: oldExecutor, plan: configPlan)
+
+        XCTAssertEqual(valueAction.kind, .update)
+        XCTAssertEqual(valueAction.updateIntent, .sliderValue)
+        XCTAssertEqual(configAction.kind, .update)
+        XCTAssertEqual(configAction.updateIntent, .sliderConfiguration)
+    }
+
+    func testExecuteDescriptorPlanCarriesFullSubtreeForNonLeafReplace() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(VStack {
+            Text("A")
+            Text("B")
+        }))
+        let oldExecutor = winMakeExecutorTree(from: oldIdentified, nativeSlotID: 11)
+        let newPlan = winPlanDescriptorTree(
+            old: winRetainDescriptorTree(oldIdentified),
+            new: winIdentifyDescriptorTree(winDescribeView(HStack {
+                Text("A")
+                Text("B")
+            }))
+        )
+
+        let action = winExecuteDescriptorPlan(old: oldExecutor, plan: newPlan)
+
+        XCTAssertEqual(action.kind, .replace)
+        XCTAssertEqual(action.previousNode?.kind, .vStack)
+        XCTAssertEqual(action.resultingNode.kind, .hStack)
+        XCTAssertEqual(action.children.map(\.kind), [.create, .create])
+        XCTAssertEqual(action.resultingNode.children.map(\.kind), [.text, .text])
+    }
+
+    func testApplyHookReturnsCreatedForCreateAction() {
+        let identified = winIdentifyDescriptorTree(winDescribeView(VStack {
+            Text("A")
+            Text("B")
+        }))
+        let action = winExecuteDescriptorPlan(
+            old: nil,
+            plan: winPlanDescriptorTree(old: nil, new: identified)
+        )
+
+        let result = winApplyHook(action: action)
+
+        XCTAssertEqual(result.kind, .created)
+        XCTAssertEqual(result.updateIntent, .none)
+        XCTAssertEqual(result.children.map(\.kind), [.created, .created])
+    }
+
+    func testApplyHookReturnsNoOpForKeepAction() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(VStack {
+            Text("A")
+            Text("B")
+        }))
+        let action = winExecuteDescriptorPlan(
+            old: winMakeExecutorTree(from: oldIdentified, nativeSlotID: 1),
+            plan: winPlanDescriptorTree(
+                old: winRetainDescriptorTree(oldIdentified),
+                new: winIdentifyDescriptorTree(winDescribeView(VStack {
+                    Text("A")
+                    Text("B")
+                }))
+            )
+        )
+
+        let result = winApplyHook(action: action)
+
+        XCTAssertEqual(result.kind, .noOp)
+        XCTAssertEqual(result.updateIntent, .none)
+        XCTAssertEqual(result.children.map(\.kind), [.noOp, .noOp])
+    }
+
+    func testApplyHookDispatchesTextContentIntent() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Text("Old")))
+        let action = winExecuteDescriptorPlan(
+            old: winMakeExecutorTree(from: oldIdentified, nativeSlotID: 2),
+            plan: winPlanDescriptorTree(
+                old: winRetainDescriptorTree(oldIdentified),
+                new: winIdentifyDescriptorTree(winDescribeView(Text("New")))
+            )
+        )
+
+        let result = winApplyHook(action: action)
+
+        XCTAssertEqual(result.kind, .updated)
+        XCTAssertEqual(result.updateIntent, .textContent)
+    }
+
+    func testApplyHookDispatchesColorFillIntent() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Color(red: 0.1, green: 0.2, blue: 0.3)))
+        let action = winExecuteDescriptorPlan(
+            old: winMakeExecutorTree(from: oldIdentified, nativeSlotID: 3),
+            plan: winPlanDescriptorTree(
+                old: winRetainDescriptorTree(oldIdentified),
+                new: winIdentifyDescriptorTree(winDescribeView(Color(red: 0.7, green: 0.8, blue: 0.9)))
+            )
+        )
+
+        let result = winApplyHook(action: action)
+
+        XCTAssertEqual(result.kind, .updated)
+        XCTAssertEqual(result.updateIntent, .colorFill)
+    }
+
+    func testApplyHookDispatchesSliderValueAndConfigurationSeparately() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Slider(
+            value: Binding<Double>(get: { 10 }, set: { _ in }),
+            in: 0...255,
+            step: 1
+        )))
+        let oldExecutor = winMakeExecutorTree(from: oldIdentified, nativeSlotID: 4)
+
+        let valueResult = winApplyHook(action: winExecuteDescriptorPlan(
+            old: oldExecutor,
+            plan: winPlanDescriptorTree(
+                old: winRetainDescriptorTree(oldIdentified),
+                new: winIdentifyDescriptorTree(winDescribeView(Slider(
+                    value: Binding<Double>(get: { 20 }, set: { _ in }),
+                    in: 0...255,
+                    step: 1
+                )))
+            )
+        ))
+
+        let configResult = winApplyHook(action: winExecuteDescriptorPlan(
+            old: oldExecutor,
+            plan: winPlanDescriptorTree(
+                old: winRetainDescriptorTree(oldIdentified),
+                new: winIdentifyDescriptorTree(winDescribeView(Slider(
+                    value: Binding<Double>(get: { 10 }, set: { _ in }),
+                    in: 0...100,
+                    step: 5
+                )))
+            )
+        ))
+
+        XCTAssertEqual(valueResult.kind, .updated)
+        XCTAssertEqual(valueResult.updateIntent, .sliderValue)
+        XCTAssertEqual(configResult.kind, .updated)
+        XCTAssertEqual(configResult.updateIntent, .sliderConfiguration)
+    }
+
+    func testApplyHookReturnsReplacedWithCreatedChildrenForNonLeafReplace() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(VStack {
+            Text("A")
+            Text("B")
+        }))
+        let action = winExecuteDescriptorPlan(
+            old: winMakeExecutorTree(from: oldIdentified, nativeSlotID: 5),
+            plan: winPlanDescriptorTree(
+                old: winRetainDescriptorTree(oldIdentified),
+                new: winIdentifyDescriptorTree(winDescribeView(HStack {
+                    Text("A")
+                    Text("B")
+                }))
+            )
+        )
+
+        let result = winApplyHook(action: action)
+
+        XCTAssertEqual(result.kind, .replaced)
+        XCTAssertEqual(result.updateIntent, .none)
+        XCTAssertEqual(result.children.map(\.kind), [.created, .created])
+    }
+
+    func testWinSetTextContentUpdatesRealStaticControl() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Text("Old"), in: ctx)!
+
+        XCTAssertTrue(winSetTextContent(hwnd: hwnd, text: "New"))
+
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
+        defer { buf.deallocate() }
+        GetWindowTextW(hwnd, buf, 64)
+        XCTAssertEqual(String(decodingCString: buf, as: UTF16.self), "New")
+    }
+
+    func testApplyHookMutationUpdatesRealStaticControlForTextContent() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Text("Old"), in: ctx)!
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Text("Old")))
+        let oldExecutor = winMakeExecutorTree(from: oldIdentified, nativeSlotID: winNativeSlotID(for: hwnd))
+        let action = winExecuteDescriptorPlan(
+            old: oldExecutor,
+            plan: winPlanDescriptorTree(
+                old: winRetainDescriptorTree(oldIdentified),
+                new: winIdentifyDescriptorTree(winDescribeView(Text("New")))
+            )
+        )
+
+        let result = winApplyHookMutation(action: action)
+
+        XCTAssertEqual(result.kind, .updated)
+        XCTAssertEqual(result.updateIntent, .textContent)
+
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
+        defer { buf.deallocate() }
+        GetWindowTextW(hwnd, buf, 64)
+        XCTAssertEqual(String(decodingCString: buf, as: UTF16.self), "New")
+    }
+
+    func testApplyHookMutationReportsFailureForMissingTextNativeSlot() {
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Text("Old")))
+        let oldRetained = winRetainDescriptorTree(oldIdentified)
+        let oldExecutor = winMakeExecutorTree(from: oldIdentified)
+        let action = winExecuteDescriptorPlan(
+            old: oldExecutor,
+            plan: winPlanDescriptorTree(
+                old: oldRetained,
+                new: winIdentifyDescriptorTree(winDescribeView(Text("New")))
+            )
+        )
+
+        let result = winApplyHookMutation(action: action)
+
+        XCTAssertEqual(result.kind, .updated)
+        XCTAssertEqual(result.updateIntent, .textContent)
+        XCTAssertFalse(result.mutationSucceeded)
+        XCTAssertFalse(winHookMutationSucceeded(result))
+    }
+
+    func testWinSetColorFillUpdatesRealColorControlState() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Color(red: 0.1, green: 0.2, blue: 0.3), in: ctx)!
+        let nativeSlotID = winNativeSlotID(for: hwnd)
+
+        XCTAssertEqual(
+            winCurrentColorFill(nativeSlotID: nativeSlotID),
+            Win32ColorDescriptor(red: 0.1, green: 0.2, blue: 0.3, opacity: 1.0)
+        )
+        XCTAssertTrue(
+            winSetColorFill(
+                nativeSlotID: nativeSlotID,
+                color: Win32ColorDescriptor(red: 0.7, green: 0.8, blue: 0.9, opacity: 0.6)
+            )
+        )
+        XCTAssertEqual(
+            winCurrentColorFill(nativeSlotID: nativeSlotID),
+            Win32ColorDescriptor(red: 0.7, green: 0.8, blue: 0.9, opacity: 0.6)
+        )
+    }
+
+    func testWinSetColorFillRejectsNonColorControl() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Text("Not color"), in: ctx)!
+
+        XCTAssertFalse(
+            winSetColorFill(
+                nativeSlotID: winNativeSlotID(for: hwnd),
+                color: Win32ColorDescriptor(red: 1, green: 0, blue: 0, opacity: 1)
+            )
+        )
+    }
+
+    func testApplyHookMutationUpdatesRealColorControlForColorFill() {
+        let ctx = testContext()
+        let hwnd = winRenderView(Color(red: 0.1, green: 0.2, blue: 0.3), in: ctx)!
+        let oldIdentified = winIdentifyDescriptorTree(winDescribeView(Color(red: 0.1, green: 0.2, blue: 0.3)))
+        let oldExecutor = winMakeExecutorTree(from: oldIdentified, nativeSlotID: winNativeSlotID(for: hwnd))
+        let action = winExecuteDescriptorPlan(
+            old: oldExecutor,
+            plan: winPlanDescriptorTree(
+                old: winRetainDescriptorTree(oldIdentified),
+                new: winIdentifyDescriptorTree(winDescribeView(Color(red: 0.7, green: 0.8, blue: 0.9, opacity: 0.6)))
+            )
+        )
+
+        let result = winApplyHookMutation(action: action)
+
+        XCTAssertEqual(result.kind, .updated)
+        XCTAssertEqual(result.updateIntent, .colorFill)
+        XCTAssertEqual(
+            winCurrentColorFill(nativeSlotID: winNativeSlotID(for: hwnd)),
+            Win32ColorDescriptor(red: 0.7, green: 0.8, blue: 0.9, opacity: 0.6)
+        )
+    }
+
     func testButtonCreatesHWND() {
         let ctx = testContext()
         let hwnd = winRenderView(Button("Click Me", action: {}), in: ctx)
@@ -362,9 +1237,15 @@ final class Win32RenderTests: XCTestCase {
 
     func testWin32ViewHostSuppressFocusRestore() {
         let ctx = testContext()
-        let host = Win32ViewHost(context: ctx, buildBody: { ctx in
-            winRenderView(Text("test"), in: ctx)
-        })
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                winRenderView(Text("test"), in: ctx)
+            },
+            describeBody: {
+                winDescribeView(Text("test"))
+            }
+        )
 
         // Initially no suppression
         host.suppressNextFocusRestore()
@@ -375,6 +1256,243 @@ final class Win32RenderTests: XCTestCase {
         if let c = child { host.addChild(c) }
         host.rebuild()
         // If we get here without crash, the suppression path works
+    }
+
+    func testWin32ViewHostBuildDescriptorWithTracking() {
+        let ctx = testContext()
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                winRenderView(Text("tracked"), in: ctx)
+            },
+            describeBody: {
+                winDescribeView(Text("tracked"))
+            }
+        )
+
+        let descriptor = host.buildDescriptorWithTracking()
+
+        XCTAssertEqual(descriptor.kind, .text)
+        XCTAssertEqual(descriptor.props, .text(Win32TextDescriptor(content: "tracked")))
+    }
+
+    func testWin32ViewHostCapturesNestedTextAndColorSlotsAfterRebuild() {
+        let ctx = testContext()
+        let view = VStack {
+            Text("Label").padding(top: 1, bottom: 2, leading: 3, trailing: 4)
+            Color(red: 0.2, green: 0.4, blue: 0.6).frame(width: 80, height: 40)
+        }
+
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                winRenderView(view, in: ctx)
+            },
+            describeBody: {
+                winDescribeView(view)
+            }
+        )
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+        host.rebuild()
+
+        guard let executorRoot = host.retainedExecutorRoot else {
+            XCTFail("Expected retained executor root after rebuild")
+            return
+        }
+
+        XCTAssertEqual(executorRoot.kind, .vStack)
+        XCTAssertNil(executorRoot.nativeSlotID)
+        XCTAssertEqual(executorRoot.children.count, 2)
+
+        let paddedText = executorRoot.children[0]
+        XCTAssertEqual(paddedText.kind, .padding)
+        XCTAssertNil(paddedText.nativeSlotID)
+        XCTAssertEqual(paddedText.children.count, 1)
+        XCTAssertEqual(paddedText.children[0].kind, .text)
+        XCTAssertNotNil(paddedText.children[0].nativeSlotID)
+
+        let framedColor = executorRoot.children[1]
+        XCTAssertEqual(framedColor.kind, .frame)
+        XCTAssertNil(framedColor.nativeSlotID)
+        XCTAssertEqual(framedColor.children.count, 1)
+        XCTAssertEqual(framedColor.children[0].kind, .color)
+        XCTAssertNotNil(framedColor.children[0].nativeSlotID)
+    }
+
+    func testWin32ViewHostLeavesUnsupportedWrapperSlotsNil() {
+        let ctx = testContext()
+        let view = Text("Styled")
+            .foregroundColor(.blue)
+            .padding(top: 4, bottom: 4, leading: 8, trailing: 8)
+
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                winRenderView(view, in: ctx)
+            },
+            describeBody: {
+                winDescribeView(view)
+            }
+        )
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+
+        guard let executorRoot = host.retainedExecutorRoot else {
+            XCTFail("Expected retained executor root after initial build")
+            return
+        }
+
+        XCTAssertEqual(executorRoot.kind, .padding)
+        XCTAssertNil(executorRoot.nativeSlotID)
+        XCTAssertEqual(executorRoot.children.count, 1)
+
+        let foreground = executorRoot.children[0]
+        XCTAssertEqual(foreground.kind, .foregroundColor)
+        XCTAssertNil(foreground.nativeSlotID)
+        XCTAssertEqual(foreground.children.count, 1)
+        XCTAssertEqual(foreground.children[0].kind, .text)
+        XCTAssertNotNil(foreground.children[0].nativeSlotID)
+    }
+
+    func testWin32ViewHostMutatesTextInPlaceForSupportedUpdate() {
+        let ctx = testContext()
+        var content = "Old"
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                winRenderView(Text(content), in: ctx)
+            },
+            describeBody: {
+                winDescribeView(Text(content))
+            }
+        )
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+
+        let originalChild = GetWindow(host.container, UINT(GW_CHILD))
+        let originalSlot = host.retainedExecutorRoot?.nativeSlotID
+
+        content = "New"
+        host.rebuild()
+
+        let rebuiltChild = GetWindow(host.container, UINT(GW_CHILD))
+        XCTAssertEqual(originalChild, rebuiltChild)
+        XCTAssertEqual(originalSlot, host.retainedExecutorRoot?.nativeSlotID)
+
+        let buffer = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
+        defer { buffer.deallocate() }
+        GetWindowTextW(rebuiltChild!, buffer, 64)
+        XCTAssertEqual(String(decodingCString: buffer, as: UTF16.self), "New")
+    }
+
+    func testWin32ViewHostMutatesColorInPlaceForSupportedUpdate() {
+        let ctx = testContext()
+        var fill = Color(red: 0.1, green: 0.2, blue: 0.3)
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                winRenderView(fill, in: ctx)
+            },
+            describeBody: {
+                winDescribeView(fill)
+            }
+        )
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+
+        let originalChild = GetWindow(host.container, UINT(GW_CHILD))
+        let originalSlot = host.retainedExecutorRoot?.nativeSlotID
+
+        fill = Color(red: 0.8, green: 0.4, blue: 0.2)
+        host.rebuild()
+
+        let rebuiltChild = GetWindow(host.container, UINT(GW_CHILD))
+        XCTAssertEqual(originalChild, rebuiltChild)
+        XCTAssertEqual(originalSlot, host.retainedExecutorRoot?.nativeSlotID)
+        XCTAssertEqual(
+            winCurrentColorFill(nativeSlotID: host.retainedExecutorRoot!.nativeSlotID!),
+            Win32ColorDescriptor(red: 0.8, green: 0.4, blue: 0.2, opacity: 1.0)
+        )
+    }
+
+    func testWin32ViewHostMutatesMixedTextAndColorLeavesInPlace() {
+        let ctx = testContext()
+        var title = "Before"
+        var swatch = Color(red: 0.2, green: 0.3, blue: 0.4)
+
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                winRenderView(VStack {
+                    Text(title)
+                    swatch
+                }, in: ctx)
+            },
+            describeBody: {
+                winDescribeView(VStack {
+                    Text(title)
+                    swatch
+                })
+            }
+        )
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+
+        let originalRoot = GetWindow(host.container, UINT(GW_CHILD))
+        let originalTextSlot = host.retainedExecutorRoot?.children[0].nativeSlotID
+        let originalColorSlot = host.retainedExecutorRoot?.children[1].nativeSlotID
+
+        title = "After"
+        swatch = Color(red: 0.9, green: 0.1, blue: 0.2)
+        host.rebuild()
+
+        let rebuiltRoot = GetWindow(host.container, UINT(GW_CHILD))
+        XCTAssertEqual(originalRoot, rebuiltRoot)
+        XCTAssertEqual(originalTextSlot, host.retainedExecutorRoot?.children[0].nativeSlotID)
+        XCTAssertEqual(originalColorSlot, host.retainedExecutorRoot?.children[1].nativeSlotID)
+
+        let textHwnd = HWND(bitPattern: originalTextSlot!)
+        let buffer = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
+        defer { buffer.deallocate() }
+        GetWindowTextW(textHwnd!, buffer, 64)
+        XCTAssertEqual(String(decodingCString: buffer, as: UTF16.self), "After")
+        XCTAssertEqual(
+            winCurrentColorFill(nativeSlotID: originalColorSlot!),
+            Win32ColorDescriptor(red: 0.9, green: 0.1, blue: 0.2, opacity: 1.0)
+        )
+    }
+
+    func testWin32ViewHostFallsBackToFullRebuildForUnsupportedIntent() {
+        let ctx = testContext()
+        var padding = 4
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                winRenderView(Text("Pad").padding(top: padding, bottom: padding, leading: padding, trailing: padding), in: ctx)
+            },
+            describeBody: {
+                winDescribeView(Text("Pad").padding(top: padding, bottom: padding, leading: padding, trailing: padding))
+            }
+        )
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+
+        let originalRoot = GetWindow(host.container, UINT(GW_CHILD))
+        let originalTextSlot = host.retainedExecutorRoot?.children[0].nativeSlotID
+
+        padding = 12
+        host.rebuild()
+
+        let rebuiltRoot = GetWindow(host.container, UINT(GW_CHILD))
+        XCTAssertNotEqual(originalRoot, rebuiltRoot)
+        XCTAssertNotEqual(originalTextSlot, host.retainedExecutorRoot?.children[0].nativeSlotID)
     }
 
     // MARK: - Win32Backend
@@ -577,10 +1695,16 @@ final class Win32RenderTests: XCTestCase {
 
     func testSaveRestoreEditCursorPosition() {
         let ctx = testContext()
-        let host = Win32ViewHost(context: ctx, buildBody: { ctx in
-            let binding = Binding<String>(get: { "Hello World" }, set: { _ in })
-            return winRenderView(TextField("", text: binding), in: ctx)
-        })
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                let binding = Binding<String>(get: { "Hello World" }, set: { _ in })
+                return winRenderView(TextField("", text: binding), in: ctx)
+            },
+            describeBody: {
+                Win32DescriptorNode(kind: .composite, typeName: "TextFieldHost")
+            }
+        )
 
         let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
         if let c = child { host.addChild(c) }
@@ -632,10 +1756,16 @@ final class Win32RenderTests: XCTestCase {
 
     func testSuppressFocusDoesNotSuppressEditState() {
         let ctx = testContext()
-        let host = Win32ViewHost(context: ctx, buildBody: { ctx in
-            let binding = Binding<String>(get: { "Test" }, set: { _ in })
-            return winRenderView(TextField("", text: binding), in: ctx)
-        })
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                let binding = Binding<String>(get: { "Test" }, set: { _ in })
+                return winRenderView(TextField("", text: binding), in: ctx)
+            },
+            describeBody: {
+                Win32DescriptorNode(kind: .composite, typeName: "TextFieldHost")
+            }
+        )
 
         let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
         if let c = child { host.addChild(c) }

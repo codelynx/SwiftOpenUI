@@ -1,80 +1,72 @@
 import WinSDK
 import CWin32
 
-/// Local invalidation outcomes for Win32 retained-node updates.
-public enum Win32NodeUpdateResult {
-    case noChange
-    case needsRepaint
-    case needsRelayout
-    case replaceSubtree
-}
-
-/// Win32-local node kinds used by the retained render tree.
+/// Win32-local backend node kinds used as lightweight annotations on HWNDs.
+/// This keeps the useful identity lesson from the reconcile spike without
+/// carrying forward the abandoned retained-tree scaffolding.
 public enum Win32HostedNodeKind: String {
+    case background
+    case color
+    case frame
+    case foregroundColor
     case hostContainer
-    case subtree
+    case hStack
+    case padding
+    case slider
+    case text
     case unknown
+    case vStack
+    case zStack
 }
 
-/// Lightweight backend-local description of the desired hosted subtree.
-public struct Win32DesiredNode {
-    public let kind: Win32HostedNodeKind
-    public let debugName: String?
-    public let children: [Win32DesiredNode]
+private let hostedNodeKindPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIHostedNodeKind".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
 
-    public init(kind: Win32HostedNodeKind,
-                debugName: String? = nil,
-                children: [Win32DesiredNode] = []) {
-        self.kind = kind
-        self.debugName = debugName
-        self.children = children
+public func markHostedNodeKind(_ hwnd: HWND, _ kind: Win32HostedNodeKind) {
+    SetPropW(hwnd, hostedNodeKindPropName, HANDLE(bitPattern: hostedNodeKindCode(kind)))
+}
+
+public func hostedNodeKind(of hwnd: HWND) -> Win32HostedNodeKind {
+    guard let raw = GetPropW(hwnd, hostedNodeKindPropName) else { return .unknown }
+    return hostedNodeKind(from: Int(bitPattern: raw))
+}
+
+private func hostedNodeKindCode(_ kind: Win32HostedNodeKind) -> Int {
+    switch kind {
+    case .background: return 1
+    case .color: return 2
+    case .frame: return 3
+    case .foregroundColor: return 4
+    case .hostContainer: return 5
+    case .hStack: return 6
+    case .padding: return 7
+    case .slider: return 8
+    case .text: return 9
+    case .unknown: return 10
+    case .vStack: return 11
+    case .zStack: return 12
     }
 }
 
-/// Retained Win32 node that can later participate in local reconciliation.
-public final class Win32HostedNode {
-    public let kind: Win32HostedNodeKind
-    public var ownedHwnd: HWND?
-    public var children: [Win32HostedNode]
-    public var desiredNode: Win32DesiredNode
-    public var updateHook: ((Win32DesiredNode) -> Win32NodeUpdateResult)?
-
-    public init(kind: Win32HostedNodeKind,
-                ownedHwnd: HWND?,
-                children: [Win32HostedNode] = [],
-                desiredNode: Win32DesiredNode,
-                updateHook: ((Win32DesiredNode) -> Win32NodeUpdateResult)? = nil) {
-        self.kind = kind
-        self.ownedHwnd = ownedHwnd
-        self.children = children
-        self.desiredNode = desiredNode
-        self.updateHook = updateHook
+private func hostedNodeKind(from code: Int) -> Win32HostedNodeKind {
+    switch code {
+    case 1: return .background
+    case 2: return .color
+    case 3: return .frame
+    case 4: return .foregroundColor
+    case 5: return .hostContainer
+    case 6: return .hStack
+    case 7: return .padding
+    case 8: return .slider
+    case 9: return .text
+    case 11: return .vStack
+    case 12: return .zStack
+    default: return .unknown
     }
-}
-
-/// Current render output for a hosted Win32 subtree.
-public struct Win32BuiltTree {
-    public let desiredRoot: Win32DesiredNode
-    public let retainedRoot: Win32HostedNode?
-
-    public init(desiredRoot: Win32DesiredNode, retainedRoot: Win32HostedNode?) {
-        self.desiredRoot = desiredRoot
-        self.retainedRoot = retainedRoot
-    }
-
-    public var rootHwnd: HWND? {
-        retainedRoot?.ownedHwnd
-    }
-}
-
-public func makeWin32HostedSubtree(rootHwnd: HWND?,
-                                   kind: Win32HostedNodeKind = .subtree,
-                                   debugName: String? = nil) -> Win32BuiltTree {
-    let desiredRoot = Win32DesiredNode(kind: kind, debugName: debugName)
-    let retainedRoot = Win32HostedNode(
-        kind: kind,
-        ownedHwnd: rootHwnd,
-        desiredNode: desiredRoot
-    )
-    return Win32BuiltTree(desiredRoot: desiredRoot, retainedRoot: retainedRoot)
 }
