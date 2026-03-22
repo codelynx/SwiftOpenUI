@@ -12,7 +12,12 @@ import Observation
 ///
 /// Uses PostMessage(WM_SWIFTUI_REBUILD) for coalesced scheduling
 /// instead of GTK's g_idle_add.
-public class Win32ViewHost: AnyViewHost {
+public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
+    /// Phase 6: storages read during last body evaluation.
+    public var lastReadSet: Set<ObjectIdentifier>?
+    /// Phase 7: generation snapshots for input-equality short-circuiting.
+    public var lastInputSnapshot: [StorageSnapshot]?
+
     /// The stable container HWND that persists across rebuilds.
     public let container: HWND
 
@@ -240,7 +245,15 @@ public class Win32ViewHost: AnyViewHost {
         }
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+
+        // Phase 6+7: track which storages are read during body evaluation
+        beginDependencyTracking()
         let newChild = buildBodyWithTracking(childContext)
+        if let tracking = endDependencyTracking() {
+            lastReadSet = tracking.readSet
+            lastInputSnapshot = tracking.snapshots
+        }
+
         if let newChild = newChild {
             currentChild = newChild
             layoutChild()
@@ -307,6 +320,8 @@ public class Win32ViewHost: AnyViewHost {
         scheduled = false
         interactiveUpdateDepth = 0
         rebuildDeferredDuringInteraction = false
+        lastReadSet = nil
+        lastInputSnapshot = nil
         lock.unlock()
     }
 

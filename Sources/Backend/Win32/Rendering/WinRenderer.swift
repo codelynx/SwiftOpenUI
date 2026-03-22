@@ -86,7 +86,15 @@ private func winRenderStatefulView<V: View>(_ view: V, in context: RenderContext
     // Use the container as parent so the initial render matches rebuild behavior.
     // This is critical for parent-routed messages like WM_CTLCOLORSTATIC.
     let containerContext = RenderContext(parent: host.container, hInstance: context.hInstance)
+
+    // Phase 6+7: track which storages are read during initial body evaluation
+    beginDependencyTracking()
     let childHwnd = host.buildBodyWithTracking(containerContext)
+    if let tracking = endDependencyTracking() {
+        host.lastReadSet = tracking.readSet
+        host.lastInputSnapshot = tracking.snapshots
+    }
+
     if let child = childHwnd {
         host.addChild(child)
     }
