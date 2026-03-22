@@ -3134,9 +3134,9 @@ extension AlertModifierView: WinRenderable {
             runOnMainThread(hwnd: root) {
                 guard binding.wrappedValue else { return }
                 binding.wrappedValue = false
-                _ = alertTitle.withCString(encodedAs: UTF16.self) { titlePtr in
-                    _ = alertMsg.withCString(encodedAs: UTF16.self) { msgPtr in
-                        MessageBoxW(root, msgPtr, titlePtr, UINT(MB_OK))
+                alertTitle.withCString(encodedAs: UTF16.self) { titlePtr in
+                    alertMsg.withCString(encodedAs: UTF16.self) { msgPtr in
+                        _ = MessageBoxW(root, msgPtr, titlePtr, UINT(MB_OK))
                     }
                 }
             }
