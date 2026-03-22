@@ -19,8 +19,8 @@ A cross-platform SwiftUI framework that renders natively on macOS, Linux, Window
 | Platform | Backend | Status | Views | Modifiers |
 |----------|---------|--------|-------|-----------|
 | macOS | SwiftUI (native) | Reference | All | All |
-| Linux | GTK4 | Production | 43/44 | 36/38 |
-| Windows | Win32 + D2D | Production | 43/44 | 36/38 |
+| Linux | GTK4 | Stable | 43/44 | 36/38 |
+| Windows | Win32 + D2D | Stable | 43/44 | 36/38 |
 | Web | Wasm + DOM | Near-parity | 42/44 | 36/38 |
 | Android | Compose | Phase 2 | 14/44 | 22/38 |
 
