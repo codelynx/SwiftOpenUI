@@ -15,7 +15,7 @@ $ErrorActionPreference = "Stop"
 # Load System.Drawing from the Windows Forms assembly (includes GDI+ Bitmap/PNG support)
 Add-Type -AssemblyName System.Windows.Forms
 
-# Win32 API for finding windows
+# Win32 API for finding windows and capturing
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -32,6 +32,12 @@ public class Win32Window {
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+    [DllImport("user32.dll")]
+    public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT {
@@ -71,24 +77,50 @@ $examples = [ordered]@{
 function Capture-WindowToPng {
     param([IntPtr]$hwnd, [string]$outPath)
 
-    $rect = New-Object Win32Window+RECT
-    [Win32Window]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
+    # GetWindowRect includes the DWM shadow; PrintWindow renders it.
+    # DwmGetWindowAttribute(EXTENDED_FRAME_BOUNDS) gives the visible
+    # window bounds without shadow. We capture the full window via
+    # PrintWindow then crop to the extended frame bounds to remove shadow.
+    $fullRect = New-Object Win32Window+RECT
+    [Win32Window]::GetWindowRect($hwnd, [ref]$fullRect) | Out-Null
 
-    $width  = $rect.Right - $rect.Left
-    $height = $rect.Bottom - $rect.Top
-    if ($width -le 0 -or $height -le 0) { return $false }
+    $fullW = $fullRect.Right - $fullRect.Left
+    $fullH = $fullRect.Bottom - $fullRect.Top
+    if ($fullW -le 0 -or $fullH -le 0) { return $false }
 
-    # Capture using System.Drawing.Bitmap + CopyFromScreen (GDI+)
-    $bmp = New-Object System.Drawing.Bitmap($width, $height)
-    $graphics = [System.Drawing.Graphics]::FromImage($bmp)
-    $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0,
-        (New-Object System.Drawing.Size($width, $height)))
+    # Capture the full window (including shadow) via PrintWindow
+    $fullBmp = New-Object System.Drawing.Bitmap($fullW, $fullH)
+    $graphics = [System.Drawing.Graphics]::FromImage($fullBmp)
+    $hdc = $graphics.GetHdc()
+    [Win32Window]::PrintWindow($hwnd, $hdc, 2) | Out-Null
+    $graphics.ReleaseHdc($hdc)
     $graphics.Dispose()
 
-    # Save as PNG
-    $bmp.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
-    $bmp.Dispose()
+    # Get the visible bounds (no shadow) via DWM
+    $visRect = New-Object Win32Window+RECT
+    $hr = [Win32Window]::DwmGetWindowAttribute($hwnd, 9, [ref]$visRect,
+        [System.Runtime.InteropServices.Marshal]::SizeOf($visRect))
 
+    if ($hr -eq 0) {
+        # Crop to visible bounds (remove DWM shadow)
+        $cropX = $visRect.Left - $fullRect.Left
+        $cropY = $visRect.Top - $fullRect.Top
+        $cropW = $visRect.Right - $visRect.Left
+        $cropH = $visRect.Bottom - $visRect.Top
+
+        if ($cropW -gt 0 -and $cropH -gt 0) {
+            $cropRect = New-Object System.Drawing.Rectangle($cropX, $cropY, $cropW, $cropH)
+            $croppedBmp = $fullBmp.Clone($cropRect, $fullBmp.PixelFormat)
+            $croppedBmp.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
+            $croppedBmp.Dispose()
+            $fullBmp.Dispose()
+            return $true
+        }
+    }
+
+    # Fallback: save with shadow
+    $fullBmp.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $fullBmp.Dispose()
     return $true
 }
 
