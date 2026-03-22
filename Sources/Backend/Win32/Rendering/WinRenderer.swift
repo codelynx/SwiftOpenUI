@@ -860,6 +860,12 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         return 0
 
     case UINT(WM_ERASEBKGND):
+        // Paint button-face background so child text with .foregroundColor(.white)
+        // is visible (white text on white background is invisible otherwise)
+        let eraseDC = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        var eraseRect = RECT()
+        GetClientRect(hwnd, &eraseRect)
+        FillRect(eraseDC, &eraseRect, GetSysColorBrush(info.pressed ? COLOR_BTNSHADOW : COLOR_BTNFACE))
         return 1
 
     // --- Layout ---
@@ -880,10 +886,10 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         return 0
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
-        if let parent = GetParent(hwnd!) {
-            return SendMessageW(parent, uMsg, wParam, lParam)
-        }
-        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+        // Provide button-face background for child STATIC controls
+        let ctlDC = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        SetBkMode(ctlDC, TRANSPARENT)
+        return LRESULT(Int(bitPattern: GetSysColorBrush(info.pressed ? COLOR_BTNSHADOW : COLOR_BTNFACE)))
 
     case UINT(WM_NCDESTROY):
         Unmanaged<CustomButtonInfo>.fromOpaque(
