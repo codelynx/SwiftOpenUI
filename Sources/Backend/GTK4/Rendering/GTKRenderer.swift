@@ -134,6 +134,7 @@ extension Divider: GTKRenderable {
 extension TextField: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let entry = gtk_entry_new()!
+        gtk_widget_set_hexpand(entry, 1)
         let entryPtr = UnsafeMutableRawPointer(entry).assumingMemoryBound(to: GtkEntry.self)
         let bufferPtr = gtk_entry_get_buffer(entryPtr)
         gtk_entry_buffer_set_text(bufferPtr, text.wrappedValue, -1)
