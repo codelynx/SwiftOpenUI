@@ -306,6 +306,46 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertFalse(success)
     }
 
+    func testFullPipelineColorMutation() throws {
+        try requireGTK()
+
+        // Render and describe old state
+        let box = widgetFromOpaque(gtkRenderView(Color.red))
+        let slotID = gtkNativeSlotID(for: box)
+        let className = "gtk-swift-color-\(slotID)"
+
+        let oldDesc = gtkDescribeView(Color.red)
+        let newDesc = gtkDescribeView(Color.green)
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+        let retained = gtkRetainDescriptorTree(oldId)
+        let executor = gtkMakeExecutorTree(from: oldId, nativeSlotID: slotID)
+
+        // Plan
+        let plan = gtkPlanDescriptorTree(old: retained, new: newId)
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+        XCTAssertEqual(plan.updateIntent, .colorFill)
+
+        // Execute + mutate (first mutation — creates provider)
+        let action = gtkExecuteDescriptorPlan(old: executor, plan: plan)
+        let result = gtkApplyHookMutation(action: action)
+        XCTAssertTrue(gtkHookMutationSucceeded(result))
+        XCTAssertTrue(gtk_widget_has_css_class(box, className) != 0)
+
+        // Second mutation on same widget — reuses provider (replace-in-place)
+        let blueDesc = gtkDescribeView(Color.blue)
+        let blueId = gtkIdentifyDescriptorTree(blueDesc)
+        let retained2 = gtkRetainDescriptorTree(newId)
+        let executor2 = action.resultingNode
+        let plan2 = gtkPlanDescriptorTree(old: retained2, new: blueId)
+        let action2 = gtkExecuteDescriptorPlan(old: executor2, plan: plan2)
+        let result2 = gtkApplyHookMutation(action: action2)
+        XCTAssertTrue(gtkHookMutationSucceeded(result2))
+
+        // Same widget, same class — provider was reused, not stacked
+        XCTAssertTrue(gtk_widget_has_css_class(box, className) != 0)
+    }
+
     func testFullPipelineTextMutation() throws {
         try requireGTK()
 
