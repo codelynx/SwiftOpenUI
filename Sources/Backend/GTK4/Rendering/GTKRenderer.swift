@@ -93,12 +93,17 @@ private func gtkMeasureLayoutSubviews(
 
 // MARK: - View GTK extensions
 
-extension Text: GTKRenderable {
+extension Text: GTKRenderable, GTKDescribable {
     public func gtkCreateWidget() -> OpaquePointer {
         let label = gtk_label_new(content)!
         gtk_swift_label_set_xalign(label, 0)
         gtk_swift_label_set_yalign(label, 0.5)
         return opaqueFromWidget(label)
+    }
+
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(kind: .text, typeName: "Text",
+                           props: .text(GTK4TextDescriptor(content: content)))
     }
 }
 
@@ -280,7 +285,7 @@ extension FocusedEqualsView: GTKRenderable {
     }
 }
 
-extension Color: GTKRenderable {
+extension Color: GTKRenderable, GTKDescribable {
     public func gtkCreateWidget() -> OpaquePointer {
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
         gtk_widget_set_hexpand(box, 1)
@@ -289,6 +294,11 @@ extension Color: GTKRenderable {
                          Int(red * 255), Int(green * 255), Int(blue * 255), alpha)
         applyCSSToWidget(box, properties: css)
         return opaqueFromWidget(box)
+    }
+
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(kind: .color, typeName: "Color",
+                           props: .color(gtkColorDescriptor(self)))
     }
 }
 
@@ -339,7 +349,22 @@ extension Button: GTKRenderable {
 
 // MARK: - Container GTK extensions
 
-extension VStack: GTKRenderable {
+extension VStack: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        let childDescs: [GTK4DescriptorNode]
+        if let multi = content as? MultiChildView {
+            childDescs = multi.children.map(gtkDescribeAnyView)
+        } else {
+            childDescs = [gtkDescribeView(content)]
+        }
+        return GTK4DescriptorNode(
+            kind: .vStack, typeName: "VStack",
+            props: .vStack(GTK4VStackDescriptor(
+                spacing: spacing,
+                alignment: gtkHorizontalAlignmentDescriptor(alignment))),
+            children: childDescs)
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let children = gtkRenderChildren(content).map(widgetFromOpaque)
         if gtkCanUseSharedVStackLayout(children) {
