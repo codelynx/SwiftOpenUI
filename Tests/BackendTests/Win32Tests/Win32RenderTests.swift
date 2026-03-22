@@ -139,6 +139,19 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertTrue(node.children.isEmpty)
     }
 
+    func testWin32ExtractTitleRecursesThroughWrappedNavigationContent() {
+        let view = VStack {
+            Text("Hello")
+        }
+        .padding()
+        .navigationTitle("Navigation")
+        .navigationDestination(for: String.self) { value in
+            Text(value)
+        }
+
+        XCTAssertEqual(win32ExtractTitle(from: view), "Navigation")
+    }
+
     func testFontChangeRejectsNarrowPath() {
         let oldDesc = winDescribeView(Text("Hi").font(.body))
         let newDesc = winDescribeView(Text("Hi").font(.headline))

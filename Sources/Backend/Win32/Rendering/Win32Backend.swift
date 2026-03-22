@@ -110,8 +110,15 @@ extension WindowGroup: Win32WindowRenderable {
 
             let screenW = GetSystemMetrics(SM_CXSCREEN)
             let screenH = GetSystemMetrics(SM_CYSCREEN)
-            let minClientW = minWindowWidth.map { Int32($0) } ?? 300
-            let minClientH = minWindowHeight.map { Int32($0) } ?? 200
+            // When explicit sizing is provided (defaultWindowSize or windowSizing(.size)),
+            // don't enforce 300x200 minimum — the developer chose the size.
+            let hasExplicitSize = defaultWindowWidth != nil || defaultWindowHeight != nil || {
+                if case .size = windowSizing ?? .automatic { return true }
+                if case .contentFixed = windowSizing ?? .automatic { return true }
+                return false
+            }()
+            let minClientW = minWindowWidth.map { Int32($0) } ?? (hasExplicitSize ? 1 : 300)
+            let minClientH = minWindowHeight.map { Int32($0) } ?? (hasExplicitSize ? 1 : 200)
             let maxClientW = maxWindowWidth.map { Int32($0) } ?? (screenW * 3 / 4)
             let maxClientH = maxWindowHeight.map { Int32($0) } ?? (screenH * 3 / 4)
 
