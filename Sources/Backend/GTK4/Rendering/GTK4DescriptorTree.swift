@@ -857,23 +857,24 @@ public func gtkSetColorFill(slotID: Int, color: GTK4ColorDescriptor) -> Bool {
     guard gtk_swift_is_widget(widget) != 0 else { return false }
 
     let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
-    let css = String(format: "* { background-color: rgba(%d, %d, %d, %.3f); }",
+    let className = "gtk-swift-color-\(gtkNativeSlotID(for: widget))"
+    let css = String(format: ".%@ { background-color: rgba(%d, %d, %d, %.3f); }",
+                     className,
                      Int(color.red * 255), Int(color.green * 255),
                      Int(color.blue * 255), color.opacity)
 
-    // Reuse or create a single CSS provider for this widget
+    // Reuse or create a single CSS provider scoped to this widget's class
     if let existingRaw = g_object_get_data(gobject, gtkColorProviderKey) {
         let provider = UnsafeMutableRawPointer(existingRaw)
             .assumingMemoryBound(to: GtkCssProvider.self)
         gtk_css_provider_load_from_string(provider, css)
     } else {
+        gtk_widget_add_css_class(widget, className)
+
         let provider = gtk_css_provider_new()!
         gtk_css_provider_load_from_string(provider, css)
         let display = gtk_widget_get_display(widget)!
         gtk_swift_add_css_provider_to_display(display, provider, UInt32(GTK_STYLE_PROVIDER_PRIORITY_USER))
-
-        let className = "gtk-swift-color-\(gtkNativeSlotID(for: widget))"
-        gtk_widget_add_css_class(widget, className)
 
         g_object_set_data_full(gobject, gtkColorProviderKey, gpointer(provider), { userData in
             g_object_unref(userData)
