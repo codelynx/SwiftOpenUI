@@ -6,9 +6,18 @@ import Observation
 
 /// Web-specific ViewHost that manages a stable DOM container element.
 /// On state change, rebuilds the body and swaps children.
+/// Supports narrow mutation path for text/color in-place updates.
 public class WebViewHost: AnyViewHost {
     let container: JSValue
     let buildBody: () -> JSValue
+    /// Describes the body as a descriptor tree without creating DOM elements.
+    var describeBody: (() -> WebDescriptorNode)?
+    /// Retained descriptor state for narrow mutation path.
+    var lastRetainedDescriptor: WebRetainedDescriptorNode?
+    var retainedExecutor: WebRetainedExecutorNode?
+    /// Per-host slot table — isolates slot ownership so rebuilding
+    /// one host does not invalidate slots for unrelated hosts.
+    let slotTable = WebSlotTable()
     private var scheduled = false
     var capturedEnvironment: EnvironmentValues
 
@@ -53,8 +62,45 @@ public class WebViewHost: AnyViewHost {
     func rebuild() {
         scheduled = false
 
+        // --- Narrow mutation path: try text/color in-place update ---
+        if let describeBody = describeBody,
+           let oldRetained = lastRetainedDescriptor,
+           let oldExecutor = retainedExecutor {
+
+            let previousEnv = getCurrentEnvironment()
+            setCurrentEnvironment(capturedEnvironment)
+            let newDescriptor = describeBody()
+            setCurrentEnvironment(previousEnv)
+
+            let newIdentified = webIdentifyDescriptorTree(newDescriptor)
+            let plan = webPlanDescriptorTree(old: oldRetained, new: newIdentified)
+
+            if webCanApplyTextColorHostMutation(plan: plan) {
+                let action = webExecuteDescriptorPlan(old: oldExecutor, plan: plan)
+
+                // Set this host's slot table as current for validation + mutation
+                _webCurrentSlotTable = slotTable
+                defer { _webCurrentSlotTable = nil }
+
+                // Verify all slots are still valid before mutating
+                if webAllSlotsValid(action: action) {
+                    let result = webApplyHookMutation(action: action)
+                    if webHookMutationSucceeded(result) {
+                        // Success — update retained state, skip full rebuild
+                        lastRetainedDescriptor = webRetainDescriptorTree(newIdentified)
+                        retainedExecutor = action.resultingNode
+                        return
+                    }
+                }
+            }
+            // Fall through to full rebuild
+        }
+
         // Release closures from the previous render pass
         _webRetainedClosures.removeAll()
+
+        // Clear this host's slot table — old DOM elements are about to be destroyed
+        slotTable.clear()
 
         // Remove old children
         container.innerHTML = ""
@@ -71,6 +117,26 @@ public class WebViewHost: AnyViewHost {
         WebViewHost.currentRebuilding = previousHost
 
         _ = container.appendChild(element)
+
+        // Capture descriptor state for next rebuild's narrow mutation path
+        if let describeBody = describeBody {
+            let previousEnvForDesc = getCurrentEnvironment()
+            setCurrentEnvironment(capturedEnvironment)
+            let descriptor = describeBody()
+            setCurrentEnvironment(previousEnvForDesc)
+
+            let identified = webIdentifyDescriptorTree(descriptor)
+            lastRetainedDescriptor = webRetainDescriptorTree(identified)
+            var executor = webMakeExecutorTree(from: identified)
+            _webCurrentSlotTable = slotTable
+            executor = webCaptureSupportedNativeSlots(
+                from: container,
+                descriptorRoot: identified,
+                executorRoot: executor
+            )
+            _webCurrentSlotTable = nil
+            retainedExecutor = executor
+        }
     }
 
     // MARK: - Rebuild context
@@ -81,8 +147,15 @@ public class WebViewHost: AnyViewHost {
 /// Render a stateful composite view wrapped in a WebViewHost.
 public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
     let mutableView = view
+
+    // Install mutation hooks on first use
+    webInstallMutationHooks()
+
     let host = WebViewHost {
         webRenderView(mutableView.body)
+    }
+    host.describeBody = {
+        webDescribeView(mutableView.body)
     }
     installState(mutableView, host: host)
 
@@ -96,6 +169,20 @@ public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
     host.capturedEnvironment = previousEnv
     let element = host.buildBodyWithTracking()
     _ = host.container.appendChild(element)
+
+    // Capture initial descriptor state for narrow mutation path
+    let descriptor = webDescribeView(mutableView.body)
+    let identified = webIdentifyDescriptorTree(descriptor)
+    host.lastRetainedDescriptor = webRetainDescriptorTree(identified)
+    var executor = webMakeExecutorTree(from: identified)
+    _webCurrentSlotTable = host.slotTable
+    executor = webCaptureSupportedNativeSlots(
+        from: host.container,
+        descriptorRoot: identified,
+        executorRoot: executor
+    )
+    _webCurrentSlotTable = nil
+    host.retainedExecutor = executor
 
     return host.container
 }

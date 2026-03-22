@@ -18,6 +18,19 @@ func webRetainClosure(_ closure: JSClosure) {
 /// and scheduleRebuild's requestAnimationFrame callback finds a nil weak self.
 var _webRetainedHosts: [WebViewHost] = []
 
+// MARK: - Hosted-node tagging
+
+/// Tag a DOM element with its hosted kind for slot capture.
+func webMarkHostedNodeKind(_ element: JSValue, kind: WebHostedNodeKind) {
+    _ = element.setAttribute("data-hosted-kind", kind.rawValue)
+}
+
+/// Read the hosted kind from a tagged DOM element.
+func webHostedNodeKind(of element: JSValue) -> WebHostedNodeKind {
+    guard let attr = element.getAttribute("data-hosted-kind").string else { return .unknown }
+    return WebHostedNodeKind(rawValue: attr) ?? .unknown
+}
+
 // MARK: - Web rendering protocol
 
 /// Protocol that views implement (via extensions) to provide DOM element creation.
@@ -80,11 +93,17 @@ public func flattenChildren<V: View>(_ view: V) -> [any View] {
 
 // MARK: - Primitive view extensions
 
-extension Text: WebRenderable {
+extension Text: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let span = document.createElement("span")
         span.textContent = .string(content)
+        webMarkHostedNodeKind(span, kind: .text)
         return span
+    }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(kind: .text, typeName: "Text",
+                          props: .text(WebTextDescriptor(content: content)))
     }
 }
 
@@ -160,7 +179,7 @@ extension FocusedView: WebRenderable {
         // Handle programmatic focus changes
         let childRef = child
         storage.addPlatformFocusCallback(key: AnyHashable(ObjectIdentifier(storage))) { newValue in
-            if let focused = newValue as? Bool {
+            if let focused = newValue {
                 if focused {
                     _ = childRef.focus()
                 } else {
@@ -276,7 +295,7 @@ extension AnimatedView: WebRenderable {
             case .easeInOut: timing = "ease-in-out"
             case .spring: timing = "cubic-bezier(0.5, 1.8, 0.3, 0.8)"
             }
-            element.style.setProperty("transition", "all \(anim.duration)s \(timing)")
+            _ = element.style.setProperty("transition", "all \(anim.duration)s \(timing)")
         }
         return element
     }
@@ -643,9 +662,9 @@ extension LongPressGestureView: WebRenderable {
         _ = element.addEventListener("contextmenu", contextHandler)
 
         // Make element interactive
-        element.style.setProperty("touch-action", "none")
-        element.style.setProperty("user-select", "none")
-        element.style.setProperty("-webkit-user-select", "none")
+        _ = element.style.setProperty("touch-action", "none")
+        _ = element.style.setProperty("user-select", "none")
+        _ = element.style.setProperty("-webkit-user-select", "none")
 
         return element
     }
@@ -717,9 +736,9 @@ extension DragGestureView: WebRenderable {
         _ = element.addEventListener("pointerdown", downHandler)
 
         // Prevent default drag behavior
-        element.style.setProperty("touch-action", "none")
-        element.style.setProperty("user-select", "none")
-        element.style.setProperty("-webkit-user-select", "none")
+        _ = element.style.setProperty("touch-action", "none")
+        _ = element.style.setProperty("user-select", "none")
+        _ = element.style.setProperty("-webkit-user-select", "none")
 
         return element
     }
@@ -746,21 +765,27 @@ extension SwiftOpenUI.Button: WebRenderable {
     }
 }
 
-extension SwiftOpenUI.Color: WebRenderable {
+extension SwiftOpenUI.Color: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let div = document.createElement("div")
         div.style = .string("background-color: \(cssColor); width: 100%; height: 100%; min-height: 20px;")
+        webMarkHostedNodeKind(div, kind: .color)
         return div
     }
 
     var cssColor: String {
         "rgba(\(Int(red * 255)), \(Int(green * 255)), \(Int(blue * 255)), \(alpha))"
     }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(kind: .color, typeName: "Color",
+                          props: .color(webColorDescriptor(self)))
+    }
 }
 
 // MARK: - Container views
 
-extension VStack: WebRenderable {
+extension VStack: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let div = document.createElement("div")
         div.style = .string("display: flex; flex-direction: column; gap: \(spacing)px; align-items: \(cssAlignment);")
@@ -778,9 +803,24 @@ extension VStack: WebRenderable {
         default: return "center"
         }
     }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        let childDescs: [WebDescriptorNode]
+        if let multi = content as? MultiChildView {
+            childDescs = multi.children.map(webDescribeAnyView)
+        } else {
+            childDescs = [webDescribeView(content)]
+        }
+        return WebDescriptorNode(
+            kind: .vStack, typeName: "VStack",
+            props: .vStack(WebVStackDescriptor(
+                spacing: spacing,
+                alignment: webHorizontalAlignmentDescriptor(alignment))),
+            children: childDescs)
+    }
 }
 
-extension HStack: WebRenderable {
+extension HStack: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let div = document.createElement("div")
         div.style = .string("display: flex; flex-direction: row; gap: \(spacing)px; align-items: \(cssAlignment);")
@@ -798,9 +838,24 @@ extension HStack: WebRenderable {
         default: return "center"
         }
     }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        let childDescs: [WebDescriptorNode]
+        if let multi = content as? MultiChildView {
+            childDescs = multi.children.map(webDescribeAnyView)
+        } else {
+            childDescs = [webDescribeView(content)]
+        }
+        return WebDescriptorNode(
+            kind: .hStack, typeName: "HStack",
+            props: .hStack(WebHStackDescriptor(
+                spacing: spacing,
+                alignment: webVerticalAlignmentDescriptor(alignment))),
+            children: childDescs)
+    }
 }
 
-extension ZStack: WebRenderable {
+extension ZStack: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let div = document.createElement("div")
         div.style = "display: grid; place-items: center;"
@@ -811,6 +866,20 @@ extension ZStack: WebRenderable {
             _ = div.appendChild(child)
         }
         return div
+    }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        let childDescs: [WebDescriptorNode]
+        if let multi = content as? MultiChildView {
+            childDescs = multi.children.map(webDescribeAnyView)
+        } else {
+            childDescs = [webDescribeView(content)]
+        }
+        return WebDescriptorNode(
+            kind: .zStack, typeName: "ZStack",
+            props: .zStack(WebZStackDescriptor(
+                alignment: webAlignmentDescriptor(alignment))),
+            children: childDescs)
     }
 }
 
@@ -850,7 +919,7 @@ extension ForEach: WebRenderable, WebMultiChildRenderable {
 
 // MARK: - Modifier views
 
-extension PaddedView: WebRenderable {
+extension PaddedView: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let padding = "padding: \(top)px \(trailing)px \(bottom)px \(leading)px;"
@@ -859,9 +928,17 @@ extension PaddedView: WebRenderable {
         _ = wrapper.appendChild(child)
         return wrapper
     }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(
+            kind: .padding, typeName: "PaddedView",
+            props: .padding(WebPaddingDescriptor(
+                top: top, bottom: bottom, leading: leading, trailing: trailing)),
+            children: [webDescribeView(content)])
+    }
 }
 
-extension FrameView: WebRenderable {
+extension FrameView: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         var styles = [String]()
@@ -883,9 +960,20 @@ extension FrameView: WebRenderable {
         _ = wrapper.appendChild(child)
         return wrapper
     }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(
+            kind: .frame, typeName: "FrameView",
+            props: .frame(WebFrameDescriptor(
+                width: width, height: height,
+                minWidth: minWidth, minHeight: minHeight,
+                maxWidth: maxWidth, maxHeight: maxHeight,
+                alignment: webAlignmentDescriptor(alignment))),
+            children: [webDescribeView(content)])
+    }
 }
 
-extension ForegroundColorView: WebRenderable {
+extension ForegroundColorView: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let css = "color: \(color.cssColor);"
@@ -894,9 +982,16 @@ extension ForegroundColorView: WebRenderable {
         _ = wrapper.appendChild(child)
         return wrapper
     }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(
+            kind: .foregroundColor, typeName: "ForegroundColorView",
+            props: .foregroundColor(webColorDescriptor(color)),
+            children: [webDescribeView(content)])
+    }
 }
 
-extension BackgroundView: WebRenderable {
+extension BackgroundView: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let css = "background-color: \(color.cssColor); display: flex; flex-direction: column; flex: 1;"
@@ -904,6 +999,13 @@ extension BackgroundView: WebRenderable {
         wrapper.style = .string(css)
         _ = wrapper.appendChild(child)
         return wrapper
+    }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(
+            kind: .background, typeName: "BackgroundView",
+            props: .background(webColorDescriptor(color)),
+            children: [webDescribeView(content)])
     }
 }
 
@@ -945,7 +1047,7 @@ extension FontModifiedView: WebRenderable {
     }
 }
 
-extension BorderView: WebRenderable {
+extension BorderView: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let css = "border: \(width)px solid \(color.cssColor);"
@@ -953,6 +1055,14 @@ extension BorderView: WebRenderable {
         wrapper.style = .string(css)
         _ = wrapper.appendChild(child)
         return wrapper
+    }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(
+            kind: .border, typeName: "BorderView",
+            props: .border(WebBorderDescriptor(
+                color: webColorDescriptor(color), width: width)),
+            children: [webDescribeView(content)])
     }
 }
 
@@ -1074,7 +1184,7 @@ extension Toggle: WebRenderable {
     }
 }
 
-extension Slider: WebRenderable {
+extension Slider: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let input = document.createElement("input")
         input.type = "range"
@@ -1095,6 +1205,13 @@ extension Slider: WebRenderable {
         _ = input.addEventListener("input", handler)
 
         return input
+    }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(
+            kind: .slider, typeName: "Slider",
+            props: .slider(WebSliderDescriptor(
+                value: value.wrappedValue, range: range, step: step)))
     }
 }
 
@@ -1734,7 +1851,7 @@ extension Grid: WebRenderable {
 
         if useExplicitRows {
             // Explicit rows: detect max column count from GridRow children
-            let rows = BackendWeb.webRenderChildren(content)
+            _ = BackendWeb.webRenderChildren(content)
             var maxCols = 1
 
             // First pass: find the widest row

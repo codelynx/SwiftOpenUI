@@ -27,7 +27,9 @@ struct ProbeSwatch: View {
 struct TextColorMutationProbeView: View {
     @State private var title = "Alpha"
     @State private var bareSwatch = Color(red: 0.2, green: 0.4, blue: 0.8)
+    @State private var bareSwatchToggle = false
     @State private var swatch = Color(red: 0.2, green: 0.4, blue: 0.8)
+    @State private var swatchToggle = false
     @State private var padding = 8
 
     var body: some View {
@@ -67,7 +69,7 @@ struct TextColorMutationProbeView: View {
                 .foregroundColor(Color(red: 0.45, green: 0.45, blue: 0.45))
 
             Text("Padding = \(padding)")
-                .padding(top: padding, bottom: padding, leading: padding, trailing: padding)
+                .padding(CGFloat(padding))
                 .border(Color(red: 0.6, green: 0.6, blue: 0.6))
 
             Divider()
@@ -84,7 +86,8 @@ struct TextColorMutationProbeView: View {
                     }
 
                     Button(action: {
-                        bareSwatch = bareSwatch.red > 0.5
+                        bareSwatchToggle.toggle()
+                        bareSwatch = bareSwatchToggle
                             ? Color(red: 0.2, green: 0.4, blue: 0.8)
                             : Color(red: 0.88, green: 0.28, blue: 0.22)
                     }) {
@@ -97,7 +100,8 @@ struct TextColorMutationProbeView: View {
 
                 HStack(spacing: 8) {
                     Button(action: {
-                        swatch = swatch.red > 0.5
+                        swatchToggle.toggle()
+                        swatch = swatchToggle
                             ? Color(red: 0.2, green: 0.4, blue: 0.8)
                             : Color(red: 0.88, green: 0.28, blue: 0.22)
                     }) {
@@ -109,10 +113,12 @@ struct TextColorMutationProbeView: View {
 
                     Button(action: {
                         title = title == "Alpha" ? "Bravo" : "Alpha"
-                        bareSwatch = bareSwatch.red > 0.5
+                        bareSwatchToggle.toggle()
+                        bareSwatch = bareSwatchToggle
                             ? Color(red: 0.2, green: 0.4, blue: 0.8)
                             : Color(red: 0.88, green: 0.28, blue: 0.22)
-                        swatch = swatch.red > 0.5
+                        swatchToggle.toggle()
+                        swatch = swatchToggle
                             ? Color(red: 0.2, green: 0.4, blue: 0.8)
                             : Color(red: 0.88, green: 0.28, blue: 0.22)
                     }) {

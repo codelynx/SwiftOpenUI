@@ -121,6 +121,11 @@ targets += [
         ],
         path: "Sources/Backend/Web/Rendering"
     ),
+    .testTarget(
+        name: "WebDescriptorTests",
+        dependencies: ["SwiftOpenUI", "BackendWeb"],
+        path: "Tests/BackendTests/WebTests"
+    ),
 ]
 exampleDeps.append("BackendWeb")
 #endif
