@@ -152,11 +152,6 @@ targets += [
         dependencies: exampleDeps,
         path: "Examples/Showcase/ColorMixer"
     ),
-    .executableTarget(
-        name: "TextColorMutationProbe",
-        dependencies: exampleDeps,
-        path: "Examples/Showcase/TextColorMutationProbe"
-    ),
     // Parity
     .executableTarget(
         name: "ParityViewsBasic",
