@@ -38,6 +38,11 @@ gtk_swift_label_set_yalign(GtkWidget *label, float yalign) {
     gtk_label_set_yalign(GTK_LABEL(label), yalign);
 }
 
+static inline void
+gtk_swift_label_set_text(GtkWidget *label, const char *text) {
+    gtk_label_set_text(GTK_LABEL(label), text);
+}
+
 // --- Widget type shims ---
 
 static inline gboolean

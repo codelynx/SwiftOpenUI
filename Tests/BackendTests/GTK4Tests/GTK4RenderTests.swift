@@ -1,6 +1,6 @@
 import XCTest
 import SwiftOpenUI
-import BackendGTK4
+@testable import BackendGTK4
 import CGTK
 import CGTKBridge
 
@@ -259,6 +259,213 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(secondOrigin.x, fifthOrigin.x, accuracy: 0.01)
         XCTAssertEqual(firstSize.width, fifthOrigin.x - 4, accuracy: 0.01)
         XCTAssertEqual(thirdOrigin.y, max(firstSize.height, allocatedSize(of: second).height) + 5, accuracy: 0.01)
+    }
+
+    // MARK: - Descriptor mutation hooks
+
+    func testTextMutationHookChangesLabelContent() throws {
+        try requireGTK()
+
+        // Render initial text and capture slot
+        let label = widgetFromOpaque(gtkRenderView(Text("Old")))
+        XCTAssertEqual(gtkHostedNodeKind(of: label), .text)
+
+        let slotID = gtkNativeSlotID(for: label)
+
+        // Mutate via hook helper
+        let success = gtkSetTextContent(slotID: slotID, text: "New")
+        XCTAssertTrue(success)
+
+        // Verify the label text changed
+        let cStr = gtk_label_get_text(OpaquePointer(label))!
+        XCTAssertEqual(String(cString: cStr), "New")
+    }
+
+    func testColorMutationHookChangesBackground() throws {
+        try requireGTK()
+
+        // Render initial color and capture slot
+        let box = widgetFromOpaque(gtkRenderView(Color.red))
+        XCTAssertEqual(gtkHostedNodeKind(of: box), .color)
+
+        let slotID = gtkNativeSlotID(for: box)
+
+        // Mutate via hook helper
+        let newColor = GTK4ColorDescriptor(red: 0, green: 1, blue: 0, opacity: 1)
+        let success = gtkSetColorFill(slotID: slotID, color: newColor)
+        XCTAssertTrue(success)
+
+        // Verify the CSS provider was installed (widget should have the class)
+        let className = "gtk-swift-color-\(slotID)"
+        XCTAssertTrue(gtk_widget_has_css_class(box, className) != 0)
+    }
+
+    func testTextMutationFailsWithInvalidSlot() throws {
+        try requireGTK()
+        let success = gtkSetTextContent(slotID: 0, text: "Nope")
+        XCTAssertFalse(success)
+    }
+
+    // MARK: - Host-level mutation path tests
+
+    func testHostTextMutationSkipsRebuild() throws {
+        try requireGTK()
+
+        // Create a ViewHost with a describable text body
+        var textContent = "Old"
+        let host = GTKViewHost(buildBody: {
+            gtkRenderView(Text(textContent))
+        })
+        host.describeBody = {
+            gtkDescribeView(Text(textContent))
+        }
+
+        // Initial build
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        // Capture initial descriptor state (simulating what rebuild does after full build)
+        let descriptor = gtkDescribeView(Text(textContent))
+        let identified = gtkIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(from: identified)
+        executor = gtkCaptureSupportedNativeSlots(from: child, descriptorRoot: identified, executorRoot: executor)
+        host.retainedExecutor = executor
+
+        // Capture the label widget pointer
+        let label = gtk_widget_get_first_child(host.container)!
+        let labelBefore = UnsafeRawPointer(label)
+
+        // Change state and rebuild
+        textContent = "New"
+        host.rebuild()
+
+        // Verify: same widget (no destroy/recreate), updated content
+        let labelAfter = gtk_widget_get_first_child(host.container)!
+        XCTAssertEqual(UnsafeRawPointer(labelAfter), labelBefore, "Widget should be same (in-place mutation)")
+        let cStr = gtk_label_get_text(OpaquePointer(labelAfter))!
+        XCTAssertEqual(String(cString: cStr), "New")
+    }
+
+    func testHostStructuralChangeTriggersFullRebuild() throws {
+        try requireGTK()
+
+        // Create a ViewHost that can switch between Text and Color
+        var showText = true
+        let host = GTKViewHost(buildBody: {
+            if showText {
+                return gtkRenderView(Text("Hello"))
+            } else {
+                return gtkRenderView(Color.red)
+            }
+        })
+        host.describeBody = {
+            if showText {
+                return gtkDescribeView(Text("Hello"))
+            } else {
+                return gtkDescribeView(Color.red)
+            }
+        }
+
+        // Initial build
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        // Capture descriptor state
+        let descriptor = gtkDescribeView(Text("Hello"))
+        let identified = gtkIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(from: identified)
+        executor = gtkCaptureSupportedNativeSlots(from: child, descriptorRoot: identified, executorRoot: executor)
+        host.retainedExecutor = executor
+
+        let labelBefore = UnsafeRawPointer(gtk_widget_get_first_child(host.container)!)
+
+        // Structural change: Text → Color
+        showText = false
+        host.rebuild()
+
+        // Verify: different widget (full rebuild happened)
+        let childAfter = gtk_widget_get_first_child(host.container)!
+        XCTAssertNotEqual(UnsafeRawPointer(childAfter), labelBefore, "Widget should be different (full rebuild)")
+    }
+
+    func testFullPipelineColorMutation() throws {
+        try requireGTK()
+
+        // Render and describe old state
+        let box = widgetFromOpaque(gtkRenderView(Color.red))
+        let slotID = gtkNativeSlotID(for: box)
+        let className = "gtk-swift-color-\(slotID)"
+
+        let oldDesc = gtkDescribeView(Color.red)
+        let newDesc = gtkDescribeView(Color.green)
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+        let retained = gtkRetainDescriptorTree(oldId)
+        let executor = gtkMakeExecutorTree(from: oldId, nativeSlotID: slotID)
+
+        // Plan
+        let plan = gtkPlanDescriptorTree(old: retained, new: newId)
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+        XCTAssertEqual(plan.updateIntent, .colorFill)
+
+        // Execute + mutate (first mutation — creates provider)
+        let action = gtkExecuteDescriptorPlan(old: executor, plan: plan)
+        let result = gtkApplyHookMutation(action: action)
+        XCTAssertTrue(gtkHookMutationSucceeded(result))
+        XCTAssertTrue(gtk_widget_has_css_class(box, className) != 0)
+
+        // Second mutation on same widget — reuses provider (replace-in-place)
+        let blueDesc = gtkDescribeView(Color.blue)
+        let blueId = gtkIdentifyDescriptorTree(blueDesc)
+        let retained2 = gtkRetainDescriptorTree(newId)
+        let executor2 = action.resultingNode
+        let plan2 = gtkPlanDescriptorTree(old: retained2, new: blueId)
+        let action2 = gtkExecuteDescriptorPlan(old: executor2, plan: plan2)
+        let result2 = gtkApplyHookMutation(action: action2)
+        XCTAssertTrue(gtkHookMutationSucceeded(result2))
+
+        // Same widget, same class — provider was reused, not stacked
+        XCTAssertTrue(gtk_widget_has_css_class(box, className) != 0)
+    }
+
+    func testFullPipelineTextMutation() throws {
+        try requireGTK()
+
+        // Render and describe old state
+        let label = widgetFromOpaque(gtkRenderView(Text("Old")))
+        let slotID = gtkNativeSlotID(for: label)
+
+        let oldDesc = gtkDescribeView(Text("Old"))
+        let newDesc = gtkDescribeView(Text("New"))
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+        let retained = gtkRetainDescriptorTree(oldId)
+        let executor = gtkMakeExecutorTree(from: oldId, nativeSlotID: slotID)
+
+        // Plan
+        let plan = gtkPlanDescriptorTree(old: retained, new: newId)
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+
+        // Execute + mutate
+        let action = gtkExecuteDescriptorPlan(old: executor, plan: plan)
+        let result = gtkApplyHookMutation(action: action)
+        XCTAssertTrue(gtkHookMutationSucceeded(result))
+
+        // Verify label changed
+        let cStr = gtk_label_get_text(OpaquePointer(label))!
+        XCTAssertEqual(String(cString: cStr), "New")
     }
 }
 
