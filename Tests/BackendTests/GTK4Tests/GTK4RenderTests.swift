@@ -1,6 +1,6 @@
 import XCTest
 import SwiftOpenUI
-import BackendGTK4
+@testable import BackendGTK4
 import CGTK
 import CGTKBridge
 
@@ -304,6 +304,100 @@ final class GTK4RenderTests: XCTestCase {
         try requireGTK()
         let success = gtkSetTextContent(slotID: 0, text: "Nope")
         XCTAssertFalse(success)
+    }
+
+    // MARK: - Host-level mutation path tests
+
+    func testHostTextMutationSkipsRebuild() throws {
+        try requireGTK()
+
+        // Create a ViewHost with a describable text body
+        var textContent = "Old"
+        let host = GTKViewHost(buildBody: {
+            gtkRenderView(Text(textContent))
+        })
+        host.describeBody = {
+            gtkDescribeView(Text(textContent))
+        }
+
+        // Initial build
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        // Capture initial descriptor state (simulating what rebuild does after full build)
+        let descriptor = gtkDescribeView(Text(textContent))
+        let identified = gtkIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(from: identified)
+        executor = gtkCaptureSupportedNativeSlots(from: child, descriptorRoot: identified, executorRoot: executor)
+        host.retainedExecutor = executor
+
+        // Capture the label widget pointer
+        let label = gtk_widget_get_first_child(host.container)!
+        let labelBefore = UnsafeRawPointer(label)
+
+        // Change state and rebuild
+        textContent = "New"
+        host.rebuild()
+
+        // Verify: same widget (no destroy/recreate), updated content
+        let labelAfter = gtk_widget_get_first_child(host.container)!
+        XCTAssertEqual(UnsafeRawPointer(labelAfter), labelBefore, "Widget should be same (in-place mutation)")
+        let cStr = gtk_label_get_text(OpaquePointer(labelAfter))!
+        XCTAssertEqual(String(cString: cStr), "New")
+    }
+
+    func testHostStructuralChangeTriggersFullRebuild() throws {
+        try requireGTK()
+
+        // Create a ViewHost that can switch between Text and Color
+        var showText = true
+        let host = GTKViewHost(buildBody: {
+            if showText {
+                return gtkRenderView(Text("Hello"))
+            } else {
+                return gtkRenderView(Color.red)
+            }
+        })
+        host.describeBody = {
+            if showText {
+                return gtkDescribeView(Text("Hello"))
+            } else {
+                return gtkDescribeView(Color.red)
+            }
+        }
+
+        // Initial build
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        // Capture descriptor state
+        let descriptor = gtkDescribeView(Text("Hello"))
+        let identified = gtkIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(from: identified)
+        executor = gtkCaptureSupportedNativeSlots(from: child, descriptorRoot: identified, executorRoot: executor)
+        host.retainedExecutor = executor
+
+        let labelBefore = UnsafeRawPointer(gtk_widget_get_first_child(host.container)!)
+
+        // Structural change: Text → Color
+        showText = false
+        host.rebuild()
+
+        // Verify: different widget (full rebuild happened)
+        let childAfter = gtk_widget_get_first_child(host.container)!
+        XCTAssertNotEqual(UnsafeRawPointer(childAfter), labelBefore, "Widget should be different (full rebuild)")
     }
 
     func testFullPipelineColorMutation() throws {
