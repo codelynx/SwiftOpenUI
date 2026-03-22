@@ -10,7 +10,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 - `Sources/Backend/Web/` — Web/Wasm backend (experimental): DOM rendering via JavaScriptKit
 - `Examples/Showcase/` — Polished demo apps (HelloWorld, Stopwatch, ColorMixer, Calculator)
 - `Examples/Parity/` — Matrix-backed coverage examples (11 parity targets)
-- `Tests/SwiftOpenUITests/` — Core tests (platform-independent, 60 tests)
+- `Tests/SwiftOpenUITests/` — Core tests (platform-independent)
 - `Tests/BackendTests/` — Platform-specific backend tests
 - `docs/` — Architecture, API reference, porting guides, mission
 - `configure` — Setup script: installs swiftly, open-source Swift toolchain, Wasm SDK
@@ -26,7 +26,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 ```bash
 # macOS (uses real SwiftUI for examples)
 swift build
-swift test                   # 60 tests
+swift test                   # 191 tests
 
 # WebAssembly (requires open-source Swift toolchain, not Xcode's)
 source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
@@ -53,7 +53,7 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 - **On macOS, examples use real SwiftUI**: `#if os(macOS) import SwiftUI` — validates API compatibility.
 - **Manifest conditionals check HOST, not target**: `#if os()` and `#if arch()` in Package.swift evaluate the build machine. Example deps always include SwiftOpenUI. Web backend + JavaScriptKit are gated to `#if os(macOS)` (Wasm cross-compilation always happens from macOS). GTK4 and Win32 backends are gated to their native OS.
 - **Namespace conflicts**: On macOS, `ObservableObject` and `Published` clash with Combine. Tests qualify as `SwiftOpenUI.ObservableObject` and `@SwiftOpenUI.Published`. See `docs/issues/observable-namespace-conflict.md`.
-- **State management** (@State, @Binding, @ObservedObject, @Published, @StateObject, @EnvironmentObject, @FocusState) is fully platform-independent with thread-safe storage.
+- **State management** (@State, @Binding, @ObservedObject, @Published, @StateObject, @EnvironmentObject, @FocusState, @Observable) is fully platform-independent with thread-safe storage.
 - **Environment TLS**: pthread on Linux/macOS, TlsAlloc on Windows, simple global on Wasm (single-threaded).
 - **Scene rendering is recursive**: `renderScene` walks `Scene.body` until it hits a terminal `WindowGroup`.
 
@@ -78,13 +78,13 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 ## Current Views & Modifiers
 
 ### Views (Sources/SwiftOpenUI/Views/)
-Text, Button, TextField, Toggle, Slider, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView
+Text, Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper, Picker, DatePicker, ProgressView, Label, Link, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView, TabView, Grid, GridRow, Form, Section, DisclosureGroup, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Menu, Canvas, GeometryReader, NavigationSplitView, ConfirmationDialog
 
 ### Navigation (Sources/SwiftOpenUI/Navigation/)
-NavigationStack, NavigationLink, NavigationPath, .navigationTitle(), .navigationDestination(for:), NavigateAction (environment)
+NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigationTitle(), .navigationDestination(for:), NavigateAction (environment)
 
 ### Modifiers (Sources/SwiftOpenUI/Modifiers/)
-.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .environmentObject(), .environment(), withAnimation(), custom ViewModifier
+.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .environmentObject(), .environment(), withAnimation(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .pickerStyle(), .navigationSplitViewColumnWidth(), custom ViewModifier
 
 ### State (Sources/SwiftOpenUI/State/)
 @State, @Binding, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @FocusState
