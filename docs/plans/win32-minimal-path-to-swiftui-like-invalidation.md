@@ -1,5 +1,9 @@
 # Win32 Minimal Path Toward SwiftUI-Like Invalidation
 
+Related:
+
+- `docs/architecture/cross-backend-invalidation-notes.md`
+
 ## Goal
 
 Improve Win32 interactive responsiveness step by step without trying to build full SwiftUI internals all at once.
