@@ -18,6 +18,7 @@ private var rebuildingViewHostKey: pthread_key_t = {
 /// Preserves focus and cursor position across rebuilds.
 public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
     public var lastReadSet: Set<ObjectIdentifier>?
+    public var lastInputSnapshot: [StorageSnapshot]?
     public let container: UnsafeMutablePointer<GtkWidget>
     let buildBody: () -> OpaquePointer
     /// Describes the body as a descriptor tree without creating widgets.
@@ -190,6 +191,12 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
             // Fall through to full rebuild
         }
 
+        // Phase 7: skip body evaluation if no storage was mutated since last render
+        if let snapshot = lastInputSnapshot,
+           inputsUnchanged(snapshot: snapshot) {
+            return
+        }
+
         g_object_ref(gpointer(container))
         defer { g_object_unref(gpointer(container)) }
 
@@ -224,7 +231,10 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         setCurrentEnvironment(capturedEnvironment)
         beginDependencyTracking()
         let widget = buildBodyWithTracking()
-        lastReadSet = endDependencyTracking()
+        if let tracking = endDependencyTracking() {
+            lastReadSet = tracking.readSet
+            lastInputSnapshot = tracking.snapshots
+        }
         setCurrentEnvironment(previousEnv)
 
         GTKViewHost.setCurrentRebuilding(previousHost)

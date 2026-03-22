@@ -9,6 +9,7 @@ import Observation
 /// Supports narrow mutation path for text/color in-place updates.
 public class WebViewHost: AnyViewHost, DependencyTrackingHost {
     public var lastReadSet: Set<ObjectIdentifier>?
+    public var lastInputSnapshot: [StorageSnapshot]?
     let container: JSValue
     let buildBody: () -> JSValue
     /// Describes the body as a descriptor tree without creating DOM elements.
@@ -126,6 +127,12 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
             // Fall through to full rebuild
         }
 
+        // Phase 7: skip body evaluation if no storage was mutated since last render
+        if let snapshot = lastInputSnapshot,
+           inputsUnchanged(snapshot: snapshot) {
+            return
+        }
+
         // Release closures from the previous render pass
         _webRetainedClosures.removeAll()
 
@@ -143,7 +150,10 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         setCurrentEnvironment(capturedEnvironment)
         beginDependencyTracking()
         let element = buildBodyWithTracking()
-        lastReadSet = endDependencyTracking()
+        if let tracking = endDependencyTracking() {
+            lastReadSet = tracking.readSet
+            lastInputSnapshot = tracking.snapshots
+        }
         setCurrentEnvironment(previousEnv)
 
         WebViewHost.currentRebuilding = previousHost
@@ -205,7 +215,10 @@ public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
     host.capturedEnvironment = previousEnv
     beginDependencyTracking()
     let element = host.buildBodyWithTracking()
-    host.lastReadSet = endDependencyTracking()
+    if let tracking = endDependencyTracking() {
+        host.lastReadSet = tracking.readSet
+        host.lastInputSnapshot = tracking.snapshots
+    }
     _ = host.container.appendChild(element)
 
     WebViewHost.currentRebuilding = previousHost

@@ -1,56 +1,101 @@
-/// Host-level dependency gating for state-driven rebuilds.
+/// Host-level dependency gating and input-equality short-circuiting.
 ///
-/// Records which state sources (PublishedStorage) a ViewHost reads during
-/// body evaluation. On subsequent @Published changes, rebuilds are suppressed
-/// for hosts whose read-set does not include the changed source.
+/// Phase 6: Records which state sources a ViewHost reads during body evaluation.
+/// On subsequent changes, rebuilds are suppressed for unread sources.
 ///
-/// @State always rebuilds its declaring host (no gating) because the declaring
-/// host is the only one notified and may pass the value to children via Binding.
-///
-/// This reduces cross-source over-invalidation but does not avoid whole-host
-/// rebuilds when multiple used sources belong to the same host.
+/// Phase 7: Captures generation counters of read storages. Before the next
+/// body evaluation, compares current generations to the snapshot. If all match,
+/// no storage was mutated → skip rebuild entirely.
+
+// MARK: - Generation tracking
+
+/// Protocol for storages that track a mutation generation counter.
+/// Both StateStorage and PublishedStorage conform.
+public protocol GenerationTracked: AnyObject {
+    var generation: UInt64 { get }
+}
+
+/// Snapshot of a storage's identity and generation at render time.
+public struct StorageSnapshot {
+    public weak var storage: AnyObject?
+    public let generation: UInt64
+
+    public init(storage: AnyObject, generation: UInt64) {
+        self.storage = storage
+        self.generation = generation
+    }
+}
+
+/// Check if all storages in the snapshot still have the same generation.
+/// Returns true if nothing changed (safe to skip rebuild).
+/// Returns false if any storage was mutated, deallocated, or the snapshot
+/// is empty (no tracked inputs → can't prove nothing changed, e.g.
+/// @Observable or @FocusState driven rebuilds).
+public func inputsUnchanged(snapshot: [StorageSnapshot]) -> Bool {
+    guard !snapshot.isEmpty else { return false }
+    for snap in snapshot {
+        guard let storage = snap.storage as? GenerationTracked else {
+            return false // Deallocated or not tracked — assume changed
+        }
+        if storage.generation != snap.generation {
+            return false
+        }
+    }
+    return true
+}
 
 // MARK: - Tracking context (stack-based)
 
-/// Stack of read-sets for nested tracking sessions.
-/// Parent body evaluation may synchronously render nested stateful children,
-/// each with their own begin/end tracking. A stack ensures the parent's
-/// session is restored after the child's completes.
-private var _trackingStack: [Set<ObjectIdentifier>] = []
+/// Each tracking session captures both a read-set (Phase 6) and
+/// a snapshot array (Phase 7).
+private struct TrackingSession {
+    var readSet: Set<ObjectIdentifier> = []
+    var snapshots: [StorageSnapshot] = []
+}
+
+/// Stack of tracking sessions for nested stateful host renders.
+private var _trackingStack: [TrackingSession] = []
 
 /// Begin tracking reads. Call before body evaluation.
-/// Pushes a new empty read-set onto the stack.
 public func beginDependencyTracking() {
-    _trackingStack.append(Set())
+    _trackingStack.append(TrackingSession())
 }
 
 /// Record a storage read. Called from StateStorage/PublishedStorage value getters.
-/// Records into the topmost (innermost) tracking session. No-op when stack is empty.
+/// Captures both the ObjectIdentifier (Phase 6) and generation snapshot (Phase 7).
 public func recordDependencyRead(_ storage: AnyObject) {
     guard !_trackingStack.isEmpty else { return }
-    _trackingStack[_trackingStack.count - 1].insert(ObjectIdentifier(storage))
+    let id = ObjectIdentifier(storage)
+    let idx = _trackingStack.count - 1
+    // Only record each storage once per session
+    if !_trackingStack[idx].readSet.contains(id) {
+        _trackingStack[idx].readSet.insert(id)
+        if let tracked = storage as? GenerationTracked {
+            _trackingStack[idx].snapshots.append(
+                StorageSnapshot(storage: storage, generation: tracked.generation))
+        }
+    }
 }
 
-/// End tracking and return the captured read-set.
-/// Pops the topmost session from the stack, restoring the parent's session.
-/// Returns nil if the stack was empty (no tracking active).
-public func endDependencyTracking() -> Set<ObjectIdentifier>? {
+/// End tracking and return the captured read-set (Phase 6) and snapshots (Phase 7).
+public func endDependencyTracking() -> (readSet: Set<ObjectIdentifier>, snapshots: [StorageSnapshot])? {
     guard !_trackingStack.isEmpty else { return nil }
-    return _trackingStack.removeLast()
+    let session = _trackingStack.removeLast()
+    return (readSet: session.readSet, snapshots: session.snapshots)
 }
 
-/// Check if a storage was read during a tracked render.
+/// Check if a storage was read during a tracked render (Phase 6).
 public func isDependency(_ storage: AnyObject, in readSet: Set<ObjectIdentifier>) -> Bool {
     readSet.contains(ObjectIdentifier(storage))
 }
 
 // MARK: - DependencyTrackingHost protocol
 
-/// Protocol for ViewHosts that support dependency-gated rebuilds.
-/// Backends conform their ViewHost to this protocol and store the
-/// read-set captured at the end of each render pass.
+/// Protocol for ViewHosts that support dependency-gated rebuilds
+/// and input-equality short-circuiting.
 public protocol DependencyTrackingHost: AnyViewHost {
-    /// The set of storage ObjectIdentifiers read during the last render.
-    /// Nil means no tracking data — always rebuild (safe default).
+    /// The set of storage ObjectIdentifiers read during the last render (Phase 6).
     var lastReadSet: Set<ObjectIdentifier>? { get set }
+    /// Generation snapshots of storages read during the last render (Phase 7).
+    var lastInputSnapshot: [StorageSnapshot]? { get set }
 }

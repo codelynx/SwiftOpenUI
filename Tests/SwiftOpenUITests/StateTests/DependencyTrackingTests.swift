@@ -5,6 +5,7 @@ import XCTest
 
 private class MockViewHost: AnyViewHost, DependencyTrackingHost {
     var lastReadSet: Set<ObjectIdentifier>?
+    var lastInputSnapshot: [StorageSnapshot]?
     var rebuildCount = 0
 
     func scheduleRebuild() { rebuildCount += 1 }
@@ -19,21 +20,21 @@ final class DependencyTrackingTests: XCTestCase {
         let obj = NSObject()
         beginDependencyTracking()
         recordDependencyRead(obj)
-        let readSet = endDependencyTracking()
-        XCTAssertNotNil(readSet)
-        XCTAssertTrue(readSet!.contains(ObjectIdentifier(obj)))
+        let tracking = endDependencyTracking()
+        XCTAssertNotNil(tracking)
+        XCTAssertTrue(tracking!.readSet.contains(ObjectIdentifier(obj)))
     }
 
     func testEmptyTrackingReturnsEmptySet() {
         beginDependencyTracking()
-        let readSet = endDependencyTracking()
-        XCTAssertNotNil(readSet)
-        XCTAssertTrue(readSet!.isEmpty)
+        let tracking = endDependencyTracking()
+        XCTAssertNotNil(tracking)
+        XCTAssertTrue(tracking!.readSet.isEmpty)
     }
 
     func testNoTrackingReturnsNil() {
-        let readSet = endDependencyTracking()
-        XCTAssertNil(readSet)
+        let tracking = endDependencyTracking()
+        XCTAssertNil(tracking)
     }
 
     // MARK: - isDependency
@@ -57,18 +58,18 @@ final class DependencyTrackingTests: XCTestCase {
         let storage = StateStorage(42)
         beginDependencyTracking()
         _ = storage.value
-        let readSet = endDependencyTracking()
-        XCTAssertNotNil(readSet)
-        XCTAssertTrue(readSet!.contains(ObjectIdentifier(storage)))
+        let tracking = endDependencyTracking()
+        XCTAssertNotNil(tracking)
+        XCTAssertTrue(tracking!.readSet.contains(ObjectIdentifier(storage)))
     }
 
     func testPublishedStorageRecordsDependency() {
         let storage = PublishedStorage("hello")
         beginDependencyTracking()
         _ = storage.value
-        let readSet = endDependencyTracking()
-        XCTAssertNotNil(readSet)
-        XCTAssertTrue(readSet!.contains(ObjectIdentifier(storage)))
+        let tracking = endDependencyTracking()
+        XCTAssertNotNil(tracking)
+        XCTAssertTrue(tracking!.readSet.contains(ObjectIdentifier(storage)))
     }
 
     // MARK: - @State always rebuilds (no gating)
@@ -78,11 +79,10 @@ final class DependencyTrackingTests: XCTestCase {
         let unreadStorage = StateStorage(1)
         unreadStorage.host = host
 
-        // Simulate a render that reads nothing
         beginDependencyTracking()
-        host.lastReadSet = endDependencyTracking()
+        let tracking = endDependencyTracking()
+        host.lastReadSet = tracking?.readSet
 
-        // @State always rebuilds its declaring host, regardless of read-set
         host.rebuildCount = 0
         unreadStorage.setValue(99)
         XCTAssertEqual(host.rebuildCount, 1, "@State must always rebuild — may pass value via Binding")
@@ -95,7 +95,6 @@ final class DependencyTrackingTests: XCTestCase {
         let readPublished = PublishedStorage("read")
         let unreadPublished = PublishedStorage("unread")
 
-        // Wire observers (simulating wirePublished behavior)
         readPublished.setObserver(token: ObjectIdentifier(host)) { [weak host] in
             guard let host = host else { return }
             if let trackingHost = host as? DependencyTrackingHost,
@@ -115,12 +114,11 @@ final class DependencyTrackingTests: XCTestCase {
             host.scheduleRebuild()
         }
 
-        // Simulate a render that only reads readPublished
         beginDependencyTracking()
         _ = readPublished.value
-        host.lastReadSet = endDependencyTracking()
+        let tracking = endDependencyTracking()
+        host.lastReadSet = tracking?.readSet
 
-        // Change the unread published — should be skipped
         host.rebuildCount = 0
         unreadPublished.setValue("changed")
         XCTAssertEqual(host.rebuildCount, 0, "Should skip rebuild for unread @Published")
@@ -140,12 +138,11 @@ final class DependencyTrackingTests: XCTestCase {
             host.scheduleRebuild()
         }
 
-        // Simulate a render that reads readPublished
         beginDependencyTracking()
         _ = readPublished.value
-        host.lastReadSet = endDependencyTracking()
+        let tracking = endDependencyTracking()
+        host.lastReadSet = tracking?.readSet
 
-        // Change the read published — should rebuild
         host.rebuildCount = 0
         readPublished.setValue("changed")
         XCTAssertEqual(host.rebuildCount, 1, "Should rebuild for read @Published")
@@ -157,24 +154,20 @@ final class DependencyTrackingTests: XCTestCase {
         let parentObj = NSObject()
         let childObj = NSObject()
 
-        // Parent begins tracking
         beginDependencyTracking()
         recordDependencyRead(parentObj)
 
-        // Child begins nested tracking (simulating nested stateful view render)
         beginDependencyTracking()
         recordDependencyRead(childObj)
-        let childReadSet = endDependencyTracking()
+        let childTracking = endDependencyTracking()
 
-        // Child should have its own read-set
-        XCTAssertNotNil(childReadSet)
-        XCTAssertTrue(childReadSet!.contains(ObjectIdentifier(childObj)))
-        XCTAssertFalse(childReadSet!.contains(ObjectIdentifier(parentObj)))
+        XCTAssertNotNil(childTracking)
+        XCTAssertTrue(childTracking!.readSet.contains(ObjectIdentifier(childObj)))
+        XCTAssertFalse(childTracking!.readSet.contains(ObjectIdentifier(parentObj)))
 
-        // Parent session should be restored with its reads intact
-        let parentReadSet = endDependencyTracking()
-        XCTAssertNotNil(parentReadSet)
-        XCTAssertTrue(parentReadSet!.contains(ObjectIdentifier(parentObj)))
-        XCTAssertFalse(parentReadSet!.contains(ObjectIdentifier(childObj)))
+        let parentTracking = endDependencyTracking()
+        XCTAssertNotNil(parentTracking)
+        XCTAssertTrue(parentTracking!.readSet.contains(ObjectIdentifier(parentObj)))
+        XCTAssertFalse(parentTracking!.readSet.contains(ObjectIdentifier(childObj)))
     }
 }

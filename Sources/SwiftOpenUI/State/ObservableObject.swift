@@ -39,10 +39,11 @@ public struct Published<Value>: AnyPublishedProvider {
 /// Backing storage for @Published. Thread-safe with token-keyed observer map.
 /// Each observer is identified by an ObjectIdentifier (the ObservedObjectStorage
 /// instance), so re-wiring replaces the old observer instead of accumulating.
-public class PublishedStorage<Value>: AnyPublishedStorage {
+public class PublishedStorage<Value>: AnyPublishedStorage, GenerationTracked {
     private let lock = NSLock()
     private var _value: Value
     private var observers: [ObjectIdentifier: () -> Void] = [:]
+    public private(set) var generation: UInt64 = 0
 
     public init(_ value: Value) {
         _value = value
@@ -58,6 +59,7 @@ public class PublishedStorage<Value>: AnyPublishedStorage {
     public func setValue(_ newValue: Value) {
         lock.lock()
         _value = newValue
+        generation += 1
         let currentObservers = observers.values
         lock.unlock()
         for observer in currentObservers {

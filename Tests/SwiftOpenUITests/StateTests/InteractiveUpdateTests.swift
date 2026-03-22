@@ -5,6 +5,7 @@ import XCTest
 
 private class MockInteractiveHost: AnyViewHost, DependencyTrackingHost {
     var lastReadSet: Set<ObjectIdentifier>?
+    var lastInputSnapshot: [StorageSnapshot]?
     var rebuildCount = 0
     private var interactiveUpdateDepth = 0
     private var rebuildDeferredDuringInteraction = false

@@ -40,10 +40,11 @@ public struct State<Value>: AnyStateStorageProvider {
 
 /// The backing storage for @State. Thread-safe value access with
 /// coalesced re-render scheduling via the owning ViewHost.
-public class StateStorage<Value>: AnyStateStorage {
+public class StateStorage<Value>: AnyStateStorage, GenerationTracked {
     private let lock = NSLock()
     var _value: Value  // internal for restoreValue cross-storage access
     public weak var host: AnyViewHost?
+    public private(set) var generation: UInt64 = 0
 
     public init(_ value: Value) {
         _value = value
@@ -59,6 +60,7 @@ public class StateStorage<Value>: AnyStateStorage {
     public func setValue(_ newValue: Value) {
         lock.lock()
         _value = newValue
+        generation += 1
         lock.unlock()
         // @State always rebuilds its declaring host — no dependency gating.
         // The declaring host is the only host notified, and it may pass
