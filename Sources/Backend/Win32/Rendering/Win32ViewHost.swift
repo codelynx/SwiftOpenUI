@@ -213,6 +213,15 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
         suppressFocusRestoreOnce = false
         lock.unlock()
 
+        // Phase 7: skip rebuild entirely if no tracked inputs changed.
+        // This avoids body evaluation, HWND destruction, and repainting
+        // when the state change that triggered this rebuild didn't affect
+        // any storage read during the last body evaluation.
+        if let snapshot = lastInputSnapshot,
+           inputsUnchanged(snapshot: snapshot) {
+            return
+        }
+
         SendMessageW(container, UINT(WM_SETREDRAW), 0, 0)
 
         let inputState = saveInputState(in: container)
