@@ -74,6 +74,9 @@ let presetSwatches: [RGB] = [
 // MARK: - Color Studio View
 
 struct ColorStudioView: View {
+    static let windowWidth = 320.0
+    static let windowHeight = 450.0
+
     @State private var red: Double = 80
     @State private var green: Double = 160
     @State private var blue: Double = 220
@@ -241,6 +244,7 @@ struct ColorStudioView: View {
 
             Spacer()
         }
+        .frame(width: Self.windowWidth, height: Self.windowHeight)
         .background(Color(red: 0.12, green: 0.12, blue: 0.12))
     }
 }
@@ -269,9 +273,21 @@ struct SliderRow: View {
 
 struct ColorMixerApp: App {
     var body: some Scene {
+        #if os(macOS)
         WindowGroup("Color Studio") {
             ColorStudioView()
         }
+        .windowResizability(.contentSize)
+        #else
+        WindowGroup("Color Studio") {
+            ColorStudioView()
+        }
+        .defaultWindowSize(
+            width: ColorStudioView.windowWidth,
+            height: ColorStudioView.windowHeight
+        )
+        .windowSizing(.contentFixed)
+        #endif
     }
 }
 
