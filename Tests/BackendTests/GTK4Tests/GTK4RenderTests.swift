@@ -352,6 +352,41 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(String(cString: cStr), "New")
     }
 
+    func testHostColorMutationSkipsRebuild() throws {
+        try requireGTK()
+
+        var currentColor = Color.red
+        let host = GTKViewHost(buildBody: {
+            gtkRenderView(currentColor)
+        })
+        host.describeBody = {
+            gtkDescribeView(currentColor)
+        }
+
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        let descriptor = gtkDescribeView(currentColor)
+        let identified = gtkIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(from: identified)
+        executor = gtkCaptureSupportedNativeSlots(from: child, descriptorRoot: identified, executorRoot: executor)
+        host.retainedExecutor = executor
+
+        let boxBefore = UnsafeRawPointer(gtk_widget_get_first_child(host.container)!)
+
+        currentColor = Color.green
+        host.rebuild()
+
+        let boxAfter = gtk_widget_get_first_child(host.container)!
+        XCTAssertEqual(UnsafeRawPointer(boxAfter), boxBefore, "Widget should be same (in-place color mutation)")
+    }
+
     func testHostStructuralChangeTriggersFullRebuild() throws {
         try requireGTK()
 
