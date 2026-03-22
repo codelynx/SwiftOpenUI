@@ -689,8 +689,12 @@ extension FrameView: GTKRenderable {
             ? gtk_swift_scrolled_window_new()!
             : gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
 
-        gtk_widget_set_halign(child, GTK_ALIGN_START)
-        gtk_widget_set_valign(child, GTK_ALIGN_START)
+        // Expanding children should fill the slot; non-expanding ones
+        // are positioned by GtkFixed placement math.
+        let childExpH = gtk_widget_get_hexpand(child) != 0
+        let childExpV = gtk_widget_get_vexpand(child) != 0
+        gtk_widget_set_halign(child, childExpH ? GTK_ALIGN_FILL : GTK_ALIGN_START)
+        gtk_widget_set_valign(child, childExpV ? GTK_ALIGN_FILL : GTK_ALIGN_START)
         gtk_widget_set_halign(slot, GTK_ALIGN_START)
         gtk_widget_set_valign(slot, GTK_ALIGN_START)
         if clampsChild {
