@@ -52,6 +52,7 @@ public class StateStorage<Value>: AnyStateStorage {
     public var value: Value {
         lock.lock()
         defer { lock.unlock() }
+        recordDependencyRead(self)
         return _value
     }
 
@@ -59,6 +60,10 @@ public class StateStorage<Value>: AnyStateStorage {
         lock.lock()
         _value = newValue
         lock.unlock()
+        // @State always rebuilds its declaring host — no dependency gating.
+        // The declaring host is the only host notified, and it may pass
+        // the value to children via Binding. Skipping its rebuild would
+        // leave bound children stale.
         host?.scheduleRebuild()
     }
 

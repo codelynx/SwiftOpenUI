@@ -7,7 +7,8 @@ import Observation
 /// Web-specific ViewHost that manages a stable DOM container element.
 /// On state change, rebuilds the body and swaps children.
 /// Supports narrow mutation path for text/color in-place updates.
-public class WebViewHost: AnyViewHost {
+public class WebViewHost: AnyViewHost, DependencyTrackingHost {
+    public var lastReadSet: Set<ObjectIdentifier>?
     let container: JSValue
     let buildBody: () -> JSValue
     /// Describes the body as a descriptor tree without creating DOM elements.
@@ -111,7 +112,9 @@ public class WebViewHost: AnyViewHost {
 
         let previousEnv = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
+        beginDependencyTracking()
         let element = buildBodyWithTracking()
+        lastReadSet = endDependencyTracking()
         setCurrentEnvironment(previousEnv)
 
         WebViewHost.currentRebuilding = previousHost
@@ -167,7 +170,9 @@ public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
     // Initial render
     let previousEnv = getCurrentEnvironment()
     host.capturedEnvironment = previousEnv
+    beginDependencyTracking()
     let element = host.buildBodyWithTracking()
+    host.lastReadSet = endDependencyTracking()
     _ = host.container.appendChild(element)
 
     // Capture initial descriptor state for narrow mutation path

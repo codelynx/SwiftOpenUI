@@ -16,7 +16,8 @@ private var rebuildingViewHostKey: pthread_key_t = {
 /// GTK4-specific ViewHost that manages a stable GtkBox container.
 /// On state change, rebuilds the body and swaps children.
 /// Preserves focus and cursor position across rebuilds.
-public class GTKViewHost: AnyViewHost {
+public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
+    public var lastReadSet: Set<ObjectIdentifier>?
     public let container: UnsafeMutablePointer<GtkWidget>
     let buildBody: () -> OpaquePointer
     /// Describes the body as a descriptor tree without creating widgets.
@@ -181,7 +182,9 @@ public class GTKViewHost: AnyViewHost {
         // Restore environment for the rebuild pass
         let previousEnv = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
+        beginDependencyTracking()
         let widget = buildBodyWithTracking()
+        lastReadSet = endDependencyTracking()
         setCurrentEnvironment(previousEnv)
 
         GTKViewHost.setCurrentRebuilding(previousHost)

@@ -51,6 +51,7 @@ public class PublishedStorage<Value>: AnyPublishedStorage {
     public var value: Value {
         lock.lock()
         defer { lock.unlock() }
+        recordDependencyRead(self)
         return _value
     }
 
@@ -216,8 +217,16 @@ private func wirePublished<T: ObservableObject>(
     while let m = mirror {
         for child in m.children {
             if let provider = child.value as? AnyPublishedProvider {
+                let storage = provider.anyPublished
                 provider.anyPublished.setObserver(token: token) { [weak host] in
-                    host?.scheduleRebuild()
+                    guard let host = host else { return }
+                    // Skip rebuild if host has a read-set and this storage wasn't read
+                    if let trackingHost = host as? DependencyTrackingHost,
+                       let readSet = trackingHost.lastReadSet,
+                       !isDependency(storage as AnyObject, in: readSet) {
+                        return
+                    }
+                    host.scheduleRebuild()
                 }
             }
         }

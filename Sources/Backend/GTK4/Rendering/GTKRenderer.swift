@@ -3517,7 +3517,9 @@ private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {
 
     let previousHost = GTKViewHost.getCurrentRebuilding()
     GTKViewHost.setCurrentRebuilding(host)
+    beginDependencyTracking()
     let widget = host.buildBodyWithTracking()
+    host.lastReadSet = endDependencyTracking()
     GTKViewHost.setCurrentRebuilding(previousHost)
 
     let child = widgetFromOpaque(widget)
