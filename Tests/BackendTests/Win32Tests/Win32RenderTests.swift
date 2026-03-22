@@ -172,6 +172,24 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertFalse(winCanApplyTextColorHostMutation(plan: plan))
     }
 
+    func testStaleSlotRejectsNarrowPath() {
+        // Simulate a text update where the HWND slot is invalid (0 = null)
+        let oldDesc = Win32DescriptorNode(kind: .text, typeName: "Text",
+                                           props: .text(Win32TextDescriptor(content: "Old")))
+        let newDesc = Win32DescriptorNode(kind: .text, typeName: "Text",
+                                           props: .text(Win32TextDescriptor(content: "New")))
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDesc))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDesc))
+        XCTAssertTrue(winCanApplyTextColorHostMutation(plan: plan))
+
+        // Execute with no real HWND (nativeSlotID = nil)
+        let identified = winIdentifyDescriptorTree(oldDesc)
+        let executor = winMakeExecutorTree(from: identified)
+        let action = winExecuteDescriptorPlan(old: executor, plan: plan)
+        // Slot validation should reject because nativeSlotID is nil
+        XCTAssertFalse(winAllSlotsValid(action: action))
+    }
+
     func testDescribeCompositeLeafSubtree() {
         let binding = Binding<Double>(
             get: { 128.0 },

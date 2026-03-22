@@ -313,6 +313,10 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
         }
 
         let action = winExecuteDescriptorPlan(old: retainedExecutorRoot, plan: plan)
+        // Validate all target HWNDs are still alive before mutating
+        guard winAllSlotsValid(action: action) else {
+            return false
+        }
         let hookResult = winApplyHookMutation(action: action)
         guard winHookMutationSucceeded(hookResult) else {
             return false

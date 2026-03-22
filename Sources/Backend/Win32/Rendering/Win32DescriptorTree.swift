@@ -582,6 +582,24 @@ public func winApplyHook(action: Win32ExecutorAction) -> Win32HookResult {
 
 /// Apply hook dispatch and perform the narrow set of real Win32 mutations that
 /// are explicitly implemented for this isolated slice.
+/// Validate that all update actions have live native HWNDs before mutation.
+/// Mirrors GTK4's gtkAllSlotsValid — prevents writing to destroyed HWNDs.
+public func winAllSlotsValid(action: Win32ExecutorAction) -> Bool {
+    switch action.kind {
+    case .update:
+        if action.updateIntent == .textContent || action.updateIntent == .colorFill {
+            guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
+                  let hwnd = HWND(bitPattern: slotID),
+                  IsWindow(hwnd) else {
+                return false
+            }
+        }
+    case .keep, .create, .replace:
+        break
+    }
+    return action.children.allSatisfy(winAllSlotsValid)
+}
+
 public func winApplyHookMutation(action: Win32ExecutorAction) -> Win32HookResult {
     winApplyHook(action: action, performMutation: true)
 }
