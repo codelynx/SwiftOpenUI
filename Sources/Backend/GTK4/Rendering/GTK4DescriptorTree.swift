@@ -923,7 +923,7 @@ private func gtkCollectSupportedHostedWidgets(
     }
 }
 
-private func gtkAssignNativeSlots(
+public func gtkAssignNativeSlots(
     _ node: GTK4RetainedExecutorNode,
     slotsByIdentity: [GTK4DescriptorIdentity: Int]
 ) -> GTK4RetainedExecutorNode {
