@@ -1,4 +1,6 @@
 import SwiftOpenUI
+import CGTK
+import CGTKBridge
 
 // MARK: - Descriptor kinds and property types
 
@@ -693,4 +695,190 @@ public func gtkVerticalAlignmentDescriptor(_ alignment: VerticalAlignment) -> GT
 
 public func gtkColorDescriptor(_ color: Color) -> GTK4ColorDescriptor {
     GTK4ColorDescriptor(red: color.red, green: color.green, blue: color.blue, opacity: color.alpha)
+}
+
+// MARK: - Hosted-node kind tagging
+
+/// Kinds of hosted native widgets that support in-place mutation.
+public enum GTK4HostedNodeKind: String {
+    case text
+    case color
+    case unknown
+}
+
+private let gtkHostedKindKey = "gtk-swift-hosted-kind"
+
+/// Tag a GTK widget with its hosted kind during render.
+public func gtkMarkHostedNodeKind(_ widget: UnsafeMutablePointer<GtkWidget>,
+                                   kind: GTK4HostedNodeKind) {
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    // Store the kind string as a static pointer (no allocation needed)
+    switch kind {
+    case .text:
+        g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindTextPtr))
+    case .color:
+        g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr))
+    case .unknown:
+        break
+    }
+}
+
+/// Read the hosted kind from a tagged GTK widget.
+public func gtkHostedNodeKind(of widget: UnsafeMutablePointer<GtkWidget>) -> GTK4HostedNodeKind {
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    guard let raw = g_object_get_data(gobject, gtkHostedKindKey) else { return .unknown }
+    if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindTextPtr) { return .text }
+    if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr) { return .color }
+    return .unknown
+}
+
+// Static pointers for kind comparison (avoids string allocation per check)
+private let gtkHostedKindTextPtr: UnsafePointer<CChar> = {
+    let p = UnsafeMutablePointer<CChar>.allocate(capacity: 1)
+    p.pointee = 1
+    return UnsafePointer(p)
+}()
+
+private let gtkHostedKindColorPtr: UnsafePointer<CChar> = {
+    let p = UnsafeMutablePointer<CChar>.allocate(capacity: 1)
+    p.pointee = 2
+    return UnsafePointer(p)
+}()
+
+/// Map descriptor kind to hosted kind (nil = not supported for mutation).
+public func gtkHostedKindForDescriptor(_ kind: GTK4DescriptorKind) -> GTK4HostedNodeKind? {
+    switch kind {
+    case .text: return .text
+    case .color: return .color
+    default: return nil
+    }
+}
+
+// MARK: - Native slot ID
+
+/// Convert a GTK widget pointer to an integer slot ID for storage.
+public func gtkNativeSlotID(for widget: UnsafeMutablePointer<GtkWidget>) -> Int {
+    Int(bitPattern: UnsafeRawPointer(widget))
+}
+
+/// Convert a slot ID back to a GTK widget pointer. Caller must verify liveness.
+public func gtkWidgetFromSlotID(_ slotID: Int) -> UnsafeMutablePointer<GtkWidget>? {
+    guard slotID != 0 else { return nil }
+    return UnsafeMutablePointer<GtkWidget>(bitPattern: slotID)
+}
+
+// MARK: - Native slot capture
+
+/// Walk the rebuilt GTK widget tree (DFS), collecting hosted text/color widgets.
+/// Matches against descriptor tree leaves by validating hosted kind == descriptor kind.
+public func gtkCaptureSupportedNativeSlots(
+    from widgetRoot: UnsafeMutablePointer<GtkWidget>,
+    descriptorRoot: GTK4IdentifiedDescriptorNode,
+    executorRoot: GTK4RetainedExecutorNode
+) -> GTK4RetainedExecutorNode {
+    let supportedDescriptors = gtkCollectSupportedLeafDescriptors(from: descriptorRoot)
+    var supportedWidgets: [UnsafeMutablePointer<GtkWidget>] = []
+    gtkCollectSupportedHostedWidgets(from: widgetRoot, into: &supportedWidgets)
+
+    guard supportedDescriptors.count == supportedWidgets.count else {
+        return executorRoot
+    }
+
+    var slotsByIdentity: [GTK4DescriptorIdentity: Int] = [:]
+    for (entry, widget) in zip(supportedDescriptors, supportedWidgets) {
+        guard let expectedKind = gtkHostedKindForDescriptor(entry.kind),
+              gtkHostedNodeKind(of: widget) == expectedKind else {
+            return executorRoot
+        }
+        slotsByIdentity[entry.identity] = gtkNativeSlotID(for: widget)
+    }
+
+    return gtkAssignNativeSlots(executorRoot, slotsByIdentity: slotsByIdentity)
+}
+
+private func gtkCollectSupportedLeafDescriptors(
+    from node: GTK4IdentifiedDescriptorNode
+) -> [(identity: GTK4DescriptorIdentity, kind: GTK4DescriptorKind)] {
+    var result: [(identity: GTK4DescriptorIdentity, kind: GTK4DescriptorKind)] = []
+    if gtkHostedKindForDescriptor(node.descriptor.kind) != nil {
+        result.append((identity: node.identity, kind: node.descriptor.kind))
+    }
+    for child in node.children {
+        result.append(contentsOf: gtkCollectSupportedLeafDescriptors(from: child))
+    }
+    return result
+}
+
+private func gtkCollectSupportedHostedWidgets(
+    from widget: UnsafeMutablePointer<GtkWidget>,
+    into result: inout [UnsafeMutablePointer<GtkWidget>]
+) {
+    let kind = gtkHostedNodeKind(of: widget)
+    if kind == .text || kind == .color {
+        result.append(widget)
+    }
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        gtkCollectSupportedHostedWidgets(from: c, into: &result)
+        child = gtk_widget_get_next_sibling(c)
+    }
+}
+
+private func gtkAssignNativeSlots(
+    _ node: GTK4RetainedExecutorNode,
+    slotsByIdentity: [GTK4DescriptorIdentity: Int]
+) -> GTK4RetainedExecutorNode {
+    GTK4RetainedExecutorNode(
+        identity: node.identity,
+        kind: node.kind,
+        lastDescriptor: node.lastDescriptor,
+        nativeSlotID: slotsByIdentity[node.identity] ?? node.nativeSlotID,
+        children: node.children.map { gtkAssignNativeSlots($0, slotsByIdentity: slotsByIdentity) }
+    )
+}
+
+// MARK: - GTK mutation helpers
+
+/// Set text content on a hosted GtkLabel widget in place.
+public func gtkSetTextContent(slotID: Int, text: String) -> Bool {
+    guard let widget = gtkWidgetFromSlotID(slotID) else { return false }
+    guard gtk_swift_is_widget(widget) != 0 else { return false }
+    gtk_swift_label_set_text(widget, text)
+    return true
+}
+
+/// Replace background color CSS on a hosted Color widget in place.
+/// Uses a single replaceable CSS provider stored on the widget,
+/// avoiding CSS provider accumulation from repeated applyCSSToWidget calls.
+private let gtkColorProviderKey = "gtk-swift-color-provider"
+
+public func gtkSetColorFill(slotID: Int, color: GTK4ColorDescriptor) -> Bool {
+    guard let widget = gtkWidgetFromSlotID(slotID) else { return false }
+    guard gtk_swift_is_widget(widget) != 0 else { return false }
+
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    let css = String(format: "* { background-color: rgba(%d, %d, %d, %.3f); }",
+                     Int(color.red * 255), Int(color.green * 255),
+                     Int(color.blue * 255), color.opacity)
+
+    // Reuse or create a single CSS provider for this widget
+    if let existingRaw = g_object_get_data(gobject, gtkColorProviderKey) {
+        let provider = UnsafeMutableRawPointer(existingRaw)
+            .assumingMemoryBound(to: GtkCssProvider.self)
+        gtk_css_provider_load_from_string(provider, css)
+    } else {
+        let provider = gtk_css_provider_new()!
+        gtk_css_provider_load_from_string(provider, css)
+        let display = gtk_widget_get_display(widget)!
+        gtk_swift_add_css_provider_to_display(display, provider, UInt32(GTK_STYLE_PROVIDER_PRIORITY_USER))
+
+        let className = "gtk-swift-color-\(gtkNativeSlotID(for: widget))"
+        gtk_widget_add_css_class(widget, className)
+
+        g_object_set_data_full(gobject, gtkColorProviderKey, gpointer(provider), { userData in
+            g_object_unref(userData)
+        })
+    }
+
+    return true
 }

@@ -98,6 +98,7 @@ extension Text: GTKRenderable, GTKDescribable {
         let label = gtk_label_new(content)!
         gtk_swift_label_set_xalign(label, 0)
         gtk_swift_label_set_yalign(label, 0.5)
+        gtkMarkHostedNodeKind(label, kind: .text)
         return opaqueFromWidget(label)
     }
 
@@ -293,6 +294,7 @@ extension Color: GTKRenderable, GTKDescribable {
         let css = String(format: "background-color: rgba(%d, %d, %d, %.3f);",
                          Int(red * 255), Int(green * 255), Int(blue * 255), alpha)
         applyCSSToWidget(box, properties: css)
+        gtkMarkHostedNodeKind(box, kind: .color)
         return opaqueFromWidget(box)
     }
 
