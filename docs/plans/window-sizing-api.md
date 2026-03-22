@@ -4,7 +4,7 @@
 
 Provide a sample-code-controlled window sizing API for showcase apps such as Calculator.
 
-The immediate target is Linux/GTK4, with a portable API that Win32 can also implement. Exact platform parity with macOS is not required; each backend should do the best native mapping it can.
+Implemented on GTK4, Win32, and Web. Each backend does the best native mapping it can. On Web, `defaultWindowSize` and `windowSizing` are applied as CSS dimensions on the app container div (browsers don't allow content to resize the window).
 
 ## Desired behaviors
 

@@ -1,21 +1,27 @@
-# GTK4 Invalidation: Future Phases
+# GTK4 Invalidation: Phase Status
 
 ## Context
 
-The current `gtk4-descriptor-invalidation-plan.md` covers the narrow first slice: descriptor pipeline + text/color in-place mutation. This document tracks the remaining phases that align with Win32's broader invalidation roadmap.
+Tracks the phased invalidation roadmap across all backends (GTK4, Web, Win32). Phases 1–9 are complete. Phase 10 (cross-backend shared logic) is future work.
 
-## Current Slice (Implemented or In Progress)
+## Completed Phases
 
-| Step | Description | Status |
-|------|-------------|--------|
-| 1 | Backend descriptor model (GTK4DescriptorTree) | In progress |
-| 2 | Position-based structural identity | In progress |
-| 3 | Match/plan/execute pipeline | In progress |
-| 4 | Narrow text/color-only host mutation | In progress |
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Backend descriptor model (GTK4/Web/Win32 DescriptorTree) | Completed |
+| 2 | Position-based structural identity | Completed |
+| 3 | Match/plan/execute pipeline | Completed |
+| 4 | Narrow text/color-only host mutation | Completed |
+| 5 | Slider host integration (.sliderValue in-place mutation) | Completed |
+| 6 | Host-level dependency gating (@Published read-set tracking) | Completed |
+| 7 | Input-equality short-circuiting (generation counters) | Completed |
+| 8 | Wrapper/layout mutation (padding, backgroundColor, foregroundColor) | Completed |
+| 9 | Descriptor coverage expansion + Button/gesture assessment | Completed |
+| — | Interactive update deferral (slider drag) | Completed |
 
 ## Future Phases
 
-### Phase 5: Slider host integration
+### Phase 5: Slider host integration (Completed)
 
 **Goal:** Avoid full rebuild during slider drag — mutate slider value in place.
 
@@ -25,7 +31,7 @@ The current `gtk4-descriptor-invalidation-plan.md` covers the narrow first slice
 
 **Win32 reference:** Slider suppression during drag + `.sliderValue` vs `.sliderConfiguration` intent split.
 
-### Phase 6: Local dependency tracking
+### Phase 6: Local dependency tracking (Completed)
 
 **Goal:** Track which @State/@Published properties a view subtree depends on, so only affected subtrees rebuild.
 
@@ -36,7 +42,7 @@ The current `gtk4-descriptor-invalidation-plan.md` covers the narrow first slice
 
 **Cross-backend:** This should be shared infrastructure in `Sources/SwiftOpenUI/State/`, not backend-specific.
 
-### Phase 7: Input-equality short-circuiting
+### Phase 7: Input-equality short-circuiting (Completed)
 
 **Goal:** Skip rebuild entirely when the view's inputs haven't changed (same @State values produce same body).
 
@@ -47,7 +53,7 @@ The current `gtk4-descriptor-invalidation-plan.md` covers the narrow first slice
 
 **Cross-backend:** Shared infrastructure, benefits all backends equally.
 
-### Phase 8: Wrapper/layout mutation
+### Phase 8: Wrapper/layout mutation (Completed)
 
 **Goal:** Update padding, frame, background, foreground color in place without rebuilding the widget subtree.
 
@@ -59,7 +65,7 @@ The current `gtk4-descriptor-invalidation-plan.md` covers the narrow first slice
 
 **Depends on:** Phase 4 (single-provider CSS mechanism), shared layout foundation.
 
-### Phase 9: Live interactive updates (ColorMixer proof)
+### Phase 9: Live interactive updates (Completed — descriptor coverage + interactive deferral)
 
 **Goal:** Slider drag updates dependent views (color swatch, hex text, RGB labels) in real time without flicker.
 
@@ -76,13 +82,15 @@ The current `gtk4-descriptor-invalidation-plan.md` covers the narrow first slice
 - Backends provide measurement + mutation hooks
 - Shared code drives the pipeline
 
-**Not planned until:** Backend-local pipelines are stable on at least GTK4 + Win32.
+**Prerequisites met:** Backend-local pipelines are stable on GTK4, Web, and Win32. Descriptor kinds, update intents, and describable coverage are aligned across all three backends. Phase 10 is the next step.
 
 ## Relationship to Win32 Plans
 
-| Win32 Plan Doc | GTK4 Equivalent |
-|----------------|-----------------|
-| `win32-incremental-reconcile-spike.md` | Phase 5-8 (incremental node preservation) |
-| `win32-minimal-path-to-swiftui-like-invalidation.md` | Phase 5-10 (full invalidation roadmap) |
-| `win32-text-color-host-integration-plan.md` | Current slice (Phase 1-4) |
-| `cross-backend-invalidation-notes.md` | Phase 10 |
+| Win32 Plan Doc | Equivalent Phase | Status |
+|----------------|-----------------|--------|
+| `win32-incremental-reconcile-spike.md` | Phase 5-8 | Completed |
+| `win32-minimal-path-to-swiftui-like-invalidation.md` | Phase 5-10 | Phases 5-9 completed; Phase 10 open |
+| `win32-text-color-host-integration-plan.md` | Phase 1-4 | Completed |
+| `win32-catch-up-phases5-9.md` | Phase 5-9 alignment | Completed |
+| `cross-backend-invalidation-notes.md` | Phase 10 | Open |
+| `phase9b-button-gesture-assessment.md` | Phase 9 assessment | Completed |

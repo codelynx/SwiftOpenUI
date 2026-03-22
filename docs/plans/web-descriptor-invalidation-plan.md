@@ -1,4 +1,4 @@
-# Web Backend: Descriptor-First Invalidation Pipeline
+# Web Backend: Descriptor-First Invalidation Pipeline (Completed)
 
 ## Context
 

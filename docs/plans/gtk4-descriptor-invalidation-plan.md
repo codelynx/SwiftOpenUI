@@ -1,4 +1,4 @@
-# GTK4 Descriptor-First Invalidation Plan
+# GTK4 Descriptor-First Invalidation Plan (Completed)
 
 ## Context
 

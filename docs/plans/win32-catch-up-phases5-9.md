@@ -1,8 +1,8 @@
-# Win32 Catch-Up: Phases 5–9 Alignment
+# Win32 Catch-Up: Phases 5–9 Alignment (Completed)
 
 ## Context
 
-GTK4 and Web backends have completed Phases 4–9 of the invalidation roadmap. Win32 already has the descriptor pipeline foundation (Phase 4: text/color mutations, interactive deferral) but lags on Phases 5–9. This document provides instructions to bring Win32 to parity.
+GTK4 and Web backends completed Phases 4–9 of the invalidation roadmap. This document provided instructions to bring Win32 to parity. All steps have been implemented.
 
 ## Current Win32 State
 
