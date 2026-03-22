@@ -2419,6 +2419,29 @@ extension BorderView: WinDescribable {
 }
 
 
+extension FontModifiedView: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(
+            kind: .font,
+            typeName: String(describing: Self.self),
+            props: .font(Win32FontDescriptor(font: font)),
+            children: [winDescribeView(content)]
+        )
+    }
+}
+
+extension Divider: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(kind: .divider, typeName: "Divider")
+    }
+}
+
+extension Spacer: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        Win32DescriptorNode(kind: .spacer, typeName: "Spacer")
+    }
+}
+
 extension ScrollView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         registerScrollViewClassIfNeeded(hInstance: context.hInstance)

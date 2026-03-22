@@ -9,6 +9,9 @@ public enum Win32DescriptorKind: Equatable {
     case background
     case border
     case composite
+    case divider
+    case font
+    case spacer
     case text
     case color
     case frame
@@ -71,6 +74,10 @@ public struct Win32BorderDescriptor: Equatable {
     public let width: Int
 }
 
+public struct Win32FontDescriptor: Equatable {
+    public let font: Font
+}
+
 public enum Win32HorizontalAlignmentDescriptor: String, Equatable {
     case leading
     case center
@@ -101,6 +108,7 @@ public enum Win32DescriptorProps: Equatable {
     case none
     case background(Win32ColorDescriptor)
     case border(Win32BorderDescriptor)
+    case font(Win32FontDescriptor)
     case text(Win32TextDescriptor)
     case color(Win32ColorDescriptor)
     case frame(Win32FrameDescriptor)
@@ -224,6 +232,7 @@ public enum Win32DescriptorUpdateIntent: Equatable {
     case backgroundColor
     case borderStyle
     case colorFill
+    case fontStyle
     case frameLayout
     case foregroundColor
     case hStackLayout
@@ -410,8 +419,17 @@ public func winCanApplyTextColorHostMutation(plan: Win32DescriptorPlan) -> Bool 
     case .create, .replace:
         return false
     case .reuse:
+        // Reject opaque composites with no described children — can't prove
+        // nothing changed inside them (matching GTK4 pattern)
+        if plan.newDescriptor.kind == .composite && plan.children.isEmpty {
+            return false
+        }
         return plan.children.allSatisfy(winCanApplyTextColorHostMutation)
     case .update:
+        // Host gate stays narrow: textContent + colorFill only.
+        // Other intents (sliderValue, paddingLayout, fontStyle) are recognized
+        // by the descriptor layer but NOT eligible for the narrow mutation path
+        // until real Win32 mutation hooks exist for them.
         guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill else {
             return false
         }
@@ -622,6 +640,8 @@ private func winApplyHook(action: Win32ExecutorAction,
             return winApplyVStackLayoutHook(action: action, performMutation: performMutation)
         case .zStackLayout:
             return winApplyZStackLayoutHook(action: action, performMutation: performMutation)
+        case .fontStyle:
+            return winApplyFontStyleHook(action: action, performMutation: performMutation)
         case .none:
             return winApplyKeepHook(action: action, performMutation: performMutation)
         }
@@ -779,6 +799,12 @@ private func winUpdateIntent(old: Win32DescriptorNode,
         return .zStackLayout
     case .composite:
         return .none
+    case .divider:
+        return .none
+    case .font:
+        return .fontStyle
+    case .spacer:
+        return .none
     }
 }
 
@@ -889,6 +915,11 @@ private func winApplyZStackLayoutHook(action: Win32ExecutorAction,
 private func winApplyPaddingLayoutHook(action: Win32ExecutorAction,
                                        performMutation: Bool) -> Win32HookResult {
     winUpdatedHookResult(action: action, intent: .paddingLayout, performMutation: performMutation)
+}
+
+private func winApplyFontStyleHook(action: Win32ExecutorAction,
+                                    performMutation: Bool) -> Win32HookResult {
+    winUpdatedHookResult(action: action, intent: .fontStyle, performMutation: performMutation)
 }
 
 private func winApplyBackgroundColorHook(action: Win32ExecutorAction,

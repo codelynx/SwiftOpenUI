@@ -69,7 +69,7 @@ struct TextColorMutationProbeView: View {
                 .foregroundColor(Color(red: 0.45, green: 0.45, blue: 0.45))
 
             Text("Padding = \(padding)")
-                .padding(CGFloat(padding))
+                .padding(padding)
                 .border(Color(red: 0.6, green: 0.6, blue: 0.6))
 
             Divider()

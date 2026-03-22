@@ -87,7 +87,7 @@ final class InputEqualityTests: XCTestCase {
         var tracking: (readSet: Set<ObjectIdentifier>, snapshots: [StorageSnapshot])!
 
         // Create storage in a scope so it gets deallocated
-        autoreleasepool {
+        do {
             let storage = StateStorage(42)
             beginDependencyTracking()
             _ = storage.value

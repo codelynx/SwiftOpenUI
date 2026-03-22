@@ -119,6 +119,46 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertTrue(node.children.isEmpty)
     }
 
+    func testDescribeFontModifiedView() {
+        let node = winDescribeView(Text("Hello").font(.headline))
+        XCTAssertEqual(node.kind, .font)
+        XCTAssertEqual(node.props, .font(Win32FontDescriptor(font: .headline)))
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].kind, .text)
+    }
+
+    func testDescribeDivider() {
+        let node = winDescribeView(Divider())
+        XCTAssertEqual(node.kind, .divider)
+        XCTAssertTrue(node.children.isEmpty)
+    }
+
+    func testDescribeSpacer() {
+        let node = winDescribeView(Spacer())
+        XCTAssertEqual(node.kind, .spacer)
+        XCTAssertTrue(node.children.isEmpty)
+    }
+
+    func testFontChangeRejectsNarrowPath() {
+        let oldDesc = winDescribeView(Text("Hi").font(.body))
+        let newDesc = winDescribeView(Text("Hi").font(.headline))
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(oldDesc))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(newDesc))
+        // fontStyle is recognized but NOT eligible for narrow mutation path
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .fontStyle)
+        XCTAssertFalse(winCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testOpaqueCompositeRejectsNarrowPath() {
+        let old = Win32DescriptorNode(kind: .composite, typeName: "SomeView", children: [])
+        let new = Win32DescriptorNode(kind: .composite, typeName: "SomeView", children: [])
+        let retained = winRetainDescriptorTree(winIdentifyDescriptorTree(old))
+        let plan = winPlanDescriptorTree(old: retained, new: winIdentifyDescriptorTree(new))
+        // Opaque composite with no children — can't prove nothing changed
+        XCTAssertFalse(winCanApplyTextColorHostMutation(plan: plan))
+    }
+
     func testDescribeCompositeLeafSubtree() {
         let binding = Binding<Double>(
             get: { 128.0 },
