@@ -94,10 +94,6 @@ extension WindowGroup: GTKWindowRenderable {
             gtk_widget_set_vexpand(contentWidget, 1)
         }
 
-        // Transparent window background so content Color views fill
-        // edge-to-edge without the default GTK theme showing through.
-        applyCSSToWidget(window, properties: "background: transparent;")
-
         gtk_window_set_child(winPtr, contentWidget)
         gtk_window_present(winPtr)
     }
