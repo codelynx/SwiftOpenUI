@@ -1867,10 +1867,14 @@ extension Toggle: GTKRenderable {
 
 /// Debounced slider state. Accumulates value changes and commits after
 /// a short delay so dragging doesn't trigger constant rebuilds.
+/// Also manages interactive update deferral: suppresses host rebuilds
+/// during pointer drag, commits one rebuild on pointer release.
 private class SliderState {
     let closure: (Double) -> Void
+    weak var host: GTKViewHost?
     var pendingValue: Double = 0
     var timerSource: guint = 0
+    var dragging = false
 
     init(closure: @escaping (Double) -> Void) {
         self.closure = closure
@@ -1927,8 +1931,10 @@ extension Slider: GTKRenderable, GTKDescribable {
                 binding.wrappedValue = newValue
             }
         }
+        state.host = GTKViewHost.getCurrentRebuilding()
         let statePtr = Unmanaged.passRetained(state).toOpaque()
 
+        // Value-changed: debounced binding update
         g_signal_connect_data(
             gpointer(scale),
             "value-changed",
@@ -1938,6 +1944,65 @@ extension Slider: GTKRenderable, GTKDescribable {
                 state.scheduleCommit(gtk_range_get_value(rng))
             } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
             statePtr,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<SliderState>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        // Interactive deferral: suppress rebuilds during pointer drag
+        let gesture = gtk_gesture_click_new()!
+        let gestureStatePtr = Unmanaged.passRetained(state).toOpaque()
+
+        // Pressed → begin interactive update
+        g_signal_connect_data(
+            gpointer(gesture),
+            "pressed",
+            unsafeBitCast({ (_: gpointer?, _: gint, _: gdouble, _: gdouble, userData: gpointer?) in
+                let state = Unmanaged<SliderState>.fromOpaque(userData!).takeUnretainedValue()
+                if !state.dragging {
+                    state.dragging = true
+                    state.host?.beginInteractiveUpdate()
+                }
+            } as @convention(c) (gpointer?, gint, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+            gestureStatePtr,
+            nil,
+            GConnectFlags(rawValue: 0)
+        )
+
+        // Released → end interactive update
+        g_signal_connect_data(
+            gpointer(gesture),
+            "released",
+            unsafeBitCast({ (_: gpointer?, _: gint, _: gdouble, _: gdouble, userData: gpointer?) in
+                let state = Unmanaged<SliderState>.fromOpaque(userData!).takeUnretainedValue()
+                if state.dragging {
+                    state.dragging = false
+                    state.host?.endInteractiveUpdate()
+                }
+            } as @convention(c) (gpointer?, gint, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+            gestureStatePtr,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<SliderState>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        gtk_swift_add_gesture(scale, gesture)
+
+        // Cleanup on widget destruction: end interactive update if still dragging
+        let destroyStatePtr = Unmanaged.passRetained(state).toOpaque()
+        g_signal_connect_data(
+            gpointer(scale),
+            "destroy",
+            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                let state = Unmanaged<SliderState>.fromOpaque(userData!).takeUnretainedValue()
+                if state.dragging {
+                    state.dragging = false
+                    state.host?.endInteractiveUpdate()
+                }
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            destroyStatePtr,
             { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
                 Unmanaged<SliderState>.fromOpaque(userData!).release()
             },

@@ -20,6 +20,8 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
     /// one host does not invalidate slots for unrelated hosts.
     let slotTable = WebSlotTable()
     private var scheduled = false
+    private var interactiveUpdateDepth = 0
+    private var rebuildDeferredDuringInteraction = false
     var capturedEnvironment: EnvironmentValues
 
     public init(buildBody: @escaping () -> JSValue) {
@@ -29,10 +31,37 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
     }
 
     public func scheduleRebuild() {
+        // Defer rebuild while interactive (e.g. slider drag)
+        if interactiveUpdateDepth > 0 {
+            rebuildDeferredDuringInteraction = true
+            return
+        }
+
         guard !scheduled else { return }
         scheduled = true
 
         // Use requestAnimationFrame for coalesced rebuilds
+        let callback = JSClosure { [weak self] _ in
+            self?.rebuild()
+            return .undefined
+        }
+        _ = JSObject.global.requestAnimationFrame!(callback)
+    }
+
+    public func beginInteractiveUpdate() {
+        interactiveUpdateDepth += 1
+    }
+
+    public func endInteractiveUpdate() {
+        guard interactiveUpdateDepth > 0 else { return }
+        interactiveUpdateDepth -= 1
+        guard interactiveUpdateDepth == 0,
+              rebuildDeferredDuringInteraction,
+              !scheduled else { return }
+
+        rebuildDeferredDuringInteraction = false
+        scheduled = true
+
         let callback = JSClosure { [weak self] _ in
             self?.rebuild()
             return .undefined
@@ -167,13 +196,19 @@ public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
     // (via requestAnimationFrame) finds a nil weak self.
     _webRetainedHosts.append(host)
 
-    // Initial render
+    // Initial render — set currentRebuilding so child views (e.g. Slider)
+    // can find their containing host for interactive update hooks.
+    let previousHost = WebViewHost.currentRebuilding
+    WebViewHost.currentRebuilding = host
+
     let previousEnv = getCurrentEnvironment()
     host.capturedEnvironment = previousEnv
     beginDependencyTracking()
     let element = host.buildBodyWithTracking()
     host.lastReadSet = endDependencyTracking()
     _ = host.container.appendChild(element)
+
+    WebViewHost.currentRebuilding = previousHost
 
     // Capture initial descriptor state for narrow mutation path
     let descriptor = webDescribeView(mutableView.body)

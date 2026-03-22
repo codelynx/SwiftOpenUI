@@ -1223,6 +1223,27 @@ extension Slider: WebRenderable, WebDescribable {
         _ = input.addEventListener("input", handler)
         webMarkHostedNodeKind(input, kind: .slider)
 
+        // Interactive deferral: suppress host rebuilds during pointer drag
+        let host = WebViewHost.currentRebuilding
+        let downHandler = JSClosure { _ in
+            host?.beginInteractiveUpdate()
+            // Add document-level pointerup/pointercancel to catch release anywhere
+            let doc = JSObject.global.document
+            var upHandler: JSClosure!
+            upHandler = JSClosure { _ in
+                host?.endInteractiveUpdate()
+                _ = doc.removeEventListener("pointerup", upHandler)
+                _ = doc.removeEventListener("pointercancel", upHandler)
+                return .undefined
+            }
+            webRetainClosure(upHandler)
+            _ = doc.addEventListener("pointerup", upHandler)
+            _ = doc.addEventListener("pointercancel", upHandler)
+            return .undefined
+        }
+        webRetainClosure(downHandler)
+        _ = input.addEventListener("pointerdown", downHandler)
+
         return input
     }
 

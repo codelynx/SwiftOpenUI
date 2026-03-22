@@ -11,6 +11,19 @@ public protocol AnyViewHost: AnyObject {
 
     /// Suppress the next automatic focus restoration during rebuild.
     func suppressNextFocusRestore()
+
+    /// Enter interactive mode (e.g. slider drag). While active, rebuilds
+    /// are deferred until `endInteractiveUpdate()`. Supports nesting.
+    func beginInteractiveUpdate()
+
+    /// Leave interactive mode. When the last nested level exits and a
+    /// rebuild was deferred, one rebuild is scheduled.
+    func endInteractiveUpdate()
+}
+
+extension AnyViewHost {
+    public func beginInteractiveUpdate() {}
+    public func endInteractiveUpdate() {}
 }
 
 /// Connect all @State / @ObservedObject / @StateObject / @EnvironmentObject

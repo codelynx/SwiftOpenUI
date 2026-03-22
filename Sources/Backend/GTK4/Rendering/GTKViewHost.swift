@@ -29,6 +29,8 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
     private var scheduled = false
     private var isContainerAlive = true
     private var suppressFocusRestoreOnce = false
+    private var interactiveUpdateDepth = 0
+    private var rebuildDeferredDuringInteraction = false
     private var pendingAnimation: Animation?
     var capturedEnvironment: EnvironmentValues
 
@@ -69,6 +71,11 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         let currentAnimation = getCurrentAnimation()
         defer { lock.unlock() }
         guard isContainerAlive else { return }
+        // Defer rebuild while interactive (e.g. slider drag)
+        if interactiveUpdateDepth > 0 {
+            rebuildDeferredDuringInteraction = true
+            return
+        }
         if let currentAnimation {
             pendingAnimation = currentAnimation
         }
@@ -79,6 +86,39 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
             let host = Unmanaged<GTKViewHost>.fromOpaque(userData!).takeRetainedValue()
             host.rebuild()
             return 0 // G_SOURCE_REMOVE
+        }, retained.toOpaque())
+    }
+
+    public func beginInteractiveUpdate() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard isContainerAlive else { return }
+        interactiveUpdateDepth += 1
+    }
+
+    public func endInteractiveUpdate() {
+        lock.lock()
+        guard interactiveUpdateDepth > 0 else {
+            lock.unlock()
+            return
+        }
+        interactiveUpdateDepth -= 1
+        guard interactiveUpdateDepth == 0,
+              rebuildDeferredDuringInteraction,
+              isContainerAlive,
+              !scheduled else {
+            lock.unlock()
+            return
+        }
+        rebuildDeferredDuringInteraction = false
+        scheduled = true
+        lock.unlock()
+
+        let retained = Unmanaged.passRetained(self)
+        g_idle_add({ userData -> gboolean in
+            let host = Unmanaged<GTKViewHost>.fromOpaque(userData!).takeRetainedValue()
+            host.rebuild()
+            return 0
         }, retained.toOpaque())
     }
 
