@@ -68,6 +68,9 @@ extension WindowGroup: GTKWindowRenderable {
                 gtk_window_set_default_size(winPtr, gint(w), gint(h))
             }
         case .contentFixed:
+            if let w = defaultWindowWidth, let h = defaultWindowHeight {
+                gtk_window_set_default_size(winPtr, gint(w), gint(h))
+            }
             gtk_window_set_resizable(winPtr, 0)
         case .size(let width, let height):
             gtk_window_set_default_size(winPtr, gint(width), gint(height))
