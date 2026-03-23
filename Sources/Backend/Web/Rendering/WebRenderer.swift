@@ -37,6 +37,21 @@ func webClearFallbackClosures() {
     _webFallbackRetainedClosures.removeAll()
 }
 
+/// Ensure global CSS for List row borders is present in the document.
+private var _webListStylesInstalled = false
+func webEnsureListRowStyles() {
+    guard !_webListStylesInstalled else { return }
+    _webListStylesInstalled = true
+
+    let style = document.createElement("style")
+    style.textContent = """
+        .swiftopenui-list-row:not(:last-child) {
+            border-bottom: 1px solid #333;
+        }
+    """
+    _ = document.head.appendChild(style)
+}
+
 /// Retains WebViewHost instances so they survive for the lifetime of the app.
 /// Without this, WebViewHost is deallocated after webRenderStatefulView returns,
 /// and scheduleRebuild's requestAnimationFrame callback finds a nil weak self.
@@ -88,7 +103,7 @@ public func webRenderView<V: View>(_ view: V) -> JSValue {
 }
 
 /// Call a closure for each child of a view, avoiding intermediate array allocations.
-public func webForEachChild<V: View>(_ view: V, _ body: (JSValue) -> Void) {
+public func webRenderChildren<V: View>(_ view: V, _ body: (JSValue) -> Void) {
     if let multi = view as? WebMultiChildRenderable {
         multi.webForEachChild(body)
         return
@@ -111,7 +126,7 @@ public func webRenderAnyView(_ view: any View) -> JSValue {
 
 /// Flatten a view's children into an array of existential views.
 public func flattenChildren<V: View>(_ view: V) -> [any View] {
-    if let multi = view as? MultiChildView {
+    if let multi = view as? any TransparentMultiChildView {
         return multi.children
     }
     return [view]
@@ -804,7 +819,7 @@ extension VStack: WebRenderable, WebDescribable {
         let div = document.createElement("div")
         div.style = .string("display: flex; flex-direction: column; gap: \(spacing)px; align-items: \(cssAlignment);")
 
-        webForEachChild(content) { child in
+        webRenderChildren(content) { child in
             _ = div.appendChild(child)
         }
         return div
@@ -839,7 +854,7 @@ extension HStack: WebRenderable, WebDescribable {
         let div = document.createElement("div")
         div.style = .string("display: flex; flex-direction: row; gap: \(spacing)px; align-items: \(cssAlignment);")
 
-        webForEachChild(content) { child in
+        webRenderChildren(content) { child in
             _ = div.appendChild(child)
         }
         return div
@@ -874,7 +889,7 @@ extension ZStack: WebRenderable, WebDescribable {
         let div = document.createElement("div")
         div.style = "display: grid; place-items: center;"
 
-        for child in webRenderChildren(content) {
+        webRenderChildren(content) { child in
             // All children stack in the same grid cell
             child.style.object?.gridArea = "1 / 1"
             _ = div.appendChild(child)
@@ -903,30 +918,31 @@ extension Group: WebRenderable, WebMultiChildRenderable {
         // children participate directly in the parent flex container.
         let div = document.createElement("div")
         div.style = "display: contents;"
-        for child in webRenderChildren() {
+        webRenderChildren(content) { child in
             _ = div.appendChild(child)
         }
+
         return div
     }
 
-    public func webRenderChildren() -> [JSValue] {
-        BackendWeb.webRenderChildren(content)
+    public func webForEachChild(_ body: (JSValue) -> Void) {
+        BackendWeb.webRenderChildren(content, body)
     }
 }
 
 extension ForEach: WebRenderable, WebMultiChildRenderable {
     public func webCreateElement() -> JSValue {
         let div = document.createElement("div")
-        for child in webRenderChildren() {
+        webForEachChild { child in
             _ = div.appendChild(child)
         }
         return div
     }
 
-    public func webRenderChildren() -> [JSValue] {
-        data.map { item in
+    public func webForEachChild(_ body: (JSValue) -> Void) {
+        for item in data {
             let view = content(item)
-            return webRenderView(view)
+            body(webRenderView(view))
         }
     }
 }
@@ -1154,33 +1170,9 @@ extension ViewList: WebRenderable {
 
 // MARK: - TupleView rendering
 
-extension TupleView2: WebMultiChildRenderable {
-    public func webRenderChildren() -> [JSValue] {
-        [webRenderView(v0), webRenderView(v1)]
-    }
-}
-
-extension TupleView3: WebMultiChildRenderable {
-    public func webRenderChildren() -> [JSValue] {
-        [webRenderView(v0), webRenderView(v1), webRenderView(v2)]
-    }
-}
-
-extension TupleView4: WebMultiChildRenderable {
-    public func webRenderChildren() -> [JSValue] {
-        [webRenderView(v0), webRenderView(v1), webRenderView(v2), webRenderView(v3)]
-    }
-}
-
-extension TupleView5: WebMultiChildRenderable {
-    public func webRenderChildren() -> [JSValue] {
-        [webRenderView(v0), webRenderView(v1), webRenderView(v2), webRenderView(v3), webRenderView(v4)]
-    }
-}
-
-extension TupleView6: WebMultiChildRenderable {
-    public func webRenderChildren() -> [JSValue] {
-        [webRenderView(v0), webRenderView(v1), webRenderView(v2), webRenderView(v3), webRenderView(v4), webRenderView(v5)]
+extension TupleView: WebMultiChildRenderable {
+    public func webForEachChild(_ body: (JSValue) -> Void) {
+        repeat body(webRenderView(each value))
     }
 }
 
@@ -1299,8 +1291,9 @@ extension ScrollView: WebRenderable {
         let overflowY = axes.contains(.vertical) ? "auto" : "hidden"
         div.style = .string("overflow-x: \(overflowX); overflow-y: \(overflowY); max-height: 100%;")
 
-        let child = webRenderView(content)
-        _ = div.appendChild(child)
+        webRenderChildren(content) { child in
+            _ = div.appendChild(child)
+        }
         return div
     }
 }
@@ -1363,8 +1356,7 @@ extension Form: WebRenderable {
         let div = document.createElement("div")
         div.style = "display: flex; flex-direction: column; gap: 8px; padding: 12px;"
 
-        let children = BackendWeb.webRenderChildren(content)
-        for child in children {
+        webRenderChildren(content) { child in
             _ = div.appendChild(child)
         }
         return div
@@ -1383,8 +1375,9 @@ extension Section: WebRenderable {
             _ = div.appendChild(h)
         }
 
-        let child = webRenderView(content)
-        _ = div.appendChild(child)
+        webRenderChildren(content) { child in
+            _ = div.appendChild(child)
+        }
 
         if let footerText = footer {
             let f = document.createElement("p")
@@ -1443,13 +1436,18 @@ extension List: WebRenderable {
         let div = document.createElement("div")
         div.style = "display: flex; flex-direction: column; border: 1px solid #333; border-radius: 4px; overflow: hidden;"
 
-        let children = BackendWeb.webRenderChildren(content)
-        for (i, child) in children.enumerated() {
+        webRenderChildren(content) { child in
             let row = document.createElement("div")
-            row.style = .string("padding: 8px 12px;\(i < children.count - 1 ? " border-bottom: 1px solid #333;" : "")")
+            // Use CSS to add border to all but the last item
+            row.style = "padding: 8px 12px;"
+            row.className = "swiftopenui-list-row"
             _ = row.appendChild(child)
             _ = div.appendChild(row)
         }
+
+        // Add a global style tag for the list row borders if not already present
+        webEnsureListRowStyles()
+
         return div
     }
 }
@@ -1916,7 +1914,6 @@ extension Grid: WebRenderable {
 
         if useExplicitRows {
             // Explicit rows: detect max column count from GridRow children
-            _ = BackendWeb.webRenderChildren(content)
             var maxCols = 1
 
             // First pass: find the widest row
@@ -1960,8 +1957,7 @@ extension Grid: WebRenderable {
         } else {
             // Auto-wrap mode
             div.style = .string("display: grid; grid-template-columns: repeat(\(columns), 1fr); gap: \(vSpacing)px \(hSpacing)px;")
-            let children = BackendWeb.webRenderChildren(content)
-            for child in children {
+            webRenderChildren(content) { child in
                 _ = div.appendChild(child)
             }
         }
@@ -1975,14 +1971,15 @@ extension GridRow: WebRenderable, WebMultiChildRenderable {
         // GridRow is typically consumed by Grid; standalone renders as a div
         let div = document.createElement("div")
         div.style = "display: contents;"
-        for child in webRenderChildren() {
+        webRenderChildren(content) { child in
             _ = div.appendChild(child)
         }
+
         return div
     }
 
-    public func webRenderChildren() -> [JSValue] {
-        BackendWeb.webRenderChildren(content)
+    public func webForEachChild(_ body: (JSValue) -> Void) {
+        BackendWeb.webRenderChildren(content, body)
     }
 }
 

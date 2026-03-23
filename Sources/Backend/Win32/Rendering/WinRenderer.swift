@@ -5723,16 +5723,9 @@ extension ViewList: WinRenderable {
     }
 }
 
-extension TupleView2: WinRenderable {
+extension TupleView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        let vstack = VStack(spacing: 0) { v0; v1 }
-        return winRenderView(vstack, in: context)
-    }
-}
-
-extension TupleView3: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        let vstack = VStack(spacing: 0) { v0; v1; v2 }
-        return winRenderView(vstack, in: context)
+        let list = ViewList(children)
+        return winRenderView(list, in: context)
     }
 }

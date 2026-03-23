@@ -2160,21 +2160,12 @@ extension _ViewModifierContent: GTKRenderable {
 
 // MARK: - TupleView GTK extensions
 
-extension TupleView2: GTKRenderable {
+extension TupleView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        for child in [gtkRenderView(v0), gtkRenderView(v1)] {
-            gtk_box_append(boxPointer(box), widgetFromOpaque(child))
-        }
-        return opaqueFromWidget(box)
-    }
-}
-
-extension TupleView3: GTKRenderable {
-    public func gtkCreateWidget() -> OpaquePointer {
-        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        for child in [gtkRenderView(v0), gtkRenderView(v1), gtkRenderView(v2)] {
-            gtk_box_append(boxPointer(box), widgetFromOpaque(child))
+        for child in children {
+            let widget = gtkRenderAnyView(child)
+            gtk_box_append(boxPointer(box), widgetFromOpaque(widget))
         }
         return opaqueFromWidget(box)
     }

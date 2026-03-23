@@ -244,7 +244,7 @@ let deps: [Package.Dependency] = []
 
 let package = Package(
     name: "SwiftOpenUI",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     products: {
         var p: [Product] = [
             .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
