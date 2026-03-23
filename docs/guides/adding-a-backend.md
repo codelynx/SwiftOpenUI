@@ -152,7 +152,7 @@ At minimum, implement rendering for these core views:
 | **Must** | Text, Button, VStack, HStack, EmptyView |
 | **Should** | ZStack, Spacer, Divider, Color, Group, ForEach |
 | **Modifiers** | PaddedView, FrameView, ForegroundColorView, BackgroundView, FontModifiedView, BorderView |
-| **State** | AnyView, _ConditionalView, Optional, TupleView2–6 |
+| **State** | AnyView, _ConditionalView, Optional, TupleView (variadic) |
 | **Environment** | EnvironmentObjectModifierView, EnvironmentModifierView |
 
 ## Reference Implementations
