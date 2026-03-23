@@ -130,83 +130,107 @@ targets += [
 exampleDeps.append("BackendWeb")
 #endif
 
+// Wasm linker settings: increase linear memory for debug builds.
+// Default Wasm memory is too small for view trees with many modifiers.
+var exampleLinkerSettings: [LinkerSetting] = [
+    .unsafeFlags([
+        "-Xlinker", "--initial-memory=41943040",   // 40 MB (debug binaries need ~38 MB)
+        "-Xlinker", "--max-memory=104857600",      // 100 MB growable
+    ], .when(platforms: [.wasi]))
+]
+
 // Examples — thin runners that wire Examples views to platform entry points
 targets += [
     .executableTarget(
         name: "HelloWorld",
         dependencies: exampleDeps,
-        path: "Examples/Showcase/HelloWorld"
+        path: "Examples/Showcase/HelloWorld",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "Stopwatch",
         dependencies: exampleDeps,
-        path: "Examples/Showcase/Stopwatch"
+        path: "Examples/Showcase/Stopwatch",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "Calculator",
         dependencies: exampleDeps,
-        path: "Examples/Showcase/Calculator"
+        path: "Examples/Showcase/Calculator",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ColorMixer",
         dependencies: exampleDeps,
-        path: "Examples/Showcase/ColorMixer"
+        path: "Examples/Showcase/ColorMixer",
+        linkerSettings: exampleLinkerSettings
     ),
     // Parity
     .executableTarget(
         name: "ParityViewsBasic",
         dependencies: exampleDeps,
-        path: "Examples/Parity/ViewsBasic"
+        path: "Examples/Parity/ViewsBasic",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityViewsLayout",
         dependencies: exampleDeps,
-        path: "Examples/Parity/ViewsLayout"
+        path: "Examples/Parity/ViewsLayout",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityModifiers",
         dependencies: exampleDeps,
-        path: "Examples/Parity/Modifiers"
+        path: "Examples/Parity/Modifiers",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityStateData",
         dependencies: exampleDeps,
-        path: "Examples/Parity/StateData"
+        path: "Examples/Parity/StateData",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityNavigation",
         dependencies: exampleDeps,
-        path: "Examples/Parity/Navigation"
+        path: "Examples/Parity/Navigation",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityGestures",
         dependencies: exampleDeps,
-        path: "Examples/Parity/Gestures"
+        path: "Examples/Parity/Gestures",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityEnvironment",
         dependencies: exampleDeps,
-        path: "Examples/Parity/Environment"
+        path: "Examples/Parity/Environment",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityAnimation",
         dependencies: exampleDeps,
-        path: "Examples/Parity/Animation"
+        path: "Examples/Parity/Animation",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityViewsContainers",
         dependencies: exampleDeps,
-        path: "Examples/Parity/ViewsContainers"
+        path: "Examples/Parity/ViewsContainers",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityFocus",
         dependencies: exampleDeps,
-        path: "Examples/Parity/Focus"
+        path: "Examples/Parity/Focus",
+        linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
         name: "ParityAppStructure",
         dependencies: exampleDeps,
-        path: "Examples/Parity/AppStructure"
+        path: "Examples/Parity/AppStructure",
+        linkerSettings: exampleLinkerSettings
     ),
 ]
 
