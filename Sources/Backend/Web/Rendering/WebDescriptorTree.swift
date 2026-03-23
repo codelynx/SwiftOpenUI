@@ -358,7 +358,7 @@ public func webDescribeView<V: View>(_ view: V) -> WebDescriptorNode {
     if let multi = view as? MultiChildView {
         return WebDescriptorNode(
             kind: .composite,
-            typeName: String(describing: type(of: view)),
+            typeName: "MultiChild",
             children: multi.children.map(webDescribeAnyView)
         )
     }
@@ -367,7 +367,7 @@ public func webDescribeView<V: View>(_ view: V) -> WebDescriptorNode {
     }
     return WebDescriptorNode(
         kind: .composite,
-        typeName: String(describing: type(of: view))
+        typeName: "Opaque"
     )
 }
 

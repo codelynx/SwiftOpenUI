@@ -2,7 +2,7 @@
 @resultBuilder
 public struct ViewBuilder {
     private static func childViews(from view: any View) -> [any View] {
-        if let multi = view as? TransparentMultiChildView {
+        if let multi = view as? any TransparentMultiChildView {
             return multi.children
         }
         return [view]
@@ -97,13 +97,15 @@ public struct ViewBuilder {
 }
 
 /// Represents a conditional view from if/else in a ViewBuilder.
-public enum _ConditionalView<TrueContent: View, FalseContent: View>: View {
+public enum _ConditionalView<TrueContent: View, FalseContent: View>: View, PrimitiveView {
     case trueContent(TrueContent)
     case falseContent(FalseContent)
 
     public typealias Body = Never
     public var body: Never { fatalError("_ConditionalView is a primitive view") }
 }
+
+extension Optional: PrimitiveView where Wrapped: View {}
 
 extension Optional: View where Wrapped: View {
     public typealias Body = Never

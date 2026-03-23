@@ -40,6 +40,11 @@ public func installState<V>(_ view: V, host: AnyViewHost) {
 /// Check if a view has any reactive properties (@State, @ObservedObject,
 /// or @Observable stored properties) via reflection.
 public func hasReactiveProperties<V>(_ view: V) -> Bool {
+    // Fast path: primitive views never have reactive properties
+    if V.self is any PrimitiveView.Type {
+        return false
+    }
+
     let mirror = Mirror(reflecting: view)
     return mirror.children.contains { child in
         if child.value is AnyStateStorageProvider { return true }

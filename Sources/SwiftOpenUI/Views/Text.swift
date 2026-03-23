@@ -1,5 +1,5 @@
 /// A view that displays one or more lines of read-only text.
-public struct Text: View {
+public struct Text: View, PrimitiveView {
     public typealias Body = Never
 
     public let content: String

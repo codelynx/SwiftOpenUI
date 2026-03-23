@@ -1,5 +1,5 @@
 /// A view with a foreground color applied.
-public struct ForegroundColorView<Content: View>: View {
+public struct ForegroundColorView<Content: View>: View, PrimitiveView {
     public typealias Body = Never
 
     public let content: Content
@@ -9,7 +9,7 @@ public struct ForegroundColorView<Content: View>: View {
 }
 
 /// A view with a background color applied.
-public struct BackgroundView<Content: View>: View {
+public struct BackgroundView<Content: View>: View, PrimitiveView {
     public typealias Body = Never
 
     public let content: Content
@@ -19,7 +19,7 @@ public struct BackgroundView<Content: View>: View {
 }
 
 /// A view with a font applied.
-public struct FontModifiedView<Content: View>: View {
+public struct FontModifiedView<Content: View>: View, PrimitiveView {
     public typealias Body = Never
 
     public let content: Content
@@ -29,7 +29,7 @@ public struct FontModifiedView<Content: View>: View {
 }
 
 /// A view with a border applied.
-public struct BorderView<Content: View>: View {
+public struct BorderView<Content: View>: View, PrimitiveView {
     public typealias Body = Never
 
     public let content: Content

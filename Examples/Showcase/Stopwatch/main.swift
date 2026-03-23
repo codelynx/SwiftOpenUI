@@ -9,7 +9,7 @@ import BackendGTK4
 #if canImport(BackendWin32)
 import BackendWin32
 #endif
-#if canImport(BackendWeb)
+#if canImport(JavaScriptKit)
 import BackendWeb
 #endif
 #endif

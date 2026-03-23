@@ -2,7 +2,7 @@
 ///
 /// Supports hex strings, RGB/RGBA components, fractional components,
 /// and an `.opacity()` modifier.
-public struct Color: Equatable, View {
+public struct Color: Equatable, View, PrimitiveView {
     public typealias Body = Never
 
     /// Red component (0.0–1.0).

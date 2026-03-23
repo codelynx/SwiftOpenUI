@@ -1,5 +1,5 @@
 /// A view that arranges its children vertically.
-public struct VStack<Content: View>: View, MultiChildView {
+public struct VStack<Content: View>: View, MultiChildView, PrimitiveView {
     public typealias Body = Never
 
     public let alignment: HorizontalAlignment
@@ -27,7 +27,7 @@ public struct VStack<Content: View>: View, MultiChildView {
 }
 
 /// A view that arranges its children horizontally.
-public struct HStack<Content: View>: View, MultiChildView {
+public struct HStack<Content: View>: View, MultiChildView, PrimitiveView {
     public typealias Body = Never
 
     public let alignment: VerticalAlignment
@@ -55,7 +55,7 @@ public struct HStack<Content: View>: View, MultiChildView {
 }
 
 /// A view that overlays its children on top of each other.
-public struct ZStack<Content: View>: View, MultiChildView {
+public struct ZStack<Content: View>: View, MultiChildView, PrimitiveView {
     public typealias Body = Never
 
     public let alignment: Alignment

@@ -5,8 +5,12 @@ public protocol View {
     @ViewBuilder var body: Body { get }
 }
 
+/// A marker protocol for views that have no reactive properties (@State, etc.)
+/// and can skip Mirror reflection during rendering.
+public protocol PrimitiveView: View {}
+
 /// A view that produces no content.
-public struct EmptyView: View {
+public struct EmptyView: View, PrimitiveView {
     public typealias Body = Never
     public var body: Never { fatalError("EmptyView has no body") }
     public init() {}

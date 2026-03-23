@@ -1,5 +1,5 @@
 /// A view with padding applied around its content.
-public struct PaddedView<Content: View>: View {
+public struct PaddedView<Content: View>: View, PrimitiveView {
     public typealias Body = Never
 
     public let content: Content

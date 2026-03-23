@@ -134,8 +134,8 @@ exampleDeps.append("BackendWeb")
 // Default Wasm memory is too small for view trees with many modifiers.
 var exampleLinkerSettings: [LinkerSetting] = [
     .unsafeFlags([
-        "-Xlinker", "--initial-memory=41943040",   // 40 MB (debug binaries need ~38 MB)
-        "-Xlinker", "--max-memory=104857600",      // 100 MB growable
+        "-Xlinker", "--initial-memory=134217728",  // 128 MB (debug binaries need ~38 MB)
+        "-Xlinker", "--max-memory=268435456",      // 256 MB growable
     ], .when(platforms: [.wasi]))
 ]
 

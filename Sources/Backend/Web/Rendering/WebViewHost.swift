@@ -17,6 +17,9 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
     /// Retained descriptor state for narrow mutation path.
     var lastRetainedDescriptor: WebRetainedDescriptorNode?
     var retainedExecutor: WebRetainedExecutorNode?
+    /// Retained JSClosure instances for event handlers and callbacks.
+    /// Cleared at the start of each full rebuild.
+    var retainedClosures: [JSClosure] = []
     /// Per-host slot table — isolates slot ownership so rebuilding
     /// one host does not invalidate slots for unrelated hosts.
     let slotTable = WebSlotTable()
@@ -42,7 +45,7 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         scheduled = true
 
         // Use requestAnimationFrame for coalesced rebuilds
-        let callback = JSClosure { [weak self] _ in
+        let callback = webMakeClosure { [weak self] _ in
             self?.rebuild()
             return .undefined
         }
@@ -63,7 +66,7 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         rebuildDeferredDuringInteraction = false
         scheduled = true
 
-        let callback = JSClosure { [weak self] _ in
+        let callback = webMakeClosure { [weak self] _ in
             self?.rebuild()
             return .undefined
         }
@@ -90,10 +93,20 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         return buildBody()
     }
 
+    /// Release old descriptor state and closures to free memory during new render.
+    func clear() {
+        lastRetainedDescriptor = nil
+        retainedExecutor = nil
+        retainedClosures.removeAll()
+        slotTable.clear()
+        // Removed: webClearFallbackClosures() — unsafe to clear root-level closures
+    }
+
     func rebuild() {
         scheduled = false
 
         // --- Narrow mutation path: try text/color in-place update ---
+        /*
         if let describeBody = describeBody,
            let oldRetained = lastRetainedDescriptor,
            let oldExecutor = retainedExecutor {
@@ -126,6 +139,7 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
             }
             // Fall through to full rebuild
         }
+        */
 
         // Phase 7: skip body evaluation if no storage was mutated since last render
         if let snapshot = lastInputSnapshot,
@@ -133,34 +147,28 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
             return
         }
 
-        // Release closures from the previous render pass
-        _webRetainedClosures.removeAll()
-
-        // Clear this host's slot table — old DOM elements are about to be destroyed
-        slotTable.clear()
+        // Release old state before new render pass to free memory
+        clear()
 
         // Remove old children
         container.innerHTML = ""
 
-        // Set up rebuild context
-        let previousHost = WebViewHost.currentRebuilding
-        WebViewHost.currentRebuilding = self
+        WebViewHost.withHost(self) {
+            let previousEnv = getCurrentEnvironment()
+            setCurrentEnvironment(capturedEnvironment)
+            beginDependencyTracking()
+            let element = buildBodyWithTracking()
+            if let tracking = endDependencyTracking() {
+                lastReadSet = tracking.readSet
+                lastInputSnapshot = tracking.snapshots
+            }
+            setCurrentEnvironment(previousEnv)
 
-        let previousEnv = getCurrentEnvironment()
-        setCurrentEnvironment(capturedEnvironment)
-        beginDependencyTracking()
-        let element = buildBodyWithTracking()
-        if let tracking = endDependencyTracking() {
-            lastReadSet = tracking.readSet
-            lastInputSnapshot = tracking.snapshots
+            _ = container.appendChild(element)
         }
-        setCurrentEnvironment(previousEnv)
-
-        WebViewHost.currentRebuilding = previousHost
-
-        _ = container.appendChild(element)
 
         // Capture descriptor state for next rebuild's narrow mutation path
+        /* Temporarily disabled to isolate OOM
         if let describeBody = describeBody {
             let previousEnvForDesc = getCurrentEnvironment()
             setCurrentEnvironment(capturedEnvironment)
@@ -179,11 +187,22 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
             _webCurrentSlotTable = nil
             retainedExecutor = executor
         }
+        */
     }
 
     // MARK: - Rebuild context
 
-    static var currentRebuilding: WebViewHost?
+    private static var hostStack: [WebViewHost] = []
+
+    public static var currentRebuilding: WebViewHost? {
+        hostStack.last
+    }
+
+    public static func withHost<T>(_ host: WebViewHost, _ body: () -> T) -> T {
+        hostStack.append(host)
+        defer { hostStack.removeLast() }
+        return body()
+    }
 }
 
 /// Render a stateful composite view wrapped in a WebViewHost.
@@ -208,34 +227,33 @@ public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
 
     // Initial render — set currentRebuilding so child views (e.g. Slider)
     // can find their containing host for interactive update hooks.
-    let previousHost = WebViewHost.currentRebuilding
-    WebViewHost.currentRebuilding = host
+    return WebViewHost.withHost(host) {
+        let previousEnv = getCurrentEnvironment()
+        host.capturedEnvironment = previousEnv
+        beginDependencyTracking()
+        let element = host.buildBodyWithTracking()
+        if let tracking = endDependencyTracking() {
+            host.lastReadSet = tracking.readSet
+            host.lastInputSnapshot = tracking.snapshots
+        }
+        _ = host.container.appendChild(element)
 
-    let previousEnv = getCurrentEnvironment()
-    host.capturedEnvironment = previousEnv
-    beginDependencyTracking()
-    let element = host.buildBodyWithTracking()
-    if let tracking = endDependencyTracking() {
-        host.lastReadSet = tracking.readSet
-        host.lastInputSnapshot = tracking.snapshots
+        // Capture initial descriptor state for narrow mutation path
+        /* Temporarily disabled to isolate OOM
+        let descriptor = webDescribeView(mutableView.body)
+        let identified = webIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = webRetainDescriptorTree(identified)
+        var executor = webMakeExecutorTree(from: identified)
+        _webCurrentSlotTable = host.slotTable
+        executor = webCaptureSupportedNativeSlots(
+            from: host.container,
+            descriptorRoot: identified,
+            executorRoot: executor
+        )
+        _webCurrentSlotTable = nil
+        host.retainedExecutor = executor
+        */
+
+        return host.container
     }
-    _ = host.container.appendChild(element)
-
-    WebViewHost.currentRebuilding = previousHost
-
-    // Capture initial descriptor state for narrow mutation path
-    let descriptor = webDescribeView(mutableView.body)
-    let identified = webIdentifyDescriptorTree(descriptor)
-    host.lastRetainedDescriptor = webRetainDescriptorTree(identified)
-    var executor = webMakeExecutorTree(from: identified)
-    _webCurrentSlotTable = host.slotTable
-    executor = webCaptureSupportedNativeSlots(
-        from: host.container,
-        descriptorRoot: identified,
-        executorRoot: executor
-    )
-    _webCurrentSlotTable = nil
-    host.retainedExecutor = executor
-
-    return host.container
 }

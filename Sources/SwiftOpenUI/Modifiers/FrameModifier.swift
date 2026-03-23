@@ -1,5 +1,5 @@
 /// A view with an explicit size or size constraints.
-public struct FrameView<Content: View>: View {
+public struct FrameView<Content: View>: View, PrimitiveView {
     public typealias Body = Never
 
     public let content: Content

@@ -7,7 +7,7 @@ public protocol MultiChildView {
 
 /// Marker for transparent child aggregators that may be flattened by
 /// ViewBuilder accumulation without changing layout semantics.
-public protocol TransparentMultiChildView: MultiChildView {}
+public protocol TransparentMultiChildView: MultiChildView, PrimitiveView {}
 
 /// A flat child-list container used by ViewBuilder incremental accumulation.
 public struct ViewList: View, TransparentMultiChildView {
