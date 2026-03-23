@@ -605,33 +605,9 @@ extension Optional: AndroidRenderable where Wrapped: View {
 
 // MARK: - TupleView rendering
 
-extension TupleView2: AndroidMultiChildRenderable {
+extension TupleView: AndroidMultiChildRenderable {
     public func androidRenderChildren() -> [RenderNode] {
-        [androidRenderView(v0), androidRenderView(v1)]
-    }
-}
-
-extension TupleView3: AndroidMultiChildRenderable {
-    public func androidRenderChildren() -> [RenderNode] {
-        [androidRenderView(v0), androidRenderView(v1), androidRenderView(v2)]
-    }
-}
-
-extension TupleView4: AndroidMultiChildRenderable {
-    public func androidRenderChildren() -> [RenderNode] {
-        [androidRenderView(v0), androidRenderView(v1), androidRenderView(v2), androidRenderView(v3)]
-    }
-}
-
-extension TupleView5: AndroidMultiChildRenderable {
-    public func androidRenderChildren() -> [RenderNode] {
-        [androidRenderView(v0), androidRenderView(v1), androidRenderView(v2), androidRenderView(v3), androidRenderView(v4)]
-    }
-}
-
-extension TupleView6: AndroidMultiChildRenderable {
-    public func androidRenderChildren() -> [RenderNode] {
-        [androidRenderView(v0), androidRenderView(v1), androidRenderView(v2), androidRenderView(v3), androidRenderView(v4), androidRenderView(v5)]
+        children.map(androidRenderAnyView)
     }
 }
 

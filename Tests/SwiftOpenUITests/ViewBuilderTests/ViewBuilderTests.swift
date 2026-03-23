@@ -67,7 +67,7 @@ final class ViewBuilderTests: XCTestCase {
     // MARK: - MultiChildView
 
     func testTupleViewChildren() {
-        let tuple = TupleView2(Text("a"), Text("b"))
+        let tuple = TupleView(Text("a"), Text("b"))
         XCTAssertEqual(tuple.children.count, 2)
     }
 

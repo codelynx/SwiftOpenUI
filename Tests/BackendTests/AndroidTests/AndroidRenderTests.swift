@@ -298,7 +298,7 @@ final class AndroidRenderTests: XCTestCase {
     }
 
     func testTopLevelTupleViewRendersAsGroup() {
-        let tuple = TupleView2(Text("A"), Text("B"))
+        let tuple = TupleView(Text("A"), Text("B"))
         let node = androidRenderView(tuple)
 
         XCTAssertEqual(node.type, "group")

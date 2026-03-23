@@ -86,8 +86,9 @@ final class Phase3ViewTests: XCTestCase {
             Text("Row 1")
             Text("Row 2")
         }
-        // List wraps a TupleView2, which conforms to MultiChildView
-        let mirror = Mirror(reflecting: list.content)
-        XCTAssertNotNil(mirror.subjectType)
+        // List wraps a TupleView, which conforms to MultiChildView
+        XCTAssertTrue(list.content is any MultiChildView)
+        let children = (list.content as! any MultiChildView).children
+        XCTAssertEqual(children.count, 2)
     }
 }
