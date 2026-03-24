@@ -26,6 +26,17 @@ public func measureText(_ text: String, hwnd: HWND) -> (width: Int32, height: In
     return (width: size.cx, height: size.cy)
 }
 
+/// Measure text with a specific font family using DirectWrite.
+public func measureText(_ text: String, fontFamily: String, hwnd: HWND) -> (width: Int32, height: Int32) {
+    if let fmt = D2DRenderer.shared.textFormat(fontFamily: fontFamily) {
+        let (w, h) = D2DRenderer.shared.measureText(text, format: fmt)
+        if w > 0 || h > 0 {
+            return (width: Int32(w) + 4, height: Int32(h) + 2)
+        }
+    }
+    return measureText(text, hwnd: hwnd)
+}
+
 /// Measure text with a specific font using DirectWrite.
 public func measureTextWithFont(_ text: String, font: SwiftOpenUI.Font, hwnd: HWND) -> (width: Int32, height: Int32) {
     let (fontSize, bold, italic) = fontParameters(for: font, hwnd: hwnd)
@@ -137,22 +148,30 @@ func performVerticalLayout(container: HWND, info: StackLayoutInfo) {
 
     let totalSpacing = info.spacing * Int32(info.children.count - 1)
 
+    // Treat both Spacers and expandHeight children as flexible along the main axis
+    var flexIndices = info.flexibleIndices
+    for (i, child) in info.children.enumerated() {
+        if shouldExpandHeight(child) {
+            flexIndices.insert(i)
+        }
+    }
+
     // Use natural sizes for fixed height calculation
     var fixedHeight: Int32 = 0
     for (i, _) in info.children.enumerated() {
-        if !info.flexibleIndices.contains(i) {
+        if !flexIndices.contains(i) {
             fixedHeight += info.naturalSizes[i].height
         }
     }
 
     let remainingHeight = max(0, totalHeight - fixedHeight - totalSpacing)
-    let flexCount = Int32(info.flexibleIndices.count)
+    let flexCount = Int32(flexIndices.count)
     let flexHeight = flexCount > 0 ? remainingHeight / flexCount : 0
 
     var y: Int32 = 0
     for (i, child) in info.children.enumerated() {
         let childHeight: Int32
-        if info.flexibleIndices.contains(i) {
+        if flexIndices.contains(i) {
             childHeight = flexHeight
         } else {
             childHeight = info.naturalSizes[i].height
@@ -193,21 +212,29 @@ func performHorizontalLayout(container: HWND, info: StackLayoutInfo) {
 
     let totalSpacing = info.spacing * Int32(info.children.count - 1)
 
+    // Treat both Spacers and expandWidth children as flexible along the main axis
+    var flexIndices = info.flexibleIndices
+    for (i, child) in info.children.enumerated() {
+        if shouldExpandWidth(child) {
+            flexIndices.insert(i)
+        }
+    }
+
     var fixedWidth: Int32 = 0
     for (i, _) in info.children.enumerated() {
-        if !info.flexibleIndices.contains(i) {
+        if !flexIndices.contains(i) {
             fixedWidth += info.naturalSizes[i].width
         }
     }
 
     let remainingWidth = max(0, totalWidth - fixedWidth - totalSpacing)
-    let flexCount = Int32(info.flexibleIndices.count)
+    let flexCount = Int32(flexIndices.count)
     let flexWidth = flexCount > 0 ? remainingWidth / flexCount : 0
 
     var x: Int32 = 0
     for (i, child) in info.children.enumerated() {
         let childWidth: Int32
-        if info.flexibleIndices.contains(i) {
+        if flexIndices.contains(i) {
             childWidth = flexWidth
         } else {
             childWidth = info.naturalSizes[i].width
@@ -340,6 +367,20 @@ let expandHeightPropName: UnsafePointer<WCHAR> = {
 /// Check if an HWND is a Spacer.
 func isSpacerHwnd(_ hwnd: HWND) -> Bool {
     return GetPropW(hwnd, spacerPropName) != nil
+}
+
+let dividerPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIDivider".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+/// Check if an HWND is a Divider.
+func isDividerHwnd(_ hwnd: HWND) -> Bool {
+    return GetPropW(hwnd, dividerPropName) != nil
 }
 
 func markExpandWidth(_ hwnd: HWND) {

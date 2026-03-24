@@ -1038,11 +1038,8 @@ final class Win32RenderTests: XCTestCase {
         let hwnd = winRenderView(Button("Click Me", action: {}), in: ctx)
         XCTAssertNotNil(hwnd)
 
-        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
-        defer { buf.deallocate() }
-        GetWindowTextW(hwnd!, buf, 64)
-        let text = String(decodingCString: buf, as: UTF16.self)
-        XCTAssertEqual(text, "Click Me")
+        // D2D flat button uses a custom surface class (no window text)
+        XCTAssertEqual(className(of: hwnd!), "SwiftUID2DSurface")
     }
 
     func testSpacerIsMarkedAsSpacer() {
@@ -1173,14 +1170,24 @@ final class Win32RenderTests: XCTestCase {
         let hwnd = winRenderView(Button("Tinted", action: {}).foregroundColor(.blue), in: ctx)
         XCTAssertNotNil(hwnd)
 
-        guard let button = GetWindow(hwnd!, UINT(GW_CHILD)) else {
-            return XCTFail("ForegroundColor button wrapper should contain the button child")
+        // Find the D2D flat button leaf
+        var button: HWND = hwnd!
+        while let child = GetWindow(button, UINT(GW_CHILD)) {
+            button = child
         }
+        XCTAssertEqual(className(of: button), "SwiftUID2DSurface",
+                       "Button inside foregroundColor should be a D2D surface")
 
-        XCTAssertEqual(className(of: button), "Button")
-        let style = win32_GetWindowLongPtrW(button, GWL_STYLE)
-        XCTAssertNotEqual(style & LONG_PTR(BS_OWNERDRAW), 0,
-                          "ForegroundColor should switch Win32 buttons to owner-draw")
+        // Verify foreground color was propagated to the FlatButtonState
+        var refData: DWORD_PTR = 0
+        if GetWindowSubclass(button, flatButtonProc, 48, &refData), refData != 0 {
+            let state = Unmanaged<FlatButtonState>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(refData))!
+            ).takeUnretainedValue()
+            XCTAssertNotNil(state.textColorR, "FlatButtonState should have custom text color after .foregroundColor()")
+        } else {
+            XCTFail("D2D button should have FlatButtonState subclass")
+        }
     }
 
     func testBackgroundWrapsChild() {
@@ -1240,11 +1247,15 @@ final class Win32RenderTests: XCTestCase {
         let plainH = plainRect.bottom - plainRect.top
 
         let fonted = winRenderView(Button("Resize Me", action: {}).font(.largeTitle), in: ctx)!
-        let button = className(of: fonted) == "Button" ? fonted : GetWindow(fonted, UINT(GW_CHILD))
-        XCTAssertNotNil(button)
+
+        // Find the innermost leaf HWND (font modifier wraps the button)
+        var button: HWND = fonted
+        while let child = GetWindow(button, UINT(GW_CHILD)) {
+            button = child
+        }
 
         var fontedRect = RECT()
-        GetWindowRect(button!, &fontedRect)
+        GetWindowRect(button, &fontedRect)
         let fontedH = fontedRect.bottom - fontedRect.top
 
         XCTAssertGreaterThan(fontedH, plainH,
@@ -1278,12 +1289,13 @@ final class Win32RenderTests: XCTestCase {
         let hwnd = winRenderView(Button("Test", action: { clicked = true }), in: ctx)
         XCTAssertNotNil(hwnd)
 
-        // Simulate BN_CLICKED: the button's control ID is in LOWORD(wParam)
-        let controlID = WORD(GetDlgCtrlID(hwnd!))
-        let wParam = WPARAM(controlID) // HIWORD=0 means BN_CLICKED
-        let handled = dispatchCommand(wParam: wParam)
-        XCTAssertTrue(handled)
-        XCTAssertTrue(clicked, "Button action should fire via dispatchCommand")
+        // D2D flat buttons handle clicks via subclass proc mouse messages.
+        // Simulate a click: LBUTTONDOWN sets pressed, LBUTTONUP fires action
+        // if the cursor is inside the button rect.
+        let lParam = LPARAM(0) // coordinates (0,0) — inside the button
+        SendMessageW(hwnd!, UINT(WM_LBUTTONDOWN), 0, lParam)
+        SendMessageW(hwnd!, UINT(WM_LBUTTONUP), 0, lParam)
+        XCTAssertTrue(clicked, "Button action should fire via WM_LBUTTONDOWN + WM_LBUTTONUP")
     }
 
     // MARK: - Stateful view rendering
@@ -2134,7 +2146,7 @@ final class Win32RenderTests: XCTestCase {
         let ctx = testContext()
         let hwnd = winRenderView(Link("Visit", destination: "https://example.com"), in: ctx)
         XCTAssertNotNil(hwnd)
-        XCTAssertEqual(className(of: hwnd!), "Button")
+        XCTAssertEqual(className(of: hwnd!), "SwiftUID2DSurface")
     }
 
     // MARK: - Phase 4B modifiers

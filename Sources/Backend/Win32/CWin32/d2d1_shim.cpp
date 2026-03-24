@@ -392,6 +392,168 @@ void d2d1_RenderTarget_DrawLine(
     );
 }
 
+// --- Stroke Style ---
+
+#define AS_STROKE_STYLE(p) reinterpret_cast<ID2D1StrokeStyle *>(p)
+
+static D2D1_CAP_STYLE mapCapStyle(int cap) {
+    switch (cap) {
+    case 1: return D2D1_CAP_STYLE_SQUARE;
+    case 2: return D2D1_CAP_STYLE_ROUND;
+    case 3: return D2D1_CAP_STYLE_TRIANGLE;
+    default: return D2D1_CAP_STYLE_FLAT;
+    }
+}
+
+static D2D1_LINE_JOIN mapLineJoin(int join) {
+    switch (join) {
+    case 1: return D2D1_LINE_JOIN_BEVEL;
+    case 2: return D2D1_LINE_JOIN_ROUND;
+    case 3: return D2D1_LINE_JOIN_MITER_OR_BEVEL;
+    default: return D2D1_LINE_JOIN_MITER;
+    }
+}
+
+HRESULT d2d1_Factory_CreateStrokeStyle(
+    D2DFactory factory,
+    int capStyle,
+    int lineJoin,
+    D2DStrokeStyle *ppStyle
+) {
+    D2D1_STROKE_STYLE_PROPERTIES props = D2D1::StrokeStyleProperties(
+        mapCapStyle(capStyle),   // startCap
+        mapCapStyle(capStyle),   // endCap
+        mapCapStyle(capStyle),   // dashCap
+        mapLineJoin(lineJoin),
+        10.0f,                   // miterLimit
+        D2D1_DASH_STYLE_SOLID,
+        0.0f                     // dashOffset
+    );
+    ID2D1StrokeStyle *style = nullptr;
+    HRESULT hr = AS_FACTORY(factory)->CreateStrokeStyle(props, nullptr, 0, &style);
+    *ppStyle = reinterpret_cast<D2DStrokeStyle>(style);
+    return hr;
+}
+
+void d2d1_StrokeStyle_Release(D2DStrokeStyle style) {
+    AS_STROKE_STYLE(style)->Release();
+}
+
+void d2d1_RenderTarget_DrawLineStyled(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float x1, float y1, float x2, float y2,
+    float strokeWidth,
+    D2DStrokeStyle style
+) {
+    AS_TARGET(target)->DrawLine(
+        D2D1::Point2F(x1, y1),
+        D2D1::Point2F(x2, y2),
+        AS_BRUSH(brush),
+        strokeWidth,
+        AS_STROKE_STYLE(style)
+    );
+}
+
+void d2d1_RenderTarget_DrawRectangleStyled(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float x, float y, float width, float height,
+    float strokeWidth,
+    D2DStrokeStyle style
+) {
+    D2D1_RECT_F rect = D2D1::RectF(x, y, x + width, y + height);
+    AS_TARGET(target)->DrawRectangle(rect, AS_BRUSH(brush), strokeWidth, AS_STROKE_STYLE(style));
+}
+
+void d2d1_RenderTarget_DrawEllipseStyled(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float centerX, float centerY, float radiusX, float radiusY,
+    float strokeWidth,
+    D2DStrokeStyle style
+) {
+    D2D1_ELLIPSE ellipse = D2D1::Ellipse(D2D1::Point2F(centerX, centerY), radiusX, radiusY);
+    AS_TARGET(target)->DrawEllipse(ellipse, AS_BRUSH(brush), strokeWidth, AS_STROKE_STYLE(style));
+}
+
+// --- Path Geometry ---
+
+#define AS_PATH_GEOMETRY(p)   reinterpret_cast<ID2D1PathGeometry *>(p)
+#define AS_GEOMETRY_SINK(p)   reinterpret_cast<ID2D1GeometrySink *>(p)
+
+HRESULT d2d1_Factory_CreatePathGeometry(D2DFactory factory, D2DPathGeometry *ppGeometry) {
+    return AS_FACTORY(factory)->CreatePathGeometry(
+        reinterpret_cast<ID2D1PathGeometry **>(ppGeometry));
+}
+
+HRESULT d2d1_PathGeometry_Open(D2DPathGeometry geometry, D2DGeometrySink *ppSink) {
+    return AS_PATH_GEOMETRY(geometry)->Open(
+        reinterpret_cast<ID2D1GeometrySink **>(ppSink));
+}
+
+void d2d1_GeometrySink_BeginFigure(D2DGeometrySink sink, float x, float y, int filled) {
+    AS_GEOMETRY_SINK(sink)->BeginFigure(
+        D2D1::Point2F(x, y),
+        filled ? D2D1_FIGURE_BEGIN_FILLED : D2D1_FIGURE_BEGIN_HOLLOW);
+}
+
+void d2d1_GeometrySink_AddLine(D2DGeometrySink sink, float x, float y) {
+    AS_GEOMETRY_SINK(sink)->AddLine(D2D1::Point2F(x, y));
+}
+
+void d2d1_GeometrySink_AddBezier(D2DGeometrySink sink,
+    float c1x, float c1y, float c2x, float c2y, float ex, float ey
+) {
+    AS_GEOMETRY_SINK(sink)->AddBezier(D2D1::BezierSegment(
+        D2D1::Point2F(c1x, c1y), D2D1::Point2F(c2x, c2y), D2D1::Point2F(ex, ey)));
+}
+
+void d2d1_GeometrySink_AddArc(D2DGeometrySink sink,
+    float ex, float ey, float rx, float ry, float rotation, int sweep, int arcSize
+) {
+    D2D1_ARC_SEGMENT seg;
+    seg.point = D2D1::Point2F(ex, ey);
+    seg.size = D2D1::SizeF(rx, ry);
+    seg.rotationAngle = rotation;
+    seg.sweepDirection = sweep ? D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE : D2D1_SWEEP_DIRECTION_CLOCKWISE;
+    seg.arcSize = arcSize ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL;
+    AS_GEOMETRY_SINK(sink)->AddArc(seg);
+}
+
+void d2d1_GeometrySink_EndFigure(D2DGeometrySink sink, int closed) {
+    AS_GEOMETRY_SINK(sink)->EndFigure(closed ? D2D1_FIGURE_END_CLOSED : D2D1_FIGURE_END_OPEN);
+}
+
+HRESULT d2d1_GeometrySink_Close(D2DGeometrySink sink) {
+    return AS_GEOMETRY_SINK(sink)->Close();
+}
+
+void d2d1_GeometrySink_Release(D2DGeometrySink sink) {
+    if (sink) AS_GEOMETRY_SINK(sink)->Release();
+}
+
+void d2d1_PathGeometry_Release(D2DPathGeometry geometry) {
+    if (geometry) AS_PATH_GEOMETRY(geometry)->Release();
+}
+
+void d2d1_RenderTarget_FillGeometry(D2DRenderTarget target, D2DPathGeometry geometry, D2DBrush brush) {
+    AS_TARGET(target)->FillGeometry(AS_PATH_GEOMETRY(geometry), AS_BRUSH(brush));
+}
+
+void d2d1_RenderTarget_DrawGeometry(D2DRenderTarget target, D2DPathGeometry geometry,
+    D2DBrush brush, float strokeWidth
+) {
+    AS_TARGET(target)->DrawGeometry(AS_PATH_GEOMETRY(geometry), AS_BRUSH(brush), strokeWidth);
+}
+
+void d2d1_RenderTarget_DrawGeometryStyled(D2DRenderTarget target, D2DPathGeometry geometry,
+    D2DBrush brush, float strokeWidth, D2DStrokeStyle style
+) {
+    AS_TARGET(target)->DrawGeometry(AS_PATH_GEOMETRY(geometry), AS_BRUSH(brush),
+        strokeWidth, AS_STROKE_STYLE(style));
+}
+
 // --- Transform ---
 
 void d2d1_RenderTarget_SetTransform(

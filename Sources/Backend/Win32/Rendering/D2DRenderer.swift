@@ -6,6 +6,8 @@ import CWin32
 public class D2DRenderer {
     public static let shared = D2DRenderer()
 
+    /// Exposed for stroke style creation in Canvas DrawingContext.
+    var d2dFactory: D2DFactory? { factory }
     private var factory: D2DFactory?
     private var dwriteFactory: DWriteFactory?
 

@@ -188,6 +188,100 @@ final class Phase4FViewTests: XCTestCase {
         XCTAssertEqual(canvas.height, 100)
     }
 
+    func testCanvasLayoutSizedInit() {
+        let canvas = Canvas { context, size in
+            // SwiftUI-style draw handler with CGSize
+        }
+        XCTAssertEqual(canvas.width, 0, "Layout-sized Canvas should have no explicit width")
+        XCTAssertEqual(canvas.height, 0, "Layout-sized Canvas should have no explicit height")
+        XCTAssertTrue(canvas.usesLayoutSize, "Canvas(renderer:) should use layout size")
+        XCTAssertNotNil(canvas.sizedDrawHandler, "sizedDrawHandler should be set")
+    }
+
+    func testCanvasLegacyInitDoesNotUseLayoutSize() {
+        let canvas = Canvas(width: 400, height: 300) { _, _, _ in }
+        XCTAssertFalse(canvas.usesLayoutSize, "Legacy Canvas should not use layout size")
+        XCTAssertNil(canvas.sizedDrawHandler, "Legacy Canvas should not have sizedDrawHandler")
+    }
+
+    func testCanvasLayoutSizedHandlerReceivesCGSize() {
+        var receivedSize: CGSize?
+        let canvas = Canvas { context, size in
+            receivedSize = size
+        }
+        // Simulate what the backend does: call the legacy drawHandler
+        // which wraps the sized handler
+        let dummyCr = OpaquePointer(bitPattern: 1)!
+        canvas.drawHandler(DrawingContext(cr: dummyCr), 640, 480)
+        XCTAssertEqual(receivedSize?.width, 640)
+        XCTAssertEqual(receivedSize?.height, 480)
+    }
+
+    // MARK: - Path tests
+
+    func testPathConstruction() {
+        var path = Path()
+        XCTAssertTrue(path.isEmpty)
+        path.move(to: CGPoint(x: 10, y: 20))
+        path.addLine(to: CGPoint(x: 100, y: 200))
+        XCTAssertFalse(path.isEmpty)
+        XCTAssertEqual(path.elements.count, 2)
+    }
+
+    func testPathFromRect() {
+        let path = Path(CGRect(x: 0, y: 0, width: 100, height: 50))
+        // moveTo + 3 lineTo + closeSubpath = 5 elements
+        XCTAssertEqual(path.elements.count, 5)
+    }
+
+    func testPathFromEllipse() {
+        let path = Path(ellipseIn: CGRect(x: 0, y: 0, width: 100, height: 80))
+        XCTAssertEqual(path.elements.count, 1) // single .ellipse element
+    }
+
+    func testPathAddCurve() {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addCurve(to: CGPoint(x: 100, y: 100),
+                       control1: CGPoint(x: 30, y: 0),
+                       control2: CGPoint(x: 70, y: 100))
+        XCTAssertEqual(path.elements.count, 2)
+    }
+
+    func testPathCloseSubpath() {
+        var path = Path()
+        path.move(to: .zero)
+        path.addLine(to: CGPoint(x: 100, y: 0))
+        path.addLine(to: CGPoint(x: 50, y: 100))
+        path.closeSubpath()
+        XCTAssertEqual(path.elements.count, 4)
+    }
+
+    func testStrokeStyleDefaults() {
+        let style = StrokeStyle()
+        XCTAssertEqual(style.lineWidth, 1)
+    }
+
+    func testStrokeStyleCustom() {
+        let style = StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
+        XCTAssertEqual(style.lineWidth, 3)
+    }
+
+    func testShadingColorComponents() {
+        let shading = Shading.color(Color(red: 1, green: 0.5, blue: 0, opacity: 0.8))
+        let (r, g, b, a) = shading.colorComponents
+        XCTAssertEqual(r, 1.0, accuracy: 0.01)
+        XCTAssertEqual(g, 0.5, accuracy: 0.01)
+        XCTAssertEqual(b, 0.0, accuracy: 0.01)
+        XCTAssertEqual(a, 0.8, accuracy: 0.01)
+    }
+
+    func testShadingOpaqueColor() {
+        let shading = Shading.color(.red)
+        let (_, _, _, a) = shading.colorComponents
+        XCTAssertEqual(a, 1.0)
+    }
+
     func testDrawingContextTypes() {
         // LineCap and LineJoin enums should be constructible
         let _ = LineCap.round

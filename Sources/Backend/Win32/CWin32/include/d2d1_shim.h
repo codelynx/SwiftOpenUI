@@ -105,6 +105,71 @@ void d2d1_RenderTarget_DrawEllipse(
     float strokeWidth
 );
 
+// --- Stroke Style ---
+
+typedef struct D2DStrokeStyleImpl *D2DStrokeStyle;
+
+// Create a stroke style with line cap and join.
+// capStyle: 0 = flat, 1 = square, 2 = round, 3 = triangle
+// lineJoin: 0 = miter, 1 = bevel, 2 = round, 3 = miter-or-bevel
+HRESULT d2d1_Factory_CreateStrokeStyle(
+    D2DFactory factory,
+    int capStyle,
+    int lineJoin,
+    D2DStrokeStyle *ppStyle
+);
+void d2d1_StrokeStyle_Release(D2DStrokeStyle style);
+
+// Styled draw functions (with stroke style parameter)
+void d2d1_RenderTarget_DrawLineStyled(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float x1, float y1, float x2, float y2,
+    float strokeWidth,
+    D2DStrokeStyle style
+);
+
+void d2d1_RenderTarget_DrawRectangleStyled(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float x, float y, float width, float height,
+    float strokeWidth,
+    D2DStrokeStyle style
+);
+
+void d2d1_RenderTarget_DrawEllipseStyled(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float centerX, float centerY, float radiusX, float radiusY,
+    float strokeWidth,
+    D2DStrokeStyle style
+);
+
+// --- Path Geometry ---
+
+typedef struct D2DPathGeometryImpl *D2DPathGeometry;
+typedef struct D2DGeometrySinkImpl *D2DGeometrySink;
+
+HRESULT d2d1_Factory_CreatePathGeometry(D2DFactory factory, D2DPathGeometry *ppGeometry);
+HRESULT d2d1_PathGeometry_Open(D2DPathGeometry geometry, D2DGeometrySink *ppSink);
+
+void d2d1_GeometrySink_BeginFigure(D2DGeometrySink sink, float x, float y, int filled);
+void d2d1_GeometrySink_AddLine(D2DGeometrySink sink, float x, float y);
+void d2d1_GeometrySink_AddBezier(D2DGeometrySink sink,
+    float c1x, float c1y, float c2x, float c2y, float ex, float ey);
+void d2d1_GeometrySink_AddArc(D2DGeometrySink sink,
+    float ex, float ey, float rx, float ry, float rotation, int sweep, int arcSize);
+void d2d1_GeometrySink_EndFigure(D2DGeometrySink sink, int closed);
+HRESULT d2d1_GeometrySink_Close(D2DGeometrySink sink);
+void d2d1_GeometrySink_Release(D2DGeometrySink sink);
+void d2d1_PathGeometry_Release(D2DPathGeometry geometry);
+
+void d2d1_RenderTarget_FillGeometry(D2DRenderTarget target, D2DPathGeometry geometry, D2DBrush brush);
+void d2d1_RenderTarget_DrawGeometry(D2DRenderTarget target, D2DPathGeometry geometry,
+    D2DBrush brush, float strokeWidth);
+void d2d1_RenderTarget_DrawGeometryStyled(D2DRenderTarget target, D2DPathGeometry geometry,
+    D2DBrush brush, float strokeWidth, D2DStrokeStyle style);
+
 // --- DirectWrite ---
 
 // Factory

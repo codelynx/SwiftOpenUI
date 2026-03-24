@@ -85,6 +85,17 @@ extension WindowGroup: GTKWindowRenderable {
             gtk_window_set_resizable(winPtr, 1)
         }
 
+        // SwiftUI-compatible .windowResizability() — takes precedence
+        // over windowResizeBehavior when set.
+        switch windowResizability {
+        case .contentSize:
+            gtk_window_set_resizable(winPtr, 0)
+        case .contentMinSize, .automatic:
+            break  // resizable (default GTK4 behavior)
+        case nil:
+            break
+        }
+
         // If the root content doesn't expand, center it in the window
         // (matches SwiftUI where root views fill the proposed size and
         // content like Text is centered by default).

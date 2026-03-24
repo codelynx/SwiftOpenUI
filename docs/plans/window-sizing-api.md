@@ -6,6 +6,9 @@ Provide a sample-code-controlled window sizing API for showcase apps such as Cal
 
 Implemented on GTK4, Win32, and Web. Each backend does the best native mapping it can. On Web, `defaultWindowSize` and `windowSizing` are applied as CSS dimensions on the app container div (browsers don't allow content to resize the window).
 
+Related limitation:
+- GTK4 `.windowResizability(.contentSize)` currently provides compatibility spelling, not full SwiftUI-equivalent content-sized window behavior. See `docs/issues/gtk-window-resizability-content-size-gap.md`.
+
 ## Desired behaviors
 
 - Size window from content when appropriate

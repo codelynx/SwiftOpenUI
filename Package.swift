@@ -165,6 +165,12 @@ targets += [
         path: "Examples/Showcase/ColorMixer",
         linkerSettings: exampleLinkerSettings
     ),
+    .executableTarget(
+        name: "SimplePaint",
+        dependencies: exampleDeps,
+        path: "Examples/Showcase/SimplePaint",
+        linkerSettings: exampleLinkerSettings
+    ),
     // Parity
     .executableTarget(
         name: "ParityViewsBasic",

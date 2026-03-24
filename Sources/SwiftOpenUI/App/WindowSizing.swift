@@ -10,6 +10,27 @@ public enum WindowSizing: Sendable {
     case size(width: Double, height: Double)
 }
 
+/// SwiftUI-compatible window resize policy.
+///
+/// Current backend support:
+/// - GTK4: `.contentSize` disables resizing (via `gtk_window_set_resizable`).
+///   Content-driven sizing is not yet implemented — use `.defaultWindowSize()`
+///   alongside `.windowResizability(.contentSize)` to set the fixed size.
+///   `.contentMinSize` is not yet distinguished from `.automatic`.
+/// - Win32: `.contentSize` disables drag-to-resize (removes `WS_THICKFRAME`)
+///   but keeps `WS_MAXIMIZEBOX` to match GTK4 behavior.
+///   `.contentMinSize` behaves the same as `.automatic`.
+public enum WindowResizability: Sendable {
+    /// Window is non-resizable. On GTK4, requires `.defaultWindowSize()` to
+    /// set the actual size; content-driven sizing is not yet implemented.
+    case contentSize
+    /// Window can be resized with content as minimum size.
+    /// Not yet implemented on GTK4 — currently behaves the same as `.automatic`.
+    case contentMinSize
+    /// Backend default (resizable).
+    case automatic
+}
+
 /// Controls whether the native window can be resized by the user.
 public enum WindowResizeBehavior: Sendable {
     /// Backend default behavior.
@@ -33,7 +54,8 @@ extension WindowGroup {
             maxWindowWidth: maxWindowWidth,
             maxWindowHeight: maxWindowHeight,
             windowSizing: windowSizing,
-            windowResizeBehavior: windowResizeBehavior
+            windowResizeBehavior: windowResizeBehavior,
+            windowResizability: windowResizability
         )
     }
 
@@ -54,7 +76,8 @@ extension WindowGroup {
             maxWindowWidth: maxWidth ?? maxWindowWidth,
             maxWindowHeight: maxHeight ?? maxWindowHeight,
             windowSizing: windowSizing,
-            windowResizeBehavior: windowResizeBehavior
+            windowResizeBehavior: windowResizeBehavior,
+            windowResizability: windowResizability
         )
     }
 
@@ -70,7 +93,8 @@ extension WindowGroup {
             maxWindowWidth: maxWindowWidth,
             maxWindowHeight: maxWindowHeight,
             windowSizing: sizing,
-            windowResizeBehavior: windowResizeBehavior
+            windowResizeBehavior: windowResizeBehavior,
+            windowResizability: windowResizability
         )
     }
 
@@ -86,7 +110,28 @@ extension WindowGroup {
             maxWindowWidth: maxWindowWidth,
             maxWindowHeight: maxWindowHeight,
             windowSizing: windowSizing,
-            windowResizeBehavior: behavior
+            windowResizeBehavior: behavior,
+            windowResizability: windowResizability
+        )
+    }
+
+    /// SwiftUI-compatible window resizability control.
+    /// `.contentSize` disables resizing. On GTK4, pair with `.defaultWindowSize()`
+    /// to set the fixed size (content-driven sizing not yet implemented).
+    /// `.contentMinSize` is not yet distinguished from `.automatic` on GTK4.
+    public func windowResizability(_ resizability: WindowResizability) -> WindowGroup<Content> {
+        WindowGroup(
+            title: title,
+            content: content,
+            defaultWindowWidth: defaultWindowWidth,
+            defaultWindowHeight: defaultWindowHeight,
+            minWindowWidth: minWindowWidth,
+            minWindowHeight: minWindowHeight,
+            maxWindowWidth: maxWindowWidth,
+            maxWindowHeight: maxWindowHeight,
+            windowSizing: windowSizing,
+            windowResizeBehavior: windowResizeBehavior,
+            windowResizability: resizability
         )
     }
 }

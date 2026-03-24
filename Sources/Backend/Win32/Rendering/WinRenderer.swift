@@ -102,11 +102,29 @@ private func winRenderStatefulView<V: View>(_ view: V, in context: RenderContext
     return host.container
 }
 
+// MARK: - Emoji detection
+
+/// Check if a string contains emoji characters that need the Segoe UI Emoji font.
+func containsEmoji(_ text: String) -> Bool {
+    for scalar in text.unicodeScalars {
+        let v = scalar.value
+        // Common emoji ranges
+        if v >= 0x1F300 && v <= 0x1FAFF { return true }  // Misc Symbols, Emoticons, etc.
+        if v >= 0x2600 && v <= 0x27BF { return true }    // Misc Symbols, Dingbats
+        if v >= 0x2300 && v <= 0x23FF { return true }    // Misc Technical (⌛, ⏰, etc.)
+        if v >= 0xFE00 && v <= 0xFE0F { return true }    // Variation selectors (emoji style)
+        if v >= 0x200D && v <= 0x200D { return true }    // ZWJ
+    }
+    return false
+}
+
 // MARK: - View Win32 extensions
 
 extension Text: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        let measured = measureText(content, hwnd: context.parent)
+        let useEmoji = containsEmoji(content)
+        let fontFamily = useEmoji ? "Segoe UI Emoji" : "Segoe UI"
+        let measured = measureText(content, fontFamily: fontFamily, hwnd: context.parent)
 
         // SS_LEFTNOWORDWRAP prevents wrapping (matches single-line measurement).
         // SS_NOTIFY enables WM_LBUTTONDOWN/UP delivery so gesture subclasses work.
@@ -125,6 +143,16 @@ extension Text: WinRenderable {
 
         if let hwnd {
             markHostedNodeKind(hwnd, .text)
+            // Apply emoji font so the Static control renders color emoji
+            if useEmoji {
+                let hfont = createEmojiHFont(hwnd: hwnd)
+                if let hfont {
+                    SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: hfont)), 1)
+                    let cleanup = FontCleanupInfo(hfont: hfont)
+                    let ptr = Unmanaged.passRetained(cleanup).toOpaque()
+                    SetWindowSubclass(hwnd, fontCleanupProc, 99, DWORD_PTR(UInt(bitPattern: ptr)))
+                }
+            }
         }
 
         return hwnd
@@ -366,6 +394,8 @@ extension Divider: WinRenderable {
         )
 
         guard let hwnd = hwnd else { return nil }
+
+        SetPropW(hwnd, dividerPropName, HANDLE(bitPattern: 1))
 
         let state = D2DViewState(hwnd: hwnd, r: 60.0/255, g: 60.0/255, b: 64.0/255)
         state.drawCallback = { rt, brush, w, h in
@@ -628,33 +658,277 @@ extension Button: WinRenderable {
     }
 }
 
-/// Create a native Win32 BUTTON control with a text label.
-/// Create a native Win32 BUTTON control with a text label.
+/// Create a flat D2D-rendered button with a text label.
 func createNativeButton(title: String, action: @escaping () -> Void, context: RenderContext) -> HWND? {
+    registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
+
     let measured = measureText(title, hwnd: context.parent)
     let buttonWidth = measured.width + 24
     let buttonHeight = measured.height + 12
 
-    let controlID = nextControlID()
+    let hwnd = CreateWindowExW(
+        0, d2dSurfaceClassName, nil,
+        DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP),
+        0, 0, buttonWidth, buttonHeight,
+        context.parent, nil, context.hInstance, nil
+    )
 
-    let hwnd = title.withCString(encodedAs: UTF16.self) { wstr in
-        win32_CreateChildWindow(
-            win32_WC_BUTTON(),
-            wstr,
-            DWORD(BS_PUSHBUTTON),
-            0, 0, buttonWidth, buttonHeight,
-            context.parent,
-            HMENU(bitPattern: UInt(controlID)),
-            context.hInstance
-        )
-    }
+    guard let hwnd = hwnd else { return nil }
 
-    if let hwnd = hwnd {
-        registerCommandHandler(controlID: controlID, action: action)
-        SetWindowSubclass(hwnd, buttonCleanupProc, 0, DWORD_PTR(controlID))
-    }
+    let state = FlatButtonState(hwnd: hwnd, title: title, action: action)
+    let ptr = Unmanaged.passRetained(state).toOpaque()
+    SetWindowSubclass(hwnd, flatButtonProc, 48, DWORD_PTR(UInt(bitPattern: ptr)))
 
     return hwnd
+}
+
+// MARK: - Flat D2D Button
+
+class FlatButtonState {
+    let hwnd: HWND
+    let title: String
+    let action: () -> Void
+    var pressed: Bool = false
+    var hovered: Bool = false
+    var tracking: Bool = false
+    var renderTarget: D2DRenderTarget?
+    var brush: D2DBrush?
+    /// Custom text color set by .foregroundColor(), nil = default dark text
+    var textColorR: Float?
+    var textColorG: Float?
+    var textColorB: Float?
+    /// Custom DirectWrite text format set by .font(), nil = default
+    var customTextFormat: DWriteTextFormat?
+
+    init(hwnd: HWND, title: String, action: @escaping () -> Void) {
+        self.hwnd = hwnd
+        self.title = title
+        self.action = action
+    }
+
+    func ensureTarget(width: UInt32, height: UInt32) {
+        guard width > 0, height > 0 else { return }
+        if let old = renderTarget { D2DRenderer.shared.releaseRenderTarget(old) }
+        if let old = brush { D2DRenderer.shared.releaseBrush(old) }
+        renderTarget = D2DRenderer.shared.createRenderTarget(for: hwnd, width: width, height: height)
+        if let rt = renderTarget { brush = D2DRenderer.shared.createBrush(rt, r: 0, g: 0, b: 0) }
+    }
+
+    func paint() {
+        if renderTarget == nil {
+            var r = RECT()
+            GetClientRect(hwnd, &r)
+            ensureTarget(width: UInt32(r.right), height: UInt32(r.bottom))
+        }
+        guard let rt = renderTarget, let brush = brush else { return }
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let w = Float(rect.right)
+        let h = Float(rect.bottom)
+        guard w > 0, h > 0 else { return }
+
+        d2d1_RenderTarget_BeginDraw(rt)
+
+        // Clear with parent background
+        var bgR: Float = Float(win32_GetRValue(GetSysColor(COLOR_WINDOW))) / 255.0
+        var bgG: Float = Float(win32_GetGValue(GetSysColor(COLOR_WINDOW))) / 255.0
+        var bgB: Float = Float(win32_GetBValue(GetSysColor(COLOR_WINDOW))) / 255.0
+        if let parent = GetParent(hwnd) {
+            let hdc = GetDC(hwnd)
+            let brushResult = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC),
+                                            WPARAM(UInt(bitPattern: hdc)), LPARAM(Int(bitPattern: hwnd)))
+            if brushResult != 0, let hBrush = HBRUSH(bitPattern: Int(brushResult)) {
+                var logBrush = LOGBRUSH()
+                GetObjectW(hBrush, Int32(MemoryLayout<LOGBRUSH>.size), &logBrush)
+                bgR = Float(win32_GetRValue(logBrush.lbColor)) / 255.0
+                bgG = Float(win32_GetGValue(logBrush.lbColor)) / 255.0
+                bgB = Float(win32_GetBValue(logBrush.lbColor)) / 255.0
+            }
+            ReleaseDC(hwnd, hdc)
+        }
+        d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
+
+        let cornerRadius: Float = 5
+
+        // Button fill
+        if pressed {
+            d2d1_SolidColorBrush_SetColor(brush, 0.78, 0.78, 0.80, 1)
+        } else if hovered {
+            d2d1_SolidColorBrush_SetColor(brush, 0.88, 0.88, 0.90, 1)
+        } else {
+            d2d1_SolidColorBrush_SetColor(brush, 0.92, 0.92, 0.94, 1)
+        }
+        d2d1_RenderTarget_FillRoundedRectangle(rt, brush,
+            1, 1, w - 2, h - 2, cornerRadius, cornerRadius)
+
+        // Border
+        d2d1_SolidColorBrush_SetColor(brush, 0.75, 0.75, 0.78, 1)
+        d2d1_RenderTarget_DrawRoundedRectangle(rt, brush,
+            0.5, 0.5, w - 1, h - 1, cornerRadius, cornerRadius, 1)
+
+        // Text — centered, with optional custom color/font
+        let tr = textColorR ?? 0.1
+        let tg = textColorG ?? 0.1
+        let tb = textColorB ?? 0.1
+        d2d1_SolidColorBrush_SetColor(brush, tr, tg, tb, 1)
+        if let fmt = customTextFormat ?? D2DRenderer.shared.textFormat() {
+            dwrite_TextFormat_SetTextAlignment(fmt, 2) // center
+            D2DRenderer.shared.drawText(title, target: rt, format: fmt,
+                                         brush: brush, x: 0, y: 0, width: w, height: h)
+            dwrite_TextFormat_SetTextAlignment(fmt, 0) // restore to leading
+        }
+
+        // Focus ring
+        if GetFocus() == hwnd {
+            d2d1_SolidColorBrush_SetColor(brush, 0.0, 0.48, 1.0, 0.6)
+            d2d1_RenderTarget_DrawRoundedRectangle(rt, brush,
+                1.5, 1.5, w - 3, h - 3, cornerRadius - 1, cornerRadius - 1, 1.5)
+        }
+
+        _ = d2d1_RenderTarget_EndDraw(rt)
+    }
+
+    func cleanup() {
+        if let b = brush { D2DRenderer.shared.releaseBrush(b); brush = nil }
+        if let rt = renderTarget { D2DRenderer.shared.releaseRenderTarget(rt); renderTarget = nil }
+    }
+
+    deinit { cleanup() }
+}
+
+let flatButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+    let state = Unmanaged<FlatButtonState>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_PAINT):
+        var ps = PAINTSTRUCT()
+        BeginPaint(hwnd, &ps)
+        state.paint()
+        EndPaint(hwnd, &ps)
+        return 0
+
+    case UINT(WM_SIZE):
+        var r = RECT()
+        GetClientRect(hwnd!, &r)
+        state.ensureTarget(width: UInt32(r.right), height: UInt32(r.bottom))
+        return 0
+
+    case UINT(WM_LBUTTONDOWN):
+        SetCapture(hwnd)
+        SetFocus(hwnd)
+        state.pressed = true
+        InvalidateRect(hwnd, nil, false)
+        return 0
+
+    case UINT(WM_LBUTTONUP):
+        ReleaseCapture()
+        let wasPressed = state.pressed
+        state.pressed = false
+        InvalidateRect(hwnd, nil, false)
+        if wasPressed {
+            var rect = RECT()
+            GetClientRect(hwnd, &rect)
+            let x = Int32(win32_GET_X_LPARAM(lParam))
+            let y = Int32(win32_GET_Y_LPARAM(lParam))
+            if x >= 0 && x < rect.right && y >= 0 && y < rect.bottom {
+                state.action()
+            }
+        }
+        return 0
+
+    case UINT(WM_MOUSEMOVE):
+        if !state.tracking {
+            var tme = TRACKMOUSEEVENT()
+            tme.cbSize = DWORD(MemoryLayout<TRACKMOUSEEVENT>.size)
+            tme.dwFlags = DWORD(TME_LEAVE)
+            tme.hwndTrack = hwnd
+            TrackMouseEvent(&tme)
+            state.tracking = true
+        }
+        if !state.hovered {
+            state.hovered = true
+            InvalidateRect(hwnd, nil, false)
+        }
+        return 0
+
+    case UINT(WM_MOUSELEAVE):
+        state.hovered = false
+        state.tracking = false
+        InvalidateRect(hwnd, nil, false)
+        return 0
+
+    case UINT(WM_KEYDOWN):
+        if wParam == WPARAM(VK_SPACE) || wParam == WPARAM(VK_RETURN) {
+            state.pressed = true
+            InvalidateRect(hwnd, nil, false)
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_KEYUP):
+        if wParam == WPARAM(VK_SPACE) || wParam == WPARAM(VK_RETURN) {
+            if state.pressed {
+                state.pressed = false
+                InvalidateRect(hwnd, nil, false)
+                state.action()
+            }
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_SETFONT):
+        // Font modifier sends WM_SETFONT — extract HFONT metrics and create
+        // a matching DirectWrite format for D2D text rendering.
+        if wParam != 0, let hfont = HFONT(bitPattern: UInt(wParam)) {
+            var lf = LOGFONTW()
+            if GetObjectW(hfont, Int32(MemoryLayout<LOGFONTW>.size), &lf) != 0 {
+                // HFONT was created with -height where height = pointSize * scale.
+                // DirectWrite textFormat expects the same pointSize * scale value.
+                let fontSize = abs(Float(lf.lfHeight))
+                let bold = lf.lfWeight >= FW_SEMIBOLD
+                let italic = lf.lfItalic != 0
+                let fmt = D2DRenderer.shared.textFormat(
+                    fontSize: max(fontSize, 8), bold: bold, italic: italic)
+                state.customTextFormat = fmt
+                // Re-measure with the new font and resize button
+                let (tw, th): (Int32, Int32) = {
+                    if let fmt = fmt {
+                        let (w, h) = D2DRenderer.shared.measureText(state.title, format: fmt)
+                        return (Int32(w) + 4, Int32(h) + 2)
+                    }
+                    return (measureText(state.title, hwnd: hwnd!).width,
+                            measureText(state.title, hwnd: hwnd!).height)
+                }()
+                let bw = tw + 24
+                let bh = th + 12
+                SetWindowPos(hwnd, nil, 0, 0, bw, bh, UINT(SWP_NOZORDER | SWP_NOMOVE))
+                InvalidateRect(hwnd, nil, false)
+            }
+        }
+        return 0
+
+    case UINT(WM_GETDLGCODE):
+        return LRESULT(DLGC_BUTTON | DLGC_WANTALLKEYS)
+
+    case UINT(WM_SETFOCUS), UINT(WM_KILLFOCUS):
+        InvalidateRect(hwnd, nil, false)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        state.cleanup()
+        Unmanaged<FlatButtonState>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, flatButtonProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
 }
 
 /// Create a clickable container that renders a custom label view inside.
@@ -1006,6 +1280,16 @@ extension VStack: WinRenderable {
         // Use shared layout only when no children need flex expansion
         // (matches GTK4 eligibility: no Spacers AND no expanding widgets)
         let hasExpandingChild = childHwnds.contains { shouldExpandWidth($0) || shouldExpandHeight($0) }
+
+        // Propagate expansion from children: if any child wants to expand
+        // in either axis, the VStack container should too.
+        if childHwnds.contains(where: { shouldExpandHeight($0) }) {
+            markExpandHeight(container)
+        }
+        if childHwnds.contains(where: { shouldExpandWidth($0) }) {
+            markExpandWidth(container)
+        }
+
         if flexibleIndices.isEmpty && !hasExpandingChild {
             let childSizes = info.naturalSizes.map { ViewSize(width: Double($0.width), height: Double($0.height)) }
             let result = computeVStackLayout(childSizes: childSizes, spacing: Double(spacing), alignment: alignment)
@@ -1054,6 +1338,12 @@ extension HStack: WinRenderable {
             if isSpacerHwnd(child) {
                 flexibleIndices.insert(i)
             }
+            // Flip Divider orientation: in HStack, dividers are vertical
+            if isDividerHwnd(child) {
+                SetWindowPos(child, nil, 0, 0, 2, 100, UINT(SWP_NOZORDER | SWP_NOMOVE))
+                RemovePropW(child, expandWidthPropName)
+                markExpandHeight(child)
+            }
         }
 
         // Map SwiftOpenUI VerticalAlignment to cross-axis int
@@ -1076,6 +1366,15 @@ extension HStack: WinRenderable {
         SetWindowSubclass(container, stackLayoutProc, 1, DWORD_PTR(UInt(bitPattern: infoPtr)))
         if !flexibleIndices.isEmpty {
             markExpandWidth(container)
+        }
+
+        // Propagate expansion from children: if any child wants to expand
+        // in either axis, the HStack container should too.
+        if childHwnds.contains(where: { shouldExpandWidth($0) }) {
+            markExpandWidth(container)
+        }
+        if childHwnds.contains(where: { shouldExpandHeight($0) }) {
+            markExpandHeight(container)
         }
 
         // Use shared layout only when no children need flex expansion
@@ -1276,6 +1575,10 @@ extension PaddedView: WinRenderable {
         let totalW = childW + Int32(leading) + Int32(trailing)
         let totalH = childH + Int32(top) + Int32(bottom)
         SetWindowPos(container, nil, 0, 0, totalW, totalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        // Propagate expand flags from child
+        if shouldExpandWidth(child) { markExpandWidth(container) }
+        if shouldExpandHeight(child) { markExpandHeight(container) }
 
         // Initial layout
         performPaddingLayout(container: container, info: padInfo)
@@ -1561,6 +1864,7 @@ extension ForegroundColorView: WinRenderable {
         let fgInfo = ForegroundColorInfo(child: child, colorRef: colorRef)
         let infoPtr = Unmanaged.passRetained(fgInfo).toOpaque()
         configureForegroundColorChild(child)
+        configureFlatButtonForegroundColor(child, r: color.red, g: color.green, b: color.blue)
         SetWindowSubclass(container, foregroundColorProc, 10, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
         // Initial layout
@@ -1586,6 +1890,27 @@ private func getWindowClassName(_ hwnd: HWND) -> String {
     let length = GetClassNameW(hwnd, buffer, 64)
     guard length > 0 else { return "" }
     return String(decodingCString: buffer, as: UTF16.self)
+}
+
+/// Set foreground text color on D2D flat buttons (recursively).
+func configureFlatButtonForegroundColor(_ hwnd: HWND, r: Double, g: Double, b: Double) {
+    // Check this HWND for a FlatButtonState subclass
+    var refData: DWORD_PTR = 0
+    if GetWindowSubclass(hwnd, flatButtonProc, 48, &refData), refData != 0 {
+        let state = Unmanaged<FlatButtonState>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(refData))!
+        ).takeUnretainedValue()
+        state.textColorR = Float(r)
+        state.textColorG = Float(g)
+        state.textColorB = Float(b)
+        InvalidateRect(hwnd, nil, false)
+    }
+    // Recurse into children
+    var child = GetWindow(hwnd, UINT(GW_CHILD))
+    while let c = child {
+        configureFlatButtonForegroundColor(c, r: r, g: g, b: b)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
 }
 
 func configureForegroundColorChild(_ child: HWND) {
@@ -1919,6 +2244,27 @@ private func createHFont(for font: Font, hwnd: HWND) -> HFONT? {
     }
 }
 
+/// Create an HFONT using Segoe UI Emoji at the default body size.
+private func createEmojiHFont(hwnd: HWND) -> HFONT? {
+    let dpi = win32_GetDpiForWindow(hwnd)
+    let scale = Double(dpi) / 96.0
+    let height = Int32(14 * scale)
+    let fontName = "Segoe UI Emoji"
+    return fontName.withCString(encodedAs: UTF16.self) { namePtr in
+        CreateFontW(
+            -height, 0, 0, 0,
+            FW_REGULAR,
+            0, 0, 0,
+            DWORD(DEFAULT_CHARSET),
+            DWORD(OUT_DEFAULT_PRECIS),
+            DWORD(CLIP_DEFAULT_PRECIS),
+            DWORD(CLEARTYPE_QUALITY),
+            DWORD(DEFAULT_PITCH) | DWORD(FF_DONTCARE),
+            namePtr
+        )
+    }
+}
+
 /// If the HWND is a text-bearing control, re-measure and resize it for the new font.
 private func remeasureControlIfNeeded(hwnd: HWND, hfont: HFONT) {
     let className = getWindowClassName(hwnd)
@@ -1946,16 +2292,110 @@ private func remeasureControlIfNeeded(hwnd: HWND, hfont: HFONT) {
 
 extension BorderView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        guard let child = winRenderView(content, in: context) else { return nil }
+        registerStackClassIfNeeded(hInstance: context.hInstance)
 
-        // For now, apply WS_EX_CLIENTEDGE for a simple border effect
-        let currentStyle = win32_GetWindowLongPtrW(child, GWL_EXSTYLE)
-        win32_SetWindowLongPtrW(child, GWL_EXSTYLE, currentStyle | LONG_PTR(WS_EX_CLIENTEDGE))
-        // Force a redraw with the new style
-        SetWindowPos(child, nil, 0, 0, 0, 0,
-                     UINT(SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED))
+        // Wrap the child in a container that paints a flat 1px border
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+        markHostedNodeKind(container, .border)
 
-        return child
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        guard let child = winRenderView(content, in: childContext) else { return container }
+
+        let bw = Int32(width)
+        // Size container to child + border on each side
+        var childRect = RECT()
+        GetWindowRect(child, &childRect)
+        let w = childRect.right - childRect.left + bw * 2
+        let h = childRect.bottom - childRect.top + bw * 2
+        SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        SetWindowPos(child, nil, bw, bw, w - bw * 2, h - bw * 2, UINT(SWP_NOZORDER))
+
+        let r = UInt8(color.red * 255)
+        let g = UInt8(color.green * 255)
+        let b = UInt8(color.blue * 255)
+
+        let borderInfo = FlatBorderInfo(child: child, colorRef: win32_RGB(r, g, b), borderWidth: bw)
+        let infoPtr = Unmanaged.passRetained(borderInfo).toOpaque()
+        SetWindowSubclass(container, flatBorderProc, 12, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        return container
+    }
+}
+
+private class FlatBorderInfo {
+    let child: HWND
+    let colorRef: COLORREF
+    let borderWidth: Int32
+
+    init(child: HWND, colorRef: COLORREF, borderWidth: Int32 = 1) {
+        self.child = child
+        self.colorRef = colorRef
+        self.borderWidth = borderWidth
+    }
+}
+
+private let flatBorderProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+    let info = Unmanaged<FlatBorderInfo>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_SIZE):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let cw = rect.right - rect.left
+        let ch = rect.bottom - rect.top
+        let bw = info.borderWidth
+        SetWindowPos(info.child, nil, bw, bw, max(0, cw - bw * 2), max(0, ch - bw * 2), UINT(SWP_NOZORDER))
+        return 0
+
+    case UINT(WM_PAINT):
+        var ps = PAINTSTRUCT()
+        let hdc = BeginPaint(hwnd, &ps)
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+
+        // Inherit background from parent chain
+        if let parent = GetParent(hwnd) {
+            let brushResult = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC),
+                                            WPARAM(UInt(bitPattern: hdc)), LPARAM(Int(bitPattern: hwnd)))
+            if brushResult != 0, let bgBrush = HBRUSH(bitPattern: Int(brushResult)) {
+                FillRect(hdc, &rect, bgBrush)
+            } else {
+                FillRect(hdc, &rect, GetSysColorBrush(COLOR_WINDOW))
+            }
+        } else {
+            FillRect(hdc, &rect, GetSysColorBrush(COLOR_WINDOW))
+        }
+
+        // Draw flat border with specified width
+        let bw = info.borderWidth
+        let pen = CreatePen(PS_SOLID, bw, info.colorRef)
+        let oldPen = SelectObject(hdc, pen)
+        let oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH))
+        Rectangle(hdc, rect.left, rect.top, rect.right, rect.bottom)
+        SelectObject(hdc, oldBrush)
+        SelectObject(hdc, oldPen)
+        DeleteObject(pen)
+
+        EndPaint(hwnd, &ps)
+        return 0
+
+    case UINT(WM_NCDESTROY):
+        Unmanaged<FlatBorderInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, flatBorderProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
@@ -2497,6 +2937,10 @@ extension ScrollView: WinRenderable {
 
         // Set initial scroll range
         updateScrollRange(container, state: scrollState)
+
+        // ScrollView should expand to fill available space in its parent stack
+        markExpandWidth(container)
+        markExpandHeight(container)
 
         return container
     }
@@ -5269,6 +5713,8 @@ private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
                 translation: (width: dx, height: dy)
             )
             handler.onChanged?(value)
+            // Invalidate so Canvas (or other D2D views) repaints with updated state
+            RedrawWindow(hwnd, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
         }
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
@@ -5291,6 +5737,8 @@ private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
                     translation: (width: x - handler.startX, height: y - handler.startY)
                 )
                 handler.onEnded?(value)
+                // Invalidate so Canvas repaints with the committed stroke
+                RedrawWindow(hwnd, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
             }
         }
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
@@ -5330,6 +5778,8 @@ struct CanvasGraphicsState {
     let colorR, colorG, colorB, colorA: Float
     let lineWidth: Float
     let currentX, currentY: Float
+    let lineCap: LineCap
+    let lineJoin: LineJoin
     // Transform matrix (row-major 3x2)
     let m11, m12, m21, m22, dx, dy: Float
 }
@@ -5348,6 +5798,11 @@ class D2DCanvasContext {
     var lineWidth: Float = 1
     var currentX: Float = 0
     var currentY: Float = 0
+
+    // Line cap/join for stroke style
+    var lineCap: LineCap = .butt
+    var lineJoin: LineJoin = .miter
+    var strokeStyle: D2DStrokeStyle?
 
     // Current transform
     var m11: Float = 1, m12: Float = 0
@@ -5368,16 +5823,49 @@ class D2DCanvasContext {
     func applyColor() {
         d2d1_SolidColorBrush_SetColor(brush, colorR, colorG, colorB, colorA)
     }
+
+    /// Create or update the D2D stroke style for current lineCap/lineJoin.
+    func ensureStrokeStyle() {
+        if let old = strokeStyle {
+            d2d1_StrokeStyle_Release(old)
+            strokeStyle = nil
+        }
+        guard let factory = D2DRenderer.shared.d2dFactory else { return }
+        let capInt: Int32 = {
+            switch lineCap {
+            case .butt: return 0    // D2D1_CAP_STYLE_FLAT
+            case .square: return 1  // D2D1_CAP_STYLE_SQUARE
+            case .round: return 2   // D2D1_CAP_STYLE_ROUND
+            }
+        }()
+        let joinInt: Int32 = {
+            switch lineJoin {
+            case .miter: return 0   // D2D1_LINE_JOIN_MITER
+            case .bevel: return 1   // D2D1_LINE_JOIN_BEVEL
+            case .round: return 2   // D2D1_LINE_JOIN_ROUND
+            }
+        }()
+        var style: D2DStrokeStyle?
+        let hr = d2d1_Factory_CreateStrokeStyle(factory, capInt, joinInt, &style)
+        if hr >= 0 { strokeStyle = style }
+    }
+
+    deinit {
+        if let s = strokeStyle { d2d1_StrokeStyle_Release(s) }
+    }
 }
 
 /// Holds draw closure + D2D resources for the Canvas HWND.
 private class CanvasDrawState {
     let drawHandler: (DrawingContext, Int, Int) -> Void
+    let sizedDrawHandler: ((DrawingContext, CGSize) -> Void)?
     var renderTarget: D2DRenderTarget?
     var brush: D2DBrush?
 
-    init(_ handler: @escaping (DrawingContext, Int, Int) -> Void) {
+    init(_ handler: @escaping (DrawingContext, Int, Int) -> Void,
+         sized: ((DrawingContext, CGSize) -> Void)? = nil) {
         self.drawHandler = handler
+        self.sizedDrawHandler = sized
     }
 
     func ensureTarget(hwnd: HWND, width: UInt32, height: UInt32) {
@@ -5436,7 +5924,11 @@ private let canvasPaintProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
                 let d2dCtx = D2DCanvasContext(renderTarget: rt, brush: brush)
                 let ctxPtr = Unmanaged.passRetained(d2dCtx).toOpaque()
                 let context = DrawingContext(cr: OpaquePointer(ctxPtr))
-                state.drawHandler(context, Int(w), Int(h))
+                if let sizedHandler = state.sizedDrawHandler {
+                    sizedHandler(context, CGSize(width: CGFloat(w), height: CGFloat(h)))
+                } else {
+                    state.drawHandler(context, Int(w), Int(h))
+                }
                 Unmanaged<D2DCanvasContext>.fromOpaque(ctxPtr).release()
 
                 _ = d2d1_RenderTarget_EndDraw(rt)
@@ -5491,10 +5983,17 @@ extension Canvas: WinRenderable {
 
         guard let hwnd = hwnd else { return nil }
 
-        let state = CanvasDrawState(drawHandler)
+        let state = CanvasDrawState(drawHandler, sized: sizedDrawHandler)
         let statePtr = Unmanaged.passRetained(state).toOpaque()
         SetPropW(hwnd, canvasStatePropName, HANDLE(statePtr))
         SetWindowSubclass(hwnd, canvasPaintProc, 45, 0)
+
+        // Layout-sized Canvas should expand to fill available space,
+        // matching SwiftUI where Canvas has no intrinsic size.
+        if usesLayoutSize {
+            markExpandWidth(hwnd)
+            markExpandHeight(hwnd)
+        }
 
         return hwnd
     }
@@ -5532,12 +6031,15 @@ extension DrawingContext {
     }
 
     public func setLineCap(_ cap: LineCap) {
-        // D2D supports line caps via stroke style — for basic usage, ignored.
-        // Full support would require ID2D1StrokeStyle creation.
+        let c = ctx
+        c.lineCap = cap
+        c.ensureStrokeStyle()
     }
 
     public func setLineJoin(_ join: LineJoin) {
-        // D2D supports line joins via stroke style — for basic usage, ignored.
+        let c = ctx
+        c.lineJoin = join
+        c.ensureStrokeStyle()
     }
 
     // MARK: - Path operations (deferred — drawn on stroke/fill)
@@ -5576,6 +6078,7 @@ extension DrawingContext {
     public func stroke() {
         let c = ctx
         c.applyColor()
+        let ss = c.strokeStyle
         var lastX: Float = c.currentX
         var lastY: Float = c.currentY
 
@@ -5586,18 +6089,33 @@ extension DrawingContext {
                 lastY = y
 
             case .lineTo(let x, let y):
-                d2d1_RenderTarget_DrawLine(c.renderTarget, c.brush,
-                                            lastX, lastY, x, y, c.lineWidth)
+                if let ss = ss {
+                    d2d1_RenderTarget_DrawLineStyled(c.renderTarget, c.brush,
+                                                      lastX, lastY, x, y, c.lineWidth, ss)
+                } else {
+                    d2d1_RenderTarget_DrawLine(c.renderTarget, c.brush,
+                                                lastX, lastY, x, y, c.lineWidth)
+                }
                 lastX = x
                 lastY = y
 
             case .rectangle(let x, let y, let w, let h):
-                d2d1_RenderTarget_DrawRectangle(c.renderTarget, c.brush,
-                                                 x, y, w, h, c.lineWidth)
+                if let ss = ss {
+                    d2d1_RenderTarget_DrawRectangleStyled(c.renderTarget, c.brush,
+                                                           x, y, w, h, c.lineWidth, ss)
+                } else {
+                    d2d1_RenderTarget_DrawRectangle(c.renderTarget, c.brush,
+                                                     x, y, w, h, c.lineWidth)
+                }
 
             case .ellipse(let cx, let cy, let rx, let ry):
-                d2d1_RenderTarget_DrawEllipse(c.renderTarget, c.brush,
-                                               cx, cy, rx, ry, c.lineWidth)
+                if let ss = ss {
+                    d2d1_RenderTarget_DrawEllipseStyled(c.renderTarget, c.brush,
+                                                         cx, cy, rx, ry, c.lineWidth, ss)
+                } else {
+                    d2d1_RenderTarget_DrawEllipse(c.renderTarget, c.brush,
+                                                   cx, cy, rx, ry, c.lineWidth)
+                }
 
             case .arc(let cx, let cy, let r, let start, let end):
                 // Approximate arc with line segments
@@ -5609,8 +6127,13 @@ extension DrawingContext {
                     let angle = start + step * Float(i)
                     let nx = cx + r * cos(angle)
                     let ny = cy + r * sin(angle)
-                    d2d1_RenderTarget_DrawLine(c.renderTarget, c.brush,
-                                                prevX, prevY, nx, ny, c.lineWidth)
+                    if let ss = ss {
+                        d2d1_RenderTarget_DrawLineStyled(c.renderTarget, c.brush,
+                                                          prevX, prevY, nx, ny, c.lineWidth, ss)
+                    } else {
+                        d2d1_RenderTarget_DrawLine(c.renderTarget, c.brush,
+                                                    prevX, prevY, nx, ny, c.lineWidth)
+                    }
                     prevX = nx
                     prevY = ny
                 }
@@ -5625,19 +6148,98 @@ extension DrawingContext {
         let c = ctx
         c.applyColor()
 
-        for element in c.path {
+        // Check if path has only simple shapes (fast path)
+        let hasComplexElements = c.path.contains { element in
             switch element {
-            case .moveTo, .lineTo, .arc:
-                break  // Lines and arcs don't fill (would need ID2D1PathGeometry)
-
-            case .rectangle(let x, let y, let w, let h):
-                d2d1_RenderTarget_FillRectangle(c.renderTarget, c.brush, x, y, w, h)
-
-            case .ellipse(let cx, let cy, let rx, let ry):
-                d2d1_RenderTarget_FillEllipse(c.renderTarget, c.brush, cx, cy, rx, ry)
+            case .moveTo, .lineTo, .arc: return true
+            case .rectangle, .ellipse: return false
             }
         }
+
+        if !hasComplexElements {
+            // Fast path: simple shapes only
+            for element in c.path {
+                switch element {
+                case .rectangle(let x, let y, let w, let h):
+                    d2d1_RenderTarget_FillRectangle(c.renderTarget, c.brush, x, y, w, h)
+                case .ellipse(let cx, let cy, let rx, let ry):
+                    d2d1_RenderTarget_FillEllipse(c.renderTarget, c.brush, cx, cy, rx, ry)
+                default: break
+                }
+            }
+        } else {
+            // Build ID2D1PathGeometry for arbitrary path fill
+            fillWithPathGeometry(c)
+        }
         c.path.removeAll()
+    }
+
+    /// Build an ID2D1PathGeometry from accumulated path elements and fill it.
+    private func fillWithPathGeometry(_ c: D2DCanvasContext) {
+        guard let factory = D2DRenderer.shared.d2dFactory else { return }
+        var geometry: D2DPathGeometry?
+        guard d2d1_Factory_CreatePathGeometry(factory, &geometry) >= 0,
+              let geometry = geometry else { return }
+        defer { d2d1_PathGeometry_Release(geometry) }
+
+        var sink: D2DGeometrySink?
+        guard d2d1_PathGeometry_Open(geometry, &sink) >= 0,
+              let sink = sink else { return }
+
+        var figureOpen = false
+        for element in c.path {
+            switch element {
+            case .moveTo(let x, let y):
+                if figureOpen { d2d1_GeometrySink_EndFigure(sink, 1) }
+                d2d1_GeometrySink_BeginFigure(sink, x, y, 1) // filled
+                figureOpen = true
+            case .lineTo(let x, let y):
+                if !figureOpen {
+                    d2d1_GeometrySink_BeginFigure(sink, x, y, 1)
+                    figureOpen = true
+                } else {
+                    d2d1_GeometrySink_AddLine(sink, x, y)
+                }
+            case .rectangle(let x, let y, let w, let h):
+                if figureOpen { d2d1_GeometrySink_EndFigure(sink, 1) }
+                d2d1_GeometrySink_BeginFigure(sink, x, y, 1)
+                d2d1_GeometrySink_AddLine(sink, x + w, y)
+                d2d1_GeometrySink_AddLine(sink, x + w, y + h)
+                d2d1_GeometrySink_AddLine(sink, x, y + h)
+                d2d1_GeometrySink_EndFigure(sink, 1) // closed
+                figureOpen = false
+            case .ellipse(let cx, let cy, let rx, let ry):
+                // Ellipse as two arcs
+                if figureOpen { d2d1_GeometrySink_EndFigure(sink, 1) }
+                d2d1_GeometrySink_BeginFigure(sink, cx - rx, cy, 1)
+                d2d1_GeometrySink_AddArc(sink, cx + rx, cy, rx, ry, 0, 0, 1) // top half
+                d2d1_GeometrySink_AddArc(sink, cx - rx, cy, rx, ry, 0, 0, 1) // bottom half
+                d2d1_GeometrySink_EndFigure(sink, 1)
+                figureOpen = false
+            case .arc(let cx, let cy, let r, let start, let end):
+                // Approximate arc with line segments for geometry sink
+                let segments = max(8, Int(abs(end - start) / (Float.pi / 16)))
+                let step = (end - start) / Float(segments)
+                let startX = cx + r * cos(start)
+                let startY = cy + r * sin(start)
+                if !figureOpen {
+                    d2d1_GeometrySink_BeginFigure(sink, startX, startY, 1)
+                    figureOpen = true
+                } else {
+                    d2d1_GeometrySink_AddLine(sink, startX, startY)
+                }
+                for i in 1...segments {
+                    let angle = start + step * Float(i)
+                    d2d1_GeometrySink_AddLine(sink, cx + r * cos(angle), cy + r * sin(angle))
+                }
+            }
+        }
+        if figureOpen { d2d1_GeometrySink_EndFigure(sink, 1) }
+
+        _ = d2d1_GeometrySink_Close(sink)
+        d2d1_GeometrySink_Release(sink)
+
+        d2d1_RenderTarget_FillGeometry(c.renderTarget, geometry, c.brush)
     }
 
     public func paint() {
@@ -5654,6 +6256,7 @@ extension DrawingContext {
         c.stateStack.append(CanvasGraphicsState(
             colorR: c.colorR, colorG: c.colorG, colorB: c.colorB, colorA: c.colorA,
             lineWidth: c.lineWidth, currentX: c.currentX, currentY: c.currentY,
+            lineCap: c.lineCap, lineJoin: c.lineJoin,
             m11: c.m11, m12: c.m12, m21: c.m21, m22: c.m22, dx: c.dx, dy: c.dy
         ))
     }
@@ -5668,6 +6271,12 @@ extension DrawingContext {
         c.lineWidth = state.lineWidth
         c.currentX = state.currentX
         c.currentY = state.currentY
+        // Restore line cap/join
+        if c.lineCap != state.lineCap || c.lineJoin != state.lineJoin {
+            c.lineCap = state.lineCap
+            c.lineJoin = state.lineJoin
+            c.ensureStrokeStyle()
+        }
         // Restore transform
         c.m11 = state.m11; c.m12 = state.m12
         c.m21 = state.m21; c.m22 = state.m22
@@ -5683,6 +6292,135 @@ extension DrawingContext {
         c.m21 *= Float(x); c.m22 *= Float(y)
         d2d1_RenderTarget_SetTransform(c.renderTarget,
             c.m11, c.m12, c.m21, c.m22, c.dx, c.dy)
+    }
+
+    // MARK: - Path-based drawing (SwiftUI-compatible)
+
+    /// Stroke a Path with the given shading and style.
+    public func stroke(_ path: Path, with shading: Shading, style: StrokeStyle = StrokeStyle()) {
+        let c = ctx
+        let (r, g, b, a) = shading.colorComponents
+        d2d1_SolidColorBrush_SetColor(c.brush, Float(r), Float(g), Float(b), Float(a))
+
+        guard let factory = D2DRenderer.shared.d2dFactory else { return }
+        guard let geometry = buildPathGeometry(path, factory: factory, filled: false) else { return }
+        defer { d2d1_PathGeometry_Release(geometry) }
+
+        // Create stroke style if needed
+        let capInt: Int32 = { switch style.lineCap { case .butt: return 0; case .square: return 1; case .round: return 2 } }()
+        let joinInt: Int32 = { switch style.lineJoin { case .miter: return 0; case .bevel: return 1; case .round: return 2 } }()
+        var strokeStyle: D2DStrokeStyle?
+        if d2d1_Factory_CreateStrokeStyle(factory, capInt, joinInt, &strokeStyle) >= 0,
+           let ss = strokeStyle {
+            d2d1_RenderTarget_DrawGeometryStyled(c.renderTarget, geometry, c.brush,
+                                                  Float(style.lineWidth), ss)
+            d2d1_StrokeStyle_Release(ss)
+        } else {
+            d2d1_RenderTarget_DrawGeometry(c.renderTarget, geometry, c.brush,
+                                            Float(style.lineWidth))
+        }
+    }
+
+    /// Fill a Path with the given shading.
+    public func fill(_ path: Path, with shading: Shading) {
+        let c = ctx
+        let (r, g, b, a) = shading.colorComponents
+        d2d1_SolidColorBrush_SetColor(c.brush, Float(r), Float(g), Float(b), Float(a))
+
+        guard let factory = D2DRenderer.shared.d2dFactory else { return }
+        guard let geometry = buildPathGeometry(path, factory: factory, filled: true) else { return }
+        defer { d2d1_PathGeometry_Release(geometry) }
+
+        d2d1_RenderTarget_FillGeometry(c.renderTarget, geometry, c.brush)
+    }
+
+    /// Build an ID2D1PathGeometry from a Path.
+    private func buildPathGeometry(_ path: Path, factory: D2DFactory, filled: Bool) -> D2DPathGeometry? {
+        var geometry: D2DPathGeometry?
+        guard d2d1_Factory_CreatePathGeometry(factory, &geometry) >= 0,
+              let geometry = geometry else { return nil }
+
+        var sink: D2DGeometrySink?
+        guard d2d1_PathGeometry_Open(geometry, &sink) >= 0,
+              let sink = sink else {
+            d2d1_PathGeometry_Release(geometry)
+            return nil
+        }
+
+        var figureOpen = false
+        let fillMode: Int32 = filled ? 1 : 0
+
+        for element in path.elements {
+            switch element {
+            case .moveTo(let pt):
+                if figureOpen { d2d1_GeometrySink_EndFigure(sink, 0) }
+                d2d1_GeometrySink_BeginFigure(sink, Float(pt.x), Float(pt.y), fillMode)
+                figureOpen = true
+
+            case .lineTo(let pt):
+                if !figureOpen {
+                    d2d1_GeometrySink_BeginFigure(sink, Float(pt.x), Float(pt.y), fillMode)
+                    figureOpen = true
+                } else {
+                    d2d1_GeometrySink_AddLine(sink, Float(pt.x), Float(pt.y))
+                }
+
+            case .curve(let end, let c1, let c2):
+                if !figureOpen {
+                    d2d1_GeometrySink_BeginFigure(sink, Float(end.x), Float(end.y), fillMode)
+                    figureOpen = true
+                } else {
+                    d2d1_GeometrySink_AddBezier(sink,
+                        Float(c1.x), Float(c1.y),
+                        Float(c2.x), Float(c2.y),
+                        Float(end.x), Float(end.y))
+                }
+
+            case .arc(let center, let radius, let startAngle, let endAngle, let clockwise):
+                // Approximate with line segments, respecting sweep direction.
+                // SwiftUI's clockwise is in the flipped coordinate system (y-down),
+                // which means clockwise=true → negative angle sweep in math coords.
+                let sweep: CGFloat = clockwise
+                    ? -(((startAngle - endAngle).truncatingRemainder(dividingBy: 2 * .pi) + 2 * .pi).truncatingRemainder(dividingBy: 2 * .pi))
+                    : ((endAngle - startAngle).truncatingRemainder(dividingBy: 2 * .pi) + 2 * .pi).truncatingRemainder(dividingBy: 2 * .pi)
+                let actualEnd = startAngle + sweep
+                let segments = max(8, Int(abs(sweep) / (CGFloat.pi / 16)))
+                let step = sweep / CGFloat(segments)
+                let sx = center.x + radius * cos(startAngle)
+                let sy = center.y + radius * sin(startAngle)
+                if !figureOpen {
+                    d2d1_GeometrySink_BeginFigure(sink, Float(sx), Float(sy), fillMode)
+                    figureOpen = true
+                } else {
+                    d2d1_GeometrySink_AddLine(sink, Float(sx), Float(sy))
+                }
+                for i in 1...segments {
+                    let angle = startAngle + step * CGFloat(i)
+                    d2d1_GeometrySink_AddLine(sink,
+                        Float(center.x + radius * cos(angle)),
+                        Float(center.y + radius * sin(angle)))
+                }
+
+            case .ellipse(let center, let rx, let ry):
+                if figureOpen { d2d1_GeometrySink_EndFigure(sink, 0); figureOpen = false }
+                d2d1_GeometrySink_BeginFigure(sink, Float(center.x - rx), Float(center.y), fillMode)
+                d2d1_GeometrySink_AddArc(sink,
+                    Float(center.x + rx), Float(center.y), Float(rx), Float(ry), 0, 0, 1)
+                d2d1_GeometrySink_AddArc(sink,
+                    Float(center.x - rx), Float(center.y), Float(rx), Float(ry), 0, 0, 1)
+                d2d1_GeometrySink_EndFigure(sink, 1)
+                figureOpen = false
+
+            case .closeSubpath:
+                if figureOpen { d2d1_GeometrySink_EndFigure(sink, 1); figureOpen = false }
+            }
+        }
+        if figureOpen { d2d1_GeometrySink_EndFigure(sink, filled ? 1 : 0) }
+
+        _ = d2d1_GeometrySink_Close(sink)
+        d2d1_GeometrySink_Release(sink)
+
+        return geometry
     }
 }
 

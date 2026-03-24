@@ -6,6 +6,7 @@ import CWin32
 /// carrying forward the abandoned retained-tree scaffolding.
 public enum Win32HostedNodeKind: String {
     case background
+    case border
     case color
     case frame
     case foregroundColor
@@ -40,6 +41,7 @@ public func hostedNodeKind(of hwnd: HWND) -> Win32HostedNodeKind {
 private func hostedNodeKindCode(_ kind: Win32HostedNodeKind) -> Int {
     switch kind {
     case .background: return 1
+    case .border: return 13
     case .color: return 2
     case .frame: return 3
     case .foregroundColor: return 4
@@ -58,6 +60,7 @@ private func hostedNodeKind(from code: Int) -> Win32HostedNodeKind {
     switch code {
     case 1: return .background
     case 2: return .color
+    case 13: return .border
     case 3: return .frame
     case 4: return .foregroundColor
     case 5: return .hostContainer

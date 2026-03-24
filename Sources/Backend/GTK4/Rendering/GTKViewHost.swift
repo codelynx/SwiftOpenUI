@@ -167,14 +167,22 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
 
             let previousEnv = getCurrentEnvironment()
             setCurrentEnvironment(capturedEnvironment)
-            let newDescriptor = describeBody()
+            let described = gtkDescribeCapturingCanvasPayloads(describeBody)
             setCurrentEnvironment(previousEnv)
 
-            let newIdentified = gtkIdentifyDescriptorTree(newDescriptor)
+            let newIdentified = gtkIdentifyDescriptorTree(described.descriptor)
+            let canvasPayloads = gtkCanvasPayloadsByIdentity(
+                descriptorRoot: newIdentified,
+                payloads: described.canvasPayloads
+            )
             let plan = gtkPlanDescriptorTree(old: oldRetained, new: newIdentified)
 
             if gtkCanApplyTextColorHostMutation(plan: plan) {
-                let action = gtkExecuteDescriptorPlan(old: oldExecutor, plan: plan)
+                let action = gtkExecuteDescriptorPlan(
+                    old: oldExecutor,
+                    plan: plan,
+                    canvasPayloadsByIdentity: canvasPayloads
+                )
 
                 // Verify all slots are still valid before mutating
                 let allSlotsValid = gtkAllSlotsValid(action: action)
@@ -326,12 +334,19 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         if let describeBody = describeBody {
             let previousEnvForDesc = getCurrentEnvironment()
             setCurrentEnvironment(capturedEnvironment)
-            let descriptor = describeBody()
+            let described = gtkDescribeCapturingCanvasPayloads(describeBody)
             setCurrentEnvironment(previousEnvForDesc)
 
-            let identified = gtkIdentifyDescriptorTree(descriptor)
+            let identified = gtkIdentifyDescriptorTree(described.descriptor)
+            let canvasPayloads = gtkCanvasPayloadsByIdentity(
+                descriptorRoot: identified,
+                payloads: described.canvasPayloads
+            )
             lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
-            var executor = gtkMakeExecutorTree(from: identified)
+            var executor = gtkMakeExecutorTree(
+                from: identified,
+                canvasPayloadsByIdentity: canvasPayloads
+            )
             executor = gtkCaptureSupportedNativeSlots(
                 from: newChild,
                 descriptorRoot: identified,

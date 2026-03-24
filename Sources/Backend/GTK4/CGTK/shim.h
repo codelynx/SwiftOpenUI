@@ -597,6 +597,28 @@ gtk_swift_cairo_scale(cairo_t *cr, double sx, double sy) {
 }
 
 static inline void
+gtk_swift_cairo_curve_to(cairo_t *cr, double x1, double y1,
+                          double x2, double y2, double x3, double y3) {
+    cairo_curve_to(cr, x1, y1, x2, y2, x3, y3);
+}
+
+static inline void
+gtk_swift_cairo_close_path(cairo_t *cr) {
+    cairo_close_path(cr);
+}
+
+static inline void
+gtk_swift_cairo_arc_negative(cairo_t *cr, double xc, double yc, double radius,
+                              double angle1, double angle2) {
+    cairo_arc_negative(cr, xc, yc, radius, angle1, angle2);
+}
+
+static inline void
+gtk_swift_cairo_new_path(cairo_t *cr) {
+    cairo_new_path(cr);
+}
+
+static inline void
 gtk_swift_cairo_set_source_surface(cairo_t *cr, cairo_surface_t *surface,
                                     double x, double y) {
     cairo_set_source_surface(cr, surface, x, y);

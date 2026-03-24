@@ -5,6 +5,8 @@ import Foundation
 
 /// Marker string for Spacer widgets.
 let gtkSwiftSpacerMarker = "gtk-swift-spacer"
+/// Marker string for Divider widgets.
+let gtkSwiftDividerMarker = "gtk-swift-divider"
 
 // MARK: - GTK rendering protocol
 
@@ -135,6 +137,8 @@ extension Divider: GTKRenderable, GTKDescribable {
     public func gtkCreateWidget() -> OpaquePointer {
         let sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)!
         gtk_widget_set_hexpand(sep, 1)
+        let gobject = UnsafeMutableRawPointer(sep).assumingMemoryBound(to: GObject.self)
+        g_object_set_data(gobject, gtkSwiftDividerMarker, UnsafeMutableRawPointer(bitPattern: 1))
         return opaqueFromWidget(sep)
     }
 }
@@ -313,7 +317,16 @@ extension Color: GTKRenderable, GTKDescribable {
     }
 }
 
-extension Button: GTKRenderable {
+extension Button: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        // Opaque stable leaf — Button action closures are captured at widget
+        // creation and do not need descriptor-level mutation.  Declaring a
+        // dedicated kind prevents the narrow-mutation guard from rejecting
+        // the entire tree when a Button appears alongside mutable nodes
+        // (Canvas, Text, Slider, etc.).
+        GTK4DescriptorNode(kind: .button, typeName: "Button")
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let button: UnsafeMutablePointer<GtkWidget>
 
@@ -553,6 +566,11 @@ private func gtkRenderFallbackHStack(
         if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
             gtk_widget_set_hexpand(widget, 1)
             gtk_widget_set_vexpand(widget, 0)
+        }
+        if g_object_get_data(gobject, gtkSwiftDividerMarker) != nil {
+            gtk_swift_orientable_set_orientation(widget, GTK_ORIENTATION_VERTICAL)
+            gtk_widget_set_hexpand(widget, 0)
+            gtk_widget_set_vexpand(widget, 1)
         }
         if gtk_widget_get_hexpand(widget) != 0 { needsHExpand = true }
         if gtk_widget_get_vexpand(widget) != 0 {
@@ -942,7 +960,19 @@ private class TapClosureBox {
     }
 }
 
-extension TapGestureView: GTKRenderable {
+extension TapGestureView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        // Transparent wrapper: describe content so sibling Canvas nodes
+        // participate in the narrow mutation path. This preserves gesture
+        // widgets across state-driven redraws.
+        let childDescriptor = gtkDescribeView(content)
+        return GTK4DescriptorNode(
+            kind: .composite,
+            typeName: "TapGestureView",
+            children: [childDescriptor]
+        )
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         let gesture = gtk_gesture_click_new()!
@@ -1004,7 +1034,19 @@ private class GTKDragState {
     var dragStarted = false
 }
 
-extension DragGestureView: GTKRenderable {
+extension DragGestureView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        // Transparent wrapper: describe content so Canvas (and other
+        // describable children) participate in the narrow mutation path.
+        // This preserves the gesture widget across state-driven redraws.
+        let childDescriptor = gtkDescribeView(content)
+        return GTK4DescriptorNode(
+            kind: .composite,
+            typeName: "DragGestureView",
+            children: [childDescriptor]
+        )
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         let gesture = gtk_gesture_drag_new()!
@@ -1950,64 +1992,11 @@ extension Slider: GTKRenderable, GTKDescribable {
             GConnectFlags(rawValue: 0)
         )
 
-        // Interactive deferral: suppress rebuilds during pointer drag
-        let gesture = gtk_gesture_click_new()!
-        let gestureStatePtr = Unmanaged.passRetained(state).toOpaque()
-
-        // Pressed → begin interactive update
-        g_signal_connect_data(
-            gpointer(gesture),
-            "pressed",
-            unsafeBitCast({ (_: gpointer?, _: gint, _: gdouble, _: gdouble, userData: gpointer?) in
-                let state = Unmanaged<SliderState>.fromOpaque(userData!).takeUnretainedValue()
-                if !state.dragging {
-                    state.dragging = true
-                    state.host?.beginInteractiveUpdate()
-                }
-            } as @convention(c) (gpointer?, gint, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
-            gestureStatePtr,
-            nil,
-            GConnectFlags(rawValue: 0)
-        )
-
-        // Released → end interactive update
-        g_signal_connect_data(
-            gpointer(gesture),
-            "released",
-            unsafeBitCast({ (_: gpointer?, _: gint, _: gdouble, _: gdouble, userData: gpointer?) in
-                let state = Unmanaged<SliderState>.fromOpaque(userData!).takeUnretainedValue()
-                if state.dragging {
-                    state.dragging = false
-                    state.host?.endInteractiveUpdate()
-                }
-            } as @convention(c) (gpointer?, gint, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
-            gestureStatePtr,
-            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
-                Unmanaged<SliderState>.fromOpaque(userData!).release()
-            },
-            GConnectFlags(rawValue: 0)
-        )
-
-        gtk_swift_add_gesture(scale, gesture)
-
-        // Cleanup on widget destruction: end interactive update if still dragging
-        let destroyStatePtr = Unmanaged.passRetained(state).toOpaque()
-        g_signal_connect_data(
-            gpointer(scale),
-            "destroy",
-            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
-                let state = Unmanaged<SliderState>.fromOpaque(userData!).takeUnretainedValue()
-                if state.dragging {
-                    state.dragging = false
-                    state.host?.endInteractiveUpdate()
-                }
-            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
-            destroyStatePtr,
-            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
-                Unmanaged<SliderState>.fromOpaque(userData!).release()
-            },
-            GConnectFlags(rawValue: 0)
-        )
+        // Note: interactive deferral (beginInteractiveUpdate/endInteractiveUpdate)
+        // removed — GtkGestureClick's "released" doesn't fire when the slider
+        // drag starts (GTK cancels the click gesture). This left
+        // interactiveUpdateDepth stuck > 0, blocking all future rebuilds.
+        // The debounced commit (150ms) already prevents constant rebuilds.
 
         return opaqueFromWidget(scale)
     }
@@ -2015,7 +2004,18 @@ extension Slider: GTKRenderable, GTKDescribable {
 
 // MARK: - ScrollView GTK extension
 
-extension ScrollView: GTKRenderable {
+extension ScrollView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        // Transparent wrapper: describe content so child Canvas nodes
+        // participate in the narrow mutation path.
+        let childDescriptor = gtkDescribeView(content)
+        return GTK4DescriptorNode(
+            kind: .composite,
+            typeName: "ScrollView",
+            children: [childDescriptor]
+        )
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let scrolled = gtk_scrolled_window_new()!
         let scrolledOp = OpaquePointer(scrolled)
@@ -3531,10 +3531,20 @@ extension ConfirmationDialogView: GTKRenderable {
 // MARK: - Canvas GTK extension
 
 /// Wraps draw closure for C callback bridging.
-private class DrawClosureBox {
-    let closure: (DrawingContext, Int, Int) -> Void
+class DrawClosureBox {
+    var closure: (DrawingContext, Int, Int) -> Void
     init(_ closure: @escaping (DrawingContext, Int, Int) -> Void) {
         self.closure = closure
+    }
+}
+
+class SizedDrawClosureBox {
+    var closure: (DrawingContext, Int, Int) -> Void
+    var sizedClosure: ((DrawingContext, CGSize) -> Void)?
+    init(_ closure: @escaping (DrawingContext, Int, Int) -> Void,
+         sized: ((DrawingContext, CGSize) -> Void)? = nil) {
+        self.closure = closure
+        self.sizedClosure = sized
     }
 }
 
@@ -3599,9 +3609,98 @@ extension DrawingContext {
     public func setSourceSurface(_ surface: OpaquePointer, x: Double = 0, y: Double = 0) {
         gtk_swift_cairo_set_source_surface(cr, surface, x, y)
     }
+
+    // MARK: - Path-based drawing
+
+    /// Stroke a Path with the given shading and style.
+    public func stroke(_ path: Path, with shading: Shading, style: StrokeStyle = StrokeStyle()) {
+        let (r, g, b, a) = shading.colorComponents
+        gtk_swift_cairo_set_source_rgba(cr, r, g, b, a)
+        gtk_swift_cairo_set_line_width(cr, Double(style.lineWidth))
+
+        let cairoCap: cairo_line_cap_t
+        switch style.lineCap {
+        case .butt:   cairoCap = CAIRO_LINE_CAP_BUTT
+        case .round:  cairoCap = CAIRO_LINE_CAP_ROUND
+        case .square: cairoCap = CAIRO_LINE_CAP_SQUARE
+        }
+        gtk_swift_cairo_set_line_cap(cr, cairoCap)
+
+        let cairoJoin: cairo_line_join_t
+        switch style.lineJoin {
+        case .miter: cairoJoin = CAIRO_LINE_JOIN_MITER
+        case .bevel: cairoJoin = CAIRO_LINE_JOIN_BEVEL
+        case .round: cairoJoin = CAIRO_LINE_JOIN_ROUND
+        }
+        gtk_swift_cairo_set_line_join(cr, cairoJoin)
+
+        applyPathElements(path)
+        gtk_swift_cairo_stroke(cr)
+    }
+
+    /// Fill a Path with the given shading.
+    public func fill(_ path: Path, with shading: Shading) {
+        let (r, g, b, a) = shading.colorComponents
+        gtk_swift_cairo_set_source_rgba(cr, r, g, b, a)
+        applyPathElements(path)
+        gtk_swift_cairo_fill(cr)
+    }
+
+    /// Walk path elements and emit corresponding Cairo calls.
+    private func applyPathElements(_ path: Path) {
+        gtk_swift_cairo_new_path(cr)
+        for element in path.elements {
+            switch element {
+            case .moveTo(let pt):
+                gtk_swift_cairo_move_to(cr, Double(pt.x), Double(pt.y))
+            case .lineTo(let pt):
+                gtk_swift_cairo_line_to(cr, Double(pt.x), Double(pt.y))
+            case .curve(let end, let c1, let c2):
+                gtk_swift_cairo_curve_to(cr,
+                    Double(c1.x), Double(c1.y),
+                    Double(c2.x), Double(c2.y),
+                    Double(end.x), Double(end.y))
+            case .arc(let center, let radius, let startAngle, let endAngle, let clockwise):
+                // SwiftUI clockwise = visually CW in y-down = cairo_arc_negative
+                if clockwise {
+                    gtk_swift_cairo_arc_negative(cr,
+                        Double(center.x), Double(center.y), Double(radius),
+                        Double(startAngle), Double(endAngle))
+                } else {
+                    gtk_swift_cairo_arc(cr,
+                        Double(center.x), Double(center.y), Double(radius),
+                        Double(startAngle), Double(endAngle))
+                }
+            case .ellipse(let center, let rx, let ry):
+                guard rx > 0 && ry > 0 else { continue }
+                gtk_swift_cairo_save(cr)
+                gtk_swift_cairo_scale(cr, 1.0, Double(ry / rx))
+                gtk_swift_cairo_arc(cr,
+                    Double(center.x), Double(center.y) * Double(rx / ry), Double(rx),
+                    0, 2 * .pi)
+                gtk_swift_cairo_restore(cr)
+            case .closeSubpath:
+                gtk_swift_cairo_close_path(cr)
+            }
+        }
+    }
 }
 
-extension Canvas: GTKRenderable {
+extension Canvas: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        gtkCollectCanvasPayload(GTK4CanvasPayload(
+            width: width,
+            height: height,
+            drawHandler: drawHandler,
+            sizedDrawHandler: sizedDrawHandler
+        ))
+        return GTK4DescriptorNode(
+            kind: .canvas,
+            typeName: "Canvas",
+            props: .canvas(GTK4CanvasDescriptor(width: width, height: height))
+        )
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let area = gtk_drawing_area_new()!
 
@@ -3621,7 +3720,12 @@ extension Canvas: GTKRenderable {
             gtk_widget_set_vexpand(area, 1)
         }
 
-        let box = Unmanaged.passRetained(DrawClosureBox(drawHandler)).toOpaque()
+        let box = Unmanaged.passRetained(
+            SizedDrawClosureBox(drawHandler, sized: sizedDrawHandler)
+        ).toOpaque()
+        let gobject = UnsafeMutableRawPointer(area).assumingMemoryBound(to: GObject.self)
+        g_object_set_data(gobject, "gtk-swift-canvas-draw-box", box)
+        gtkMarkHostedNodeKind(area, kind: .canvas)
 
         gtk_swift_drawing_area_set_draw_func(
             area,
@@ -3630,14 +3734,18 @@ extension Canvas: GTKRenderable {
                w: gint, h: gint,
                userData: gpointer?) in
                 guard let cr = cr, let userData = userData else { return }
-                let box = Unmanaged<DrawClosureBox>.fromOpaque(userData).takeUnretainedValue()
+                let box = Unmanaged<SizedDrawClosureBox>.fromOpaque(userData).takeUnretainedValue()
                 let context = DrawingContext(cr: cr)
-                box.closure(context, Int(w), Int(h))
+                if let sizedHandler = box.sizedClosure {
+                    sizedHandler(context, CGSize(width: CGFloat(w), height: CGFloat(h)))
+                } else {
+                    box.closure(context, Int(w), Int(h))
+                }
             },
             box,
             { (userData: gpointer?) in
                 guard let userData = userData else { return }
-                Unmanaged<DrawClosureBox>.fromOpaque(userData).release()
+                Unmanaged<SizedDrawClosureBox>.fromOpaque(userData).release()
             }
         )
 
@@ -3673,6 +3781,34 @@ private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {
     gtk_widget_set_hexpand(host.container, childHexpand ? 1 : 0)
     gtk_widget_set_vexpand(host.container, childVexpand ? 1 : 0)
     gtk_box_append(boxPointer(host.container), child)
+
+    // Capture initial descriptor state so the narrow mutation path is
+    // available from the very first @State change.  Without this, the
+    // first rebuild always takes the full-teardown path, which destroys
+    // gesture recognisers attached to child widgets (e.g. Canvas + onDrag).
+    if let describeBody = host.describeBody {
+        let previousEnvForDesc = getCurrentEnvironment()
+        setCurrentEnvironment(host.capturedEnvironment)
+        let described = gtkDescribeCapturingCanvasPayloads(describeBody)
+        setCurrentEnvironment(previousEnvForDesc)
+
+        let identified = gtkIdentifyDescriptorTree(described.descriptor)
+        let canvasPayloads = gtkCanvasPayloadsByIdentity(
+            descriptorRoot: identified,
+            payloads: described.canvasPayloads
+        )
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(
+            from: identified,
+            canvasPayloadsByIdentity: canvasPayloads
+        )
+        executor = gtkCaptureSupportedNativeSlots(
+            from: child,
+            descriptorRoot: identified,
+            executorRoot: executor
+        )
+        host.retainedExecutor = executor
+    }
 
     return opaqueFromWidget(host.container)
 }

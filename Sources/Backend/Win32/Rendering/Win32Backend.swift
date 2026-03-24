@@ -69,6 +69,20 @@ extension WindowGroup: Win32WindowRenderable {
             break
         }
 
+        // SwiftUI-compatible .windowResizability() — takes precedence
+        // over windowResizeBehavior when set.
+        // Only remove WS_THICKFRAME (drag-to-resize); keep WS_MAXIMIZEBOX
+        // to match GTK4 behavior where gtk_window_set_resizable(0) still
+        // allows maximize via the window manager.
+        switch windowResizability {
+        case .contentSize:
+            style &= ~DWORD(WS_THICKFRAME)
+        case .contentMinSize, .automatic:
+            break
+        case nil:
+            break
+        }
+
         // Create with default size initially; we'll resize after rendering content
         let titleWide: [WCHAR] = Array(title.utf16) + [0]
         let hwnd = titleWide.withUnsafeBufferPointer { titlePtr in

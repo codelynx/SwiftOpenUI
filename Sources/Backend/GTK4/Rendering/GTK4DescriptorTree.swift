@@ -1,4 +1,5 @@
 import SwiftOpenUI
+import Foundation
 import CGTK
 import CGTKBridge
 
@@ -8,6 +9,8 @@ import CGTKBridge
 public enum GTK4DescriptorKind: Equatable {
     case background
     case border
+    case button
+    case canvas
     case composite
     case divider
     case font
@@ -98,12 +101,37 @@ public struct GTK4FontDescriptor: Equatable {
     public let font: Font
 }
 
+public struct GTK4CanvasDescriptor: Equatable {
+    public let width: Int
+    public let height: Int
+}
+
+public final class GTK4CanvasPayload {
+    public let width: Int
+    public let height: Int
+    public let drawHandler: (DrawingContext, Int, Int) -> Void
+    public let sizedDrawHandler: ((DrawingContext, CGSize) -> Void)?
+
+    public init(
+        width: Int,
+        height: Int,
+        drawHandler: @escaping (DrawingContext, Int, Int) -> Void,
+        sizedDrawHandler: ((DrawingContext, CGSize) -> Void)? = nil
+    ) {
+        self.width = width
+        self.height = height
+        self.drawHandler = drawHandler
+        self.sizedDrawHandler = sizedDrawHandler
+    }
+}
+
 // MARK: - Descriptor props and node
 
 public enum GTK4DescriptorProps: Equatable {
     case none
     case background(GTK4ColorDescriptor)
     case border(GTK4BorderDescriptor)
+    case canvas(GTK4CanvasDescriptor)
     case font(GTK4FontDescriptor)
     case text(GTK4TextDescriptor)
     case color(GTK4ColorDescriptor)
@@ -176,22 +204,25 @@ public struct GTK4RetainedDescriptorNode: Equatable {
 
 // MARK: - Retained executor node
 
-public struct GTK4RetainedExecutorNode: Equatable {
+public struct GTK4RetainedExecutorNode {
     public let identity: GTK4DescriptorIdentity
     public let kind: GTK4DescriptorKind
     public let lastDescriptor: GTK4DescriptorNode
     public let nativeSlotID: Int?
+    public let canvasPayload: GTK4CanvasPayload?
     public let children: [GTK4RetainedExecutorNode]
 
     public init(identity: GTK4DescriptorIdentity,
                 kind: GTK4DescriptorKind,
                 lastDescriptor: GTK4DescriptorNode,
                 nativeSlotID: Int? = nil,
+                canvasPayload: GTK4CanvasPayload? = nil,
                 children: [GTK4RetainedExecutorNode] = []) {
         self.identity = identity
         self.kind = kind
         self.lastDescriptor = lastDescriptor
         self.nativeSlotID = nativeSlotID
+        self.canvasPayload = canvasPayload
         self.children = children
     }
 }
@@ -236,6 +267,7 @@ public enum GTK4DescriptorUpdateIntent: Equatable {
     case none
     case backgroundColor
     case borderStyle
+    case canvasContent
     case colorFill
     case fontStyle
     case frameLayout
@@ -281,7 +313,7 @@ public enum GTK4ExecutorActionKind: Equatable {
     case replace
 }
 
-public struct GTK4ExecutorAction: Equatable {
+public struct GTK4ExecutorAction {
     public let identity: GTK4DescriptorIdentity
     public let kind: GTK4ExecutorActionKind
     public let updateIntent: GTK4DescriptorUpdateIntent
@@ -352,6 +384,35 @@ public protocol GTKDescribable {
     func gtkDescribeNode() -> GTK4DescriptorNode
 }
 
+private final class GTK4CanvasPayloadCollector {
+    var payloads: [GTK4CanvasPayload] = []
+}
+
+private var gtkCanvasPayloadCollectorKey: pthread_key_t = {
+    var key: pthread_key_t = 0
+    pthread_key_create(&key, nil)
+    return key
+}()
+
+public func gtkCollectCanvasPayload(_ payload: GTK4CanvasPayload) {
+    guard let raw = pthread_getspecific(gtkCanvasPayloadCollectorKey) else { return }
+    let collector = Unmanaged<GTK4CanvasPayloadCollector>.fromOpaque(raw).takeUnretainedValue()
+    collector.payloads.append(payload)
+}
+
+public func gtkDescribeCapturingCanvasPayloads(
+    _ describe: () -> GTK4DescriptorNode
+) -> (descriptor: GTK4DescriptorNode, canvasPayloads: [GTK4CanvasPayload]) {
+    let collector = GTK4CanvasPayloadCollector()
+    let retained = Unmanaged.passRetained(collector)
+    let previous = pthread_getspecific(gtkCanvasPayloadCollectorKey)
+    pthread_setspecific(gtkCanvasPayloadCollectorKey, retained.toOpaque())
+    let descriptor = describe()
+    pthread_setspecific(gtkCanvasPayloadCollectorKey, previous)
+    retained.release()
+    return (descriptor, collector.payloads)
+}
+
 /// Build a GTK4-local descriptor tree without creating widgets.
 public func gtkDescribeView<V: View>(_ view: V) -> GTK4DescriptorNode {
     if let describable = view as? GTKDescribable {
@@ -405,14 +466,20 @@ public func gtkRetainDescriptorTree(_ node: GTK4IdentifiedDescriptorNode) -> GTK
     )
 }
 
-public func gtkMakeExecutorTree(from node: GTK4IdentifiedDescriptorNode,
-                                nativeSlotID: Int? = nil) -> GTK4RetainedExecutorNode {
+public func gtkMakeExecutorTree(
+    from node: GTK4IdentifiedDescriptorNode,
+    nativeSlotID: Int? = nil,
+    canvasPayloadsByIdentity: [GTK4DescriptorIdentity: GTK4CanvasPayload] = [:]
+) -> GTK4RetainedExecutorNode {
     GTK4RetainedExecutorNode(
         identity: node.identity,
         kind: node.descriptor.kind,
         lastDescriptor: node.descriptor,
         nativeSlotID: nativeSlotID,
-        children: node.children.map { gtkMakeExecutorTree(from: $0) }
+        canvasPayload: canvasPayloadsByIdentity[node.identity],
+        children: node.children.map {
+            gtkMakeExecutorTree(from: $0, canvasPayloadsByIdentity: canvasPayloadsByIdentity)
+        }
     )
 }
 
@@ -471,7 +538,12 @@ public func gtkPlanDescriptorTree(old: GTK4RetainedDescriptorNode?,
     let childPlans = zip(old.children, new.children).map { oldChild, newChild in
         gtkPlanDescriptorTree(old: oldChild, new: newChild)
     }
-    let localKind: GTK4DescriptorPlanKind = old.descriptor.props == new.descriptor.props ? .reuse : .update
+    let localKind: GTK4DescriptorPlanKind
+    if new.descriptor.kind == .canvas {
+        localKind = .update
+    } else {
+        localKind = old.descriptor.props == new.descriptor.props ? .reuse : .update
+    }
     let updateIntent: GTK4DescriptorUpdateIntent =
         localKind == .update ? gtkUpdateIntent(old: old.descriptor, new: new.descriptor) : .none
 
@@ -491,6 +563,7 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
     switch new.kind {
     case .background:    return .backgroundColor
     case .border:        return .borderStyle
+    case .canvas:        return .canvasContent
     case .color:         return .colorFill
     case .frame:         return .frameLayout
     case .foregroundColor: return .foregroundColor
@@ -506,6 +579,7 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
     case .text:          return .textContent
     case .vStack:        return .vStackLayout
     case .zStack:        return .zStackLayout
+    case .button:        return .none
     case .divider:       return .none
     case .font:          return .fontStyle
     case .spacer:        return .none
@@ -515,24 +589,35 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
 
 // MARK: - Execute
 
-public func gtkExecuteDescriptorPlan(old: GTK4RetainedExecutorNode?,
-                                      plan: GTK4DescriptorPlan) -> GTK4ExecutorAction {
+public func gtkExecuteDescriptorPlan(
+    old: GTK4RetainedExecutorNode?,
+    plan: GTK4DescriptorPlan,
+    canvasPayloadsByIdentity: [GTK4DescriptorIdentity: GTK4CanvasPayload] = [:]
+) -> GTK4ExecutorAction {
     switch plan.kind {
     case .create:
-        let childActions = plan.children.map { gtkExecuteDescriptorPlan(old: nil, plan: $0) }
+        let childActions = plan.children.map {
+            gtkExecuteDescriptorPlan(old: nil, plan: $0, canvasPayloadsByIdentity: canvasPayloadsByIdentity)
+        }
         let node = GTK4RetainedExecutorNode(
             identity: plan.identity, kind: plan.newDescriptor.kind,
-            lastDescriptor: plan.newDescriptor, children: childActions.map(\.resultingNode))
+            lastDescriptor: plan.newDescriptor,
+            canvasPayload: canvasPayloadsByIdentity[plan.identity],
+            children: childActions.map(\.resultingNode))
         return GTK4ExecutorAction(
             identity: plan.identity, kind: .create,
             previousDescriptor: nil, currentDescriptor: plan.newDescriptor,
             previousNode: nil, resultingNode: node, children: childActions)
 
     case .replace:
-        let childActions = plan.children.map { gtkExecuteDescriptorPlan(old: nil, plan: $0) }
+        let childActions = plan.children.map {
+            gtkExecuteDescriptorPlan(old: nil, plan: $0, canvasPayloadsByIdentity: canvasPayloadsByIdentity)
+        }
         let node = GTK4RetainedExecutorNode(
             identity: plan.identity, kind: plan.newDescriptor.kind,
-            lastDescriptor: plan.newDescriptor, children: childActions.map(\.resultingNode))
+            lastDescriptor: plan.newDescriptor,
+            canvasPayload: canvasPayloadsByIdentity[plan.identity],
+            children: childActions.map(\.resultingNode))
         return GTK4ExecutorAction(
             identity: plan.identity, kind: .replace,
             previousDescriptor: old?.lastDescriptor ?? plan.oldDescriptor,
@@ -541,11 +626,16 @@ public func gtkExecuteDescriptorPlan(old: GTK4RetainedExecutorNode?,
 
     case .reuse, .update:
         let childActions = zip(old?.children ?? [], plan.children).map { oldChild, childPlan in
-            gtkExecuteDescriptorPlan(old: oldChild, plan: childPlan)
+            gtkExecuteDescriptorPlan(
+                old: oldChild,
+                plan: childPlan,
+                canvasPayloadsByIdentity: canvasPayloadsByIdentity
+            )
         }
         let node = GTK4RetainedExecutorNode(
             identity: plan.identity, kind: plan.newDescriptor.kind,
             lastDescriptor: plan.newDescriptor, nativeSlotID: old?.nativeSlotID,
+            canvasPayload: canvasPayloadsByIdentity[plan.identity] ?? old?.canvasPayload,
             children: childActions.map(\.resultingNode))
         return GTK4ExecutorAction(
             identity: plan.identity, kind: plan.kind == .update ? .update : .keep,
@@ -585,6 +675,7 @@ public func gtkCanApplyTextColorHostMutation(plan: GTK4DescriptorPlan) -> Bool {
         return plan.children.allSatisfy(gtkCanApplyTextColorHostMutation)
     case .update:
         guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill
+                || plan.updateIntent == .canvasContent
                 || plan.updateIntent == .sliderValue
                 || plan.updateIntent == .paddingLayout else {
             return false
@@ -614,6 +705,8 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
         return gtkTextContentHook(action: action, performMutation: performMutation)
     case .colorFill:
         return gtkColorFillHook(action: action, performMutation: performMutation)
+    case .canvasContent:
+        return gtkCanvasContentHook(action: action, performMutation: performMutation)
     case .sliderValue:
         return gtkSliderValueHook(action: action, performMutation: performMutation)
     case .paddingLayout:
@@ -625,6 +718,21 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
         return gtkUpdatedHookResult(action: action, intent: action.updateIntent,
                                      performMutation: performMutation)
     }
+}
+
+private func gtkCanvasContentHook(action: GTK4ExecutorAction,
+                                   performMutation: Bool) -> GTK4HookResult {
+    var mutationSucceeded = true
+    if performMutation,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
+       let payload = action.resultingNode.canvasPayload ?? action.previousNode?.canvasPayload {
+        mutationSucceeded = gtkSetCanvasContent(slotID: slotID, payload: payload)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
+    return gtkUpdatedHookResult(action: action, intent: .canvasContent,
+                                 performMutation: performMutation,
+                                 mutationSucceeded: mutationSucceeded)
 }
 
 private func gtkTextContentHook(action: GTK4ExecutorAction,
@@ -780,6 +888,7 @@ public func gtkColorDescriptor(_ color: Color) -> GTK4ColorDescriptor {
 public enum GTK4HostedNodeKind: String {
     case text
     case color
+    case canvas
     case slider
     case padding
     case unknown
@@ -797,6 +906,8 @@ public func gtkMarkHostedNodeKind(_ widget: UnsafeMutablePointer<GtkWidget>,
         g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindTextPtr))
     case .color:
         g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr))
+    case .canvas:
+        g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindCanvasPtr))
     case .slider:
         g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindSliderPtr))
     case .padding:
@@ -812,6 +923,7 @@ public func gtkHostedNodeKind(of widget: UnsafeMutablePointer<GtkWidget>) -> GTK
     guard let raw = g_object_get_data(gobject, gtkHostedKindKey) else { return .unknown }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindTextPtr) { return .text }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr) { return .color }
+    if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindCanvasPtr) { return .canvas }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindSliderPtr) { return .slider }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindPaddingPtr) { return .padding }
     return .unknown
@@ -827,6 +939,12 @@ private let gtkHostedKindTextPtr: UnsafePointer<CChar> = {
 private let gtkHostedKindColorPtr: UnsafePointer<CChar> = {
     let p = UnsafeMutablePointer<CChar>.allocate(capacity: 1)
     p.pointee = 2
+    return UnsafePointer(p)
+}()
+
+private let gtkHostedKindCanvasPtr: UnsafePointer<CChar> = {
+    let p = UnsafeMutablePointer<CChar>.allocate(capacity: 1)
+    p.pointee = 5
     return UnsafePointer(p)
 }()
 
@@ -847,6 +965,7 @@ public func gtkHostedKindForDescriptor(_ kind: GTK4DescriptorKind) -> GTK4Hosted
     switch kind {
     case .text: return .text
     case .color: return .color
+    case .canvas: return .canvas
     case .slider: return .slider
     case .padding: return .padding
     default: return nil
@@ -913,7 +1032,7 @@ private func gtkCollectSupportedHostedWidgets(
     into result: inout [UnsafeMutablePointer<GtkWidget>]
 ) {
     let kind = gtkHostedNodeKind(of: widget)
-    if kind == .text || kind == .color || kind == .slider || kind == .padding {
+    if kind == .text || kind == .color || kind == .canvas || kind == .slider || kind == .padding {
         result.append(widget)
     }
     var child = gtk_widget_get_first_child(widget)
@@ -932,6 +1051,7 @@ public func gtkAssignNativeSlots(
         kind: node.kind,
         lastDescriptor: node.lastDescriptor,
         nativeSlotID: slotsByIdentity[node.identity] ?? node.nativeSlotID,
+        canvasPayload: node.canvasPayload,
         children: node.children.map { gtkAssignNativeSlots($0, slotsByIdentity: slotsByIdentity) }
     )
 }
@@ -945,6 +1065,7 @@ public func gtkAllSlotsValid(action: GTK4ExecutorAction) -> Bool {
     switch action.kind {
     case .update:
         if action.updateIntent == .textContent || action.updateIntent == .colorFill
+            || action.updateIntent == .canvasContent
             || action.updateIntent == .sliderValue
             || action.updateIntent == .paddingLayout {
             guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
@@ -1013,6 +1134,57 @@ public func gtkSetSliderValue(slotID: Int, value: Double) -> Bool {
     let range = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GtkRange.self)
     gtk_range_set_value(range, value)
     return true
+}
+
+private let gtkCanvasDrawBoxKey = "gtk-swift-canvas-draw-box"
+
+public func gtkSetCanvasContent(slotID: Int, payload: GTK4CanvasPayload) -> Bool {
+    guard let widget = gtkWidgetFromSlotID(slotID) else { return false }
+    guard gtk_swift_is_widget(widget) != 0 else { return false }
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    guard let raw = g_object_get_data(gobject, gtkCanvasDrawBoxKey) else { return false }
+
+    let box = Unmanaged<SizedDrawClosureBox>.fromOpaque(raw).takeUnretainedValue()
+    box.closure = payload.drawHandler
+    box.sizedClosure = payload.sizedDrawHandler
+
+    if payload.width > 0 {
+        gtk_swift_drawing_area_set_content_width(widget, gint(payload.width))
+    }
+    if payload.height > 0 {
+        gtk_swift_drawing_area_set_content_height(widget, gint(payload.height))
+    }
+    gtk_widget_set_hexpand(widget, payload.width <= 0 ? 1 : 0)
+    gtk_widget_set_vexpand(widget, payload.height <= 0 ? 1 : 0)
+    gtk_widget_queue_draw(widget)
+    return true
+}
+
+public func gtkCanvasPayloadsByIdentity(
+    descriptorRoot: GTK4IdentifiedDescriptorNode,
+    payloads: [GTK4CanvasPayload]
+) -> [GTK4DescriptorIdentity: GTK4CanvasPayload] {
+    let identities = gtkCollectCanvasDescriptorIdentities(from: descriptorRoot)
+    guard identities.count == payloads.count else { return [:] }
+
+    var result: [GTK4DescriptorIdentity: GTK4CanvasPayload] = [:]
+    for (identity, payload) in zip(identities, payloads) {
+        result[identity] = payload
+    }
+    return result
+}
+
+private func gtkCollectCanvasDescriptorIdentities(
+    from node: GTK4IdentifiedDescriptorNode
+) -> [GTK4DescriptorIdentity] {
+    var result: [GTK4DescriptorIdentity] = []
+    if node.descriptor.kind == .canvas {
+        result.append(node.identity)
+    }
+    for child in node.children {
+        result.append(contentsOf: gtkCollectCanvasDescriptorIdentities(from: child))
+    }
+    return result
 }
 
 /// Update CSS padding on a hosted PaddedView wrapper widget in place.
