@@ -15,6 +15,7 @@ Each example is a single `main.swift` using `#if os(macOS) import SwiftUI` for r
 swift run HelloWorld
 swift run Stopwatch
 swift run ColorMixer
+swift run SimplePaint
 
 # Parity
 swift run ParityViewsBasic
@@ -81,6 +82,7 @@ sudo apt install libgtk-4-dev
 swift run HelloWorld
 swift run Stopwatch
 swift run ColorMixer
+swift run SimplePaint
 
 # Parity
 swift run ParityViewsBasic
@@ -149,6 +151,7 @@ See [android-setup.md](android-setup.md) for full setup instructions.
 | Stopwatch | `Stopwatch` | Timer, ObservableObject, start/stop/lap |
 | ColorMixer | `ColorMixer` | Sliders, color swatches, harmony, dark theme |
 | Calculator | `Calculator` | Grid/GridRow, .gridCellColumns, ZStack, @State |
+| SimplePaint | `SimplePaint` | Canvas, Path, .onDrag(), tools, color palette, undo/redo |
 
 ### Parity
 

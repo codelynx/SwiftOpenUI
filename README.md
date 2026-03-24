@@ -8,11 +8,17 @@ A cross-platform SwiftUI framework that renders natively on macOS, Linux, Window
 
 | macOS (SwiftUI) | Linux (GTK4) |
 |:---:|:---:|
-| <img src="screenshots/macos/showcase-ColorMixer.png" width="380"> | <img src="screenshots/linux/showcase-ColorMixer.png" width="380"> |
+| <img src="screenshots/macos/showcase-ColorMixer.png" width="320"> | <img src="screenshots/linux/showcase-ColorMixer.png" width="320"> |
 | **Windows (Win32)** | **Web (Wasm)** |
-| <img src="screenshots/windows/showcase-ColorMixer.png" width="380"> | <img src="screenshots/web/showcase-ColorMixer.png" width="380"> |
+| <img src="screenshots/windows/showcase-ColorMixer.png" width="320"> | <img src="screenshots/web/showcase-ColorMixer.png" width="320"> |
 
 > Same Swift code. Native rendering on each platform. No electron, no webview wrappers.
+
+## SimplePaint — Canvas, Path, and gesture input
+
+<img src="screenshots/macos/showcase-SimplePaint.png" width="640">
+
+A MacPaint-class drawing app with pencil, eraser, line, rectangle, and ellipse tools. Demonstrates Canvas rendering, Path-based drawing, drag gestures, and undo/redo — all from a single `main.swift`.
 
 ## Platform Support
 
@@ -35,6 +41,7 @@ cd SwiftOpenUI
 swift run HelloWorld
 swift run Stopwatch
 swift run ColorMixer
+swift run SimplePaint
 
 # Run on Linux (GTK4)
 sudo apt install libgtk-4-dev
@@ -58,6 +65,7 @@ Polished mini-apps demonstrating what you can build:
 | Stopwatch | `swift run Stopwatch` | Timer, start/stop, lap times |
 | ColorMixer | `swift run ColorMixer` | Color picker with sliders, swatches, harmony |
 | Calculator | `swift run Calculator` | Grid/GridRow calculator with arithmetic logic |
+| SimplePaint | `swift run SimplePaint` | Drawing app with tools, color palette, undo/redo |
 
 ### Parity
 
@@ -80,7 +88,7 @@ swift run ParityAppStructure      # App, Scene, WindowGroup, @ViewBuilder
 ## What's Implemented
 
 ### Views (43 of 44)
-Text, Button, TextField, Toggle, Slider, Image, Color, Spacer, Divider, VStack, HStack, ZStack, Group, ForEach, List, ScrollView, AnyView, EmptyView, NavigationStack, NavigationLink, SecureField, TextEditor, ProgressView, Stepper, Label, Link, TabView, Grid, GridRow, DisclosureGroup, Form, Section, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Picker, DatePicker, GeometryReader, Menu, ConfirmationDialog, Canvas, NavigationSplitView
+Text, Button, TextField, Toggle, Slider, Image, Color, Spacer, Divider, VStack, HStack, ZStack, Group, ForEach, List, ScrollView, AnyView, EmptyView, NavigationStack, NavigationLink, SecureField, TextEditor, ProgressView, Stepper, Label, Link, TabView, Grid, GridRow, DisclosureGroup, Form, Section, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Picker, DatePicker, GeometryReader, Menu, ConfirmationDialog, Canvas, NavigationSplitView, Path
 
 ### Modifiers (36 of 38)
 .padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .environmentObject(), .environment(), .navigationTitle(), .navigationDestination(), .focused(), .modifier(), withAnimation(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .searchable(), .toolbar(), .gridCellColumns(), .pickerStyle(), .navigationSplitViewColumnWidth(), .onDisappear()

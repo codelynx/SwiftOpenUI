@@ -22,7 +22,7 @@ Examples/
 │   ├── Stopwatch/main.swift     # target: Stopwatch (replaces Counter)
 │   ├── ColorMixer/main.swift    # target: ColorMixer
 │   ├── Calculator/main.swift    # target: Calculator
-│   └── PaintApp/main.swift      # target: PaintApp (future, needs Canvas)
+│   └── SimplePaint/main.swift   # target: SimplePaint
 │
 ├── Parity/                      # Maps to parity matrix sections
 │   ├── ViewsBasic/main.swift    # target: ParityViewsBasic
@@ -162,12 +162,10 @@ Redesign as a "Color Studio" — visually presentable like a Photoshop/Figma col
 **Features:** Grid/GridRow, .gridCellColumns(2), ZStack, Button, @State, .font(), .foregroundColor(), .background(), .frame()
 iOS-style calculator — dark theme, orange operator keys, 5×4 grid layout with wide zero button, full arithmetic logic. Uses ZStack { Color; Text } for full-bleed button backgrounds with centered labels.
 
-### PaintApp (future)
-**Target:** `PaintApp`
-**Requires:** Canvas rendering on backends
-**Reference:** SwiftLinuxUI repo, `Examples/PaintApp/main.swift`
-**Features:** Canvas, .onDrag(), @State, Color palette, brush size selection
-Drawing app — drag to paint strokes, pick colors and brush sizes. Borrowed from SwiftLinuxUI's PaintApp. Depends on Canvas view having backend rendering (currently core-defined, no backend renderers yet).
+### SimplePaint — Done
+**Target:** `SimplePaint`
+**Features:** Canvas, Path, .onDrag(), @State, @Binding, Color palette, brush size Slider, undo/redo
+Drawing app with pencil, eraser, line, rectangle, and ellipse tools. Three-panel layout (tool strip, canvas, inspector). Uses shared `buildStrokePath()` with Path type across all platforms. See `docs/plans/simplepaint-example.md` for design.
 
 ## Migration Status
 

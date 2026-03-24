@@ -8,7 +8,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 - `Sources/Backend/GTK4/` — Linux backend (GTK4): CGTK system module, CGTKBridge interop, Rendering
 - `Sources/Backend/Win32/` — Windows backend (Win32): CWin32, CWin32Bridge, Rendering + LayoutEngine
 - `Sources/Backend/Web/` — Web/Wasm backend (experimental): DOM rendering via JavaScriptKit
-- `Examples/Showcase/` — Polished demo apps (HelloWorld, Stopwatch, ColorMixer, Calculator)
+- `Examples/Showcase/` — Polished demo apps (HelloWorld, Stopwatch, ColorMixer, Calculator, SimplePaint)
 - `Examples/Parity/` — Matrix-backed coverage examples (11 parity targets)
 - `Tests/SwiftOpenUITests/` — Core tests (platform-independent)
 - `Tests/BackendTests/` — Platform-specific backend tests
@@ -26,7 +26,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 ```bash
 # macOS (uses real SwiftUI for examples)
 swift build
-swift test                   # 256 tests
+swift test                   # 268 tests
 
 # WebAssembly (requires open-source Swift toolchain, not Xcode's)
 source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
@@ -36,6 +36,7 @@ swift build --swift-sdk swift-6.2.4-RELEASE_wasm
 swift run HelloWorld
 swift run Stopwatch
 swift run ColorMixer
+swift run SimplePaint
 swift run ParityViewsBasic
 
 # Run in browser (Wasm)
@@ -78,7 +79,7 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 ## Current Views & Modifiers
 
 ### Views (Sources/SwiftOpenUI/Views/)
-Text, Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper, Picker, DatePicker, ProgressView, Label, Link, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView, TabView, Grid, GridRow, Form, Section, DisclosureGroup, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Menu, Canvas, GeometryReader, NavigationSplitView, ConfirmationDialog
+Text, Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper, Picker, DatePicker, ProgressView, Label, Link, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView, TabView, Grid, GridRow, Form, Section, DisclosureGroup, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Menu, Canvas, GeometryReader, NavigationSplitView, ConfirmationDialog, Path (with StrokeStyle, Shading)
 
 ### Navigation (Sources/SwiftOpenUI/Navigation/)
 NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigationTitle(), .navigationDestination(for:), NavigateAction (environment)
@@ -105,7 +106,7 @@ NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigatio
 
 ## Examples
 
-- Showcase: HelloWorld, Stopwatch, ColorMixer, Calculator (in `Examples/Showcase/`)
+- Showcase: HelloWorld, Stopwatch, ColorMixer, Calculator, SimplePaint (in `Examples/Showcase/`)
 - Parity: ParityViewsBasic, ParityViewsLayout, ParityViewsContainers, ParityModifiers, ParityStateData, ParityNavigation, ParityEnvironment, ParityGestures, ParityAnimation, ParityFocus, ParityAppStructure (in `Examples/Parity/`)
 - Plan: `docs/guides/examples-plan.md` — two-track Showcase + Parity design
 - **Rules**: single `main.swift` per example, compiles and runs on all platforms (Android exception: uses flat views in JNIBridge.swift due to import conflict — see `docs/guides/examples-plan.md`), platform limitations labeled inline with fallback text (never build errors)
@@ -125,6 +126,8 @@ NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigatio
 | `docs/architecture/android-backend-design.md` | Android backend design (batched JNI diffs) |
 | `docs/porting/platform-notes.md` | Platform quirks: macOS, Linux, Windows, Web, Android |
 | `docs/issues/observable-namespace-conflict.md` | ObservableObject/Published clash on macOS |
+| `docs/plans/simplepaint-example.md` | SimplePaint example design and scope |
+| `docs/proposals/unified-canvas-api.md` | Unified Canvas API proposal (Path, Shading, StrokeStyle) |
 
 ## Reference Projects
 

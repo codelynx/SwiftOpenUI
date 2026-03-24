@@ -32,7 +32,7 @@ cd apple/Examples && xcodegen generate
 open Examples.xcodeproj
 ```
 
-Select any scheme (HelloWorld, Stopwatch, ColorMixer, ParityViewsBasic, etc.) and press Cmd+R.
+Select any scheme (HelloWorld, Stopwatch, ColorMixer, SimplePaint, ParityViewsBasic, etc.) and press Cmd+R.
 
 The generated `.xcodeproj` is not committed — each developer generates it locally. If you add or rename an example, update `apple/Examples/project.yml` and re-run `xcodegen generate`.
 
@@ -87,7 +87,7 @@ swift run ColorMixer
 swift run ParityViewsBasic
 ```
 
-All 14 examples (3 Showcase + 11 Parity) work on Linux.
+All 16 examples (5 Showcase + 11 Parity) work on Linux.
 
 ### Notes
 
