@@ -140,8 +140,10 @@ All 14 examples work on Windows.
 
 ### Notes
 
-- Rendering uses native Win32 controls (HWND) for buttons, text fields, toggles, etc.
-- Direct2D is used for Canvas, opacity, scale, and rotation effects.
+- Rendering uses native Win32 controls (HWND) for text fields, toggles, etc.
+- Buttons use D2D flat rendering with rounded corners, hover/press states.
+- Borders use flat 1px GDI rendering (no 3D bezel).
+- Direct2D is used for Canvas, Slider, opacity, scale, and rotation effects.
 - Image rendering uses Windows Imaging Component (WIC) — supports PNG, JPEG, BMP, GIF.
 - Timer-based apps (Stopwatch) work via a hybrid RunLoop + Win32 message pump.
 

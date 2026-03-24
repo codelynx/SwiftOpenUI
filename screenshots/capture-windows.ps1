@@ -60,6 +60,7 @@ $examples = [ordered]@{
     "Stopwatch"   = @{ File = "showcase-Stopwatch";   Title = "Stopwatch" }
     "ColorMixer"  = @{ File = "showcase-ColorMixer";  Title = "Color Studio" }
     "Calculator"  = @{ File = "showcase-Calculator";  Title = "Calculator" }
+    "SimplePaint" = @{ File = "showcase-SimplePaint"; Title = "SimplePaint" }
     # Parity
     "ParityViewsBasic"      = @{ File = "parity-ViewsBasic";      Title = "Parity: Views Basic" }
     "ParityViewsLayout"     = @{ File = "parity-ViewsLayout";     Title = "Parity: Views Layout" }

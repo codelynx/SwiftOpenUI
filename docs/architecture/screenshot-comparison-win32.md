@@ -229,7 +229,7 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 ## Platform Differences (Expected)
 
 These are inherent Win32 vs SwiftUI differences, not bugs:
-- Button style: Win32 native pushbuttons vs SwiftUI rounded buttons
+- Button style: D2D flat buttons with rounded corners (close to SwiftUI but not identical)
 - Font weight: .thin weight not available in Win32 text pipeline
 - TextField: Win32 EDIT controls vs SwiftUI text fields (visual styling)
 - Slider: D2D custom slider is close but not identical to SwiftUI native

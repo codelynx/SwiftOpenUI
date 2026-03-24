@@ -40,7 +40,7 @@ contradicts "write SwiftUI, run anywhere."
 | Drawing model | Path-based: `context.stroke(path, with:)` | Imperative: `context.moveTo(); context.stroke()` |
 | Color | `with: .color(.red)` | `context.setColor(r:g:b:)` |
 | Transforms | Full affine via `.transform` | `scale(x:y:)` only |
-| Stroke style | lineCap, lineJoin, dash | lineCap/lineJoin declared but partially wired |
+| Stroke style | lineCap, lineJoin, dash | lineCap/lineJoin wired via D2D stroke styles; dash not yet |
 | Clipping | `context.clip(to:)` | Not implemented |
 
 ## Verified Backend Implementation Status
@@ -65,9 +65,9 @@ Audited against actual source code, not documentation.
 
 | Operation | GTK4 | Win32 | Web | Issue |
 |-----------|------|-------|-----|-------|
-| fill | All path types | Rect/ellipse only | All path types | Win32 needs ID2D1PathGeometry for arbitrary path fill |
-| setLineCap | Wired to cairo | **No-op** (declared but ignored) | Wired to Canvas2D | Win32 needs D2D stroke style |
-| setLineJoin | Wired to cairo | **No-op** (declared but ignored) | Wired to Canvas2D | Win32 needs D2D stroke style |
+| fill | All path types | All path types (via ID2D1PathGeometry) | All path types | |
+| setLineCap | Wired to cairo | Wired via D2D stroke style | Wired to Canvas2D | |
+| setLineJoin | Wired to cairo | Wired via D2D stroke style | Wired to Canvas2D | |
 
 ### Not implemented on any backend
 
@@ -223,7 +223,7 @@ context.fill(path, with: .color(.blue))
 ```
 
 **Blockers before this ships**:
-- Win32: Wire lineCap/lineJoin via D2D stroke styles
+- ~~Win32: Wire lineCap/lineJoin via D2D stroke styles~~ (done)
 - Win32: Implement fill for arbitrary paths via ID2D1PathGeometry
 
 Backend implementations walk `Path` elements and emit native calls.
@@ -298,6 +298,6 @@ level, not in client code.
    remain accessible as a low-level escape hatch?
 
 2. **StrokeStyle.lineCap in portable subset**: lineCap/lineJoin are
-   wired on GTK4 and Web but not Win32. Should the portable subset
-   include them (making Win32 a blocker) or exclude them (accepting
-   visual inconsistency)?
+   now wired on all three backends (GTK4 via Cairo, Win32 via D2D
+   stroke styles, Web via Canvas2D). They can be included in the
+   portable subset.
