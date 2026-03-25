@@ -1,10 +1,10 @@
 # Style Modifiers
 
-Summary: 20 total, 0 implemented, 0 partial, 20 missing.
+Summary: 20 total, 1 implemented, 0 partial, 19 missing.
 
 ## Style Modifiers (~21)
 
-20 total, 0 implemented, 0 partial, 20 missing.
+20 total, 1 implemented, 0 partial, 19 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -20,7 +20,7 @@ Summary: 20 total, 0 implemented, 0 partial, 20 missing.
 | `listStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `menuStyle` | Both | iOS 16 / macOS 13 / tvOS 17 / visionOS 1 | Current | Missing | `-` | - |
 | `navigationSplitViewStyle` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
-| `pickerStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | .automatic (select), .segmented (button row), .palette (alias) |
+| `pickerStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Picker.swift` | .automatic (select), .segmented (button row), .palette (alias) |
 | `presentedWindowStyle` | Both | macOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `progressViewStyle` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Missing | `-` | - |
 | `tableStyle` | Both | iOS 16 / macOS 12 / visionOS 1 | Current | Missing | `-` | - |

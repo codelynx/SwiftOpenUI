@@ -291,7 +291,7 @@ def extract_public_surface() -> tuple[
         r"public\s+(?:struct|enum|protocol|class)\s+([A-Za-z_][A-Za-z0-9_]*)"
     )
     function_pattern = re.compile(
-        r"^public func\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>]+>)?\s*\(",
+        r"^\s*public func\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>]+>)?\s*\(",
         re.M,
     )
     modifier_pattern = re.compile(

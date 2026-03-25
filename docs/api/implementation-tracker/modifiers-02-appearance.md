@@ -1,10 +1,10 @@
 # Appearance Modifiers
 
-Summary: 36 total, 1 implemented, 1 partial, 34 missing.
+Summary: 36 total, 2 implemented, 1 partial, 33 missing.
 
 ## Appearance Modifiers (~81)
 
-36 total, 1 implemented, 1 partial, 34 missing.
+36 total, 2 implemented, 1 partial, 33 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -43,4 +43,4 @@ Summary: 36 total, 1 implemented, 1 partial, 34 missing.
 | `windowDismissBehavior` | Both | macOS 15 / visionOS 2 | Current | Missing | `-` | New macOS 15 |
 | `windowFullScreenBehavior` | Both | macOS 15 | Current | Missing | `-` | New macOS 15 |
 | `windowMinimizeBehavior` | Both | macOS 15 | Current | Missing | `-` | New macOS 15 |
-| `windowResizeBehavior` | Both | macOS 15 | Current | Missing | `-` | New macOS 15 |
+| `windowResizeBehavior` | Both | macOS 15 | Current | Implemented | `Sources/SwiftOpenUI/App/WindowSizing.swift` | New macOS 15 |

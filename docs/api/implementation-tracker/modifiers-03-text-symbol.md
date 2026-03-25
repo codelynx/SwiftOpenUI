@@ -1,10 +1,10 @@
 # Text and Symbol Modifiers
 
-Summary: 37 total, 1 implemented, 0 partial, 36 missing.
+Summary: 37 total, 2 implemented, 0 partial, 35 missing.
 
 ## Text and Symbol Modifiers (~50)
 
-37 total, 1 implemented, 0 partial, 36 missing.
+37 total, 2 implemented, 0 partial, 35 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -19,7 +19,7 @@ Summary: 37 total, 1 implemented, 0 partial, 36 missing.
 | `fontDesign` | Both | iOS 16.1 / macOS 13 / watchOS 9.1 / tvOS 16.1 / visionOS 1 | Current | Missing | `-` | - |
 | `fontWeight` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `fontWidth` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
-| `imageScale` | Both | iOS 13 / macOS 11 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | Win32: no real image rendering |
+| `imageScale` | Both | iOS 13 / macOS 11 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Image.swift` | Win32: no real image rendering |
 | `italic` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `kerning` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `keyboardType` | Both | iOS 13 / visionOS 1 | Current | Missing | `-` | iOS/visionOS-only |

@@ -8,7 +8,7 @@ Summary: 23 total, 2 implemented, 0 partial, 21 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
-| `confirmationDialog` | Both | iOS, macOS 12, watchOS 8, tvOS 15, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ConfirmationDialogModifier.swift` | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
+| `confirmationDialog` | Both | iOS, macOS 12, watchOS 8, tvOS 15, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ConfirmationDialogModifier.swift` | Batch B fallback on GTK/Win32/Web: titleVisibility == .hidden and message are supported; .automatic currently behaves like .visible. GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay. |
 | `dialogSeverity` | Both | iOS 17 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `dialogSuppressionToggle` | Both | iOS 17 / macOS 14 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
 | `dismissalConfirmationDialog` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
