@@ -969,6 +969,64 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
     }
 
+    func testItemSheetReplacesOnIdentityChange() throws {
+        try requireGTK()
+
+        struct TestItem: Identifiable { let id: Int; let name: String }
+        var item: TestItem? = TestItem(id: 1, name: "First")
+        let itemBinding = Binding(get: { item }, set: { item = $0 })
+
+        // Use a GTKViewHost so we can rebuild and observe anchor state
+        let host = GTKViewHost(buildBody: {
+            gtkRenderView(Text("Base").sheet(item: itemBinding) { i in Text(i.name) })
+        })
+
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        let anchor = host.container
+        let gobject = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+
+        // After first render with item id=1, active flag and item-id should be set
+        XCTAssertNotNil(g_object_get_data(gobject, "swift-sheet-active"),
+                        "Sheet should be marked active after presenting item 1")
+        let firstIdHash = Int(bitPattern: g_object_get_data(gobject, "swift-sheet-item-id"))
+        XCTAssertEqual(firstIdHash, 1.hashValue, "Stored identity should match item 1")
+
+        // Simulate the deferred g_idle_add having created a sheet window.
+        // In headless GTK the idle callback never runs, so we place a dummy
+        // window on the anchor to exercise the dismiss-and-replace branch.
+        let dummyDialog = gtk_window_new()!
+        g_object_set_data(gobject, "swift-sheet-window", gpointer(windowPointer(dummyDialog)))
+
+        // Change to item with different identity
+        item = TestItem(id: 2, name: "Second")
+
+        // Rebuild — should detect identity change, dismiss old window, present new
+        GTKViewHost.setCurrentRebuilding(host)
+        _ = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        // After rebuild, active flag should still be set (new sheet) but item-id should change
+        XCTAssertNotNil(g_object_get_data(gobject, "swift-sheet-active"),
+                        "Sheet should still be active after replacing with item 2")
+        let secondIdHash = Int(bitPattern: g_object_get_data(gobject, "swift-sheet-item-id"))
+        XCTAssertEqual(secondIdHash, 2.hashValue, "Stored identity should match item 2")
+        XCTAssertNotEqual(firstIdHash, secondIdHash,
+                          "Identity should have changed from item 1 to item 2")
+
+        // The old swift-sheet-window should have been cleared by the replacement
+        // branch before scheduling the new presentation (new window not yet created
+        // since g_idle_add is deferred). Verify window ref was cleared.
+        XCTAssertNil(g_object_get_data(gobject, "swift-sheet-window"),
+                     "Old sheet window should have been cleared during replacement")
+    }
+
     func testAlertWithActionsAndMessageRendersContent() throws {
         try requireGTK()
 
