@@ -3937,3 +3937,42 @@ extension SafeAreaInsetView: GTKRenderable, GTKDescribable {
         return opaqueFromWidget(box)
     }
 }
+
+/// Synthetic safe-area padding default when length is nil (Batch A).
+private let gtkSyntheticSafeAreaPadding = 16
+
+extension SafeAreaPaddingView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        let resolved = length ?? gtkSyntheticSafeAreaPadding
+        let top = edges.contains(.top) ? resolved : 0
+        let bottom = edges.contains(.bottom) ? resolved : 0
+        let leading = edges.contains(.leading) ? resolved : 0
+        let trailing = edges.contains(.trailing) ? resolved : 0
+        return GTK4DescriptorNode(
+            kind: .safeAreaPadding, typeName: "SafeAreaPaddingView",
+            props: .safeAreaPadding(GTK4SafeAreaPaddingDescriptor(
+                top: top, bottom: bottom, leading: leading, trailing: trailing)),
+            children: [gtkDescribeView(content)])
+    }
+
+    public func gtkCreateWidget() -> OpaquePointer {
+        let resolved = length ?? gtkSyntheticSafeAreaPadding
+        let top = edges.contains(.top) ? resolved : 0
+        let bottom = edges.contains(.bottom) ? resolved : 0
+        let leading = edges.contains(.leading) ? resolved : 0
+        let trailing = edges.contains(.trailing) ? resolved : 0
+
+        let child = widgetFromOpaque(gtkRenderView(content))
+        let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        applyCSSToWidget(wrapper, properties: """
+            padding-top: \(top)px;
+            padding-bottom: \(bottom)px;
+            padding-left: \(leading)px;
+            padding-right: \(trailing)px;
+            """)
+        if gtk_widget_get_hexpand(child) != 0 { gtk_widget_set_hexpand(wrapper, 1) }
+        if gtk_widget_get_vexpand(child) != 0 { gtk_widget_set_vexpand(wrapper, 1) }
+        gtk_box_append(boxPointer(wrapper), child)
+        return opaqueFromWidget(wrapper)
+    }
+}
