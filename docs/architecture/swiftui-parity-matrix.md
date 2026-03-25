@@ -93,7 +93,7 @@ Last updated: 2026-03-25
 | .overlay() | Y | Y | Y | Y | Y | - | GTK: GtkOverlay; Win32: container; Web: absolute positioning |
 | .sheet() | Y | Y | Y | Y | Y | - | Batch A: `isPresented`, `item`, and `onDismiss` families on GTK/Win32/Web. GTK: modal window; Win32: popup; Web: modal overlay. |
 | .alert() | Y | ~ | ~ | ~ | ~ | - | Batch B: title + `isPresented` + actions/message + error families via simplified `AlertButton[]` + `String` API. GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay. |
-| .confirmationDialog() | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
+| .confirmationDialog() | Y | Y | ~ | ~ | ~ | - | Batch B fallback on GTK/Win32/Web: `titleVisibility == .hidden` and `message` are supported; `.automatic` currently behaves like `.visible`. GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay. |
 | .onAppear() | Y | Y | Y | Y | ~ | - | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
 | .searchable() | Y | Y | ~ | ~ | ~ | - | Batch B fallback on GTK/Win32/Web: search field above content; placement stored but not differentiated yet; tokens and editableTokens render as display-only chips. Win32 suppresses field when `isPresented == false`. |

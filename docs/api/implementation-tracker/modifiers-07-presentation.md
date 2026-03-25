@@ -1,14 +1,14 @@
 # Presentation Modifiers
 
-Summary: 23 total, 1 implemented, 1 partial, 21 missing.
+Summary: 23 total, 2 implemented, 0 partial, 21 missing.
 
 ## Presentation Modifiers (~97)
 
-23 total, 1 implemented, 1 partial, 21 missing.
+23 total, 2 implemented, 0 partial, 21 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
-| `confirmationDialog` | Both | iOS, macOS 12, watchOS 8, tvOS 15, visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/ConfirmationDialogModifier.swift` | Public surface exists, but only 1 overload(s) are present vs 2 in the curated reference families. \| GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
+| `confirmationDialog` | Both | iOS, macOS 12, watchOS 8, tvOS 15, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ConfirmationDialogModifier.swift` | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | `dialogSeverity` | Both | iOS 17 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `dialogSuppressionToggle` | Both | iOS 17 / macOS 14 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
 | `dismissalConfirmationDialog` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
