@@ -788,4 +788,134 @@ final class WebDescriptorTests: XCTestCase {
         XCTAssertTrue(webCanApplyTextColorHostMutation(plan: plan))
     }
 
+    // MARK: - Searchable Descriptor Tests
+
+    func testDescribeSearchableDefault() {
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content").searchable(text: $query)
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(node.kind, .composite)
+        XCTAssertEqual(node.typeName, "SearchableView")
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: nil
+                )
+            )
+        )
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].kind, .text)
+    }
+
+    func testDescribeSearchableWithPlacement() {
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content").searchable(
+            text: $query,
+            placement: .toolbar,
+            prompt: "Find items"
+        )
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(node.kind, .composite)
+        XCTAssertEqual(node.typeName, "SearchableView")
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Find items",
+                    placement: "toolbar",
+                    isPresented: nil
+                )
+            )
+        )
+    }
+
+    func testDescribeSearchableWithIsPresented() {
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var presented = true
+        let view = Text("Content").searchable(
+            text: $query,
+            isPresented: $presented
+        )
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(node.kind, .composite)
+        XCTAssertEqual(node.typeName, "SearchableView")
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: true
+                )
+            )
+        )
+    }
+
+    func testDescribeSearchableIsPresentedFalse() {
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var presented = false
+        let view = Text("Content").searchable(
+            text: $query,
+            isPresented: $presented
+        )
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: false
+                )
+            )
+        )
+    }
+
+    func testDescribeSearchableNavigationBarDrawerPlacement() {
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content").searchable(
+            text: $query,
+            placement: .navigationBarDrawer(displayMode: .always)
+        )
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "navigationBarDrawerAlways",
+                    isPresented: nil
+                )
+            )
+        )
+    }
+
+    func testDescribeSearchableSidebarPlacement() {
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content").searchable(
+            text: $query,
+            placement: .sidebar
+        )
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "sidebar",
+                    isPresented: nil
+                )
+            )
+        )
+    }
+
 }

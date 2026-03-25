@@ -2010,7 +2010,7 @@ extension OnAppearView: WebRenderable {
     }
 }
 
-extension SearchableView: WebRenderable {
+extension SearchableView: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let container = document.createElement("div")
         container.style = "display: flex; flex-direction: column; gap: 8px;"
@@ -2021,11 +2021,21 @@ extension SearchableView: WebRenderable {
         input.value = .string(text.wrappedValue)
         input.style = "padding: 6px 8px; font-size: 14px; width: 100%; box-sizing: border-box;"
 
+        // Honor isPresented: hide the search field when explicitly dismissed
+        if let presented = isPresented, !presented.wrappedValue {
+            input.style = "display: none;"
+        }
+
         let binding = text
+        let presentedBinding = isPresented
         let handler = webMakeClosure { _ in
             let newValue = input.value.string ?? ""
             if newValue != binding.wrappedValue {
                 binding.wrappedValue = newValue
+            }
+            // When text changes and isPresented binding exists, ensure it's true
+            if let presented = presentedBinding, !presented.wrappedValue {
+                presented.wrappedValue = true
             }
             return .undefined
         }
@@ -2037,6 +2047,34 @@ extension SearchableView: WebRenderable {
         _ = container.appendChild(contentEl)
 
         return container
+    }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(
+            kind: .composite,
+            typeName: "SearchableView",
+            props: .searchable(
+                WebSearchableDescriptor(
+                    prompt: prompt,
+                    placement: webSearchFieldPlacementString(placement),
+                    isPresented: isPresented?.wrappedValue
+                )
+            ),
+            children: [webDescribeView(content)]
+        )
+    }
+}
+
+private func webSearchFieldPlacementString(_ placement: SearchFieldPlacement) -> String {
+    switch placement {
+    case .automatic: return "automatic"
+    case .toolbar: return "toolbar"
+    case .sidebar: return "sidebar"
+    case .navigationBarDrawer(let displayMode):
+        switch displayMode {
+        case .automatic: return "navigationBarDrawer"
+        case .always: return "navigationBarDrawerAlways"
+        }
     }
 }
 
