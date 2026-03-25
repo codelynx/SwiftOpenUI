@@ -28,7 +28,25 @@ A MacPaint-class drawing app with pencil, eraser, line, rectangle, and ellipse t
 | Linux | GTK4 | Stable | 43/44 | 36/38 |
 | Windows | Win32 + D2D | Stable | 43/44 | 36/38 |
 | Web | Wasm + DOM | Near-parity | 42/44 | 36/38 |
-| Android | Compose | Phase 2 | 14/44 | 22/38 |
+| Android | Compose | Suspended | 14/44 | 22/38 |
+
+## Feature Parity
+
+SwiftOpenUI now tracks parity at two levels:
+
+| Doc | Purpose |
+|-----|---------|
+| [Feature Parity Matrix](docs/architecture/swiftui-parity-matrix.md) | Backend-by-backend behavior status for SwiftUI features, with notes for GTK4, Win32, Web, and Android |
+| [API Implementation Tracker](docs/api/implementation-tracker/README.md) | SwiftUI API-surface coverage, availability, and current vs partial vs missing status by feature family |
+
+Use the matrix when you want to know how a feature behaves on a specific backend. Use the implementation tracker when you want to know whether a SwiftUI view or modifier family exists in SwiftOpenUI at all.
+
+Current examples:
+- `.searchable()` is in Batch A on GTK4, Win32, and Web: the search field works, but placement is still fallback-level.
+- `.safeAreaInset()` and `.safeAreaPadding()` exist on GTK4, Win32, and Web, with synthetic or partial backend behavior documented in the matrix.
+- `.toolbar()` and `.sheet()` have working GTK4, Win32, and Web support, while the tracker shows which overload families are implemented vs still pending.
+
+Android work is currently suspended. Existing Android rows remain in the parity docs for reference, but active parity work is focused on GTK4, Win32, and Web.
 
 ## Quick Start
 
@@ -138,6 +156,7 @@ open Examples.xcodeproj
 | Doc | Description |
 |-----|-------------|
 | [Feature Parity Matrix](docs/architecture/swiftui-parity-matrix.md) | Per-backend implementation status |
+| [API Implementation Tracker](docs/api/implementation-tracker/README.md) | SwiftUI API-surface coverage and generated feature-family status |
 | [Running Examples](docs/guides/running-examples.md) | Build and run on all platforms |
 | [Adding a Backend](docs/guides/adding-a-backend.md) | How to implement a new backend |
 | [Web Setup](docs/guides/web-setup.md) | Wasm build, Vite, DOM mapping |
