@@ -3595,50 +3595,106 @@ private let sheetPropName: UnsafePointer<WCHAR> = {
     }
 }()
 
+private let sheetInfoPropName: UnsafePointer<WCHAR> = {
+    "SwiftUISheetInfo".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+func win32ActiveSheetWindow(for root: HWND) -> HWND? {
+    guard let existing = GetPropW(root, sheetPropName) else { return nil }
+    return HWND(bitPattern: Int(bitPattern: existing))
+}
+
+private func win32SheetDismissInfo(for sheet: HWND) -> SheetDismissInfo? {
+    guard let infoHandle = GetPropW(sheet, sheetInfoPropName) else { return nil }
+    let infoPtr = UnsafeMutableRawPointer(bitPattern: Int(bitPattern: infoHandle))
+    return infoPtr.map { Unmanaged<SheetDismissInfo>.fromOpaque($0).takeUnretainedValue() }
+}
+
+private func win32RefreshSheetOnDismiss(for sheet: HWND?, onDismiss: (() -> Void)?) {
+    guard let sheet, let dismissInfo = win32SheetDismissInfo(for: sheet) else { return }
+    dismissInfo.onDismiss = onDismiss
+}
+
+private func win32PresentSheet<Sheet: View>(
+    sheet: Sheet,
+    root: HWND,
+    hInstance: HINSTANCE,
+    dismissInfo: SheetDismissInfo
+) {
+    guard win32ActiveSheetWindow(for: root) == nil else { return }
+
+    registerStackClassIfNeeded(hInstance: hInstance)
+    let sheetHwnd = CreateWindowExW(
+        DWORD(WS_EX_TOOLWINDOW),
+        stackContainerClassName, nil,
+        DWORD(WS_POPUP) | DWORD(WS_VISIBLE) | DWORD(WS_CAPTION) | DWORD(WS_SYSMENU),
+        Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT), 400, 300,
+        root, nil, hInstance, nil
+    )
+
+    guard let sheetHwnd else { return }
+
+    SetPropW(root, sheetPropName, HANDLE(bitPattern: Int(bitPattern: sheetHwnd)))
+
+    let sheetContext = RenderContext(parent: sheetHwnd, hInstance: hInstance)
+    let previousEnv = getCurrentEnvironment()
+    var env = previousEnv
+    env.dismiss = DismissAction { DestroyWindow(sheetHwnd) }
+    setCurrentEnvironment(env)
+    if let sheetChild = winRenderView(sheet, in: sheetContext) {
+        var rect = RECT()
+        GetClientRect(sheetHwnd, &rect)
+        SetWindowPos(
+            sheetChild,
+            nil,
+            0,
+            0,
+            rect.right,
+            rect.bottom,
+            UINT(SWP_NOZORDER)
+        )
+    }
+    setCurrentEnvironment(previousEnv)
+
+    let infoPtr = Unmanaged.passRetained(dismissInfo).toOpaque()
+    SetPropW(sheetHwnd, sheetInfoPropName, HANDLE(bitPattern: UInt(bitPattern: infoPtr)))
+    SetWindowSubclass(
+        sheetHwnd,
+        sheetDismissProc,
+        91,
+        DWORD_PTR(UInt(bitPattern: infoPtr))
+    )
+}
+
 extension SheetModifierView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
         let root = findRootWindow(from: context.parent)
-        let existingSheet = GetPropW(root, sheetPropName)
+        let existingSheet = win32ActiveSheetWindow(for: root)
+        win32RefreshSheetOnDismiss(for: existingSheet, onDismiss: onDismiss)
 
         if isPresented.wrappedValue && existingSheet == nil {
             let binding = isPresented
-            let sheetBuilder = sheetContent
-            let hInst = context.hInstance
-
-            registerStackClassIfNeeded(hInstance: hInst)
-            let sheetHwnd = CreateWindowExW(
-                DWORD(WS_EX_TOOLWINDOW),
-                stackContainerClassName, nil,
-                DWORD(WS_POPUP) | DWORD(WS_VISIBLE) | DWORD(WS_CAPTION) | DWORD(WS_SYSMENU),
-                Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT), 400, 300,
-                root, nil, hInst, nil
+            let dismissInfo = SheetDismissInfo(
+                root: root,
+                dismiss: { binding.wrappedValue = false },
+                onDismiss: onDismiss
             )
-
-            if let sheetHwnd = sheetHwnd {
-                // Track on root window (stable, survives presenter rebuilds)
-                SetPropW(root, sheetPropName, HANDLE(bitPattern: Int(bitPattern: sheetHwnd)))
-
-                let sheetContext = RenderContext(parent: sheetHwnd, hInstance: hInst)
-                if let sheetChild = winRenderView(sheetBuilder, in: sheetContext) {
-                    var rect = RECT()
-                    GetClientRect(sheetHwnd, &rect)
-                    SetWindowPos(sheetChild, nil, 0, 0,
-                                 rect.right, rect.bottom, UINT(SWP_NOZORDER))
-                }
-
-                // Dismiss subclass: WM_CLOSE sets binding=false + destroys
-                let info = SheetDismissInfo(dismiss: { binding.wrappedValue = false }, root: root)
-                let infoPtr = Unmanaged.passRetained(info).toOpaque()
-                SetWindowSubclass(sheetHwnd, sheetDismissProc, 91,
-                                  DWORD_PTR(UInt(bitPattern: infoPtr)))
-            }
+            win32PresentSheet(
+                sheet: sheetContent,
+                root: root,
+                hInstance: context.hInstance,
+                dismissInfo: dismissInfo
+            )
         } else if !isPresented.wrappedValue, let existing = existingSheet {
             // Programmatic dismiss: isPresented set to false while sheet is open
-            if let sheetHwnd = HWND(bitPattern: Int(bitPattern: existing)) {
-                DestroyWindow(sheetHwnd)
-            }
+            DestroyWindow(existing)
         }
 
         return hwnd
@@ -3647,11 +3703,27 @@ extension SheetModifierView: WinRenderable {
 
 private class SheetDismissInfo {
     let dismiss: () -> Void
+    var onDismiss: (() -> Void)?
     let root: HWND
+    var presentedItemID: AnyHashable?
     var dismissed = false
-    init(dismiss: @escaping () -> Void, root: HWND) {
-        self.dismiss = dismiss
+    var isReplacing = false
+    init(root: HWND, dismiss: @escaping () -> Void, onDismiss: (() -> Void)?) {
         self.root = root
+        self.dismiss = dismiss
+        self.onDismiss = onDismiss
+    }
+
+    func prepareForReplacement() {
+        isReplacing = true
+        dismissed = true
+    }
+
+    func dismissOnce() {
+        guard !dismissed else { return }
+        dismissed = true
+        dismiss()
+        onDismiss?()
     }
 }
 
@@ -3662,10 +3734,7 @@ private let sheetDismissProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
             let info = Unmanaged<SheetDismissInfo>.fromOpaque(
                 UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
             ).takeUnretainedValue()
-            if !info.dismissed {
-                info.dismissed = true
-                info.dismiss()
-            }
+            info.dismissOnce()
         }
         DestroyWindow(hwnd)
         return 0
@@ -3677,9 +3746,9 @@ private let sheetDismissProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
             )
             let val = info.takeUnretainedValue()
             RemovePropW(val.root, sheetPropName)
-            if !val.dismissed {
-                val.dismissed = true
-                val.dismiss()
+            RemovePropW(hwnd, sheetInfoPropName)
+            if !val.isReplacing {
+                val.dismissOnce()
             }
             info.release()
         }
@@ -3688,6 +3757,45 @@ private let sheetDismissProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
 
     default:
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+extension ItemSheetModifierView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        let root = findRootWindow(from: context.parent)
+        let existingSheet = win32ActiveSheetWindow(for: root)
+        win32RefreshSheetOnDismiss(for: existingSheet, onDismiss: onDismiss)
+
+        if let item = item.wrappedValue {
+            let currentItemID = AnyHashable(item.id)
+            if let existingSheet,
+               let dismissInfo = win32SheetDismissInfo(for: existingSheet) {
+                if dismissInfo.presentedItemID == currentItemID {
+                    return hwnd
+                }
+                dismissInfo.prepareForReplacement()
+                DestroyWindow(existingSheet)
+            }
+            let binding = self.item
+            let dismissInfo = SheetDismissInfo(
+                root: root,
+                dismiss: { binding.wrappedValue = nil },
+                onDismiss: onDismiss
+            )
+            dismissInfo.presentedItemID = currentItemID
+            win32PresentSheet(
+                sheet: sheetContent(item),
+                root: root,
+                hInstance: context.hInstance,
+                dismissInfo: dismissInfo
+            )
+        } else if let existingSheet {
+            DestroyWindow(existingSheet)
+        }
+
+        return hwnd
     }
 }
 
