@@ -110,6 +110,7 @@ public struct GTK4SafeAreaInsetDescriptor: Equatable {
 }
 
 public struct GTK4SearchableDescriptor: Equatable {
+    public let text: String
     public let prompt: String
     public let placement: SearchFieldPlacement
     public let isPresented: Bool?

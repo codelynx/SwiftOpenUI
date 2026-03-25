@@ -3240,6 +3240,7 @@ extension SearchableView: GTKRenderable, GTKDescribable {
         GTK4DescriptorNode(
             kind: .searchable, typeName: "SearchableView",
             props: .searchable(GTK4SearchableDescriptor(
+                text: text.wrappedValue,
                 prompt: prompt,
                 placement: placement,
                 isPresented: isPresented?.wrappedValue)),
