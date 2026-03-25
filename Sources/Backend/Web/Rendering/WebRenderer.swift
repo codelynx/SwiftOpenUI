@@ -2056,6 +2056,19 @@ extension SearchableView: WebRenderable, WebDescribable {
         let container = document.createElement("div")
         container.style = "display: flex; flex-direction: column; gap: 8px;"
 
+        // Render tokens as pills above the search input
+        if !tokens.isEmpty {
+            let tokenBar = document.createElement("div")
+            tokenBar.style = "display: flex; flex-wrap: wrap; gap: 4px;"
+            for token in tokens {
+                let pill = document.createElement("span")
+                pill.textContent = .string(token.label)
+                pill.style = "display: inline-block; padding: 2px 8px; background: #555; color: white; border-radius: 12px; font-size: 12px;"
+                _ = tokenBar.appendChild(pill)
+            }
+            _ = container.appendChild(tokenBar)
+        }
+
         let input = document.createElement("input")
         input.type = "search"
         input.placeholder = .string(prompt)
@@ -2098,7 +2111,9 @@ extension SearchableView: WebRenderable, WebDescribable {
                 WebSearchableDescriptor(
                     prompt: prompt,
                     placement: webSearchFieldPlacementString(placement),
-                    isPresented: isPresented?.wrappedValue
+                    isPresented: isPresented?.wrappedValue,
+                    tokens: tokens.map { WebSearchTokenDescriptor(id: $0.id, label: $0.label) },
+                    tokenMode: tokenMode.map { $0 == .editableTokens ? "editableTokens" : "tokens" }
                 )
             ),
             children: [webDescribeView(content)]

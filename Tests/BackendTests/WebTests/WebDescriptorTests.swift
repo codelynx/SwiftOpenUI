@@ -803,7 +803,9 @@ final class WebDescriptorTests: XCTestCase {
                 WebSearchableDescriptor(
                     prompt: "Search",
                     placement: "automatic",
-                    isPresented: nil
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: nil
                 )
             )
         )
@@ -828,7 +830,9 @@ final class WebDescriptorTests: XCTestCase {
                 WebSearchableDescriptor(
                     prompt: "Find items",
                     placement: "toolbar",
-                    isPresented: nil
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: nil
                 )
             )
         )
@@ -851,7 +855,9 @@ final class WebDescriptorTests: XCTestCase {
                 WebSearchableDescriptor(
                     prompt: "Search",
                     placement: "automatic",
-                    isPresented: true
+                    isPresented: true,
+                    tokens: [],
+                    tokenMode: nil
                 )
             )
         )
@@ -872,7 +878,9 @@ final class WebDescriptorTests: XCTestCase {
                 WebSearchableDescriptor(
                     prompt: "Search",
                     placement: "automatic",
-                    isPresented: false
+                    isPresented: false,
+                    tokens: [],
+                    tokenMode: nil
                 )
             )
         )
@@ -892,7 +900,9 @@ final class WebDescriptorTests: XCTestCase {
                 WebSearchableDescriptor(
                     prompt: "Search",
                     placement: "navigationBarDrawerAlways",
-                    isPresented: nil
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: nil
                 )
             )
         )
@@ -912,7 +922,9 @@ final class WebDescriptorTests: XCTestCase {
                 WebSearchableDescriptor(
                     prompt: "Search",
                     placement: "sidebar",
-                    isPresented: nil
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: nil
                 )
             )
         )
@@ -1118,6 +1130,103 @@ final class WebDescriptorTests: XCTestCase {
 
         XCTAssertTrue(aDismissed, "Sheet A should have onDismiss fired")
         XCTAssertFalse(bDismissed, "Sheet B should NOT have onDismiss fired — still presenting")
+    }
+
+    // MARK: - Searchable Token Descriptor Tests
+
+    private struct TestToken: Identifiable {
+        let id: String
+        let name: String
+    }
+
+    func testDescribeSearchableWithTokens() {
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var tokens = [
+            TestToken(id: "1", name: "Swift"),
+            TestToken(id: "2", name: "Rust"),
+        ]
+        let view = Text("Content").searchable(
+            text: $query,
+            tokens: $tokens,
+            prompt: "Search"
+        ) { token in
+            Text(token.name)
+        }
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(node.kind, .composite)
+        XCTAssertEqual(node.typeName, "SearchableView")
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: nil,
+                    tokens: [
+                        WebSearchTokenDescriptor(id: "1", label: "Swift"),
+                        WebSearchTokenDescriptor(id: "2", label: "Rust"),
+                    ],
+                    tokenMode: "tokens"
+                )
+            )
+        )
+    }
+
+    func testDescribeSearchableWithEditableTokens() {
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var tokens = [
+            TestToken(id: "a", name: "Tag A"),
+        ]
+        let view = Text("Content").searchable(
+            text: $query,
+            editableTokens: $tokens,
+            prompt: "Filter"
+        ) { token in
+            Text(token.name)
+        }
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Filter",
+                    placement: "automatic",
+                    isPresented: nil,
+                    tokens: [
+                        WebSearchTokenDescriptor(id: "a", label: "Tag A"),
+                    ],
+                    tokenMode: "editableTokens"
+                )
+            )
+        )
+    }
+
+    func testDescribeSearchableWithEmptyTokens() {
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var tokens: [TestToken] = []
+        let view = Text("Content").searchable(
+            text: $query,
+            tokens: $tokens,
+            prompt: "Search"
+        ) { token in
+            Text(token.name)
+        }
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: "tokens"
+                )
+            )
+        )
     }
 
 }
