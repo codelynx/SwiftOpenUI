@@ -5316,13 +5316,51 @@ extension SearchableView: WinRenderable {
             }
         }
 
-        // Content below search field (or at top when search is hidden)
+        // Batch B: render token chips between search field and content
+        var tokenRowHwnd: HWND? = nil
+        let tokenRowHeight: Int32 = tokens.isEmpty ? 0 : 22
+        var tokenRowWidth: Int32 = 0
+        if searchVisible && !tokens.isEmpty {
+            registerStackClassIfNeeded(hInstance: context.hInstance)
+            let tokenRow = CreateWindowExW(
+                0, stackContainerClassName, nil,
+                DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+                0, 0, 0, tokenRowHeight,
+                container, nil, context.hInstance, nil
+            )!
+            tokenRowHwnd = tokenRow
+
+            var chipX: Int32 = 2
+            for token in tokens {
+                let chipText = "[\(token.label)]"
+                let chipHwnd = chipText.withCString(encodedAs: UTF16.self) { wstr in
+                    win32_CreateChildWindow(
+                        win32_WC_STATIC(), wstr,
+                        DWORD(SS_CENTER | SS_CENTERIMAGE),
+                        chipX, 1, 0, tokenRowHeight - 2,
+                        tokenRow, nil, context.hInstance
+                    )
+                }
+                if let chipHwnd {
+                    let measured = measureText(chipText, hwnd: tokenRow)
+                    let chipW = measured.width + 8
+                    SetWindowPos(chipHwnd, nil, chipX, 1, chipW, tokenRowHeight - 2,
+                                 UINT(SWP_NOZORDER))
+                    chipX += chipW + 4
+                }
+            }
+            tokenRowWidth = chipX + 2
+        }
+
+        // Content below search field + token row (or at top when search is hidden)
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         let contentHwnd = winRenderView(content, in: childContext)
 
         // Retained layout info for resize relayout
         let layoutInfo = SearchableLayoutInfo(
             searchHwnd: searchHwnd,
+            tokenRowHwnd: tokenRowHwnd,
+            tokenRowHeight: tokenRowHeight,
             contentHwnd: contentHwnd,
             searchHeight: searchHeight,
             searchVisible: searchVisible
@@ -5331,7 +5369,7 @@ extension SearchableView: WinRenderable {
         SetWindowSubclass(container, searchableLayoutProc, 4,
                           DWORD_PTR(UInt(bitPattern: infoPtr)))
 
-        // Initial sizing
+        // Initial sizing — account for token row width so chips aren't clipped
         var contentW: Int32 = 200
         var contentH: Int32 = 100
         if let ch = contentHwnd {
@@ -5340,9 +5378,11 @@ extension SearchableView: WinRenderable {
             contentW = max(r.right - r.left, 200)
             contentH = r.bottom - r.top
         }
+        contentW = max(contentW, tokenRowWidth)
 
         if searchVisible {
-            SetWindowPos(container, nil, 0, 0, contentW, searchHeight + 4 + contentH,
+            let tokenExtra = tokenRowHeight > 0 ? tokenRowHeight + 4 : Int32(0)
+            SetWindowPos(container, nil, 0, 0, contentW, searchHeight + 4 + tokenExtra + contentH,
                          UINT(SWP_NOZORDER | SWP_NOMOVE))
         } else {
             SetWindowPos(container, nil, 0, 0, contentW, contentH,
@@ -5358,13 +5398,17 @@ extension SearchableView: WinRenderable {
 
 class SearchableLayoutInfo {
     let searchHwnd: HWND?
+    let tokenRowHwnd: HWND?
+    let tokenRowHeight: Int32
     let contentHwnd: HWND?
     let searchHeight: Int32
     let searchVisible: Bool
 
-    init(searchHwnd: HWND?, contentHwnd: HWND?,
-         searchHeight: Int32, searchVisible: Bool) {
+    init(searchHwnd: HWND?, tokenRowHwnd: HWND? = nil, tokenRowHeight: Int32 = 0,
+         contentHwnd: HWND?, searchHeight: Int32, searchVisible: Bool) {
         self.searchHwnd = searchHwnd
+        self.tokenRowHwnd = tokenRowHwnd
+        self.tokenRowHeight = tokenRowHeight
         self.contentHwnd = contentHwnd
         self.searchHeight = searchHeight
         self.searchVisible = searchVisible
@@ -5379,12 +5423,17 @@ func performSearchableLayout(container: HWND, info: SearchableLayoutInfo) {
 
     if info.searchVisible {
         let gap: Int32 = 4
+        var nextY: Int32 = 0
         if let sh = info.searchHwnd {
             SetWindowPos(sh, nil, 0, 0, w, info.searchHeight, UINT(SWP_NOZORDER))
+            nextY = info.searchHeight + gap
+        }
+        if let tr = info.tokenRowHwnd {
+            SetWindowPos(tr, nil, 0, nextY, w, info.tokenRowHeight, UINT(SWP_NOZORDER))
+            nextY += info.tokenRowHeight + gap
         }
         if let ch = info.contentHwnd {
-            let contentY = info.searchHeight + gap
-            SetWindowPos(ch, nil, 0, contentY, w, max(0, h - contentY), UINT(SWP_NOZORDER))
+            SetWindowPos(ch, nil, 0, nextY, w, max(0, h - nextY), UINT(SWP_NOZORDER))
         }
     } else {
         if let ch = info.contentHwnd {
