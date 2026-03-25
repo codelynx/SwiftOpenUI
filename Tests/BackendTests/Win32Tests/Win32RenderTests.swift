@@ -2360,6 +2360,72 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertGreaterThan(childW, 0)
         XCTAssertLessThan(childW, 400, "Content should not stretch to parent width without expand flags")
     }
+
+    // MARK: - Searchable
+
+    func testSearchableCreatesSearchField() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content").searchable(text: $query)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Should have an Edit child (the search field)
+        var edits: [HWND] = []
+        collectEditControls(in: hwnd!, into: &edits)
+        XCTAssertGreaterThanOrEqual(edits.count, 1, "Should have at least one Edit control for search")
+    }
+
+    func testSearchableWithPlacement() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        // All placements render as top-of-content in Batch A
+        let view = Text("Content").searchable(
+            text: $query, placement: .toolbar, prompt: "Search")
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var edits: [HWND] = []
+        collectEditControls(in: hwnd!, into: &edits)
+        XCTAssertGreaterThanOrEqual(edits.count, 1, "Toolbar placement should still render search field")
+    }
+
+    func testSearchableIsPresentedTrue() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var presented = true
+        let view = Text("Content").searchable(
+            text: $query, isPresented: $presented)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var edits: [HWND] = []
+        collectEditControls(in: hwnd!, into: &edits)
+        XCTAssertGreaterThanOrEqual(edits.count, 1, "isPresented=true should show search field")
+    }
+
+    func testSearchableIsPresentedFalse() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var presented = false
+        let view = Text("Content").searchable(
+            text: $query, isPresented: $presented)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // With isPresented=false, no Edit control should be created
+        var edits: [HWND] = []
+        collectEditControls(in: hwnd!, into: &edits)
+        XCTAssertEqual(edits.count, 0, "isPresented=false should hide search field")
+    }
+
+    func testSearchablePromptPreserved() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content").searchable(text: $query, prompt: "Find items")
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Searchable with custom prompt should render")
+    }
 }
 
 // MARK: - Test helpers

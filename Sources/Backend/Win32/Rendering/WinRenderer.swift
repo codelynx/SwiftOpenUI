@@ -5087,44 +5087,70 @@ extension SearchableView: WinRenderable {
             context.parent, nil, context.hInstance, nil
         )!
 
-        // Search field at top — initialized with current binding value
+        // Batch A placement handling: all placements render as top-of-content
+        // search field. .automatic, .toolbar, .sidebar, .navigationBarDrawer
+        // are read and acknowledged but produce the same layout on Win32 in
+        // this batch. Future batches may differentiate toolbar vs sidebar.
+        let _ = placement  // read explicitly — not ignored
+
+        // Batch A isPresented handling: when the binding is false, the search
+        // field is hidden and content gets the full space. When true or nil
+        // (no binding), the search field is visible.
+        let searchVisible = isPresented?.wrappedValue ?? true
+
         let searchHeight: Int32 = 24
-        let currentText = text.wrappedValue
-        let searchHwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
-            win32_CreateChildWindow(
-                win32_WC_EDIT(), wstr,
-                DWORD(ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP),
-                0, 0, 0, searchHeight,
-                container, nil, context.hInstance
-            )
-        }
+        var searchHwnd: HWND? = nil
 
-        if let searchHwnd = searchHwnd {
-            // Placeholder
-            prompt.withCString(encodedAs: UTF16.self) { ptr in
-                _ = SendMessageW(searchHwnd, UINT(EM_SETCUEBANNER), 1,
-                                 LPARAM(Int(bitPattern: ptr)))
+        if searchVisible {
+            // Search field at top — initialized with current binding value
+            let currentText = text.wrappedValue
+            searchHwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_EDIT(), wstr,
+                    DWORD(ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP),
+                    0, 0, 0, searchHeight,
+                    container, nil, context.hInstance
+                )
             }
 
-            // Wire binding
-            let binding = text
-            let handler = SubclassHandler(hwnd: searchHwnd)
-            handler.onTextChanged = { newValue in
-                if newValue != binding.wrappedValue {
-                    binding.wrappedValue = newValue
+            if let searchHwnd = searchHwnd {
+                // Placeholder
+                prompt.withCString(encodedAs: UTF16.self) { ptr in
+                    _ = SendMessageW(searchHwnd, UINT(EM_SETCUEBANNER), 1,
+                                     LPARAM(Int(bitPattern: ptr)))
                 }
+
+                // Wire binding
+                let binding = text
+                let handler = SubclassHandler(hwnd: searchHwnd)
+                handler.onTextChanged = { newValue in
+                    if newValue != binding.wrappedValue {
+                        binding.wrappedValue = newValue
+                    }
+                }
+                let state = TextFieldState(handler: handler)
+                let statePtr = Unmanaged.passRetained(state).toOpaque()
+                SetWindowSubclass(searchHwnd, textFieldCleanupProc, 41,
+                                  DWORD_PTR(UInt(bitPattern: statePtr)))
             }
-            let state = TextFieldState(handler: handler)
-            let statePtr = Unmanaged.passRetained(state).toOpaque()
-            SetWindowSubclass(searchHwnd, textFieldCleanupProc, 41,
-                              DWORD_PTR(UInt(bitPattern: statePtr)))
         }
 
-        // Content below search field
+        // Content below search field (or at top when search is hidden)
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         let contentHwnd = winRenderView(content, in: childContext)
 
-        // Size container
+        // Retained layout info for resize relayout
+        let layoutInfo = SearchableLayoutInfo(
+            searchHwnd: searchHwnd,
+            contentHwnd: contentHwnd,
+            searchHeight: searchHeight,
+            searchVisible: searchVisible
+        )
+        let infoPtr = Unmanaged.passRetained(layoutInfo).toOpaque()
+        SetWindowSubclass(container, searchableLayoutProc, 4,
+                          DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        // Initial sizing
         var contentW: Int32 = 200
         var contentH: Int32 = 100
         if let ch = contentHwnd {
@@ -5134,18 +5160,105 @@ extension SearchableView: WinRenderable {
             contentH = r.bottom - r.top
         }
 
-        SetWindowPos(container, nil, 0, 0, contentW, searchHeight + 4 + contentH,
-                     UINT(SWP_NOZORDER | SWP_NOMOVE))
-
-        // Position children
-        if let sh = searchHwnd {
-            SetWindowPos(sh, nil, 0, 0, contentW, searchHeight, UINT(SWP_NOZORDER))
+        if searchVisible {
+            SetWindowPos(container, nil, 0, 0, contentW, searchHeight + 4 + contentH,
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+        } else {
+            SetWindowPos(container, nil, 0, 0, contentW, contentH,
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
         }
-        if let ch = contentHwnd {
-            SetWindowPos(ch, nil, 0, searchHeight + 4, contentW, contentH, UINT(SWP_NOZORDER))
-        }
+        performSearchableLayout(container: container, info: layoutInfo)
 
         return container
+    }
+}
+
+// MARK: - Searchable layout info & relayout
+
+class SearchableLayoutInfo {
+    let searchHwnd: HWND?
+    let contentHwnd: HWND?
+    let searchHeight: Int32
+    let searchVisible: Bool
+
+    init(searchHwnd: HWND?, contentHwnd: HWND?,
+         searchHeight: Int32, searchVisible: Bool) {
+        self.searchHwnd = searchHwnd
+        self.contentHwnd = contentHwnd
+        self.searchHeight = searchHeight
+        self.searchVisible = searchVisible
+    }
+}
+
+func performSearchableLayout(container: HWND, info: SearchableLayoutInfo) {
+    var rect = RECT()
+    GetClientRect(container, &rect)
+    let w = rect.right - rect.left
+    let h = rect.bottom - rect.top
+
+    if info.searchVisible {
+        let gap: Int32 = 4
+        if let sh = info.searchHwnd {
+            SetWindowPos(sh, nil, 0, 0, w, info.searchHeight, UINT(SWP_NOZORDER))
+        }
+        if let ch = info.contentHwnd {
+            let contentY = info.searchHeight + gap
+            SetWindowPos(ch, nil, 0, contentY, w, max(0, h - contentY), UINT(SWP_NOZORDER))
+        }
+    } else {
+        if let ch = info.contentHwnd {
+            SetWindowPos(ch, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+        }
+    }
+}
+
+let searchableLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_SIZE):
+        if dwRefData != 0 {
+            let info = Unmanaged<SearchableLayoutInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+            performSearchableLayout(container: hwnd!, info: info)
+        }
+        return 0
+
+    case UINT(WM_COMMAND):
+        if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
+            SendMessageW(childHwnd, uMsg, wParam, lParam)
+        }
+        if let root = findRootWindow(from: hwnd!) as HWND? {
+            return SendMessageW(root, uMsg, wParam, lParam)
+        }
+        return 0
+
+    case UINT(WM_HSCROLL), UINT(WM_VSCROLL):
+        if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
+            return SendMessageW(childHwnd, uMsg, wParam, lParam)
+        }
+        return 0
+
+    case UINT(WM_ERASEBKGND):
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
+
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
+        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        SetBkMode(hdc, TRANSPARENT)
+        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            Unmanaged<SearchableLayoutInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).release()
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
