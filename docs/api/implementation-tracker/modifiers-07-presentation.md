@@ -1,10 +1,10 @@
 # Presentation Modifiers
 
-Summary: 23 total, 0 implemented, 2 partial, 21 missing.
+Summary: 23 total, 1 implemented, 1 partial, 21 missing.
 
 ## Presentation Modifiers (~97)
 
-23 total, 0 implemented, 2 partial, 21 missing.
+23 total, 1 implemented, 1 partial, 21 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -30,4 +30,4 @@ Summary: 23 total, 0 implemented, 2 partial, 21 missing.
 | `presentationDetents` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `presentationDragIndicator` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `presentationSizing` | Both | iOS 18 / macOS 15 / watchOS 11 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
-| `sheet` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/SheetModifier.swift` | Public surface exists, but only 1 overload(s) are present vs 3 in the curated reference families. \| GTK: modal window; Win32: popup; Web: modal overlay |
+| `sheet` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/SheetModifier.swift` | GTK: modal window; Win32: popup; Web: modal overlay |
