@@ -30,4 +30,4 @@ Summary: 23 total, 1 implemented, 1 partial, 21 missing.
 | `presentationDetents` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `presentationDragIndicator` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `presentationSizing` | Both | iOS 18 / macOS 15 / watchOS 11 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
-| `sheet` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/SheetModifier.swift` | GTK: modal window; Win32: popup; Web: modal overlay |
+| `sheet` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/SheetModifier.swift` | Batch A: isPresented, item, and onDismiss families on GTK/Win32/Web. GTK: modal window; Win32: popup; Web: modal overlay. |

@@ -30,7 +30,7 @@ Summary: 34 total, 6 implemented, 2 partial, 26 missing.
 | `accentColor` | Both | - | Deprecated | Missing | `-` | iOS 17 |
 | `accessibility` | Both | - | Deprecated | Missing | `-` | iOS 14 |
 | `actionSheet` | Both | - | Deprecated | Missing | `-` | iOS 15 |
-| `alert` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/AlertModifier.swift` | Public surface exists, but only 3 overload(s) are present vs 4 in the curated reference families. \| GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay |
+| `alert` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/AlertModifier.swift` | Public surface exists, but only 3 overload(s) are present vs 4 in the curated reference families. \| Batch A: title + isPresented + actions/message families via simplified AlertButton[] + String API. Error-based family still missing. GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay. |
 | `animation` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AnimationModifier.swift` | Preferred \| Win32: D2D only; Android: JSON node |
 | `autocapitalization` | Both | - | Deprecated | Missing | `-` | iOS 15 |
 | `background` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/StyleModifiers.swift` | Modern API \| Color and arbitrary view overloads |
