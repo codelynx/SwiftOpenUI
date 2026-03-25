@@ -23,6 +23,7 @@ Every platform worker handoff must include:
 - Branch
 - Commit
 - Base commit
+- Verified remote base hash
 - Changed files
 - What was implemented
 - What remains partial
@@ -56,10 +57,18 @@ Workers may mention expected doc impacts in the handoff, but coordinator decides
 ## Merge Protocol
 
 1. Coordinator creates and pushes the batch base.
-2. Platform branches start from that exact base commit.
-3. Coordinator reviews and merges clean platform branches.
-4. Once any branch from that batch is merged into `develop`, remaining sibling branches are stale by default.
-5. After that point, additional platform work should come back as:
+2. Coordinator verifies the pushed remote ref with:
+   - `git ls-remote --heads origin <branch>`
+   - only then sends the worker handoff
+3. Worker verifies the base before doing any implementation:
+   - `git fetch origin`
+   - `git switch -C <worker-branch> origin/<base-branch>`
+   - `git rev-parse HEAD`
+   - if the hash differs from the handoff hash, stop and report stale base
+4. Platform branches start from that exact base commit.
+5. Coordinator reviews and merges clean platform branches.
+6. Once any branch from that batch is merged into `develop`, remaining sibling branches are stale by default.
+7. After that point, additional platform work should come back as:
    - a new branch from current `develop`, or
    - a focused cherry-pickable commit
 

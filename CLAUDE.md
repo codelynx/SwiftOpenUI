@@ -24,12 +24,20 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 ## Multi-Platform Branch Protocol
 
 - Coordinator creates one pushed core/base branch per batch and declares the exact base commit hash.
+- After pushing a core/base branch, coordinator must verify the remote ref explicitly with:
+  - `git ls-remote --heads origin <branch>`
+  - only send handoff after the remote hash matches the intended local commit
 - Every platform handoff must include:
   - branch
   - commit
   - base commit
   - changed files
   - tests run
+- Worker first step must be:
+  - `git fetch origin`
+  - `git switch -C <worker-branch> origin/<base-branch>`
+  - `git rev-parse HEAD`
+- If the worker sees a different commit hash than the handoff hash, stop and report a stale base immediately.
 - Platform branches may edit only backend-owned files and backend tests.
 - Platform branches must not update shared truth docs:
   - `docs/api/implementation-tracker/**`
@@ -54,7 +62,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 ```bash
 # macOS (uses real SwiftUI for examples)
 swift build
-swift test                   # 319 tests
+swift test                   # 324 tests
 
 # WebAssembly (requires open-source Swift toolchain, not Xcode's)
 source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
