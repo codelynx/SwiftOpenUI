@@ -2000,6 +2000,47 @@ private func webSafeAreaVerticalAlignmentDescriptor(
     }
 }
 
+// MARK: - Safe Area Padding
+
+/// Synthetic safe-area padding default for Batch A (no native measurement).
+private let webSafeAreaPaddingSyntheticDefault = 16
+
+extension SafeAreaPaddingView: WebRenderable, WebDescribable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let amount = max(length ?? webSafeAreaPaddingSyntheticDefault, 0)
+
+        let top = edges.contains(.top) ? amount : 0
+        let bottom = edges.contains(.bottom) ? amount : 0
+        let leading = edges.contains(.leading) ? amount : 0
+        let trailing = edges.contains(.trailing) ? amount : 0
+
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("padding: \(top)px \(trailing)px \(bottom)px \(leading)px;")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        let amount = max(length ?? webSafeAreaPaddingSyntheticDefault, 0)
+        let top = edges.contains(.top) ? amount : 0
+        let bottom = edges.contains(.bottom) ? amount : 0
+        let leading = edges.contains(.leading) ? amount : 0
+        let trailing = edges.contains(.trailing) ? amount : 0
+
+        return WebDescriptorNode(
+            kind: .composite,
+            typeName: "SafeAreaPaddingView",
+            props: .safeAreaPadding(
+                WebSafeAreaPaddingDescriptor(
+                    top: top, bottom: bottom, leading: leading, trailing: trailing
+                )
+            ),
+            children: [webDescribeView(content)]
+        )
+    }
+}
+
 extension OnAppearView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)

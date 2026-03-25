@@ -918,4 +918,85 @@ final class WebDescriptorTests: XCTestCase {
         )
     }
 
+    // MARK: - Safe Area Padding Descriptor Tests
+
+    func testDescribeSafeAreaPaddingDefault() {
+        let view = Text("Content").safeAreaPadding()
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(node.kind, .composite)
+        XCTAssertEqual(node.typeName, "SafeAreaPaddingView")
+        // nil length → synthetic default 16 on all edges
+        XCTAssertEqual(
+            node.props,
+            .safeAreaPadding(
+                WebSafeAreaPaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)
+            )
+        )
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].kind, .text)
+    }
+
+    func testDescribeSafeAreaPaddingExplicitLength() {
+        let view = Text("Content").safeAreaPadding(24)
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .safeAreaPadding(
+                WebSafeAreaPaddingDescriptor(top: 24, bottom: 24, leading: 24, trailing: 24)
+            )
+        )
+    }
+
+    func testDescribeSafeAreaPaddingSelectedEdgesExplicit() {
+        let view = Text("Content").safeAreaPadding(.horizontal, 10)
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .safeAreaPadding(
+                WebSafeAreaPaddingDescriptor(top: 0, bottom: 0, leading: 10, trailing: 10)
+            )
+        )
+    }
+
+    func testDescribeSafeAreaPaddingSelectedEdgesNilLength() {
+        let view = Text("Content").safeAreaPadding(.vertical)
+        let node = webDescribeView(view)
+
+        // nil length → synthetic default 16 on vertical edges only
+        XCTAssertEqual(
+            node.props,
+            .safeAreaPadding(
+                WebSafeAreaPaddingDescriptor(top: 16, bottom: 16, leading: 0, trailing: 0)
+            )
+        )
+    }
+
+    func testDescribeSafeAreaPaddingTopOnly() {
+        let view = Text("Content").safeAreaPadding(.top, 8)
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .safeAreaPadding(
+                WebSafeAreaPaddingDescriptor(top: 8, bottom: 0, leading: 0, trailing: 0)
+            )
+        )
+    }
+
+    func testDescribeSafeAreaPaddingNegativeClampsToZero() {
+        let view = Text("Content").safeAreaPadding(-8)
+        let node = webDescribeView(view)
+
+        // Negative lengths clamp to 0 — CSS padding cannot be negative
+        XCTAssertEqual(
+            node.props,
+            .safeAreaPadding(
+                WebSafeAreaPaddingDescriptor(top: 0, bottom: 0, leading: 0, trailing: 0)
+            )
+        )
+    }
+
 }
