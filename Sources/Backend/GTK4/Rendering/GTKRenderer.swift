@@ -3621,7 +3621,7 @@ extension ConfirmationDialogView: GTKRenderable {
             let dialog = gtk_window_new()!
             let dialogWin = windowPointer(dialog)
             gtk_window_set_modal(dialogWin, 1)
-            gtk_window_set_title(dialogWin, dialogTitle)
+            gtk_window_set_title(dialogWin, dialogTitleVisibility == .hidden ? "" : dialogTitle)
             gtk_window_set_default_size(dialogWin, 300, -1)
             gtk_window_set_resizable(dialogWin, 0)
             gtk_window_set_transient_for(
