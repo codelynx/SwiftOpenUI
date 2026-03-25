@@ -88,11 +88,39 @@ final class Phase4FViewTests: XCTestCase {
         let searchable = text.searchable(text: .constant("query"), prompt: "Find...")
         XCTAssertEqual(searchable.text.wrappedValue, "query")
         XCTAssertEqual(searchable.prompt, "Find...")
+        XCTAssertEqual(searchable.placement, .automatic)
+        XCTAssertNil(searchable.isPresented)
     }
 
     func testSearchableDefaultPrompt() {
         let searchable = Text("Content").searchable(text: .constant(""))
         XCTAssertEqual(searchable.prompt, "Search")
+        XCTAssertEqual(searchable.placement, .automatic)
+    }
+
+    func testSearchableExplicitPlacement() {
+        let searchable = Text("Content").searchable(
+            text: .constant("query"),
+            placement: .sidebar,
+            prompt: "Find..."
+        )
+        XCTAssertEqual(searchable.placement, .sidebar)
+        XCTAssertNil(searchable.isPresented)
+    }
+
+    func testSearchableStoresPresentationBinding() {
+        let presented = Binding.constant(true)
+        let searchable = Text("Content").searchable(
+            text: .constant("query"),
+            isPresented: presented,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Find..."
+        )
+        XCTAssertTrue(searchable.isPresented?.wrappedValue == true)
+        XCTAssertEqual(
+            searchable.placement,
+            .navigationBarDrawer(displayMode: .always)
+        )
     }
 
     // MARK: - Menu
