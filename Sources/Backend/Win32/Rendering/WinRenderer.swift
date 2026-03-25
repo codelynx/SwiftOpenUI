@@ -5353,7 +5353,52 @@ extension SearchableView: WinRenderable {
             tokenRowWidth = chipX + 2
         }
 
-        // Batch C: render suggestion rows below search field + token row
+        // Batch D: render scope buttons as a horizontal row below token row
+        var scopeRowHwnd: HWND? = nil
+        let scopeRowHeight: Int32 = scopes.isEmpty ? 0 : 26
+        var scopeRowWidth: Int32 = 0
+        if searchVisible && !scopes.isEmpty {
+            let scopeRow = CreateWindowExW(
+                0, stackContainerClassName, nil,
+                DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+                0, 0, 0, scopeRowHeight,
+                container, nil, context.hInstance, nil
+            )!
+            scopeRowHwnd = scopeRow
+
+            SetWindowSubclass(scopeRow, searchableLayoutProc, 6, 0)
+
+            var scopeX: Int32 = 0
+            for scope in scopes {
+                let isSelected = scope.id == selectedScopeID
+                let controlID = nextControlID()
+                let label = isSelected ? "[\(scope.label)]" : scope.label
+                let measured = measureText(label, hwnd: scopeRow)
+                let btnW = measured.width + 16
+                let btn = label.withCString(encodedAs: UTF16.self) { wstr in
+                    win32_CreateChildWindow(
+                        win32_WC_BUTTON(), wstr,
+                        DWORD(BS_PUSHBUTTON),
+                        scopeX, 0, btnW, scopeRowHeight,
+                        scopeRow,
+                        HMENU(bitPattern: UInt(controlID)),
+                        context.hInstance
+                    )
+                }
+                if let btn {
+                    SetWindowSubclass(btn, buttonCleanupProc, 0, DWORD_PTR(controlID))
+                    let scopeID = scope.id
+                    let view = self
+                    registerCommandHandler(controlID: controlID, action: {
+                        view.selectScope(id: scopeID)
+                    })
+                }
+                scopeX += btnW + 2
+            }
+            scopeRowWidth = scopeX
+        }
+
+        // Batch C: render suggestion rows below search field + token row + scopes
         var suggestionContainerHwnd: HWND? = nil
         let suggestionRowHeight: Int32 = 24
         var suggestionContainerHeight: Int32 = 0
@@ -5407,6 +5452,8 @@ extension SearchableView: WinRenderable {
             searchHwnd: searchHwnd,
             tokenRowHwnd: tokenRowHwnd,
             tokenRowHeight: tokenRowHeight,
+            scopeRowHwnd: scopeRowHwnd,
+            scopeRowHeight: scopeRowHeight,
             suggestionContainerHwnd: suggestionContainerHwnd,
             suggestionContainerHeight: suggestionContainerHeight,
             contentHwnd: contentHwnd,
@@ -5427,13 +5474,15 @@ extension SearchableView: WinRenderable {
             contentH = r.bottom - r.top
         }
         contentW = max(contentW, tokenRowWidth)
+        contentW = max(contentW, scopeRowWidth)
         contentW = max(contentW, suggestionMaxWidth)
 
         if searchVisible {
             let tokenExtra = tokenRowHeight > 0 ? tokenRowHeight + 4 : Int32(0)
+            let scopeExtra = scopeRowHeight > 0 ? scopeRowHeight + 4 : Int32(0)
             let suggestionExtra = suggestionContainerHeight > 0 ? suggestionContainerHeight + 4 : Int32(0)
             SetWindowPos(container, nil, 0, 0, contentW,
-                         searchHeight + 4 + tokenExtra + suggestionExtra + contentH,
+                         searchHeight + 4 + tokenExtra + scopeExtra + suggestionExtra + contentH,
                          UINT(SWP_NOZORDER | SWP_NOMOVE))
         } else {
             SetWindowPos(container, nil, 0, 0, contentW, contentH,
@@ -5451,6 +5500,8 @@ class SearchableLayoutInfo {
     let searchHwnd: HWND?
     let tokenRowHwnd: HWND?
     let tokenRowHeight: Int32
+    let scopeRowHwnd: HWND?
+    let scopeRowHeight: Int32
     let suggestionContainerHwnd: HWND?
     let suggestionContainerHeight: Int32
     let contentHwnd: HWND?
@@ -5458,11 +5509,14 @@ class SearchableLayoutInfo {
     let searchVisible: Bool
 
     init(searchHwnd: HWND?, tokenRowHwnd: HWND? = nil, tokenRowHeight: Int32 = 0,
+         scopeRowHwnd: HWND? = nil, scopeRowHeight: Int32 = 0,
          suggestionContainerHwnd: HWND? = nil, suggestionContainerHeight: Int32 = 0,
          contentHwnd: HWND?, searchHeight: Int32, searchVisible: Bool) {
         self.searchHwnd = searchHwnd
         self.tokenRowHwnd = tokenRowHwnd
         self.tokenRowHeight = tokenRowHeight
+        self.scopeRowHwnd = scopeRowHwnd
+        self.scopeRowHeight = scopeRowHeight
         self.suggestionContainerHwnd = suggestionContainerHwnd
         self.suggestionContainerHeight = suggestionContainerHeight
         self.contentHwnd = contentHwnd
@@ -5487,6 +5541,10 @@ func performSearchableLayout(container: HWND, info: SearchableLayoutInfo) {
         if let tr = info.tokenRowHwnd {
             SetWindowPos(tr, nil, 0, nextY, w, info.tokenRowHeight, UINT(SWP_NOZORDER))
             nextY += info.tokenRowHeight + gap
+        }
+        if let sr = info.scopeRowHwnd {
+            SetWindowPos(sr, nil, 0, nextY, w, info.scopeRowHeight, UINT(SWP_NOZORDER))
+            nextY += info.scopeRowHeight + gap
         }
         if let sc = info.suggestionContainerHwnd {
             SetWindowPos(sc, nil, 0, nextY, w, info.suggestionContainerHeight, UINT(SWP_NOZORDER))
