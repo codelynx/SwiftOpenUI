@@ -806,7 +806,9 @@ final class WebDescriptorTests: XCTestCase {
                     isPresented: nil,
                     tokens: [],
                     tokenMode: nil,
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -834,7 +836,9 @@ final class WebDescriptorTests: XCTestCase {
                     isPresented: nil,
                     tokens: [],
                     tokenMode: nil,
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -860,7 +864,9 @@ final class WebDescriptorTests: XCTestCase {
                     isPresented: true,
                     tokens: [],
                     tokenMode: nil,
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -884,7 +890,9 @@ final class WebDescriptorTests: XCTestCase {
                     isPresented: false,
                     tokens: [],
                     tokenMode: nil,
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -907,7 +915,9 @@ final class WebDescriptorTests: XCTestCase {
                     isPresented: nil,
                     tokens: [],
                     tokenMode: nil,
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -930,7 +940,9 @@ final class WebDescriptorTests: XCTestCase {
                     isPresented: nil,
                     tokens: [],
                     tokenMode: nil,
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -1174,7 +1186,9 @@ final class WebDescriptorTests: XCTestCase {
                         WebSearchTokenDescriptor(id: "2", label: "Rust"),
                     ],
                     tokenMode: "tokens",
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -1205,7 +1219,9 @@ final class WebDescriptorTests: XCTestCase {
                         WebSearchTokenDescriptor(id: "a", label: "Tag A"),
                     ],
                     tokenMode: "editableTokens",
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -1232,7 +1248,9 @@ final class WebDescriptorTests: XCTestCase {
                     isPresented: nil,
                     tokens: [],
                     tokenMode: "tokens",
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -1264,7 +1282,9 @@ final class WebDescriptorTests: XCTestCase {
                     suggestions: [
                         WebSearchSuggestionDescriptor(id: "Apple", label: "Apple", completion: nil),
                         WebSearchSuggestionDescriptor(id: "Banana", label: "Banana", completion: nil),
-                    ]
+                    ],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -1290,7 +1310,9 @@ final class WebDescriptorTests: XCTestCase {
                     tokenMode: nil,
                     suggestions: [
                         WebSearchSuggestionDescriptor(id: "Show me apples|apple", label: "Show me apples", completion: "apple"),
-                    ]
+                    ],
+                    scopes: [],
+                    selectedScopeID: nil
                 )
             )
         )
@@ -1312,7 +1334,85 @@ final class WebDescriptorTests: XCTestCase {
                     isPresented: nil,
                     tokens: [],
                     tokenMode: nil,
-                    suggestions: []
+                    suggestions: [],
+                    scopes: [],
+                    selectedScopeID: nil
+                )
+            )
+        )
+    }
+
+    // MARK: - Search Scopes Descriptor Tests
+
+    private enum TestScope: String, Hashable, CaseIterable {
+        case all = "All"
+        case books = "Books"
+        case music = "Music"
+    }
+
+    func testDescribeSearchableWithScopes() {
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var scope = TestScope.all
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchScopes($scope, scopes: TestScope.allCases) { s in
+                Text(s.rawValue)
+            }
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(node.kind, .composite)
+        XCTAssertEqual(node.typeName, "SearchableView")
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: nil,
+                    suggestions: [],
+                    scopes: [
+                        WebSearchScopeDescriptor(id: "all", label: "All"),
+                        WebSearchScopeDescriptor(id: "books", label: "Books"),
+                        WebSearchScopeDescriptor(id: "music", label: "Music"),
+                    ],
+                    selectedScopeID: "all"
+                )
+            )
+        )
+    }
+
+    func testDescribeSearchableWithScopesAndSuggestions() {
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var scope = TestScope.books
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchSuggestions {
+                Text("Swift")
+            }
+            .searchScopes($scope, scopes: [TestScope.all, TestScope.books]) { s in
+                Text(s.rawValue)
+            }
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: nil,
+                    suggestions: [
+                        WebSearchSuggestionDescriptor(id: "Swift", label: "Swift", completion: nil),
+                    ],
+                    scopes: [
+                        WebSearchScopeDescriptor(id: "all", label: "All"),
+                        WebSearchScopeDescriptor(id: "books", label: "Books"),
+                    ],
+                    selectedScopeID: "books"
                 )
             )
         )

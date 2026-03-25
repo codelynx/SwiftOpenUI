@@ -2100,6 +2100,30 @@ extension SearchableView: WebRenderable, WebDescribable {
 
         _ = container.appendChild(input)
 
+        // Render scope controls below the search input (hidden when dismissed)
+        if !scopes.isEmpty && !searchDismissed {
+            let scopeBar = document.createElement("div")
+            scopeBar.style = "display: flex; gap: 0; border: 1px solid #555; border-radius: 4px; overflow: hidden;"
+            let currentID = selectedScopeID
+            for scope in scopes {
+                let btn = document.createElement("button")
+                btn.textContent = .string(scope.label)
+                let isSelected = scope.id == currentID
+                let bgColor = isSelected ? "#0a84ff" : "#333"
+                btn.style = .string("flex: 1; padding: 6px 8px; border: none; cursor: pointer; font-size: 13px; background: \(bgColor); color: white;")
+
+                let scopeID = scope.id
+                let view = self
+                let clickHandler = webMakeClosure { _ in
+                    view.selectScope(id: scopeID)
+                    return .undefined
+                }
+                btn.onclick = .object(clickHandler)
+                _ = scopeBar.appendChild(btn)
+            }
+            _ = container.appendChild(scopeBar)
+        }
+
         // Render suggestions below the search input (hidden when search is dismissed)
         if !suggestions.isEmpty && !searchDismissed {
             let suggestionsDiv = document.createElement("div")
@@ -2141,7 +2165,9 @@ extension SearchableView: WebRenderable, WebDescribable {
                     tokenMode: tokenMode.map { $0 == .editableTokens ? "editableTokens" : "tokens" },
                     suggestions: suggestions.map {
                         WebSearchSuggestionDescriptor(id: $0.id, label: $0.label, completion: $0.completion)
-                    }
+                    },
+                    scopes: scopes.map { WebSearchScopeDescriptor(id: $0.id, label: $0.label) },
+                    selectedScopeID: selectedScopeID
                 )
             ),
             children: [webDescribeView(content)]

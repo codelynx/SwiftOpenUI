@@ -126,6 +126,11 @@ public struct WebSearchSuggestionDescriptor: Equatable {
     public let completion: String?
 }
 
+public struct WebSearchScopeDescriptor: Equatable {
+    public let id: String
+    public let label: String
+}
+
 public struct WebSearchableDescriptor: Equatable {
     public let prompt: String
     public let placement: String
@@ -133,6 +138,8 @@ public struct WebSearchableDescriptor: Equatable {
     public let tokens: [WebSearchTokenDescriptor]
     public let tokenMode: String?
     public let suggestions: [WebSearchSuggestionDescriptor]
+    public let scopes: [WebSearchScopeDescriptor]
+    public let selectedScopeID: String?
 }
 
 public struct WebSafeAreaPaddingDescriptor: Equatable {
