@@ -96,6 +96,25 @@ public struct WebFontDescriptor: Equatable {
     public let font: Font
 }
 
+public struct WebIgnoresSafeAreaDescriptor: Equatable {
+    public let regionsRawValue: Int
+    public let edgesRawValue: Int
+}
+
+public enum WebSafeAreaInsetEdgeDescriptor: String, Equatable {
+    case top
+    case bottom
+    case leading
+    case trailing
+}
+
+public struct WebSafeAreaInsetDescriptor: Equatable {
+    public let edge: WebSafeAreaInsetEdgeDescriptor
+    public let horizontalAlignment: WebHorizontalAlignmentDescriptor?
+    public let verticalAlignment: WebVerticalAlignmentDescriptor?
+    public let spacing: Int
+}
+
 // MARK: - Descriptor props and node
 
 public enum WebDescriptorProps: Equatable {
@@ -108,7 +127,9 @@ public enum WebDescriptorProps: Equatable {
     case frame(WebFrameDescriptor)
     case foregroundColor(WebColorDescriptor)
     case hStack(WebHStackDescriptor)
+    case ignoresSafeArea(WebIgnoresSafeAreaDescriptor)
     case padding(WebPaddingDescriptor)
+    case safeAreaInset(WebSafeAreaInsetDescriptor)
     case slider(WebSliderDescriptor)
     case vStack(WebVStackDescriptor)
     case zStack(WebZStackDescriptor)

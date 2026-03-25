@@ -101,8 +101,8 @@ Last updated: 2026-03-24
 | .gridCellColumns() | Y | Y | Y | Y | Y | - | Column span in Grid/GridRow; Web: grid-column span |
 | .pickerStyle() | Y | Y | Y | Y | Y | - | .automatic (select), .segmented (button row), .palette (alias) |
 | .navigationSplitViewColumnWidth() | Y | Y | Y | Y | Y | - | min/ideal/max; Web: pass-through (consumed by NavigationSplitView) |
-| .ignoresSafeArea() | Y | Y | Y | ~ | - | - | GTK: passthrough; Win32: passthrough pending native safe-area model |
-| .safeAreaInset() | Y | Y | Y | ~ | - | - | GTK: GtkBox reserved-space layout; Win32: all-edge reservation with spacing/alignment |
+| .ignoresSafeArea() | Y | Y | Y | ~ | ~ | - | GTK: passthrough; Win32/Web: passthrough pending safe-area model |
+| .safeAreaInset() | Y | Y | Y | ~ | ~ | - | GTK: GtkBox reserved-space layout; Win32/Web: reservation with spacing/alignment |
 | .clipShape() | Y | - | - | - | - | - | |
 | .task() | Y | - | - | - | - | - | Needs async runtime |
 
