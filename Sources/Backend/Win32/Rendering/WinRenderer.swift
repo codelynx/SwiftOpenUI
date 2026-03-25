@@ -6482,3 +6482,241 @@ extension TupleView: WinRenderable {
         return winRenderView(list, in: context)
     }
 }
+
+// MARK: - Safe Area
+
+extension IgnoresSafeAreaView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Batch 1: passthrough — Win32 has no native safe-area reservation yet,
+        // so ignoring it is a no-op. Just render the wrapped content.
+        return winRenderView(content, in: context)
+    }
+}
+
+extension SafeAreaInsetView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+
+        guard let contentHwnd = winRenderView(content, in: childContext) else { return container }
+        guard let insetHwnd = winRenderView(inset, in: childContext) else {
+            var r = RECT()
+            GetWindowRect(contentHwnd, &r)
+            SetWindowPos(container, nil, 0, 0, r.right - r.left, r.bottom - r.top,
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+            return container
+        }
+
+        // Build retained layout info for resize relayout
+        let layoutInfo = SafeAreaInsetLayoutInfo(
+            contentHwnd: contentHwnd,
+            insetHwnd: insetHwnd,
+            edge: edge,
+            alignment: alignment,
+            spacing: Int32(spacing)
+        )
+        let infoPtr = Unmanaged.passRetained(layoutInfo).toOpaque()
+        SetWindowSubclass(container, safeAreaInsetLayoutProc, 3,
+                          DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        // Initial natural-size layout
+        var contentRect = RECT()
+        GetWindowRect(contentHwnd, &contentRect)
+        let cw = contentRect.right - contentRect.left
+        let ch = contentRect.bottom - contentRect.top
+
+        var insetRect = RECT()
+        GetWindowRect(insetHwnd, &insetRect)
+        let iw = insetRect.right - insetRect.left
+        let ih = insetRect.bottom - insetRect.top
+
+        let gap = Int32(spacing)
+        let totalW: Int32
+        let totalH: Int32
+        switch edge {
+        case .top, .bottom:
+            totalW = max(cw, iw)
+            totalH = ch + gap + ih
+        case .leading, .trailing:
+            totalW = cw + gap + iw
+            totalH = max(ch, ih)
+        }
+        SetWindowPos(container, nil, 0, 0, totalW, totalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        performSafeAreaInsetLayout(container: container, info: layoutInfo)
+
+        // Propagate expansion flags
+        if shouldExpandWidth(contentHwnd) || shouldExpandWidth(insetHwnd) {
+            markExpandWidth(container)
+        }
+        if shouldExpandHeight(contentHwnd) || shouldExpandHeight(insetHwnd) {
+            markExpandHeight(container)
+        }
+
+        return container
+    }
+}
+
+// MARK: - Safe area inset layout info & relayout
+
+class SafeAreaInsetLayoutInfo {
+    let contentHwnd: HWND
+    let insetHwnd: HWND
+    let edge: SafeAreaInsetEdge
+    let alignment: SafeAreaInsetAlignment
+    let spacing: Int32
+
+    init(contentHwnd: HWND, insetHwnd: HWND,
+         edge: SafeAreaInsetEdge, alignment: SafeAreaInsetAlignment,
+         spacing: Int32) {
+        self.contentHwnd = contentHwnd
+        self.insetHwnd = insetHwnd
+        self.edge = edge
+        self.alignment = alignment
+        self.spacing = spacing
+    }
+}
+
+func performSafeAreaInsetLayout(container: HWND, info: SafeAreaInsetLayoutInfo) {
+    var rect = RECT()
+    GetClientRect(container, &rect)
+    let containerW = rect.right - rect.left
+    let containerH = rect.bottom - rect.top
+
+    // Measure inset natural size (inset keeps its natural cross-axis dimension)
+    var insetRect = RECT()
+    GetWindowRect(info.insetHwnd, &insetRect)
+    let iNatW = insetRect.right - insetRect.left
+    let iNatH = insetRect.bottom - insetRect.top
+
+    let gap = info.spacing
+
+    // Expand inset along the cross-axis when it has expand flags
+    let insetExpandsW = shouldExpandWidth(info.insetHwnd)
+    let insetExpandsH = shouldExpandHeight(info.insetHwnd)
+
+    switch info.edge {
+    case .top:
+        let iw = insetExpandsW ? containerW : iNatW
+        let ix = insetExpandsW ? Int32(0)
+            : safeAreaCrossAlignX(alignment: info.alignment,
+                                   insetWidth: iNatW, containerWidth: containerW)
+        SetWindowPos(info.insetHwnd, nil, ix, 0, iw, iNatH, UINT(SWP_NOZORDER))
+        let contentY = iNatH + gap
+        SetWindowPos(info.contentHwnd, nil, 0, contentY,
+                     containerW, max(0, containerH - contentY), UINT(SWP_NOZORDER))
+
+    case .bottom:
+        let contentH = max(0, containerH - iNatH - gap)
+        SetWindowPos(info.contentHwnd, nil, 0, 0, containerW, contentH, UINT(SWP_NOZORDER))
+        let iw = insetExpandsW ? containerW : iNatW
+        let ix = insetExpandsW ? Int32(0)
+            : safeAreaCrossAlignX(alignment: info.alignment,
+                                   insetWidth: iNatW, containerWidth: containerW)
+        SetWindowPos(info.insetHwnd, nil, ix, contentH + gap, iw, iNatH, UINT(SWP_NOZORDER))
+
+    case .leading:
+        let ih = insetExpandsH ? containerH : iNatH
+        let iy = insetExpandsH ? Int32(0)
+            : safeAreaCrossAlignY(alignment: info.alignment,
+                                   insetHeight: iNatH, containerHeight: containerH)
+        SetWindowPos(info.insetHwnd, nil, 0, iy, iNatW, ih, UINT(SWP_NOZORDER))
+        let contentX = iNatW + gap
+        SetWindowPos(info.contentHwnd, nil, contentX, 0,
+                     max(0, containerW - contentX), containerH, UINT(SWP_NOZORDER))
+
+    case .trailing:
+        let contentW = max(0, containerW - iNatW - gap)
+        SetWindowPos(info.contentHwnd, nil, 0, 0, contentW, containerH, UINT(SWP_NOZORDER))
+        let ih = insetExpandsH ? containerH : iNatH
+        let iy = insetExpandsH ? Int32(0)
+            : safeAreaCrossAlignY(alignment: info.alignment,
+                                   insetHeight: iNatH, containerHeight: containerH)
+        SetWindowPos(info.insetHwnd, nil, contentW + gap, iy, iNatW, ih, UINT(SWP_NOZORDER))
+    }
+}
+
+private func safeAreaCrossAlignX(alignment: SafeAreaInsetAlignment,
+                                  insetWidth: Int32, containerWidth: Int32) -> Int32 {
+    let hAlign: HorizontalAlignment
+    switch alignment {
+    case .horizontal(let a): hAlign = a
+    case .vertical: hAlign = .center
+    }
+    switch hAlign {
+    case .leading:  return 0
+    case .center:   return (containerWidth - insetWidth) / 2
+    case .trailing: return containerWidth - insetWidth
+    }
+}
+
+private func safeAreaCrossAlignY(alignment: SafeAreaInsetAlignment,
+                                  insetHeight: Int32, containerHeight: Int32) -> Int32 {
+    let vAlign: VerticalAlignment
+    switch alignment {
+    case .vertical(let a): vAlign = a
+    case .horizontal: vAlign = .center
+    }
+    switch vAlign {
+    case .top:    return 0
+    case .center: return (containerHeight - insetHeight) / 2
+    case .bottom: return containerHeight - insetHeight
+    }
+}
+
+let safeAreaInsetLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_SIZE):
+        if dwRefData != 0 {
+            let info = Unmanaged<SafeAreaInsetLayoutInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+            performSafeAreaInsetLayout(container: hwnd!, info: info)
+        }
+        return 0
+
+    case UINT(WM_COMMAND):
+        if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
+            SendMessageW(childHwnd, uMsg, wParam, lParam)
+        }
+        if let root = findRootWindow(from: hwnd!) as HWND? {
+            return SendMessageW(root, uMsg, wParam, lParam)
+        }
+        return 0
+
+    case UINT(WM_HSCROLL), UINT(WM_VSCROLL):
+        if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
+            return SendMessageW(childHwnd, uMsg, wParam, lParam)
+        }
+        return 0
+
+    case UINT(WM_ERASEBKGND):
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
+
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
+        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        SetBkMode(hdc, TRANSPARENT)
+        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            Unmanaged<SafeAreaInsetLayoutInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).release()
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
