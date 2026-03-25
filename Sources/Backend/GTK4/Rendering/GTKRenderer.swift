@@ -1387,8 +1387,10 @@ extension SheetModifierView: GTKRenderable {
             // Dismiss active sheet if binding turned false
             if let dialogPtr = g_object_get_data(gobject, "swift-sheet-window") {
                 let dialog = dialogPtr.assumingMemoryBound(to: GtkWindow.self)
+                g_object_set_data(gobject, "swift-sheet-active", nil)
                 g_object_set_data(gobject, "swift-sheet-window", nil)
                 gtk_window_destroy(dialog)
+                onDismiss?()
             }
             return opaqueFromWidget(widget)
         }
@@ -1485,8 +1487,10 @@ extension ItemSheetModifierView: GTKRenderable {
             // Dismiss active sheet if item became nil
             if let dialogPtr = g_object_get_data(gobject, "swift-sheet-window") {
                 let dialog = dialogPtr.assumingMemoryBound(to: GtkWindow.self)
+                g_object_set_data(gobject, "swift-sheet-active", nil)
                 g_object_set_data(gobject, "swift-sheet-window", nil)
                 gtk_window_destroy(dialog)
+                onDismiss?()
             }
             return opaqueFromWidget(widget)
         }
