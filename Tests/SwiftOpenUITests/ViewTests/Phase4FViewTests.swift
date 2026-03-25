@@ -412,6 +412,57 @@ final class Phase4FViewTests: XCTestCase {
         XCTAssertEqual(view.toolbarItems.count, 1)
     }
 
+    func testToolbarVisibilityConfigurationStored() {
+        let view = Text("Content").toolbar(.hidden, for: .navigationBar)
+
+        XCTAssertEqual(
+            view.toolbarConfiguration,
+            ToolbarConfiguration(
+                visibility: .hidden,
+                visibilityTarget: .navigationBar
+            )
+        )
+    }
+
+    func testToolbarRemovingPlacementsStored() {
+        let view = Text("Content").toolbar(removing: .leading, .primaryAction)
+
+        XCTAssertEqual(
+            view.toolbarConfiguration.removedPlacements,
+            [.leading, .primaryAction]
+        )
+    }
+
+    func testToolbarConfigurationWrapsToolbarItems() {
+        let configured = Text("Content")
+            .toolbar {
+                ToolbarItem(placement: .trailing) {
+                    Button("Save") { }
+                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+
+        XCTAssertEqual(configured.toolbarConfiguration.visibility, .hidden)
+        XCTAssertEqual(configured.toolbarConfiguration.visibilityTarget, .navigationBar)
+        XCTAssertTrue(configured.content is ToolbarView<Text>)
+        let wrapped = configured.content as! ToolbarView<Text>
+        XCTAssertEqual(wrapped.toolbarItems.count, 1)
+    }
+
+    func testToolbarConfigurationCanMergeVisibilityAndRemovals() {
+        let configured = Text("Content")
+            .toolbar(.visible, for: .navigationBar)
+            .toolbar(removing: .trailing)
+            .toolbar(removing: .trailing, .primaryAction)
+
+        XCTAssertEqual(configured.toolbarConfiguration.visibility, .visible)
+        XCTAssertEqual(configured.toolbarConfiguration.visibilityTarget, .navigationBar)
+        XCTAssertEqual(
+            configured.toolbarConfiguration.removedPlacements,
+            [.trailing, .primaryAction]
+        )
+    }
+
     // MARK: - ConfirmationDialog
 
     func testConfirmationDialogConstruction() {
