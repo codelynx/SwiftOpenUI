@@ -1,10 +1,10 @@
 # Navigation and Auxiliary Modifiers
 
-Summary: 24 total, 2 implemented, 2 partial, 20 missing.
+Summary: 24 total, 3 implemented, 1 partial, 20 missing.
 
 ## Navigation and Auxiliary Modifiers (~48)
 
-24 total, 2 implemented, 2 partial, 20 missing.
+24 total, 3 implemented, 1 partial, 20 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -23,7 +23,7 @@ Summary: 24 total, 2 implemented, 2 partial, 20 missing.
 | `tabViewCustomization` | Both | iOS 18 / macOS 15 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `tabViewSidebarFooter` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `tabViewSidebarHeader` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
-| `toolbar` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/ToolbarModifier.swift` | Public surface exists, but only 2 overload(s) are present vs 4 in the curated reference families. \| GTK: header bar; Win32: nav header; Web: header right area |
+| `toolbar` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ToolbarModifier.swift` | GTK: header bar; Win32: nav header; Web: header right area |
 | `toolbarBackground` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `toolbarBackgroundVisibility` | Both | iOS 18 / macOS 15 / watchOS 11 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `toolbarColorScheme` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |

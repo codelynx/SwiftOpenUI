@@ -97,7 +97,7 @@ Last updated: 2026-03-25
 | .onAppear() | Y | Y | Y | Y | ~ | - | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
 | .searchable() | Y | Y | ~ | ~ | ~ | - | Batch E fallback on GTK/Win32/Web: search field above content; placement stored but not differentiated yet; tokens and editableTokens render as display-only chips; suggestions render as simple rows with click-to-complete behavior, including core-filtered `searchSuggestions(_:for:)`; scopes render as simple mutually exclusive controls. Search UI is hidden when `isPresented == false`. |
-| .toolbar() | Y | Y | Y | Y | Y | - | GTK: header bar; Win32: nav header; Web: header right area |
+| .toolbar() | Y | Y | Y | Y | Y | - | Batch B fallback on GTK/Win32/Web: `toolbar(_:for:)` and `toolbar(removing:)` are supported for the active navigation/header toolbar surface; target handling is narrower than SwiftUI. GTK: header bar; Win32: nav header; Web: header right area. |
 | .gridCellColumns() | Y | Y | Y | Y | Y | - | Column span in Grid/GridRow; Web: grid-column span |
 | .pickerStyle() | Y | Y | Y | Y | Y | - | .automatic (select), .segmented (button row), .palette (alias) |
 | .navigationSplitViewColumnWidth() | Y | Y | Y | Y | Y | - | min/ideal/max; Web: pass-through (consumed by NavigationSplitView) |
