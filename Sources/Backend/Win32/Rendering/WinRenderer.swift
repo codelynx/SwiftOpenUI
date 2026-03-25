@@ -4213,27 +4213,85 @@ extension Picker: WinRenderable {
     }
 }
 
+// MARK: - Toolbar configuration context (TLS)
+
+private var _toolbarConfigTlsIndex: DWORD = TlsAlloc()
+
+private func setCurrentToolbarConfiguration(_ config: ToolbarConfiguration?) {
+    // Release any existing retained box before overwriting
+    if let existing = TlsGetValue(_toolbarConfigTlsIndex) {
+        Unmanaged<ToolbarConfigurationBox>.fromOpaque(existing).release()
+    }
+    if let config = config {
+        let boxed = ToolbarConfigurationBox(config)
+        let ptr = Unmanaged.passRetained(boxed).toOpaque()
+        TlsSetValue(_toolbarConfigTlsIndex, ptr)
+    } else {
+        TlsSetValue(_toolbarConfigTlsIndex, nil)
+    }
+}
+
+private func getCurrentToolbarConfiguration() -> ToolbarConfiguration? {
+    guard let ptr = TlsGetValue(_toolbarConfigTlsIndex) else { return nil }
+    return Unmanaged<ToolbarConfigurationBox>.fromOpaque(ptr).takeUnretainedValue().value
+}
+
+private class ToolbarConfigurationBox {
+    let value: ToolbarConfiguration
+    init(_ value: ToolbarConfiguration) { self.value = value }
+}
+
 // MARK: - Toolbar
+
+extension ToolbarConfigurationView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let prev = getCurrentToolbarConfiguration()
+        setCurrentToolbarConfiguration(toolbarConfiguration)
+        let result = winRenderView(content, in: context)
+        setCurrentToolbarConfiguration(prev)
+        return result
+    }
+}
 
 extension ToolbarView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        // Check for toolbar configuration from an ancestor ToolbarConfigurationView (TLS)
+        // or from content if ToolbarConfigurationView is nested inside ToolbarView (reverse order)
+        let config = getCurrentToolbarConfiguration()
+            ?? (content as? ToolbarConfigurationProvider)?.toolbarConfiguration
+
+        // If visibility is hidden for a target Win32 actually renders (.navigationBar
+        // or .automatic), skip toolbar rendering entirely. Other targets (.bottomBar,
+        // .tabBar) don't affect the Win32 toolbar.
+        if config?.visibility == .hidden,
+           let target = config?.visibilityTarget,
+           target == .navigationBar || target == .automatic {
+            return hwnd
+        }
+
+        // Filter out removed placements
+        let removedPlacements = config?.removedPlacements ?? []
+        let filteredItems = removedPlacements.isEmpty
+            ? toolbarItems
+            : toolbarItems.filter { !removedPlacements.contains($0.placement) }
 
         // Extract toolbar items and render them into the navigation header.
         // If we're inside a NavigationStack, add buttons to the header bar.
         // Otherwise, create a toolbar bar above the content.
         guard let navCtx = getCurrentNavigationContext() else {
             // Not inside NavigationStack — render toolbar items as an HStack above content
-            return renderToolbarWithContent(hwnd: hwnd, context: context)
+            return renderToolbarWithContent(hwnd: hwnd, items: filteredItems, context: context)
         }
 
         // Inside NavigationStack — add items to the header bar
-        renderToolbarItems(into: navCtx, context: context)
+        renderToolbarItems(filteredItems, into: navCtx, context: context)
         return hwnd
     }
 
-    private func renderToolbarWithContent(hwnd: HWND, context: RenderContext) -> HWND? {
-        guard !toolbarItems.isEmpty else { return hwnd }
+    private func renderToolbarWithContent(hwnd: HWND, items: [AnyToolbarItem], context: RenderContext) -> HWND? {
+        guard !items.isEmpty else { return hwnd }
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
         let container = CreateWindowExW(
@@ -4249,7 +4307,7 @@ extension ToolbarView: WinRenderable {
         var trailingRendered: [(hwnd: HWND, width: Int32)] = []
         let barH: Int32 = 28
 
-        for item in toolbarItems {
+        for item in items {
             guard let itemHwnd = winRenderAnyView(item.wrapped, in: toolbarContext) else { continue }
             var r = RECT()
             GetWindowRect(itemHwnd, &r)
@@ -4282,13 +4340,13 @@ extension ToolbarView: WinRenderable {
         return container
     }
 
-    private func renderToolbarItems(into navCtx: Win32NavigationContext, context: RenderContext) {
+    private func renderToolbarItems(_ items: [AnyToolbarItem], into navCtx: Win32NavigationContext, context: RenderContext) {
         clearToolbarItems(from: navCtx.headerContainer)
         let headerContext = RenderContext(parent: navCtx.headerContainer, hInstance: context.hInstance)
         var leadingX: Int32 = 68
         var trailingItems: [(hwnd: HWND, width: Int32)] = []
 
-        for item in toolbarItems {
+        for item in items {
             guard let itemHwnd = winRenderAnyView(item.wrapped, in: headerContext) else { continue }
             SetPropW(itemHwnd, toolbarItemPropName, HANDLE(bitPattern: 1))
             var r = RECT()
