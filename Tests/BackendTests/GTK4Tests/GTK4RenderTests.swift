@@ -1502,6 +1502,59 @@ final class GTK4RenderTests: XCTestCase {
         let (_, hidden) = gtkApplyToolbarConfiguration(items: items, configuration: config)
         XCTAssertTrue(hidden, "Hidden visibility should suppress toolbar")
     }
+
+    func testToolbarHiddenVisibilityWorksWhenAppliedAfterItems() throws {
+        try requireGTK()
+
+        let view = Text("X")
+            .toolbar {
+                ToolbarItem(placement: .trailing) { Text("A") }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+
+        let items = gtkExtractToolbarItems(from: view)
+        let config = gtkExtractToolbarConfiguration(from: view)
+        let (_, hidden) = gtkApplyToolbarConfiguration(items: items, configuration: config)
+
+        XCTAssertTrue(hidden, "Hidden visibility should apply when configuration wraps toolbar items")
+    }
+
+    func testToolbarHiddenVisibilityWorksWhenAppliedBeforeItems() throws {
+        try requireGTK()
+
+        let view = Text("X")
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .trailing) { Text("A") }
+            }
+
+        let items = gtkExtractToolbarItems(from: view)
+        let config = gtkExtractToolbarConfiguration(from: view)
+        let (_, hidden) = gtkApplyToolbarConfiguration(items: items, configuration: config)
+
+        XCTAssertTrue(hidden, "Hidden visibility should apply when toolbar items wrap configuration")
+    }
+
+    func testToolbarMixedVisibilityAndRemovalChainPreservesBothSettings() throws {
+        try requireGTK()
+
+        let view = Text("X")
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .leading) { Text("A") }
+                ToolbarItem(placement: .trailing) { Text("B") }
+            }
+            .toolbar(removing: .leading)
+
+        let items = gtkExtractToolbarItems(from: view)
+        let config = gtkExtractToolbarConfiguration(from: view)
+        let (filtered, hidden) = gtkApplyToolbarConfiguration(items: items, configuration: config)
+
+        XCTAssertTrue(hidden, "Hidden visibility should survive the mixed chain")
+        XCTAssertEqual(config?.removedPlacements, [.leading], "Removed placements should survive the mixed chain")
+        XCTAssertEqual(filtered.count, 1, "Leading item should still be removed in the mixed chain")
+        XCTAssertEqual(filtered[0].placement, .trailing)
+    }
 }
 
 private func requireGTK(
