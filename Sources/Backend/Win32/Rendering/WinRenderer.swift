@@ -3894,14 +3894,15 @@ extension ConfirmationDialogView: WinRenderable {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
         if isPresented.wrappedValue {
             let binding = isPresented
-            let dlgTitle = title
+            let dlgTitle = titleVisibility == .hidden ? "" : title
+            let dlgMessage = message.isEmpty ? dlgTitle : message
             let dlgButtons = buttons
             let root = findRootWindow(from: context.parent)
             runOnMainThread(hwnd: root) {
                 guard binding.wrappedValue else { return }
                 binding.wrappedValue = false
                 let result = dlgTitle.withCString(encodedAs: UTF16.self) { titlePtr in
-                    dlgTitle.withCString(encodedAs: UTF16.self) { msgPtr in
+                    dlgMessage.withCString(encodedAs: UTF16.self) { msgPtr in
                         MessageBoxW(root, msgPtr, titlePtr, UINT(MB_YESNO | MB_ICONQUESTION))
                     }
                 }
