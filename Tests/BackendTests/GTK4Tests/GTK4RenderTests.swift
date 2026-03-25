@@ -1437,6 +1437,71 @@ final class GTK4RenderTests: XCTestCase {
         let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
         XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Main")
     }
+
+    // MARK: - Toolbar Batch B Tests
+
+    func testToolbarConfigurationViewRendersContent() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").toolbar(.hidden, for: .navigationBar)
+        ))
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Content")
+    }
+
+    func testToolbarConfigurationExtractsHiddenVisibility() throws {
+        try requireGTK()
+
+        let view = Text("X").toolbar(.hidden, for: .navigationBar)
+        let config = gtkExtractToolbarConfiguration(from: view)
+        XCTAssertNotNil(config)
+        XCTAssertEqual(config?.visibility, .hidden)
+        XCTAssertEqual(config?.visibilityTarget, .navigationBar)
+    }
+
+    func testToolbarConfigurationRemovesPlacement() throws {
+        try requireGTK()
+
+        let view = Text("X")
+            .toolbar {
+                ToolbarItem(placement: .leading) { Text("A") }
+                ToolbarItem(placement: .trailing) { Text("B") }
+            }
+            .toolbar(removing: .leading)
+
+        let items = gtkExtractToolbarItems(from: view)
+        let config = gtkExtractToolbarConfiguration(from: view)
+        let (filtered, hidden) = gtkApplyToolbarConfiguration(items: items, configuration: config)
+
+        XCTAssertFalse(hidden)
+        XCTAssertEqual(filtered.count, 1, "Leading item should be removed")
+        XCTAssertEqual(filtered[0].placement, .trailing)
+    }
+
+    func testToolbarHiddenForBottomBarDoesNotAffectGTK() throws {
+        try requireGTK()
+
+        let items = [
+            AnyToolbarItem(ToolbarItem(placement: .leading) { Text("A") }),
+        ]
+        let config = ToolbarConfiguration(visibility: .hidden, visibilityTarget: .bottomBar)
+        let (filtered, hidden) = gtkApplyToolbarConfiguration(items: items, configuration: config)
+        XCTAssertFalse(hidden, "Hidden for .bottomBar should not suppress GTK navigation-bar toolbar")
+        XCTAssertEqual(filtered.count, 1)
+    }
+
+    func testToolbarHiddenVisibilityFiltersAllItems() throws {
+        try requireGTK()
+
+        let items = [
+            AnyToolbarItem(ToolbarItem(placement: .leading) { Text("A") }),
+            AnyToolbarItem(ToolbarItem(placement: .trailing) { Text("B") }),
+        ]
+        let config = ToolbarConfiguration(visibility: .hidden, visibilityTarget: .navigationBar)
+        let (_, hidden) = gtkApplyToolbarConfiguration(items: items, configuration: config)
+        XCTAssertTrue(hidden, "Hidden visibility should suppress toolbar")
+    }
 }
 
 private func requireGTK(

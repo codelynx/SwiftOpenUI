@@ -304,6 +304,52 @@ private func gtkExtractToolbarItemsAny(from view: Any, depth: Int = 0) -> [AnyTo
     return []
 }
 
+/// Extract toolbar configuration from a view tree via ToolbarConfigurationProvider.
+func gtkExtractToolbarConfiguration<V: View>(from view: V) -> ToolbarConfiguration? {
+    return gtkExtractToolbarConfigurationAny(from: view)
+}
+
+private func gtkExtractToolbarConfigurationAny(from view: Any, depth: Int = 0) -> ToolbarConfiguration? {
+    guard depth < 20 else { return nil }
+
+    if let provider = view as? ToolbarConfigurationProvider {
+        return provider.toolbarConfiguration
+    }
+
+    let mirror = Mirror(reflecting: view)
+    for child in mirror.children {
+        if let provider = child.value as? ToolbarConfigurationProvider {
+            return provider.toolbarConfiguration
+        }
+    }
+
+    for child in mirror.children {
+        if child.value is any View {
+            if let result = gtkExtractToolbarConfigurationAny(from: child.value, depth: depth + 1) {
+                return result
+            }
+        }
+    }
+
+    return nil
+}
+
+/// Filter toolbar items based on configuration (remove placements, respect visibility).
+func gtkApplyToolbarConfiguration(
+    items: [AnyToolbarItem],
+    configuration: ToolbarConfiguration?
+) -> (items: [AnyToolbarItem], hidden: Bool) {
+    guard let config = configuration else { return (items, false) }
+
+    // GTK only renders navigation-bar-style toolbar; only hide for matching targets
+    let targetAppliesToGTK = config.visibilityTarget == nil
+        || config.visibilityTarget == .automatic
+        || config.visibilityTarget == .navigationBar
+    let hidden = config.visibility == .hidden && targetAppliesToGTK
+    let filtered = items.filter { !config.removedPlacements.contains($0.placement) }
+    return (filtered, hidden)
+}
+
 // MARK: - GTK rendering extensions
 
 extension NavigationStack: GTKRenderable {
@@ -371,8 +417,11 @@ extension NavigationStack: GTKRenderable {
         setCurrentNavigationContext(nil)
 
         // Extract and install root toolbar items
-        let toolbarItems = gtkExtractToolbarItems(from: content)
+        let rawToolbarItems = gtkExtractToolbarItems(from: content)
+        let toolbarConfig = gtkExtractToolbarConfiguration(from: content)
+        let (toolbarItems, toolbarHidden) = gtkApplyToolbarConfiguration(items: rawToolbarItems, configuration: toolbarConfig)
         var rootEntry = GTKNavigationEntry(title: title, name: "nav-root", widget: rootWidget)
+        if !toolbarHidden {
         for item in toolbarItems {
             let itemWidget = widgetFromOpaque(gtkRenderAnyView(item.wrapped))
             switch item.placement {
@@ -384,6 +433,7 @@ extension NavigationStack: GTKRenderable {
             g_object_ref(gpointer(itemWidget))
             rootEntry.toolbarWidgets.append((widget: itemWidget, placement: item.placement))
         }
+        } // end if !toolbarHidden
 
         // Add root as first stack entry
         gtk_stack_add_named(stackOp, rootWidget, "nav-root")
@@ -487,8 +537,10 @@ extension NavigationLink: GTKRenderable {
             let destView = dest()
             let extracted = gtkExtractTitle(from: destView)
             let finalTitle = extracted.isEmpty ? destTitle : extracted
-            let toolbarItems = gtkExtractToolbarItems(from: destView)
-            context.push(title: finalTitle, toolbarItems: toolbarItems) {
+            let rawItems = gtkExtractToolbarItems(from: destView)
+            let destConfig = gtkExtractToolbarConfiguration(from: destView)
+            let (toolbarItems, destHidden) = gtkApplyToolbarConfiguration(items: rawItems, configuration: destConfig)
+            context.push(title: finalTitle, toolbarItems: destHidden ? [] : toolbarItems) {
                 gtkRenderView(destView)
             }
             setCurrentEnvironment(prevEnv)
@@ -530,11 +582,13 @@ extension NavigationDestinationModifier: GTKRenderable {
                 setCurrentEnvironment(env)
                 let destView = destinationBuilder(value)
                 let title = gtkExtractTitle(from: destView)
-                let toolbarItems = gtkExtractToolbarItems(from: destView)
+                let rawItems = gtkExtractToolbarItems(from: destView)
+                let destConfig = gtkExtractToolbarConfiguration(from: destView)
+                let (filteredItems, destHidden) = gtkApplyToolbarConfiguration(items: rawItems, configuration: destConfig)
                 let widget = gtkRenderView(destView)
                 setCurrentEnvironment(prevEnv)
                 setCurrentNavigationContext(nil)
-                return GTKResolvedDestination(widget: widget, title: title, toolbarItems: toolbarItems)
+                return GTKResolvedDestination(widget: widget, title: title, toolbarItems: destHidden ? [] : filteredItems)
             }
         }
 
@@ -586,8 +640,10 @@ private func gtkExtractColumnWidth<V: View>(from view: V) -> Double? {
 /// Install toolbar items from a view tree into a GtkHeaderBar, attaching
 /// it to the given widget via "gtk-swift-window-titlebar" for Window pickup.
 private func gtkInstallToolbar<V: View>(from view: V, on widget: UnsafeMutablePointer<GtkWidget>) {
-    let toolbarItems = gtkExtractToolbarItems(from: view)
-    guard !toolbarItems.isEmpty else { return }
+    let rawItems = gtkExtractToolbarItems(from: view)
+    let config = gtkExtractToolbarConfiguration(from: view)
+    let (toolbarItems, hidden) = gtkApplyToolbarConfiguration(items: rawItems, configuration: config)
+    guard !hidden, !toolbarItems.isEmpty else { return }
 
     let headerBar = gtk_header_bar_new()!
     let headerBarOp = OpaquePointer(headerBar)
