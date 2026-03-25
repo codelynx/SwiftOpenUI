@@ -889,6 +889,20 @@ final class GTK4RenderTests: XCTestCase {
         let plan = gtkPlanDescriptorTree(old: retained, new: newId)
         XCTAssertNotEqual(plan.kind, .reuse, "Plan should not be .reuse when padding changes")
     }
+
+    func testSafeAreaPaddingNegativeLengthClampsToZero() throws {
+        try requireGTK()
+
+        let desc = gtkDescribeView(Text("Hi").safeAreaPadding(-5))
+        guard case .safeAreaPadding(let props) = desc.props else {
+            XCTFail("Expected .safeAreaPadding descriptor props")
+            return
+        }
+        XCTAssertEqual(props.top, 0)
+        XCTAssertEqual(props.bottom, 0)
+        XCTAssertEqual(props.leading, 0)
+        XCTAssertEqual(props.trailing, 0)
+    }
 }
 
 private func requireGTK(
