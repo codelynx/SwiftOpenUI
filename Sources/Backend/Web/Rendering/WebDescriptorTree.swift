@@ -115,6 +115,12 @@ public struct WebSafeAreaInsetDescriptor: Equatable {
     public let spacing: Int
 }
 
+public struct WebSearchableDescriptor: Equatable {
+    public let prompt: String
+    public let placement: String
+    public let isPresented: Bool?
+}
+
 // MARK: - Descriptor props and node
 
 public enum WebDescriptorProps: Equatable {
@@ -130,6 +136,7 @@ public enum WebDescriptorProps: Equatable {
     case ignoresSafeArea(WebIgnoresSafeAreaDescriptor)
     case padding(WebPaddingDescriptor)
     case safeAreaInset(WebSafeAreaInsetDescriptor)
+    case searchable(WebSearchableDescriptor)
     case slider(WebSliderDescriptor)
     case vStack(WebVStackDescriptor)
     case zStack(WebZStackDescriptor)
