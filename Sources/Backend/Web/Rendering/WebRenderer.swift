@@ -2682,8 +2682,10 @@ extension ToolbarView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
 
-        // Inject toolbar items into the current NavigationStack header
+        // Inject toolbar items into the current NavigationStack header.
+        // Always restore default visibility in case a previous screen hid it.
         if let ctx = _webCurrentNavContext {
+            ctx.toolbarArea.style = .string(webToolbarAreaDefaultStyle)
             ctx.toolbarArea.innerHTML = ""
             for item in toolbarItems {
                 let rendered = webRenderAnyView(item.wrapped)
@@ -2695,6 +2697,9 @@ extension ToolbarView: WebRenderable {
     }
 }
 
+/// Default toolbar area style — used to reset after hidden state.
+private let webToolbarAreaDefaultStyle = "display: flex; align-items: center; gap: 4px;"
+
 extension ToolbarConfigurationView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
@@ -2702,27 +2707,32 @@ extension ToolbarConfigurationView: WebRenderable {
         if let ctx = _webCurrentNavContext {
             let config = toolbarConfiguration
 
-            // Honor hidden visibility: hide the toolbar area
-            if config.visibility == .hidden {
+            // Always reset toolbar visibility to default first, then apply
+            // the requested state. This prevents a previous .hidden from
+            // persisting across navigation transitions or rebuilds.
+            switch config.visibility {
+            case .hidden:
                 ctx.toolbarArea.style = "display: none;"
-            } else if config.visibility == .visible {
-                ctx.toolbarArea.style = "display: flex; align-items: center; gap: 4px;"
+            case .visible, .automatic, nil:
+                ctx.toolbarArea.style = .string(webToolbarAreaDefaultStyle)
             }
 
-            // Remove items matching removed placements
+            // Remove items matching removed placements.
+            // If no ToolbarProvider is in the content tree, clear existing
+            // items for removed placements by filtering the current DOM children.
             if !config.removedPlacements.isEmpty {
-                // Walk up the view tree to find the nearest ToolbarView's items
-                // and filter them. Since toolbar items are already rendered by
-                // ToolbarView, we remove matching children from the toolbar area.
                 let removedSet = Set(config.removedPlacements)
-                // Re-render toolbar area without removed placements if a
-                // ToolbarProvider is in the content tree
                 if let provider = findToolbarProvider(in: content) {
                     ctx.toolbarArea.innerHTML = ""
                     for item in provider.toolbarItems where !removedSet.contains(item.placement) {
                         let rendered = webRenderAnyView(item.wrapped)
                         _ = ctx.toolbarArea.appendChild(rendered)
                     }
+                } else {
+                    // No local provider — clear the toolbar area entirely
+                    // since we cannot determine which existing children
+                    // correspond to the removed placements.
+                    ctx.toolbarArea.innerHTML = ""
                 }
             }
         }
