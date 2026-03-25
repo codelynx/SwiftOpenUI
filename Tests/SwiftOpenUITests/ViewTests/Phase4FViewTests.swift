@@ -209,6 +209,75 @@ final class Phase4FViewTests: XCTestCase {
         XCTAssertEqual(searchable.suggestions[1].completion, "B")
     }
 
+    func testSearchableStoresFilteredSuggestionsForQuery() {
+        let searchable = Text("Content")
+            .searchable(text: .constant("swift"))
+            .searchSuggestions(
+                [
+                    SearchSuggestionValue(id: "swiftui", label: "SwiftUI"),
+                    SearchSuggestionValue(id: "uikit", label: "UIKit"),
+                    SearchSuggestionValue(id: "swift-data", label: "Swift Data")
+                ],
+                for: "swift"
+            )
+
+        XCTAssertEqual(searchable.suggestionMode, .suggestionsFor)
+        XCTAssertEqual(
+            searchable.suggestions,
+            [
+                SearchSuggestionValue(id: "swiftui", label: "SwiftUI"),
+                SearchSuggestionValue(id: "swift-data", label: "Swift Data")
+            ]
+        )
+    }
+
+    func testSearchableFilteredSuggestionsAreCaseInsensitive() {
+        let searchable = Text("Content")
+            .searchable(text: .constant("KIT"))
+            .searchSuggestions(
+                [
+                    SearchSuggestionValue(id: "swiftui", label: "SwiftUI"),
+                    SearchSuggestionValue(id: "uikit", label: "UIKit")
+                ],
+                for: "KIT"
+            )
+
+        XCTAssertEqual(searchable.suggestions.count, 1)
+        XCTAssertEqual(searchable.suggestions[0].label, "UIKit")
+    }
+
+    func testSearchableFilteredSuggestionsMatchCompletionText() {
+        let searchable = Text("Content")
+            .searchable(text: .constant("ios"))
+            .searchSuggestions(
+                [
+                    SearchSuggestionValue(id: "swift", label: "SwiftUI", completion: "ios ui"),
+                    SearchSuggestionValue(id: "server", label: "Vapor", completion: "server")
+                ],
+                for: "ios"
+            )
+
+        XCTAssertEqual(searchable.suggestions.count, 1)
+        XCTAssertEqual(searchable.suggestions[0].label, "SwiftUI")
+        XCTAssertEqual(searchable.suggestions[0].completion, "ios ui")
+    }
+
+    func testSearchableFilteredSuggestionsKeepAllRowsForEmptyQuery() {
+        let searchable = Text("Content")
+            .searchable(text: .constant(""))
+            .searchSuggestions(
+                [
+                    SearchSuggestionValue(id: "one", label: "Alpha"),
+                    SearchSuggestionValue(id: "two", label: "Beta")
+                ],
+                for: ""
+            )
+
+        XCTAssertEqual(searchable.suggestions.count, 2)
+        XCTAssertEqual(searchable.suggestions[0].label, "Alpha")
+        XCTAssertEqual(searchable.suggestions[1].label, "Beta")
+    }
+
     func testSearchableStoresScopes() {
         enum Scope: String, Hashable {
             case all
