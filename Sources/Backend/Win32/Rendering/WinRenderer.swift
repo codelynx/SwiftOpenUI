@@ -6515,19 +6515,7 @@ extension SafeAreaInsetView: WinRenderable {
             return container
         }
 
-        // Build retained layout info for resize relayout
-        let layoutInfo = SafeAreaInsetLayoutInfo(
-            contentHwnd: contentHwnd,
-            insetHwnd: insetHwnd,
-            edge: edge,
-            alignment: alignment,
-            spacing: Int32(spacing)
-        )
-        let infoPtr = Unmanaged.passRetained(layoutInfo).toOpaque()
-        SetWindowSubclass(container, safeAreaInsetLayoutProc, 3,
-                          DWORD_PTR(UInt(bitPattern: infoPtr)))
-
-        // Initial natural-size layout
+        // Measure natural sizes before any layout
         var contentRect = RECT()
         GetWindowRect(contentHwnd, &contentRect)
         let cw = contentRect.right - contentRect.left
@@ -6537,6 +6525,20 @@ extension SafeAreaInsetView: WinRenderable {
         GetWindowRect(insetHwnd, &insetRect)
         let iw = insetRect.right - insetRect.left
         let ih = insetRect.bottom - insetRect.top
+
+        // Build retained layout info for resize relayout
+        let layoutInfo = SafeAreaInsetLayoutInfo(
+            contentHwnd: contentHwnd,
+            insetHwnd: insetHwnd,
+            edge: edge,
+            alignment: alignment,
+            spacing: Int32(spacing),
+            contentNatW: cw, contentNatH: ch,
+            insetNatW: iw, insetNatH: ih
+        )
+        let infoPtr = Unmanaged.passRetained(layoutInfo).toOpaque()
+        SetWindowSubclass(container, safeAreaInsetLayoutProc, 3,
+                          DWORD_PTR(UInt(bitPattern: infoPtr)))
 
         let gap = Int32(spacing)
         let totalW: Int32
@@ -6572,15 +6574,25 @@ class SafeAreaInsetLayoutInfo {
     let edge: SafeAreaInsetEdge
     let alignment: SafeAreaInsetAlignment
     let spacing: Int32
+    let contentNatW: Int32
+    let contentNatH: Int32
+    let insetNatW: Int32
+    let insetNatH: Int32
 
     init(contentHwnd: HWND, insetHwnd: HWND,
          edge: SafeAreaInsetEdge, alignment: SafeAreaInsetAlignment,
-         spacing: Int32) {
+         spacing: Int32,
+         contentNatW: Int32, contentNatH: Int32,
+         insetNatW: Int32, insetNatH: Int32) {
         self.contentHwnd = contentHwnd
         self.insetHwnd = insetHwnd
         self.edge = edge
         self.alignment = alignment
         self.spacing = spacing
+        self.contentNatW = contentNatW
+        self.contentNatH = contentNatH
+        self.insetNatW = insetNatW
+        self.insetNatH = insetNatH
     }
 }
 
@@ -6598,9 +6610,11 @@ func performSafeAreaInsetLayout(container: HWND, info: SafeAreaInsetLayoutInfo) 
 
     let gap = info.spacing
 
-    // Expand inset along the cross-axis when it has expand flags
+    // Check expand flags for both children
     let insetExpandsW = shouldExpandWidth(info.insetHwnd)
     let insetExpandsH = shouldExpandHeight(info.insetHwnd)
+    let contentExpandsW = shouldExpandWidth(info.contentHwnd)
+    let contentExpandsH = shouldExpandHeight(info.contentHwnd)
 
     switch info.edge {
     case .top:
@@ -6610,17 +6624,21 @@ func performSafeAreaInsetLayout(container: HWND, info: SafeAreaInsetLayoutInfo) 
                                    insetWidth: iNatW, containerWidth: containerW)
         SetWindowPos(info.insetHwnd, nil, ix, 0, iw, iNatH, UINT(SWP_NOZORDER))
         let contentY = iNatH + gap
-        SetWindowPos(info.contentHwnd, nil, 0, contentY,
-                     containerW, max(0, containerH - contentY), UINT(SWP_NOZORDER))
+        let availH = max(0, containerH - contentY)
+        let cw = contentExpandsW ? containerW : info.contentNatW
+        let ch = contentExpandsH ? availH : min(info.contentNatH, availH)
+        SetWindowPos(info.contentHwnd, nil, 0, contentY, cw, ch, UINT(SWP_NOZORDER))
 
     case .bottom:
-        let contentH = max(0, containerH - iNatH - gap)
-        SetWindowPos(info.contentHwnd, nil, 0, 0, containerW, contentH, UINT(SWP_NOZORDER))
+        let availH = max(0, containerH - iNatH - gap)
+        let cw = contentExpandsW ? containerW : info.contentNatW
+        let ch = contentExpandsH ? availH : min(info.contentNatH, availH)
+        SetWindowPos(info.contentHwnd, nil, 0, 0, cw, ch, UINT(SWP_NOZORDER))
         let iw = insetExpandsW ? containerW : iNatW
         let ix = insetExpandsW ? Int32(0)
             : safeAreaCrossAlignX(alignment: info.alignment,
                                    insetWidth: iNatW, containerWidth: containerW)
-        SetWindowPos(info.insetHwnd, nil, ix, contentH + gap, iw, iNatH, UINT(SWP_NOZORDER))
+        SetWindowPos(info.insetHwnd, nil, ix, ch + gap, iw, iNatH, UINT(SWP_NOZORDER))
 
     case .leading:
         let ih = insetExpandsH ? containerH : iNatH
@@ -6629,17 +6647,21 @@ func performSafeAreaInsetLayout(container: HWND, info: SafeAreaInsetLayoutInfo) 
                                    insetHeight: iNatH, containerHeight: containerH)
         SetWindowPos(info.insetHwnd, nil, 0, iy, iNatW, ih, UINT(SWP_NOZORDER))
         let contentX = iNatW + gap
-        SetWindowPos(info.contentHwnd, nil, contentX, 0,
-                     max(0, containerW - contentX), containerH, UINT(SWP_NOZORDER))
+        let availW = max(0, containerW - contentX)
+        let cw = contentExpandsW ? availW : min(info.contentNatW, availW)
+        let ch = contentExpandsH ? containerH : info.contentNatH
+        SetWindowPos(info.contentHwnd, nil, contentX, 0, cw, ch, UINT(SWP_NOZORDER))
 
     case .trailing:
-        let contentW = max(0, containerW - iNatW - gap)
-        SetWindowPos(info.contentHwnd, nil, 0, 0, contentW, containerH, UINT(SWP_NOZORDER))
+        let availW = max(0, containerW - iNatW - gap)
+        let cw = contentExpandsW ? availW : min(info.contentNatW, availW)
+        let ch = contentExpandsH ? containerH : info.contentNatH
+        SetWindowPos(info.contentHwnd, nil, 0, 0, cw, ch, UINT(SWP_NOZORDER))
         let ih = insetExpandsH ? containerH : iNatH
         let iy = insetExpandsH ? Int32(0)
             : safeAreaCrossAlignY(alignment: info.alignment,
                                    insetHeight: iNatH, containerHeight: containerH)
-        SetWindowPos(info.insetHwnd, nil, contentW + gap, iy, iNatW, ih, UINT(SWP_NOZORDER))
+        SetWindowPos(info.insetHwnd, nil, cw + gap, iy, iNatW, ih, UINT(SWP_NOZORDER))
     }
 }
 
