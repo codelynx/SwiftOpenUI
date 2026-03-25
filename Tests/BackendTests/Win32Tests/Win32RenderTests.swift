@@ -2919,6 +2919,115 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertTrue(suggestionLabels.contains("Suggestion"), "Suggestion button should render alongside tokens")
     }
 
+    // MARK: - Searchable Batch D (scopes)
+
+    func testSearchScopesRenderButtons() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var scope = "all"
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchScopes($scope, scopes: ["all", "recent", "favorites"]) { s in
+                Text(s)
+            }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        let labels = buttons.map { windowText(of: $0) }
+        // Selected scope "all" renders as "[all]", others as plain labels
+        XCTAssertTrue(labels.contains("[all]"), "Selected scope should render with brackets")
+        XCTAssertTrue(labels.contains("recent"), "Unselected scope should render")
+        XCTAssertTrue(labels.contains("favorites"), "Unselected scope should render")
+    }
+
+    func testSearchScopesPreserveOrder() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var scope = "A"
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchScopes($scope, scopes: ["A", "B", "C"]) { s in Text(s) }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        let scopeButtons = buttons.filter {
+            let t = windowText(of: $0)
+            return t == "[A]" || t == "B" || t == "C"
+        }.map { hwnd -> (text: String, x: Int32) in
+            var r = RECT()
+            GetWindowRect(hwnd, &r)
+            return (text: windowText(of: hwnd), x: r.left)
+        }.sorted { $0.x < $1.x }
+
+        XCTAssertEqual(scopeButtons.count, 3)
+        XCTAssertEqual(scopeButtons[0].text, "[A]")
+        XCTAssertEqual(scopeButtons[1].text, "B")
+        XCTAssertEqual(scopeButtons[2].text, "C")
+    }
+
+    func testSearchScopeSelectionWritesBack() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var scope = "all"
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchScopes($scope, scopes: ["all", "recent"]) { s in Text(s) }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Install test dispatch proc on root
+        let root = findRootWindow(from: hwnd!)
+        SetWindowSubclass(root, testCommandDispatchProc, 99, 0)
+        defer { RemoveWindowSubclass(root, testCommandDispatchProc, 99) }
+
+        // Find the "recent" scope button and click it via WM_COMMAND
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        let recentBtn = buttons.first { windowText(of: $0) == "recent" }
+        XCTAssertNotNil(recentBtn, "Should find 'recent' scope button")
+
+        if let btn = recentBtn {
+            let scopeRow = GetParent(btn)!
+            let controlID = GetDlgCtrlID(btn)
+            let wParam = WPARAM(UInt16(controlID))
+            let lParam = LPARAM(Int(bitPattern: btn))
+            SendMessageW(scopeRow, UINT(WM_COMMAND), wParam, lParam)
+        }
+
+        XCTAssertEqual(scope, "recent",
+            "Clicking scope should write back to selection binding")
+    }
+
+    func testSearchScopesWithSuggestionsAndTokens() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        @SwiftOpenUI.State var scope = "all"
+        let tokens: [TestSearchToken] = [TestSearchToken(id: "1", name: "Tag")]
+        let view = Text("Content")
+            .searchable(text: $query, tokens: .constant(tokens)) { t in Text(t.name) }
+            .searchScopes($scope, scopes: ["all", "recent"]) { s in Text(s) }
+            .searchSuggestions { Text("Hint") }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Token chip present
+        let chips = collectStaticLabels(in: hwnd!)
+        XCTAssertTrue(chips.map { windowText(of: $0) }.contains("[Tag]"), "Token chip should render")
+
+        // Scope buttons present
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        let labels = buttons.map { windowText(of: $0) }
+        XCTAssertTrue(labels.contains("[all]") || labels.contains("all"), "Scope should render")
+
+        // Suggestion button present
+        XCTAssertTrue(labels.contains("Hint"), "Suggestion should render alongside scopes")
+    }
+
     // MARK: - Safe area padding
 
     func testSafeAreaPaddingDefaultAllEdges() {
