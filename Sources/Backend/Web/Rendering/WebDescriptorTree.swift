@@ -121,6 +121,13 @@ public struct WebSearchableDescriptor: Equatable {
     public let isPresented: Bool?
 }
 
+public struct WebSafeAreaPaddingDescriptor: Equatable {
+    public let top: Int
+    public let bottom: Int
+    public let leading: Int
+    public let trailing: Int
+}
+
 // MARK: - Descriptor props and node
 
 public enum WebDescriptorProps: Equatable {
@@ -136,6 +143,7 @@ public enum WebDescriptorProps: Equatable {
     case ignoresSafeArea(WebIgnoresSafeAreaDescriptor)
     case padding(WebPaddingDescriptor)
     case safeAreaInset(WebSafeAreaInsetDescriptor)
+    case safeAreaPadding(WebSafeAreaPaddingDescriptor)
     case searchable(WebSearchableDescriptor)
     case slider(WebSliderDescriptor)
     case vStack(WebVStackDescriptor)
