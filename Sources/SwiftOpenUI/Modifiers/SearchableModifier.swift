@@ -12,6 +12,23 @@ public enum NavigationBarDrawerDisplayMode: Equatable {
     case always
 }
 
+/// Simplified token mode for searchable token families.
+public enum SearchTokenMode: Equatable {
+    case tokens
+    case editableTokens
+}
+
+/// Erased token value stored by the searchable primitive.
+public struct SearchTokenValue: Equatable {
+    public let id: String
+    public let label: String
+
+    public init(id: String, label: String) {
+        self.id = id
+        self.label = label
+    }
+}
+
 /// Modifier that adds a search entry above the content.
 public struct SearchableView<Content: View>: View, PrimitiveView {
     public typealias Body = Never
@@ -21,8 +38,20 @@ public struct SearchableView<Content: View>: View, PrimitiveView {
     public let prompt: String
     public let placement: SearchFieldPlacement
     public let isPresented: Binding<Bool>?
+    public let tokens: [SearchTokenValue]
+    public let tokenMode: SearchTokenMode?
 
     public var body: Never { fatalError("SearchableView is a primitive view") }
+}
+
+private func makeSearchTokenValue<Token: Identifiable>(
+    from token: Token,
+    label: (Token) -> Text
+) -> SearchTokenValue {
+    SearchTokenValue(
+        id: String(describing: token.id),
+        label: label(token).content
+    )
 }
 
 extension View {
@@ -33,7 +62,9 @@ extension View {
             text: text,
             prompt: prompt,
             placement: .automatic,
-            isPresented: nil
+            isPresented: nil,
+            tokens: [],
+            tokenMode: nil
         )
     }
 
@@ -48,7 +79,9 @@ extension View {
             text: text,
             prompt: prompt,
             placement: placement,
-            isPresented: nil
+            isPresented: nil,
+            tokens: [],
+            tokenMode: nil
         )
     }
 
@@ -64,7 +97,47 @@ extension View {
             text: text,
             prompt: prompt,
             placement: placement,
-            isPresented: isPresented
+            isPresented: isPresented,
+            tokens: [],
+            tokenMode: nil
+        )
+    }
+
+    /// Adds a searchable field with selected tokens.
+    public func searchable<Token: Identifiable>(
+        text: Binding<String>,
+        tokens: Binding<[Token]>,
+        placement: SearchFieldPlacement = .automatic,
+        prompt: String = "Search",
+        token: (Token) -> Text
+    ) -> SearchableView<Self> {
+        SearchableView(
+            content: self,
+            text: text,
+            prompt: prompt,
+            placement: placement,
+            isPresented: nil,
+            tokens: tokens.wrappedValue.map { makeSearchTokenValue(from: $0, label: token) },
+            tokenMode: .tokens
+        )
+    }
+
+    /// Adds a searchable field with editable tokens.
+    public func searchable<Token: Identifiable>(
+        text: Binding<String>,
+        editableTokens: Binding<[Token]>,
+        placement: SearchFieldPlacement = .automatic,
+        prompt: String = "Search",
+        token: (Token) -> Text
+    ) -> SearchableView<Self> {
+        SearchableView(
+            content: self,
+            text: text,
+            prompt: prompt,
+            placement: placement,
+            isPresented: nil,
+            tokens: editableTokens.wrappedValue.map { makeSearchTokenValue(from: $0, label: token) },
+            tokenMode: .editableTokens
         )
     }
 }

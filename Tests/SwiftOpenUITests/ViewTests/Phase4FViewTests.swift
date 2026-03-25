@@ -123,6 +123,58 @@ final class Phase4FViewTests: XCTestCase {
         )
     }
 
+    func testSearchableStoresTokenValues() {
+        struct SearchToken: Identifiable {
+            let id: Int
+            let name: String
+        }
+
+        let searchable = Text("Content").searchable(
+            text: .constant("query"),
+            tokens: .constant([
+                SearchToken(id: 1, name: "Swift"),
+                SearchToken(id: 2, name: "UI")
+            ]),
+            placement: .sidebar,
+            prompt: "Find"
+        ) { token in
+            Text(token.name)
+        }
+
+        XCTAssertEqual(searchable.placement, .sidebar)
+        XCTAssertEqual(searchable.tokenMode, .tokens)
+        XCTAssertEqual(
+            searchable.tokens,
+            [
+                SearchTokenValue(id: "1", label: "Swift"),
+                SearchTokenValue(id: "2", label: "UI")
+            ]
+        )
+    }
+
+    func testSearchableStoresEditableTokenValues() {
+        struct SearchToken: Identifiable {
+            let id: String
+            let label: String
+        }
+
+        let searchable = Text("Content").searchable(
+            text: .constant(""),
+            editableTokens: .constant([
+                SearchToken(id: "a", label: "Open"),
+                SearchToken(id: "b", label: "Closed")
+            ]),
+            prompt: "Filter"
+        ) { token in
+            Text(token.label)
+        }
+
+        XCTAssertEqual(searchable.tokenMode, .editableTokens)
+        XCTAssertEqual(searchable.tokens.count, 2)
+        XCTAssertEqual(searchable.tokens[0].id, "a")
+        XCTAssertEqual(searchable.tokens[1].label, "Closed")
+    }
+
     // MARK: - Menu
 
     func testMenuConstruction() {

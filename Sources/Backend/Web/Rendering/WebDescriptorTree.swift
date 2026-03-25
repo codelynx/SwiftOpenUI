@@ -115,10 +115,17 @@ public struct WebSafeAreaInsetDescriptor: Equatable {
     public let spacing: Int
 }
 
+public struct WebSearchTokenDescriptor: Equatable {
+    public let id: String
+    public let label: String
+}
+
 public struct WebSearchableDescriptor: Equatable {
     public let prompt: String
     public let placement: String
     public let isPresented: Bool?
+    public let tokens: [WebSearchTokenDescriptor]
+    public let tokenMode: String?
 }
 
 public struct WebSafeAreaPaddingDescriptor: Equatable {
