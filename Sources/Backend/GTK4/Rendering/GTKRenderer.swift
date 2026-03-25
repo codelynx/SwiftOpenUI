@@ -3401,8 +3401,9 @@ extension SearchableView: GTKRenderable, GTKDescribable {
             gtk_swift_editable_set_text(entry, text.wrappedValue)
         }
 
-        // Honor isPresented: hide entry when false
-        if let isPresented = isPresented, !isPresented.wrappedValue {
+        // Honor isPresented: hide entire search UI surface when false
+        let isDismissed = isPresented.map { !$0.wrappedValue } ?? false
+        if isDismissed {
             gtk_widget_set_visible(entry, 0)
         }
 
@@ -3442,6 +3443,7 @@ extension SearchableView: GTKRenderable, GTKDescribable {
                 gtk_widget_add_css_class(label, "dim-label")
                 gtk_box_append(boxPointer(tokenRow), label)
             }
+            if isDismissed { gtk_widget_set_visible(tokenRow, 0) }
             gtk_box_append(boxPtr, tokenRow)
         }
 
@@ -3475,6 +3477,7 @@ extension SearchableView: GTKRenderable, GTKDescribable {
                 )
                 gtk_box_append(boxPointer(suggestionBox), btn)
             }
+            if isDismissed { gtk_widget_set_visible(suggestionBox, 0) }
             gtk_box_append(boxPtr, suggestionBox)
         }
 

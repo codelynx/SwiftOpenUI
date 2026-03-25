@@ -956,6 +956,32 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertNotEqual(oldDesc, newDesc, "Descriptor should differ when suggestions change")
     }
 
+    func testSearchableDismissedHidesSuggestions() throws {
+        try requireGTK()
+
+        var searchText = ""
+        var presented = false
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content")
+                .searchable(
+                    text: Binding(get: { searchText }, set: { searchText = $0 }),
+                    isPresented: Binding(get: { presented }, set: { presented = $0 })
+                )
+                .searchSuggestions {
+                    Text("Hint")
+                }
+        ))
+
+        // Entry should be hidden
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        XCTAssertEqual(gtk_widget_get_visible(entry), 0, "Entry should be hidden when dismissed")
+
+        // Suggestion box should be hidden
+        let suggestionBox = try unwrapNextSibling(of: entry)
+        XCTAssertEqual(gtk_widget_get_visible(suggestionBox), 0, "Suggestion box should be hidden when dismissed")
+    }
+
     // MARK: - Safe Area Padding Tests
 
     func testSafeAreaPaddingAllEdgesNilLengthUsesSyntheticDefault() throws {
