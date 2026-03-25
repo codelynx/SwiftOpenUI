@@ -2056,8 +2056,11 @@ extension SearchableView: WebRenderable, WebDescribable {
         let container = document.createElement("div")
         container.style = "display: flex; flex-direction: column; gap: 8px;"
 
+        // Determine if search is dismissed early so tokens/suggestions also hide
+        let searchDismissed = isPresented.map { !$0.wrappedValue } ?? false
+
         // Render tokens as pills above the search input
-        if !tokens.isEmpty {
+        if !tokens.isEmpty && !searchDismissed {
             let tokenBar = document.createElement("div")
             tokenBar.style = "display: flex; flex-wrap: wrap; gap: 4px;"
             for token in tokens {
@@ -2075,8 +2078,8 @@ extension SearchableView: WebRenderable, WebDescribable {
         input.value = .string(text.wrappedValue)
         input.style = "padding: 6px 8px; font-size: 14px; width: 100%; box-sizing: border-box;"
 
-        // Honor isPresented: hide the search field when explicitly dismissed
-        if let presented = isPresented, !presented.wrappedValue {
+        // Honor isPresented: hide search field when dismissed
+        if searchDismissed {
             input.style = "display: none;"
         }
 
@@ -2097,8 +2100,8 @@ extension SearchableView: WebRenderable, WebDescribable {
 
         _ = container.appendChild(input)
 
-        // Render suggestions below the search input
-        if !suggestions.isEmpty {
+        // Render suggestions below the search input (hidden when search is dismissed)
+        if !suggestions.isEmpty && !searchDismissed {
             let suggestionsDiv = document.createElement("div")
             suggestionsDiv.style = "display: flex; flex-direction: column; border: 1px solid #444; border-radius: 4px; overflow: hidden;"
             for suggestion in suggestions {
