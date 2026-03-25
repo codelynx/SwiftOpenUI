@@ -1587,6 +1587,55 @@ extension PaddedView: WinRenderable {
     }
 }
 
+extension SafeAreaPaddingView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Batch A: lower to padding with synthetic default of 16 when length is nil.
+        // No native/measured safe-area insets in this batch.
+        let amount = Int32(length ?? 16)
+        let padTop     = edges.contains(.top)      ? amount : 0
+        let padBottom  = edges.contains(.bottom)   ? amount : 0
+        let padLeading = edges.contains(.leading)  ? amount : 0
+        let padTrailing = edges.contains(.trailing) ? amount : 0
+
+        // Reuse existing padding container plumbing
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+        markHostedNodeKind(container, .padding)
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        guard let child = winRenderView(content, in: childContext) else { return container }
+
+        let padInfo = PaddingLayoutInfo(
+            child: child,
+            top: padTop, bottom: padBottom,
+            leading: padLeading, trailing: padTrailing
+        )
+        let infoPtr = Unmanaged.passRetained(padInfo).toOpaque()
+        SetWindowSubclass(container, paddingLayoutProc, 2, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        var childRect = RECT()
+        GetWindowRect(child, &childRect)
+        let childW = childRect.right - childRect.left
+        let childH = childRect.bottom - childRect.top
+        let totalW = childW + padLeading + padTrailing
+        let totalH = childH + padTop + padBottom
+        SetWindowPos(container, nil, 0, 0, totalW, totalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        if shouldExpandWidth(child) { markExpandWidth(container) }
+        if shouldExpandHeight(child) { markExpandHeight(container) }
+
+        performPaddingLayout(container: container, info: padInfo)
+
+        return container
+    }
+}
+
 class PaddingLayoutInfo {
     let child: HWND
     let top: Int32, bottom: Int32, leading: Int32, trailing: Int32
