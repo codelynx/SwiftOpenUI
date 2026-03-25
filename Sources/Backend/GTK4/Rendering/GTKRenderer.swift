@@ -3826,3 +3826,95 @@ private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {
 
     return opaqueFromWidget(host.container)
 }
+
+// MARK: - Safe Area GTK extensions
+
+extension IgnoresSafeAreaView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .composite, typeName: "IgnoresSafeAreaView",
+            children: [gtkDescribeView(content)])
+    }
+
+    public func gtkCreateWidget() -> OpaquePointer {
+        // Passthrough in Batch 1 — GTK has no native safe-area reservation yet
+        gtkRenderView(content)
+    }
+}
+
+extension SafeAreaInsetView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        let insetFirst = edge == .top || edge == .leading
+        let children = insetFirst
+            ? [gtkDescribeView(inset), gtkDescribeView(content)]
+            : [gtkDescribeView(content), gtkDescribeView(inset)]
+        return GTK4DescriptorNode(
+            kind: .safeAreaInset, typeName: "SafeAreaInsetView",
+            props: .safeAreaInset(GTK4SafeAreaInsetDescriptor(
+                edge: edge, alignment: alignment, spacing: spacing)),
+            children: children)
+    }
+
+    public func gtkCreateWidget() -> OpaquePointer {
+        let isVertical: Bool
+        let insetFirst: Bool
+
+        switch edge {
+        case .top:
+            isVertical = true
+            insetFirst = true
+        case .bottom:
+            isVertical = true
+            insetFirst = false
+        case .leading:
+            isVertical = false
+            insetFirst = true
+        case .trailing:
+            isVertical = false
+            insetFirst = false
+        }
+
+        let orientation = isVertical ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL
+        let box = gtk_box_new(orientation, gint(spacing))!
+
+        let contentWidget = widgetFromOpaque(gtkRenderView(content))
+        let insetWidget = widgetFromOpaque(gtkRenderView(inset))
+
+        // Cross-axis alignment for the inset content
+        let crossAlign: GtkAlign
+        switch alignment {
+        case .horizontal(let hAlign):
+            switch hAlign {
+            case .leading:  crossAlign = GTK_ALIGN_START
+            case .center:   crossAlign = GTK_ALIGN_CENTER
+            case .trailing: crossAlign = GTK_ALIGN_END
+            }
+        case .vertical(let vAlign):
+            switch vAlign {
+            case .top:    crossAlign = GTK_ALIGN_START
+            case .center: crossAlign = GTK_ALIGN_CENTER
+            case .bottom: crossAlign = GTK_ALIGN_END
+            }
+        }
+
+        if isVertical {
+            gtk_widget_set_halign(insetWidget, crossAlign)
+        } else {
+            gtk_widget_set_valign(insetWidget, crossAlign)
+        }
+
+        if insetFirst {
+            gtk_box_append(boxPointer(box), insetWidget)
+            gtk_box_append(boxPointer(box), contentWidget)
+        } else {
+            gtk_box_append(boxPointer(box), contentWidget)
+            gtk_box_append(boxPointer(box), insetWidget)
+        }
+
+        // Preserve expand flags from content — do not manufacture expansion
+        if gtk_widget_get_hexpand(contentWidget) != 0 { gtk_widget_set_hexpand(box, 1) }
+        if gtk_widget_get_vexpand(contentWidget) != 0 { gtk_widget_set_vexpand(box, 1) }
+
+        return opaqueFromWidget(box)
+    }
+}
