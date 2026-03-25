@@ -378,6 +378,9 @@ private class WebNavigationContext {
     let destinationRegistry = WebDestinationRegistry()
     private var isSyncing = false
     let toolbarArea: JSValue  // Right side of header for toolbar items
+    /// Per-render toolbar configuration — set by ToolbarConfigurationView,
+    /// consumed by ToolbarView, regardless of modifier order.
+    var pendingToolbarConfig: ToolbarConfiguration?
 
     init() {
         let doc = JSObject.global.document
@@ -2678,17 +2681,72 @@ extension AlertModifierView: WebRenderable {
 
 // MARK: - Phase D (partial)
 
+/// Default toolbar area style — used to reset after hidden state.
+private let webToolbarAreaDefaultStyle = "display: flex; align-items: center; gap: 4px;"
+
+/// Apply pending toolbar configuration (visibility + removal) to the toolbar area.
+private func webApplyToolbarConfig(_ ctx: WebNavigationContext) {
+    guard let config = ctx.pendingToolbarConfig else { return }
+
+    // Apply visibility
+    switch config.visibility {
+    case .hidden:
+        ctx.toolbarArea.style = "display: none;"
+    case .visible, .automatic, nil:
+        ctx.toolbarArea.style = .string(webToolbarAreaDefaultStyle)
+    }
+
+    // Apply removal by filtering already-rendered children.
+    // We re-collect items from the toolbar area's parent ToolbarView if available,
+    // but since items are already in the DOM, we use a simpler approach:
+    // clear and re-render with the config's removed placements excluded.
+    // This is handled at injection time in ToolbarView, so no extra work here.
+}
+
 extension ToolbarView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
 
-        // Inject toolbar items into the current NavigationStack header
+        // Inject toolbar items into the current NavigationStack header.
+        // Always restore default visibility in case a previous screen hid it.
         if let ctx = _webCurrentNavContext {
+            ctx.toolbarArea.style = .string(webToolbarAreaDefaultStyle)
             ctx.toolbarArea.innerHTML = ""
-            for item in toolbarItems {
+
+            // Filter out removed placements if a config exists
+            let removedSet = ctx.pendingToolbarConfig.map { Set($0.removedPlacements) } ?? []
+            for item in toolbarItems where !removedSet.contains(item.placement) {
                 let rendered = webRenderAnyView(item.wrapped)
                 _ = ctx.toolbarArea.appendChild(rendered)
             }
+
+            // Apply visibility from config (may hide what we just rendered)
+            webApplyToolbarConfig(ctx)
+            // Clear consumed config so it doesn't leak to later screens
+            ctx.pendingToolbarConfig = nil
+        }
+
+        return child
+    }
+}
+
+extension ToolbarConfigurationView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        if let ctx = _webCurrentNavContext {
+            // Store config in nav context so ToolbarView can read it
+            // regardless of modifier order
+            ctx.pendingToolbarConfig = toolbarConfiguration
+        }
+
+        let child = webRenderView(content)
+
+        // After rendering content (which may contain ToolbarView),
+        // apply config in case ToolbarView already rendered items
+        // or in case there is no ToolbarView at all.
+        if let ctx = _webCurrentNavContext {
+            webApplyToolbarConfig(ctx)
+            // Clear consumed config so it doesn't leak to later screens
+            ctx.pendingToolbarConfig = nil
         }
 
         return child
