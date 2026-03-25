@@ -4257,10 +4257,12 @@ extension ToolbarView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
-        // Check for toolbar configuration from an ancestor ToolbarConfigurationView (TLS)
-        // or from content if ToolbarConfigurationView is nested inside ToolbarView (reverse order)
-        let config = getCurrentToolbarConfiguration()
-            ?? (content as? ToolbarConfigurationProvider)?.toolbarConfiguration
+        // Prefer the merged configuration carried by ToolbarView itself.
+        // Fall back to legacy wrapper discovery so older nested shapes still work.
+        let config = toolbarConfiguration == ToolbarConfiguration()
+            ? (getCurrentToolbarConfiguration()
+                ?? (content as? ToolbarConfigurationProvider)?.toolbarConfiguration)
+            : toolbarConfiguration
 
         // If visibility is hidden for a target Win32 actually renders (.navigationBar
         // or .automatic), skip toolbar rendering entirely. Other targets (.bottomBar,

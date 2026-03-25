@@ -3472,6 +3472,27 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(items.count, 1,
             "Removing .leading in reverse order should leave only trailing item")
     }
+
+    func testToolbarMixedVisibilityAndRemovalChainUsesMergedConfiguration() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .toolbar(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .leading) {
+                    Button("Lead") {}
+                }
+                ToolbarItem(placement: .trailing) {
+                    Button("Trail") {}
+                }
+            }
+            .toolbar(removing: .leading)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let items = collectToolbarBarChildren(in: hwnd!)
+        XCTAssertEqual(items.count, 1,
+            "Merged visibility/removal config should still remove .leading")
+    }
 }
 
 // MARK: - Test helpers
