@@ -956,6 +956,41 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertNotEqual(oldDesc, newDesc, "Descriptor should differ when suggestions change")
     }
 
+    func testSearchSuggestionsForRendersFilteredRows() throws {
+        try requireGTK()
+
+        var searchText = "an"
+        let allSuggestions = [
+            SearchSuggestionValue(id: "1", label: "Apple", completion: "Apple"),
+            SearchSuggestionValue(id: "2", label: "Banana", completion: "Banana"),
+            SearchSuggestionValue(id: "3", label: "Orange", completion: "Orange"),
+        ]
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content")
+                .searchable(text: Binding(get: { searchText }, set: { searchText = $0 }))
+                .searchSuggestions(allSuggestions, for: searchText)
+        ))
+
+        // Core filters case-insensitively with .contains — "an" matches "Banana" and "Orange"
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        let suggestionBox = try unwrapNextSibling(of: entry)
+        XCTAssertEqual(gtkWidgetTypeName(suggestionBox), "GtkBox")
+
+        // Should have 2 buttons (Banana, Orange), not 3 — Apple excluded
+        let firstBtn = try unwrapFirstChild(of: suggestionBox)
+        XCTAssertEqual(gtkWidgetTypeName(firstBtn), "GtkButton")
+        let firstLabel = try unwrapFirstDescendant(ofType: "GtkLabel", in: firstBtn)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(firstLabel))), "Banana")
+
+        let secondBtn = try unwrapNextSibling(of: firstBtn)
+        XCTAssertEqual(gtkWidgetTypeName(secondBtn), "GtkButton")
+        let secondLabel = try unwrapFirstDescendant(ofType: "GtkLabel", in: secondBtn)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(secondLabel))), "Orange")
+
+        XCTAssertNil(gtk_widget_get_next_sibling(secondBtn), "Apple should be excluded by filter")
+    }
+
     func testSearchableDismissedHidesSuggestions() throws {
         try requireGTK()
 
