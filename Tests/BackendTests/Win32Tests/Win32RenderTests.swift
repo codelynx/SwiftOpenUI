@@ -2426,6 +2426,130 @@ final class Win32RenderTests: XCTestCase {
         let hwnd = winRenderView(view, in: ctx)
         XCTAssertNotNil(hwnd, "Searchable with custom prompt should render")
     }
+
+    // MARK: - Safe area padding
+
+    func testSafeAreaPaddingDefaultAllEdges() {
+        let ctx = testContext()
+        let view = Text("Hello").safeAreaPadding()
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Container should be larger than child by 16 on each edge (synthetic default)
+        let child = GetWindow(hwnd!, UINT(GW_CHILD))
+        XCTAssertNotNil(child)
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        let cw = containerRect.right - containerRect.left
+        let ch = containerRect.bottom - containerRect.top
+
+        var childRect = RECT()
+        GetWindowRect(child!, &childRect)
+        let childW = childRect.right - childRect.left
+        let childH = childRect.bottom - childRect.top
+
+        // 16 leading + 16 trailing = 32 extra width
+        XCTAssertEqual(cw, childW + 32, "Default safeAreaPadding should add 16px on each side")
+        XCTAssertEqual(ch, childH + 32, "Default safeAreaPadding should add 16px on top and bottom")
+    }
+
+    func testSafeAreaPaddingExplicitLength() {
+        let ctx = testContext()
+        let view = Text("Hello").safeAreaPadding(10)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let child = GetWindow(hwnd!, UINT(GW_CHILD))
+        XCTAssertNotNil(child)
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        var childRect = RECT()
+        GetWindowRect(child!, &childRect)
+
+        let extraW = (containerRect.right - containerRect.left) - (childRect.right - childRect.left)
+        let extraH = (containerRect.bottom - containerRect.top) - (childRect.bottom - childRect.top)
+        XCTAssertEqual(extraW, 20, "safeAreaPadding(10) should add 10px on leading + trailing")
+        XCTAssertEqual(extraH, 20, "safeAreaPadding(10) should add 10px on top + bottom")
+    }
+
+    func testSafeAreaPaddingSelectedEdges() {
+        let ctx = testContext()
+        let view = Text("Hello").safeAreaPadding(.top, 8)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let child = GetWindow(hwnd!, UINT(GW_CHILD))
+        XCTAssertNotNil(child)
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        var childRect = RECT()
+        GetWindowRect(child!, &childRect)
+
+        let extraW = (containerRect.right - containerRect.left) - (childRect.right - childRect.left)
+        let extraH = (containerRect.bottom - containerRect.top) - (childRect.bottom - childRect.top)
+        XCTAssertEqual(extraW, 0, "Top-only padding should not add horizontal space")
+        XCTAssertEqual(extraH, 8, "Top-only padding(8) should add 8px vertically")
+    }
+
+    func testSafeAreaPaddingHorizontalEdges() {
+        let ctx = testContext()
+        let view = Text("Hello").safeAreaPadding(.horizontal, 12)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let child = GetWindow(hwnd!, UINT(GW_CHILD))
+        XCTAssertNotNil(child)
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        var childRect = RECT()
+        GetWindowRect(child!, &childRect)
+
+        let extraW = (containerRect.right - containerRect.left) - (childRect.right - childRect.left)
+        let extraH = (containerRect.bottom - containerRect.top) - (childRect.bottom - childRect.top)
+        XCTAssertEqual(extraW, 24, "Horizontal padding(12) should add 12px leading + 12px trailing")
+        XCTAssertEqual(extraH, 0, "Horizontal-only padding should not add vertical space")
+    }
+
+    func testSafeAreaPaddingNegativeLengthClamps() {
+        let ctx = testContext()
+        let view = Text("Hello").safeAreaPadding(-5)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let child = GetWindow(hwnd!, UINT(GW_CHILD))
+        XCTAssertNotNil(child)
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        var childRect = RECT()
+        GetWindowRect(child!, &childRect)
+
+        let extraW = (containerRect.right - containerRect.left) - (childRect.right - childRect.left)
+        let extraH = (containerRect.bottom - containerRect.top) - (childRect.bottom - childRect.top)
+        XCTAssertEqual(extraW, 0, "Negative length should clamp to 0")
+        XCTAssertEqual(extraH, 0, "Negative length should clamp to 0")
+    }
+
+    func testSafeAreaPaddingDescriptor() {
+        let node = winDescribeView(Text("Hello").safeAreaPadding(.top, 20))
+        XCTAssertEqual(node.kind, .padding)
+        XCTAssertEqual(node.props, .padding(
+            Win32PaddingDescriptor(top: 20, bottom: 0, leading: 0, trailing: 0)
+        ))
+        XCTAssertEqual(node.children.count, 1)
+    }
+
+    func testSafeAreaPaddingDescriptorDefault() {
+        let node = winDescribeView(Text("Hello").safeAreaPadding())
+        XCTAssertEqual(node.kind, .padding)
+        XCTAssertEqual(node.props, .padding(
+            Win32PaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)
+        ))
+    }
 }
 
 // MARK: - Test helpers
