@@ -3431,6 +3431,47 @@ final class Win32RenderTests: XCTestCase {
         let items = collectToolbarBarChildren(in: hwnd!)
         XCTAssertEqual(items.count, 1, "Visible toolbar should still render items")
     }
+
+    // MARK: - Toolbar Batch B (reverse modifier order)
+
+    func testToolbarHiddenReverseOrder() {
+        let ctx = testContext()
+        // Config applied before .toolbar { ... } — ToolbarView wraps ToolbarConfigurationView
+        let view = Text("Content")
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .trailing) {
+                    Button("Action") {}
+                }
+            }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let childCount = countDirectChildren(of: hwnd!)
+        XCTAssertEqual(childCount, 0,
+            "Hidden toolbar in reverse order should not create toolbar container")
+    }
+
+    func testToolbarRemovingReverseOrder() {
+        let ctx = testContext()
+        // Config applied before .toolbar { ... }
+        let view = Text("Content")
+            .toolbar(removing: .leading)
+            .toolbar {
+                ToolbarItem(placement: .leading) {
+                    Button("Lead") {}
+                }
+                ToolbarItem(placement: .trailing) {
+                    Button("Trail") {}
+                }
+            }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let items = collectToolbarBarChildren(in: hwnd!)
+        XCTAssertEqual(items.count, 1,
+            "Removing .leading in reverse order should leave only trailing item")
+    }
 }
 
 // MARK: - Test helpers
