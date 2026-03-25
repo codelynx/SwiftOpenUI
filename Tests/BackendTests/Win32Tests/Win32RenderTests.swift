@@ -50,6 +50,9 @@ private func testContext() -> RenderContext {
 /// Destroy all child windows of the test parent between tests.
 private func cleanupChildren() {
     guard let parent = testWindow else { return }
+    if let sheet = win32ActiveSheetWindow(for: parent) {
+        DestroyWindow(sheet)
+    }
     while let child = GetWindow(parent, UINT(GW_CHILD)) {
         DestroyWindow(child)
     }
@@ -66,6 +69,11 @@ private func className(of hwnd: HWND) -> String {
 // MARK: - Tests
 
 final class Win32RenderTests: XCTestCase {
+
+    private struct TestSheetItem: Identifiable, Equatable {
+        let id: Int
+        let title: String
+    }
 
     override func tearDown() {
         super.tearDown()
@@ -248,6 +256,87 @@ final class Win32RenderTests: XCTestCase {
             node.props,
             .zStack(Win32ZStackDescriptor(alignment: .topTrailing))
         )
+    }
+
+    func testWin32SheetProgrammaticDismissCallsOnDismissOnce() {
+        let ctx = testContext()
+        var isPresented = true
+        var dismissCount = 0
+        let binding = Binding<Bool>(
+            get: { isPresented },
+            set: { isPresented = $0 }
+        )
+
+        let presentedView = Text("Host").sheet(isPresented: binding, onDismiss: {
+            dismissCount += 1
+        }) {
+            Text("Sheet")
+        }
+
+        _ = winRenderView(presentedView, in: ctx)
+        let sheet = win32ActiveSheetWindow(for: testWindow)
+        XCTAssertNotNil(sheet)
+        XCTAssertTrue(isPresented)
+
+        isPresented = false
+        let dismissedView = Text("Host").sheet(isPresented: binding, onDismiss: {
+            dismissCount += 1
+        }) {
+            Text("Sheet")
+        }
+        _ = winRenderView(dismissedView, in: ctx)
+
+        XCTAssertNil(win32ActiveSheetWindow(for: testWindow))
+        XCTAssertFalse(isPresented)
+        XCTAssertEqual(dismissCount, 1)
+    }
+
+    func testWin32ItemSheetCloseClearsItemAndCallsOnDismissOnce() {
+        let ctx = testContext()
+        var selectedItem: TestSheetItem? = TestSheetItem(id: 1, title: "Record")
+        var dismissCount = 0
+        let binding = Binding<TestSheetItem?>(
+            get: { selectedItem },
+            set: { selectedItem = $0 }
+        )
+
+        let view = Text("Host").sheet(item: binding, onDismiss: {
+            dismissCount += 1
+        }) { item in
+            Text(item.title)
+        }
+
+        _ = winRenderView(view, in: ctx)
+        guard let sheet = win32ActiveSheetWindow(for: testWindow) else {
+            return XCTFail("Expected active sheet window")
+        }
+
+        _ = SendMessageW(sheet, UINT(WM_CLOSE), 0, 0)
+
+        XCTAssertNil(win32ActiveSheetWindow(for: testWindow))
+        XCTAssertNil(selectedItem)
+        XCTAssertEqual(dismissCount, 1)
+    }
+
+    func testWin32SheetDoesNotDuplicatePopupOnRebuild() {
+        let ctx = testContext()
+        var isPresented = true
+        let binding = Binding<Bool>(
+            get: { isPresented },
+            set: { isPresented = $0 }
+        )
+        let view = Text("Host").sheet(isPresented: binding, onDismiss: nil) {
+            Text("Sheet")
+        }
+
+        _ = winRenderView(view, in: ctx)
+        let firstSheet = win32ActiveSheetWindow(for: testWindow)
+        XCTAssertNotNil(firstSheet)
+
+        _ = winRenderView(view, in: ctx)
+        let secondSheet = win32ActiveSheetWindow(for: testWindow)
+        XCTAssertEqual(firstSheet, secondSheet)
+        XCTAssertTrue(isPresented)
     }
 
     func testDescribePaddingWrapsChild() {
