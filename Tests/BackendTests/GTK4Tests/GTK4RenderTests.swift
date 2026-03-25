@@ -816,6 +816,93 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertNotEqual(plan.kind, .reuse,
                           "Plan should not be .reuse when text changes")
     }
+
+    // MARK: - Safe Area Padding Tests
+
+    func testSafeAreaPaddingAllEdgesNilLengthUsesSyntheticDefault() throws {
+        try requireGTK()
+
+        // safeAreaPadding() with nil length should use synthetic default 16
+        let desc = gtkDescribeView(Text("Hi").safeAreaPadding())
+        guard case .safeAreaPadding(let props) = desc.props else {
+            XCTFail("Expected .safeAreaPadding descriptor props")
+            return
+        }
+        XCTAssertEqual(props.top, 16)
+        XCTAssertEqual(props.bottom, 16)
+        XCTAssertEqual(props.leading, 16)
+        XCTAssertEqual(props.trailing, 16)
+    }
+
+    func testSafeAreaPaddingExplicitLength() throws {
+        try requireGTK()
+
+        let desc = gtkDescribeView(Text("Hi").safeAreaPadding(24))
+        guard case .safeAreaPadding(let props) = desc.props else {
+            XCTFail("Expected .safeAreaPadding descriptor props")
+            return
+        }
+        XCTAssertEqual(props.top, 24)
+        XCTAssertEqual(props.bottom, 24)
+        XCTAssertEqual(props.leading, 24)
+        XCTAssertEqual(props.trailing, 24)
+    }
+
+    func testSafeAreaPaddingSelectedEdges() throws {
+        try requireGTK()
+
+        let desc = gtkDescribeView(Text("Hi").safeAreaPadding([.top, .trailing], 10))
+        guard case .safeAreaPadding(let props) = desc.props else {
+            XCTFail("Expected .safeAreaPadding descriptor props")
+            return
+        }
+        XCTAssertEqual(props.top, 10)
+        XCTAssertEqual(props.bottom, 0)
+        XCTAssertEqual(props.leading, 0)
+        XCTAssertEqual(props.trailing, 10)
+    }
+
+    func testSafeAreaPaddingRenders() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").safeAreaPadding(8)
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        let child = try unwrapFirstChild(of: widget)
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: child)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Content")
+    }
+
+    func testSafeAreaPaddingDescriptorDetectsLengthChange() throws {
+        try requireGTK()
+
+        let oldDesc = gtkDescribeView(Text("Hi").safeAreaPadding(8))
+        let newDesc = gtkDescribeView(Text("Hi").safeAreaPadding(20))
+
+        XCTAssertNotEqual(oldDesc, newDesc, "Descriptor should differ when length changes")
+
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+        let retained = gtkRetainDescriptorTree(oldId)
+        let plan = gtkPlanDescriptorTree(old: retained, new: newId)
+        XCTAssertNotEqual(plan.kind, .reuse, "Plan should not be .reuse when padding changes")
+    }
+
+    func testSafeAreaPaddingNegativeLengthClampsToZero() throws {
+        try requireGTK()
+
+        let desc = gtkDescribeView(Text("Hi").safeAreaPadding(-5))
+        guard case .safeAreaPadding(let props) = desc.props else {
+            XCTFail("Expected .safeAreaPadding descriptor props")
+            return
+        }
+        XCTAssertEqual(props.top, 0)
+        XCTAssertEqual(props.bottom, 0)
+        XCTAssertEqual(props.leading, 0)
+        XCTAssertEqual(props.trailing, 0)
+    }
 }
 
 private func requireGTK(

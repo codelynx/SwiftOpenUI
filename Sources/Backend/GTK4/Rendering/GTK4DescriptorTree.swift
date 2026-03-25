@@ -14,6 +14,7 @@ public enum GTK4DescriptorKind: Equatable {
     case composite
     case divider
     case safeAreaInset
+    case safeAreaPadding
     case searchable
     case font
     case text
@@ -109,6 +110,13 @@ public struct GTK4SafeAreaInsetDescriptor: Equatable {
     public let spacing: Int
 }
 
+public struct GTK4SafeAreaPaddingDescriptor: Equatable {
+    public let top: Int
+    public let bottom: Int
+    public let leading: Int
+    public let trailing: Int
+}
+
 public struct GTK4SearchableDescriptor: Equatable {
     public let text: String
     public let prompt: String
@@ -157,6 +165,7 @@ public enum GTK4DescriptorProps: Equatable {
     case slider(GTK4SliderDescriptor)
     case vStack(GTK4VStackDescriptor)
     case safeAreaInset(GTK4SafeAreaInsetDescriptor)
+    case safeAreaPadding(GTK4SafeAreaPaddingDescriptor)
     case searchable(GTK4SearchableDescriptor)
     case zStack(GTK4ZStackDescriptor)
 }
@@ -292,6 +301,7 @@ public enum GTK4DescriptorUpdateIntent: Equatable {
     case hStackLayout
     case paddingLayout
     case safeAreaInsetLayout
+    case safeAreaPaddingLayout
     case searchableLayout
     case sliderConfiguration
     case sliderValue
@@ -603,8 +613,9 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
     case .font:          return .fontStyle
     case .spacer:        return .none
     case .composite:     return .none
-    case .safeAreaInset: return .safeAreaInsetLayout
-    case .searchable:    return .searchableLayout
+    case .safeAreaInset:   return .safeAreaInsetLayout
+    case .safeAreaPadding: return .safeAreaPaddingLayout
+    case .searchable:      return .searchableLayout
     }
 }
 
@@ -733,7 +744,7 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
     case .paddingLayout:
         return gtkPaddingLayoutHook(action: action, performMutation: performMutation)
     case .backgroundColor, .borderStyle, .fontStyle, .frameLayout, .foregroundColor,
-         .hStackLayout, .safeAreaInsetLayout, .searchableLayout, .sliderConfiguration,
+         .hStackLayout, .safeAreaInsetLayout, .safeAreaPaddingLayout, .searchableLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet
         return gtkUpdatedHookResult(action: action, intent: action.updateIntent,

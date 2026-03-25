@@ -3937,3 +3937,45 @@ extension SafeAreaInsetView: GTKRenderable, GTKDescribable {
         return opaqueFromWidget(box)
     }
 }
+
+/// Synthetic safe-area padding default when length is nil (Batch A).
+private let gtkSyntheticSafeAreaPadding = 16
+
+/// Resolve per-edge safe-area padding. Negative lengths clamp to 0.
+private func gtkResolveSafeAreaPadding(edges: Edge.Set, length: Int?) -> (top: Int, bottom: Int, leading: Int, trailing: Int) {
+    let resolved = max(0, length ?? gtkSyntheticSafeAreaPadding)
+    return (
+        top: edges.contains(.top) ? resolved : 0,
+        bottom: edges.contains(.bottom) ? resolved : 0,
+        leading: edges.contains(.leading) ? resolved : 0,
+        trailing: edges.contains(.trailing) ? resolved : 0
+    )
+}
+
+extension SafeAreaPaddingView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        let p = gtkResolveSafeAreaPadding(edges: edges, length: length)
+        return GTK4DescriptorNode(
+            kind: .safeAreaPadding, typeName: "SafeAreaPaddingView",
+            props: .safeAreaPadding(GTK4SafeAreaPaddingDescriptor(
+                top: p.top, bottom: p.bottom, leading: p.leading, trailing: p.trailing)),
+            children: [gtkDescribeView(content)])
+    }
+
+    public func gtkCreateWidget() -> OpaquePointer {
+        let p = gtkResolveSafeAreaPadding(edges: edges, length: length)
+
+        let child = widgetFromOpaque(gtkRenderView(content))
+        let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        applyCSSToWidget(wrapper, properties: """
+            padding-top: \(p.top)px;
+            padding-bottom: \(p.bottom)px;
+            padding-left: \(p.leading)px;
+            padding-right: \(p.trailing)px;
+            """)
+        if gtk_widget_get_hexpand(child) != 0 { gtk_widget_set_hexpand(wrapper, 1) }
+        if gtk_widget_get_vexpand(child) != 0 { gtk_widget_set_vexpand(wrapper, 1) }
+        gtk_box_append(boxPointer(wrapper), child)
+        return opaqueFromWidget(wrapper)
+    }
+}
