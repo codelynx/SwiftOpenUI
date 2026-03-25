@@ -2772,9 +2772,249 @@ final class Win32RenderTests: XCTestCase {
             Win32PaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)
         ))
     }
+
+    // MARK: - Toolbar Batch A (fallback path — outside NavigationStack)
+
+    func testToolbarSingleItem() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .trailing) {
+                Button("Action") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Toolbar with single item should render")
+    }
+
+    func testToolbarMultipleItems() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .leading) {
+                Button("Back") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Save") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Share") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Toolbar with multiple items should render")
+
+        // Outside NavigationStack, toolbar renders as container with items + content.
+        // 3 toolbar item HWNDs + 1 content HWND = at least 4 children.
+        var childCount: Int = 0
+        var child = GetWindow(hwnd!, UINT(GW_CHILD))
+        while let c = child {
+            childCount += 1
+            child = GetWindow(c, UINT(GW_HWNDNEXT))
+        }
+        XCTAssertGreaterThanOrEqual(childCount, 4,
+            "Container should have 3 toolbar item HWNDs + content HWND")
+    }
+
+    func testToolbarLeadingTrailingPlacement() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .leading) {
+                Button("Lead") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Trail") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Collect toolbar-bar children (y == 0) in creation order.
+        // The renderer creates HWNDs in source order, so GW_CHILD + GW_HWNDNEXT
+        // walks them in source order: index 0 = leading "Lead", index 1 = trailing "Trail".
+        let items = collectToolbarBarChildren(in: hwnd!)
+        XCTAssertEqual(items.count, 2, "Should have 2 toolbar item HWNDs at y=0")
+
+        // The leading item (index 0) must have a smaller X than the trailing item (index 1)
+        XCTAssertLessThan(items[0].x, items[1].x,
+            "Leading item should be positioned left of trailing item")
+    }
+
+    func testToolbarWithID() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar(id: "myToolbar") {
+            ToolbarItem(placement: .trailing) {
+                Button("Done") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "toolbar(id:content:) should render identically to toolbar(content:)")
+    }
+
+    func testToolbarEmptyContent() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar {}
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Toolbar with no items should still render content")
+    }
+
+    func testToolbarMultipleItemsPreserveOrder() {
+        let ctx = testContext()
+        // Three trailing items in source order: First, Second, Third.
+        // The renderer positions trailing items from the right edge via
+        // trailingRendered.reversed(), so the last source item ends up
+        // rightmost and the first source item ends up leftmost:
+        //   - "Third"  (last in source)  → positioned first from right → rightmost
+        //   - "Second" (middle)          → positioned next             → middle
+        //   - "First"  (first in source) → positioned last from right  → leftmost
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .trailing) {
+                Button("First") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Second") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Third") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Collect in creation order (= source order): index 0=First, 1=Second, 2=Third
+        let items = collectToolbarBarChildren(in: hwnd!)
+        XCTAssertEqual(items.count, 3, "All 3 toolbar items should render at y=0")
+
+        // "First" (index 0) should be leftmost, "Third" (index 2) should be rightmost
+        XCTAssertLessThan(items[0].x, items[1].x,
+            "First (source[0]) should be left of Second (source[1])")
+        XCTAssertLessThan(items[1].x, items[2].x,
+            "Second (source[1]) should be left of Third (source[2])")
+    }
+
+    // MARK: - Toolbar Batch A (navigation-header path — inside NavigationStack)
+
+    func testToolbarInNavigationStack() {
+        let ctx = testContext()
+        let view = NavigationStack {
+            Text("Content")
+                .toolbar {
+                    ToolbarItem(placement: .trailing) {
+                        Button("Save") {}
+                    }
+                }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "NavigationStack with toolbar should render")
+
+        // The toolbar items are tagged with the "SwiftUIToolbarItem" window property.
+        // Walk all descendants and count tagged windows.
+        let tagged = collectToolbarTaggedWindows(in: hwnd!)
+        XCTAssertEqual(tagged.count, 1, "One toolbar item should be tagged in header")
+    }
+
+    func testToolbarMultipleItemsInNavigationStack() {
+        let ctx = testContext()
+        let view = NavigationStack {
+            Text("Content")
+                .toolbar {
+                    ToolbarItem(placement: .leading) {
+                        Button("Back") {}
+                    }
+                    ToolbarItem(placement: .trailing) {
+                        Button("Save") {}
+                    }
+                    ToolbarItem(placement: .trailing) {
+                        Button("Share") {}
+                    }
+                }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let tagged = collectToolbarTaggedWindows(in: hwnd!)
+        XCTAssertEqual(tagged.count, 3,
+            "All 3 toolbar items should be tagged in navigation header")
+    }
+
+    func testToolbarLeadingTrailingInNavigationStack() {
+        let ctx = testContext()
+        let view = NavigationStack {
+            Text("Content")
+                .toolbar {
+                    ToolbarItem(placement: .leading) {
+                        Button("Lead") {}
+                    }
+                    ToolbarItem(placement: .trailing) {
+                        Button("Trail") {}
+                    }
+                }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Tagged windows in creation order: index 0 = leading, index 1 = trailing.
+        let tagged = collectToolbarTaggedWindows(in: hwnd!)
+        XCTAssertEqual(tagged.count, 2, "Both items should be tagged")
+
+        // Verify the leading item is positioned at the renderer's leading start (68).
+        // The trailing item position depends on the header container width which is
+        // set after toolbar rendering in the NavigationStack layout pass, so we only
+        // verify it was placed at a different position.
+        let parent = GetParent(tagged[0])!
+        var r0 = RECT()
+        var r1 = RECT()
+        GetWindowRect(tagged[0], &r0)
+        GetWindowRect(tagged[1], &r1)
+        var pt0 = POINT(x: r0.left, y: r0.top)
+        var pt1 = POINT(x: r1.left, y: r1.top)
+        ScreenToClient(parent, &pt0)
+        ScreenToClient(parent, &pt1)
+        XCTAssertEqual(pt0.x, 68,
+            "Leading item should start at renderer's leadingX origin (68)")
+        XCTAssertNotEqual(pt0.x, pt1.x,
+            "Leading and trailing items should be at different X positions")
+    }
 }
 
 // MARK: - Test helpers
+
+/// Collect direct children of a toolbar container that sit at y=0 (toolbar bar row),
+/// returned in creation order (GW_CHILD + GW_HWNDNEXT). Content is at y=barH (28).
+private func collectToolbarBarChildren(in container: HWND) -> [(hwnd: HWND, x: Int32)] {
+    var result: [(hwnd: HWND, x: Int32)] = []
+    var child = GetWindow(container, UINT(GW_CHILD))
+    while let c = child {
+        var r = RECT()
+        GetWindowRect(c, &r)
+        var pt = POINT(x: r.left, y: r.top)
+        ScreenToClient(container, &pt)
+        if pt.y == 0 {
+            result.append((hwnd: c, x: pt.x))
+        }
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+    return result
+}
+
+private let testToolbarItemPropName: [WCHAR] = Array("SwiftUIToolbarItem".utf16) + [0]
+
+private func collectToolbarTaggedWindows(in parent: HWND) -> [HWND] {
+    var result: [HWND] = []
+    collectToolbarTaggedWindowsRecursive(in: parent, into: &result)
+    return result
+}
+
+private func collectToolbarTaggedWindowsRecursive(in parent: HWND, into result: inout [HWND]) {
+    var child = GetWindow(parent, UINT(GW_CHILD))
+    while let c = child {
+        testToolbarItemPropName.withUnsafeBufferPointer { ptr in
+            if GetPropW(c, ptr.baseAddress!) != nil {
+                result.append(c)
+            }
+        }
+        collectToolbarTaggedWindowsRecursive(in: c, into: &result)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+}
 
 private func collectEditControls(in parent: HWND, into result: inout [HWND]) {
     var child = GetWindow(parent, UINT(GW_CHILD))
