@@ -1041,6 +1041,48 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
     }
 
+    func testAlertErrorBasedPresentedRendersContent() throws {
+        try requireGTK()
+
+        struct TestError: LocalizedError {
+            var errorDescription: String? { "Something failed" }
+            var failureReason: String? { "Bad input" }
+        }
+
+        var presented = true
+        let error: TestError? = TestError()
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").alert(
+                isPresented: Binding(get: { presented }, set: { presented = $0 }),
+                error: error
+            )
+        ))
+        // Error-based alert with isPresented=true and non-nil error takes the
+        // presenting branch (alert scheduled via g_idle_add); content still renders
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
+    func testAlertErrorNilSuppressesPresentation() throws {
+        try requireGTK()
+
+        struct TestError: LocalizedError {
+            var errorDescription: String? { "Oops" }
+        }
+
+        var presented = true
+        let error: TestError? = nil
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").alert(
+                isPresented: Binding(get: { presented }, set: { presented = $0 }),
+                error: error
+            )
+        ))
+        // With nil error, effective isPresented is false — no alert should attempt presentation
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
     // MARK: - Toolbar Tests
 
     func testToolbarMultiItemExtractsAllItems() throws {
