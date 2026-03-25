@@ -2033,6 +2033,13 @@ let foregroundColorProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcla
 
 extension BackgroundView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        if (background as? Color) == nil {
+            return winRenderView(ZStack(alignment: alignment) {
+                self.background
+                content
+            }, in: context)
+        }
+
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
         // Create a container that paints itself with the background color
@@ -2054,6 +2061,7 @@ extension BackgroundView: WinRenderable {
         let h = childRect.bottom - childRect.top
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
+        guard let color = background as? Color else { return container }
         let r = UInt8(color.red * 255)
         let g = UInt8(color.green * 255)
         let b = UInt8(color.blue * 255)
@@ -2847,12 +2855,19 @@ extension ForegroundColorView: WinDescribable {
 
 extension BackgroundView: WinDescribable {
     public func winDescribeNode() -> Win32DescriptorNode {
-        Win32DescriptorNode(
-            kind: .background,
-            typeName: String(describing: Self.self),
-            props: .background(winColorDescriptor(color)),
-            children: [winDescribeView(content)]
-        )
+        if let color = background as? Color {
+            return Win32DescriptorNode(
+                kind: .background,
+                typeName: String(describing: Self.self),
+                props: .background(winColorDescriptor(color)),
+                children: [winDescribeView(content)]
+            )
+        }
+
+        return winDescribeView(ZStack(alignment: alignment) {
+            self.background
+            content
+        })
     }
 }
 

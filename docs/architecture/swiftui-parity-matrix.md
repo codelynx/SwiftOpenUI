@@ -35,7 +35,7 @@ Last updated: 2026-03-19
 | AnyView | Y | Y | Y | Y | Y | Y | |
 | EmptyView | Y | Y | Y | Y | Y | Y | |
 | NavigationStack | Y | Y | Y | Y | Y | Y | GtkStack / Win32 HWND stack / DOM stack |
-| NavigationLink | Y | Y | Y | Y | Y | Y | String label only |
+| NavigationLink | Y | Y | Y | Y | Y | Y | String and custom ViewBuilder labels |
 | SecureField | Y | Y | Y | Y | Y | - | GTK: PasswordEntry; Win32: EDIT+ES_PASSWORD; Web: password input |
 | TextEditor | Y | Y | Y | Y | Y | - | GTK: TextView+ScrolledWindow; Win32: EDIT+ES_MULTILINE; Web: textarea |
 | ProgressView | Y | Y | Y | Y | Y | - | GTK: GtkProgressBar; Win32: msctls_progress32; Web: progress element |
@@ -69,7 +69,7 @@ Last updated: 2026-03-19
 | .frame() | Y | Y | Y | Y | Y | Y | width/height/min/max |
 | .foregroundColor() | Y | Y | Y | Y | Y | Y | |
 | .foregroundStyle() | Y | Y | Y | Y | Y | Y | Color only (no gradients) |
-| .background() | Y | Y | Y | Y | Y | Y | Color only |
+| .background() | Y | Y | Y | Y | Y | Y | Color and arbitrary view overloads |
 | .font() | Y | Y | Y | Y | Y | Y | Preset + custom |
 | .border() | Y | Y | Y | Y | Y | Y | |
 | .opacity() | Y | Y | Y | Y | Y | Y | |
@@ -129,7 +129,7 @@ Last updated: 2026-03-19
 | Feature | SwiftUI | Core | GTK4 | Win32 | Web | Android | Notes |
 |---------|---------|------|------|-------|-----|---------|-------|
 | NavigationStack | Y | Y | Y | Y | Y | Y | |
-| NavigationLink | Y | Y | Y | Y | Y | Y | String label |
+| NavigationLink | Y | Y | Y | Y | Y | Y | String and custom ViewBuilder labels |
 | NavigationPath | Y | Y | Y | Y | Y | ~ | Bidirectional on GTK4/Win32/Web; Android is one-way rebuild |
 | .navigationTitle() | Y | Y | Y | Y | Y | ~ | Header bar / title bar; Android falls back to path value |
 | .navigationDestination() | Y | Y | Y | Y | Y | Y | Type-based |

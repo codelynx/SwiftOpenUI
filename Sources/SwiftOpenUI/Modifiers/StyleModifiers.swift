@@ -8,14 +8,19 @@ public struct ForegroundColorView<Content: View>: View, PrimitiveView {
     public var body: Never { fatalError("ForegroundColorView is a primitive view") }
 }
 
-/// A view with a background color applied.
-public struct BackgroundView<Content: View>: View, PrimitiveView {
+/// A view with a background applied.
+public struct BackgroundView<Content: View, Background: View>: View, PrimitiveView {
     public typealias Body = Never
 
     public let content: Content
-    public let color: Color
+    public let background: Background
+    public let alignment: Alignment
 
     public var body: Never { fatalError("BackgroundView is a primitive view") }
+}
+
+extension BackgroundView where Background == Color {
+    public var color: Color { background }
 }
 
 /// A view with a font applied.
@@ -51,8 +56,18 @@ extension View {
     }
 
     /// Apply a background color to this view.
-    public func background(_ color: Color) -> BackgroundView<Self> {
-        BackgroundView(content: self, color: color)
+    public func background(_ color: Color) -> BackgroundView<Self, Color> {
+        BackgroundView(content: self, background: color, alignment: .center)
+    }
+
+    /// Layer a background view behind this view.
+    public func background<V: View>(_ background: V, alignment: Alignment = .center) -> BackgroundView<Self, V> {
+        BackgroundView(content: self, background: background, alignment: alignment)
+    }
+
+    /// Build a background view behind this view.
+    public func background<V: View>(alignment: Alignment = .center, @ViewBuilder _ background: () -> V) -> BackgroundView<Self, V> {
+        BackgroundView(content: self, background: background(), alignment: alignment)
     }
 
     /// Apply a font to this view.

@@ -255,12 +255,18 @@ extension ForegroundColorView: AndroidRenderable {
 
 extension BackgroundView: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
-        let node = RenderNode(type: "backgroundColor")
-        node.props["r"] = "\(color.red)"
-        node.props["g"] = "\(color.green)"
-        node.props["b"] = "\(color.blue)"
-        node.props["a"] = "\(color.alpha)"
-        node.children = [androidRenderView(content)]
+        if let color = background as? Color {
+            let node = RenderNode(type: "backgroundColor")
+            node.props["r"] = "\(color.red)"
+            node.props["g"] = "\(color.green)"
+            node.props["b"] = "\(color.blue)"
+            node.props["a"] = "\(color.alpha)"
+            node.children = [androidRenderView(content)]
+            return node
+        }
+
+        let node = RenderNode(type: "zstack")
+        node.children = [androidRenderView(background), androidRenderView(content)]
         return node
     }
 }
@@ -463,8 +469,15 @@ extension NavigationStack: AndroidRenderable {
 extension NavigationLink: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let node = RenderNode(type: "navigationLink")
-        node.props["label"] = label
         node.props["title"] = title
+        let labelNode = androidRenderView(labelView)
+        if !label.isEmpty {
+            node.props["label"] = label
+        } else if labelNode.type == "text", let text = labelNode.props["content"] {
+            node.props["label"] = text
+        } else {
+            node.children = [labelNode]
+        }
 
         // Register action that pushes the destination
         let nodeId = androidCurrentNodeId()

@@ -422,7 +422,22 @@ extension NavigationStack: GTKRenderable {
 
 extension NavigationLink: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let button = gtk_button_new_with_label(label)!
+        let button: UnsafeMutablePointer<GtkWidget>
+        if label.isEmpty {
+            button = gtk_button_new()!
+            let childWidget = widgetFromOpaque(gtkRenderView(labelView))
+            let btnPtr = UnsafeMutableRawPointer(button).assumingMemoryBound(to: GtkButton.self)
+            gtk_button_set_child(btnPtr, childWidget)
+            applyCSSToWidget(button, properties: """
+                border: none;
+                outline: none;
+                padding: 0;
+                min-height: 0;
+                min-width: 0;
+                """)
+        } else {
+            button = gtk_button_new_with_label(label)!
+        }
 
         // Capture context strongly at render time
         guard let context = getCurrentNavigationContext() else {

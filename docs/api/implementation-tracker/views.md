@@ -111,7 +111,7 @@ Summary: 89 total, 44 implemented, 0 partial, 45 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
-| `NavigationLink` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Navigation/NavigationLink.swift` | String label only |
+| `NavigationLink` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Navigation/NavigationLink.swift` | String and custom ViewBuilder labels |
 | `NavigationSplitView` | Both | iOS, macOS 13, watchOS 9, tvOS 16, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/NavigationSplitView.swift` | - |
 | `NavigationStack` | Both | iOS, macOS 13, watchOS 9, tvOS 16, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Navigation/NavigationStack.swift` | GtkStack / Win32 HWND stack / DOM stack |
 | `NavigationView` | Both | iOS, macOS 10.15, watchOS 7, tvOS 13, visionOS 1 | Deprecated | Missing | `-` | Yes (iOS 16) — use NavigationStack/NavigationSplitView |

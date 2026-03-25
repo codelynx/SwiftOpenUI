@@ -889,16 +889,30 @@ extension ForegroundColorView: GTKRenderable, GTKDescribable {
 
 extension BackgroundView: GTKRenderable, GTKDescribable {
     public func gtkDescribeNode() -> GTK4DescriptorNode {
-        GTK4DescriptorNode(
-            kind: .background, typeName: "BackgroundView",
-            props: .background(gtkColorDescriptor(color)),
-            children: [gtkDescribeView(content)])
+        if let color = background as? Color {
+            return GTK4DescriptorNode(
+                kind: .background, typeName: "BackgroundView",
+                props: .background(gtkColorDescriptor(color)),
+                children: [gtkDescribeView(content)])
+        }
+
+        return gtkDescribeView(ZStack(alignment: alignment) {
+            self.background
+            content
+        })
     }
 
     public func gtkCreateWidget() -> OpaquePointer {
-        let widget = widgetFromOpaque(gtkRenderView(content))
-        applyCSSToWidget(widget, properties: "background-color: \(color.hex);")
-        return opaqueFromWidget(widget)
+        if let color = background as? Color {
+            let widget = widgetFromOpaque(gtkRenderView(content))
+            applyCSSToWidget(widget, properties: "background-color: \(color.hex);")
+            return opaqueFromWidget(widget)
+        }
+
+        return gtkRenderView(ZStack(alignment: alignment) {
+            self.background
+            content
+        })
     }
 }
 

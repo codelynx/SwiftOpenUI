@@ -545,8 +545,8 @@ extension NavigationStack: WebRenderable {
 extension NavigationLink: WebRenderable {
     public func webCreateElement() -> JSValue {
         let button = document.createElement("button")
-        button.textContent = .string(label)
-        button.style = "padding: 6px 12px; cursor: pointer;"
+        button.style = "padding: 6px 12px; cursor: pointer; border: none; background: none; color: inherit; font: inherit; display: flex; align-items: center; justify-content: center;"
+        _ = button.appendChild(webRenderView(labelView))
 
         // Capture the nav context NOW (during render), not at click time
         let capturedCtx = _webCurrentNavContext
@@ -1060,20 +1060,34 @@ extension ForegroundColorView: WebRenderable, WebDescribable {
 
 extension BackgroundView: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
-        let child = webRenderView(content)
-        let css = "background-color: \(color.cssColor); display: flex; flex-direction: column; flex: 1;"
-        let wrapper = document.createElement("div")
-        wrapper.style = .string(css)
-        webMarkHostedNodeKind(wrapper, kind: .background)
-        _ = wrapper.appendChild(child)
-        return wrapper
+        if let color = background as? Color {
+            let child = webRenderView(content)
+            let css = "background-color: \(color.cssColor); display: flex; flex-direction: column; flex: 1;"
+            let wrapper = document.createElement("div")
+            wrapper.style = .string(css)
+            webMarkHostedNodeKind(wrapper, kind: .background)
+            _ = wrapper.appendChild(child)
+            return wrapper
+        }
+
+        return webRenderView(ZStack(alignment: alignment) {
+            self.background
+            content
+        })
     }
 
     public func webDescribeNode() -> WebDescriptorNode {
-        WebDescriptorNode(
-            kind: .background, typeName: "BackgroundView",
-            props: .background(webColorDescriptor(color)),
-            children: [webDescribeView(content)])
+        if let color = background as? Color {
+            return WebDescriptorNode(
+                kind: .background, typeName: "BackgroundView",
+                props: .background(webColorDescriptor(color)),
+                children: [webDescribeView(content)])
+        }
+
+        return webDescribeView(ZStack(alignment: alignment) {
+            self.background
+            content
+        })
     }
 }
 

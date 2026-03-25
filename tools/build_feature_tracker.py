@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCS_API = ROOT / "docs" / "api"
 OUT_DIR = DOCS_API / "implementation-tracker"
 
-CURATED_REF = DOCS_API / "swiftui-2025-reference.md"
-GENERATED_REF = DOCS_API / "swiftui-views-modifiers-2025.md"
+CURATED_REF = DOCS_API / "swiftui-reference-2025-clade.md"
+GENERATED_REF = DOCS_API / "swiftui-reference-2025-codex.md"
 PARITY_REF = ROOT / "docs" / "architecture" / "swiftui-parity-matrix.md"
 SOURCE_ROOT = ROOT / "Sources" / "SwiftOpenUI"
 
@@ -623,8 +623,8 @@ def build_docs() -> None:
 
 Merged from:
 
-- `docs/api/swiftui-2025-reference.md`
-- `docs/api/swiftui-views-modifiers-2025.md`
+- `docs/api/swiftui-reference-2025-clade.md`
+- `docs/api/swiftui-reference-2025-codex.md`
 
 Status is derived from the public SwiftOpenUI surface under `Sources/SwiftOpenUI/`.
 
@@ -634,7 +634,7 @@ Rules for this tracker:
 - `Partial` currently applies to modifier families: SwiftOpenUI exposes the base name, but only a subset of the curated canonical family set (or the generated baseline when no curated family count exists).
 - `Missing` means no matching public surface exists yet.
 - `Seen In` shows whether the feature came from the curated reference, the SDK-scan reference, or both.
-- Curated grouping comes from `swiftui-2025-reference.md`.
+- Curated grouping comes from `swiftui-reference-2025-clade.md`.
 - Extra public surface found only by the SDK scan is split into separate generated-only files.
 - View-adjacent and modifier-adjacent items that do not fit the direct `View` / `View`-modifier model are kept in `adjacent-apis.md`.
 - When curated and generated metadata disagree, the curated reference is treated as canonical for availability, status, and human notes.

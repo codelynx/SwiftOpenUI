@@ -504,6 +504,38 @@ final class AndroidRenderTests: XCTestCase {
         androidCurrentHost = nil
     }
 
+    func testNavigationLinkWithCustomLabelRendersNestedLabelNode() {
+        let node = androidRenderView(
+            NavigationLink(title: "Detail") {
+                Text("Destination")
+            } label: {
+                HStack {
+                    Text("Go")
+                    Text("Now")
+                }
+            }
+        )
+
+        XCTAssertEqual(node.type, "navigationLink")
+        XCTAssertEqual(node.props["title"], "Detail")
+        XCTAssertNil(node.props["label"])
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].type, "hstack")
+    }
+
+    func testBackgroundViewUsesZStackForCustomBackground() {
+        let node = androidRenderView(
+            Text("Hello").background(Text("BG"), alignment: .bottom)
+        )
+
+        XCTAssertEqual(node.type, "zstack")
+        XCTAssertEqual(node.children.count, 2)
+        XCTAssertEqual(node.children[0].type, "text")
+        XCTAssertEqual(node.children[0].props["content"], "BG")
+        XCTAssertEqual(node.children[1].type, "text")
+        XCTAssertEqual(node.children[1].props["content"], "Hello")
+    }
+
     /// Helper to find a node by type in the render tree.
     private func findNode(_ node: RenderNode, type: String) -> RenderNode? {
         if node.type == type { return node }

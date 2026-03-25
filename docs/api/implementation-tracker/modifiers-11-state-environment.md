@@ -1,6 +1,6 @@
 # State, Environment, and Deprecated Modifiers
 
-Summary: 34 total, 4 implemented, 4 partial, 26 missing.
+Summary: 34 total, 6 implemented, 2 partial, 26 missing.
 
 ## State and Environment Modifiers (~20)
 
@@ -23,7 +23,7 @@ Summary: 34 total, 4 implemented, 4 partial, 26 missing.
 
 ## Deprecated Modifiers and Replacements (~52)
 
-22 total, 3 implemented, 3 partial, 16 missing.
+22 total, 5 implemented, 1 partial, 16 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -33,7 +33,7 @@ Summary: 34 total, 4 implemented, 4 partial, 26 missing.
 | `alert` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/AlertModifier.swift` | Public surface exists, but only 1 overload(s) are present vs 4 in the curated reference families. \| GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay |
 | `animation` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AnimationModifier.swift` | Preferred \| Win32: D2D only; Android: JSON node |
 | `autocapitalization` | Both | - | Deprecated | Missing | `-` | iOS 15 |
-| `background` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/StyleModifiers.swift` | Modern API \| Public surface exists, but only 1 overload(s) are present vs 2 in the curated reference families. \| Color only |
+| `background` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/StyleModifiers.swift` | Modern API \| Color and arbitrary view overloads |
 | `colorScheme` | Both | - | Deprecated | Missing | `-` | iOS 15 |
 | `coordinateSpace` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | Replaces deprecated coordinateSpace(name:) |
 | `cornerRadius` | Both | - | Deprecated | Implemented | `Sources/SwiftOpenUI/Modifiers/CornerRadiusModifier.swift` | iOS 17 \| GTK/Web: CSS; Win32: SetWindowRgn rounded region |
@@ -47,5 +47,5 @@ Summary: 34 total, 4 implemented, 4 partial, 26 missing.
 | `navigationBarTitle` | Both | - | Deprecated | Missing | `-` | iOS 14 |
 | `navigationViewStyle` | Both | - | Deprecated | Missing | `-` | iOS 16 |
 | `onChange` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | Replaces deprecated onChange(of:perform:) |
-| `overlay` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/OverlayModifier.swift` | Modern API \| Public surface exists, but only 1 overload(s) are present vs 2 in the curated reference families. \| GTK: GtkOverlay; Win32: container; Web: absolute positioning |
+| `overlay` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/OverlayModifier.swift` | Modern API \| GTK: GtkOverlay; Win32: container; Web: absolute positioning |
 | `statusBar` | Both | - | Deprecated | Missing | `-` | iOS 16 |

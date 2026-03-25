@@ -474,8 +474,8 @@ extension NavigationStack: WinRenderable {
 extension NavigationLink: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let navCtx = getCurrentNavigationContext() else {
-            // Not inside a NavigationStack — render as plain text
-            return winRenderView(Text(label), in: context)
+            // Not inside a NavigationStack — render the label only.
+            return winRenderView(labelView, in: context)
         }
 
         let destTitle = self.title
@@ -483,23 +483,31 @@ extension NavigationLink: WinRenderable {
 
         if let value = pushValue {
             // Value-based NavigationLink — resolve via destination registry
-            return createNativeButton(title: label, action: { [weak navCtx] in
+            let action = { [weak navCtx] in
                 guard let navCtx = navCtx else { return }
                 if let factory = navCtx.destinationRegistry.resolve(value) {
                     navCtx.push(title: destTitle) { factory() }
                 }
-            }, context: context)
+            }
+            if label.isEmpty {
+                return createCustomLabelButton(label: labelView, action: action, context: context)
+            }
+            return createNativeButton(title: label, action: action, context: context)
         }
 
         // Destination-based NavigationLink
         let dest = self.destination
-        return createNativeButton(title: label, action: { [weak navCtx] in
+        let action = { [weak navCtx] in
             guard let navCtx = navCtx else { return }
             navCtx.push(title: destTitle) {
                 let destContext = RenderContext(parent: navCtx.contentArea, hInstance: hInst)
                 return winRenderView(dest(), in: destContext)
             }
-        }, context: context)
+        }
+        if label.isEmpty {
+            return createCustomLabelButton(label: labelView, action: action, context: context)
+        }
+        return createNativeButton(title: label, action: action, context: context)
     }
 }
 

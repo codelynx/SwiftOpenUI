@@ -80,6 +80,21 @@ final class ModifierTests: XCTestCase {
     func testBackgroundColor() {
         let styled = Text("hello").background(.green)
         XCTAssertEqual(styled.color, .green)
+        XCTAssertEqual(styled.alignment, .center)
+    }
+
+    func testBackgroundViewOverload() {
+        let styled = Text("hello").background(Text("bg"), alignment: .bottomTrailing)
+        XCTAssertEqual(styled.background.content, "bg")
+        XCTAssertEqual(styled.alignment, .bottomTrailing)
+    }
+
+    func testBackgroundBuilderOverload() {
+        let styled = Text("hello").background(alignment: .topLeading) {
+            Text("bg")
+        }
+        XCTAssertEqual(styled.background.content, "bg")
+        XCTAssertEqual(styled.alignment, .topLeading)
     }
 
     func testFontModifier() {
@@ -91,6 +106,12 @@ final class ModifierTests: XCTestCase {
         let styled = Text("hello").border(.red, width: 2)
         XCTAssertEqual(styled.color, .red)
         XCTAssertEqual(styled.width, 2)
+    }
+
+    func testOverlayDirectViewOverload() {
+        let styled = Text("hello").overlay(Text("badge"), alignment: .topTrailing)
+        XCTAssertEqual(styled.overlay.content, "badge")
+        XCTAssertEqual(styled.alignment, .topTrailing)
     }
 
     // MARK: - Environment modifiers
