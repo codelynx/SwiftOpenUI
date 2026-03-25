@@ -1743,6 +1743,263 @@ extension OverlayView: WebRenderable {
     }
 }
 
+extension IgnoresSafeAreaView: WebRenderable, WebDescribable {
+    public func webCreateElement() -> JSValue {
+        // Batch 1: passthrough until the Web backend grows a real safe-area model.
+        webRenderView(content)
+    }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        WebDescriptorNode(
+            kind: .composite,
+            typeName: "IgnoresSafeAreaView",
+            props: .ignoresSafeArea(
+                WebIgnoresSafeAreaDescriptor(
+                    regionsRawValue: regions.rawValue,
+                    edgesRawValue: edges.rawValue
+                )
+            ),
+            children: [webDescribeView(content)]
+        )
+    }
+}
+
+extension SafeAreaInsetView: WebRenderable, WebDescribable {
+    public func webCreateElement() -> JSValue {
+        let container = document.createElement("div")
+        container.style = .string(webSafeAreaContainerStyle(edge: edge, spacing: spacing))
+
+        let contentElement = webRenderView(content)
+        let insetElement = webRenderView(inset)
+        let contentWrapper = webSafeAreaWrappedContent(contentElement, edge: edge, spacing: spacing)
+        let insetWrapper = webSafeAreaWrappedInset(insetElement, edge: edge, alignment: alignment, spacing: spacing)
+
+        switch edge {
+        case .top, .leading:
+            _ = container.appendChild(insetWrapper)
+            _ = container.appendChild(contentWrapper)
+        case .bottom, .trailing:
+            _ = container.appendChild(contentWrapper)
+            _ = container.appendChild(insetWrapper)
+        }
+
+        return container
+    }
+
+    public func webDescribeNode() -> WebDescriptorNode {
+        let contentDescriptor = webDescribeView(content)
+        let insetDescriptor = webDescribeView(inset)
+        let children: [WebDescriptorNode]
+        switch edge {
+        case .top, .leading:
+            children = [insetDescriptor, contentDescriptor]
+        case .bottom, .trailing:
+            children = [contentDescriptor, insetDescriptor]
+        }
+
+        return WebDescriptorNode(
+            kind: .composite,
+            typeName: "SafeAreaInsetView",
+            props: .safeAreaInset(webSafeAreaInsetDescriptor(edge: edge, alignment: alignment, spacing: spacing)),
+            children: children
+        )
+    }
+}
+
+func webSafeAreaContainerStyle(edge: SafeAreaInsetEdge, spacing: Int) -> String {
+    let normalizedSpacing = max(spacing, 0)
+    switch edge {
+    case .top, .bottom:
+        return "display: flex; flex-direction: column; gap: \(normalizedSpacing)px; align-items: stretch;"
+    case .leading, .trailing:
+        return "display: flex; flex-direction: row; gap: \(normalizedSpacing)px; align-items: stretch;"
+    }
+}
+
+private func webSafeAreaWrappedContent(_ child: JSValue, edge: SafeAreaInsetEdge, spacing: Int) -> JSValue {
+    let wrapper = document.createElement("div")
+    wrapper.style = .string(webSafeAreaContentWrapperStyle(edge: edge, spacing: spacing))
+    _ = wrapper.appendChild(child)
+    return wrapper
+}
+
+private func webSafeAreaWrappedInset(
+    _ child: JSValue,
+    edge: SafeAreaInsetEdge,
+    alignment: SafeAreaInsetAlignment,
+    spacing: Int
+) -> JSValue {
+    let wrapper = document.createElement("div")
+    wrapper.style = .string(webSafeAreaInsetWrapperStyle(edge: edge, alignment: alignment, spacing: spacing))
+    _ = wrapper.appendChild(child)
+    return wrapper
+}
+
+func webSafeAreaContentWrapperStyle(edge: SafeAreaInsetEdge, spacing: Int) -> String {
+    var styles: [String]
+    switch edge {
+    case .top, .bottom:
+        styles = [
+            "display: flex",
+            "width: 100%",
+            "justify-content: flex-start",
+            "align-items: flex-start",
+        ]
+    case .leading, .trailing:
+        styles = [
+            "display: flex",
+            "height: 100%",
+            "justify-content: flex-start",
+            "align-items: flex-start",
+        ]
+    }
+
+    if spacing < 0 {
+        switch edge {
+        case .top:
+            styles.append("margin-top: \(spacing)px")
+        case .leading:
+            styles.append("margin-left: \(spacing)px")
+        case .bottom, .trailing:
+            break
+        }
+    }
+
+    return styles.joined(separator: "; ") + ";"
+}
+
+func webSafeAreaInsetWrapperStyle(
+    edge: SafeAreaInsetEdge,
+    alignment: SafeAreaInsetAlignment,
+    spacing: Int
+) -> String {
+    var styles: [String]
+    switch edge {
+    case .top, .bottom:
+        styles = [
+            "display: flex",
+            "width: 100%",
+            "justify-content: \(webSafeAreaHorizontalAlignment(alignment))",
+        ]
+    case .leading, .trailing:
+        styles = [
+            "display: flex",
+            "height: 100%",
+            "align-items: \(webSafeAreaVerticalAlignment(alignment))",
+        ]
+    }
+
+    if spacing < 0 {
+        switch edge {
+        case .bottom:
+            styles.append("margin-top: \(spacing)px")
+        case .trailing:
+            styles.append("margin-left: \(spacing)px")
+        case .top, .leading:
+            break
+        }
+    }
+
+    return styles.joined(separator: "; ") + ";"
+}
+
+private func webSafeAreaHorizontalAlignment(_ alignment: SafeAreaInsetAlignment) -> String {
+    let horizontalAlignment: HorizontalAlignment
+    switch alignment {
+    case .horizontal(let value):
+        horizontalAlignment = value
+    case .vertical:
+        horizontalAlignment = .center
+    }
+
+    switch horizontalAlignment {
+    case .leading:
+        return "flex-start"
+    case .center:
+        return "center"
+    case .trailing:
+        return "flex-end"
+    }
+}
+
+private func webSafeAreaVerticalAlignment(_ alignment: SafeAreaInsetAlignment) -> String {
+    let verticalAlignment: VerticalAlignment
+    switch alignment {
+    case .horizontal:
+        verticalAlignment = .center
+    case .vertical(let value):
+        verticalAlignment = value
+    }
+
+    switch verticalAlignment {
+    case .top:
+        return "flex-start"
+    case .center:
+        return "center"
+    case .bottom:
+        return "flex-end"
+    }
+}
+
+private func webSafeAreaInsetDescriptor(
+    edge: SafeAreaInsetEdge,
+    alignment: SafeAreaInsetAlignment,
+    spacing: Int
+) -> WebSafeAreaInsetDescriptor {
+    switch edge {
+    case .top:
+        return WebSafeAreaInsetDescriptor(
+            edge: .top,
+            horizontalAlignment: webSafeAreaHorizontalAlignmentDescriptor(alignment),
+            verticalAlignment: nil,
+            spacing: spacing
+        )
+    case .bottom:
+        return WebSafeAreaInsetDescriptor(
+            edge: .bottom,
+            horizontalAlignment: webSafeAreaHorizontalAlignmentDescriptor(alignment),
+            verticalAlignment: nil,
+            spacing: spacing
+        )
+    case .leading:
+        return WebSafeAreaInsetDescriptor(
+            edge: .leading,
+            horizontalAlignment: nil,
+            verticalAlignment: webSafeAreaVerticalAlignmentDescriptor(alignment),
+            spacing: spacing
+        )
+    case .trailing:
+        return WebSafeAreaInsetDescriptor(
+            edge: .trailing,
+            horizontalAlignment: nil,
+            verticalAlignment: webSafeAreaVerticalAlignmentDescriptor(alignment),
+            spacing: spacing
+        )
+    }
+}
+
+private func webSafeAreaHorizontalAlignmentDescriptor(
+    _ alignment: SafeAreaInsetAlignment
+) -> WebHorizontalAlignmentDescriptor {
+    switch alignment {
+    case .horizontal(let value):
+        return webHorizontalAlignmentDescriptor(value)
+    case .vertical:
+        return .center
+    }
+}
+
+private func webSafeAreaVerticalAlignmentDescriptor(
+    _ alignment: SafeAreaInsetAlignment
+) -> WebVerticalAlignmentDescriptor {
+    switch alignment {
+    case .horizontal:
+        return .center
+    case .vertical(let value):
+        return webVerticalAlignmentDescriptor(value)
+    }
+}
+
 extension OnAppearView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)

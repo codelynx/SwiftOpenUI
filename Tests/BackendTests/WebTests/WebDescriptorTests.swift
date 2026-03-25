@@ -39,6 +39,109 @@ final class WebDescriptorTests: XCTestCase {
         XCTAssertEqual(node.children[1].kind, .text)
     }
 
+    func testDescribeIgnoresSafeAreaCarriesConfiguration() {
+        let node = webDescribeView(
+            Text("Hello").ignoresSafeArea([.container], edges: .horizontal)
+        )
+
+        XCTAssertEqual(node.kind, .composite)
+        XCTAssertEqual(node.typeName, "IgnoresSafeAreaView")
+        XCTAssertEqual(
+            node.props,
+            .ignoresSafeArea(
+                WebIgnoresSafeAreaDescriptor(
+                    regionsRawValue: SafeAreaRegions.container.rawValue,
+                    edgesRawValue: Edge.Set.horizontal.rawValue
+                )
+            )
+        )
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].kind, .text)
+    }
+
+    func testDescribeSafeAreaInsetCarriesEdgeAlignmentAndSpacing() {
+        let node = webDescribeView(
+            Text("Body").safeAreaInset(edge: .trailing, alignment: .bottom, spacing: 12) {
+                Text("Inset")
+            }
+        )
+
+        XCTAssertEqual(node.kind, .composite)
+        XCTAssertEqual(node.typeName, "SafeAreaInsetView")
+        XCTAssertEqual(
+            node.props,
+            .safeAreaInset(
+                WebSafeAreaInsetDescriptor(
+                    edge: .trailing,
+                    horizontalAlignment: nil,
+                    verticalAlignment: .bottom,
+                    spacing: 12
+                )
+            )
+        )
+        XCTAssertEqual(node.children.count, 2)
+        XCTAssertEqual(node.children[0].kind, .text)
+        XCTAssertEqual(node.children[1].kind, .text)
+    }
+
+    func testDescribeSafeAreaInsetTopMatchesDOMChildOrder() {
+        let node = webDescribeView(
+            Text("Body").safeAreaInset(edge: .top) {
+                Text("Inset")
+            }
+        )
+
+        XCTAssertEqual(node.typeName, "SafeAreaInsetView")
+        XCTAssertEqual(node.children.count, 2)
+        if case let .text(desc) = node.children[0].props {
+            XCTAssertEqual(desc.content, "Inset")
+        } else {
+            XCTFail("Expected inset text first")
+        }
+        if case let .text(desc) = node.children[1].props {
+            XCTAssertEqual(desc.content, "Body")
+        } else {
+            XCTFail("Expected content text second")
+        }
+    }
+
+    func testDescribeSafeAreaInsetLeadingMatchesDOMChildOrder() {
+        let node = webDescribeView(
+            Text("Body").safeAreaInset(edge: .leading) {
+                Text("Inset")
+            }
+        )
+
+        XCTAssertEqual(node.typeName, "SafeAreaInsetView")
+        XCTAssertEqual(node.children.count, 2)
+        if case let .text(desc) = node.children[0].props {
+            XCTAssertEqual(desc.content, "Inset")
+        } else {
+            XCTFail("Expected inset text first")
+        }
+        if case let .text(desc) = node.children[1].props {
+            XCTAssertEqual(desc.content, "Body")
+        } else {
+            XCTFail("Expected content text second")
+        }
+    }
+
+    func testSafeAreaContainerStyleClampsNegativeGap() {
+        let style = webSafeAreaContainerStyle(edge: .top, spacing: -8)
+        XCTAssertTrue(style.contains("gap: 0px"))
+    }
+
+    func testSafeAreaContentWrapperStyleUsesNegativeMarginForTopOverlap() {
+        let style = webSafeAreaContentWrapperStyle(edge: .top, spacing: -8)
+        XCTAssertTrue(style.contains("margin-top: -8px"))
+    }
+
+    func testSafeAreaInsetWrapperStyleUsesNegativeMarginForTrailingOverlap() {
+        let style = webSafeAreaInsetWrapperStyle(edge: .trailing, alignment: .vertical(.bottom), spacing: -6)
+        XCTAssertTrue(style.contains("margin-left: -6px"))
+        XCTAssertTrue(style.contains("align-items: flex-end"))
+    }
+
     // MARK: - Identify
 
     func testIdentifyAssignsPaths() {
@@ -684,4 +787,5 @@ final class WebDescriptorTests: XCTestCase {
         // Font, divider, spacer, and button nodes are all reused.
         XCTAssertTrue(webCanApplyTextColorHostMutation(plan: plan))
     }
+
 }
