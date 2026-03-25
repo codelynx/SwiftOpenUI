@@ -2788,6 +2788,137 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(chips[2].text, "[Gamma]")
     }
 
+    // MARK: - Searchable Batch C (suggestions)
+
+    func testSearchSuggestionsRenderButtons() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchSuggestions {
+                Text("Swift")
+                Text("SwiftUI")
+            }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Suggestion buttons should be present as native Button controls
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        let labels = buttons.map { windowText(of: $0) }
+        XCTAssertTrue(labels.contains("Swift"), "Should render 'Swift' suggestion button")
+        XCTAssertTrue(labels.contains("SwiftUI"), "Should render 'SwiftUI' suggestion button")
+    }
+
+    func testSearchSuggestionsPreserveOrder() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchSuggestions {
+                Text("Alpha")
+                Text("Beta")
+                Text("Gamma")
+            }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        let suggestionButtons = buttons.filter {
+            let t = windowText(of: $0)
+            return t == "Alpha" || t == "Beta" || t == "Gamma"
+        }
+        XCTAssertEqual(suggestionButtons.count, 3, "All 3 suggestions should render")
+
+        // Verify vertical order by Y position
+        let positions = suggestionButtons.map { hwnd -> (text: String, y: Int32) in
+            var r = RECT()
+            GetWindowRect(hwnd, &r)
+            return (text: windowText(of: hwnd), y: r.top)
+        }.sorted { $0.y < $1.y }
+        XCTAssertEqual(positions[0].text, "Alpha")
+        XCTAssertEqual(positions[1].text, "Beta")
+        XCTAssertEqual(positions[2].text, "Gamma")
+    }
+
+    func testSearchSuggestionCompletionWritesBinding() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchSuggestions {
+                Text("SwiftUI").searchCompletion("import SwiftUI")
+            }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Install a test subclass on the root window so WM_COMMAND forwarding
+        // through the suggestion container's searchableLayoutProc actually
+        // reaches dispatchCommand — exercising the real routing path.
+        let root = findRootWindow(from: hwnd!)
+        SetWindowSubclass(root, testCommandDispatchProc, 99, 0)
+        defer { RemoveWindowSubclass(root, testCommandDispatchProc, 99) }
+
+        // Find the suggestion button and send WM_COMMAND to its parent
+        // (the suggestion container), which has searchableLayoutProc subclassed.
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        let suggestionBtn = buttons.first { windowText(of: $0) == "SwiftUI" }
+        XCTAssertNotNil(suggestionBtn, "Should find suggestion button")
+
+        if let btn = suggestionBtn {
+            let sugContainer = GetParent(btn)!
+            let controlID = GetDlgCtrlID(btn)
+            // BN_CLICKED: HIWORD = 0, LOWORD = controlID, lParam = button HWND
+            let wParam = WPARAM(UInt16(controlID))
+            let lParam = LPARAM(Int(bitPattern: btn))
+            SendMessageW(sugContainer, UINT(WM_COMMAND), wParam, lParam)
+        }
+
+        XCTAssertEqual(query, "import SwiftUI",
+            "Clicking suggestion should write completion text into search binding")
+    }
+
+    func testSearchSuggestionsEmptyNoButtons() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content")
+            .searchable(text: $query)
+        // No .searchSuggestions call — suggestions array is empty
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        XCTAssertEqual(buttons.count, 0, "No suggestion buttons without searchSuggestions")
+    }
+
+    func testSearchSuggestionsWithTokens() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let tokens: [TestSearchToken] = [
+            TestSearchToken(id: "1", name: "Tag")
+        ]
+        let view = Text("Content")
+            .searchable(text: $query, tokens: .constant(tokens)) { t in Text(t.name) }
+            .searchSuggestions {
+                Text("Suggestion")
+            }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Both token chip and suggestion button should be present
+        let chips = collectStaticLabels(in: hwnd!)
+        let chipTexts = chips.map { windowText(of: $0) }
+        XCTAssertTrue(chipTexts.contains("[Tag]"), "Token chip should still render")
+
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        let suggestionLabels = buttons.map { windowText(of: $0) }
+        XCTAssertTrue(suggestionLabels.contains("Suggestion"), "Suggestion button should render alongside tokens")
+    }
+
     // MARK: - Safe area padding
 
     func testSafeAreaPaddingDefaultAllEdges() {
@@ -3189,5 +3320,26 @@ private func collectStaticLabelsWithPositions(in parent: HWND) -> [(text: String
         var r = RECT()
         GetWindowRect(hwnd, &r)
         return (text: windowText(of: hwnd), x: r.left)
+    }
+}
+
+/// Test subclass proc that forwards WM_COMMAND to dispatchCommand,
+/// simulating the real app root window's WndProc for command routing tests.
+private let testCommandDispatchProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    if uMsg == UINT(WM_COMMAND) {
+        _ = dispatchCommand(wParam: wParam)
+        return 0
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
+private func collectButtonControls(in parent: HWND, into result: inout [HWND]) {
+    var child = GetWindow(parent, UINT(GW_CHILD))
+    while let c = child {
+        if className(of: c) == "Button" {
+            result.append(c)
+        }
+        collectButtonControls(in: c, into: &result)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
     }
 }

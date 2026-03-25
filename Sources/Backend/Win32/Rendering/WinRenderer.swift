@@ -5353,7 +5353,52 @@ extension SearchableView: WinRenderable {
             tokenRowWidth = chipX + 2
         }
 
-        // Content below search field + token row (or at top when search is hidden)
+        // Batch C: render suggestion rows below search field + token row
+        var suggestionContainerHwnd: HWND? = nil
+        let suggestionRowHeight: Int32 = 24
+        var suggestionContainerHeight: Int32 = 0
+        var suggestionMaxWidth: Int32 = 0
+        if searchVisible && !suggestions.isEmpty {
+            let suggestionCount = Int32(suggestions.count)
+            suggestionContainerHeight = suggestionCount * suggestionRowHeight
+            let sugContainer = CreateWindowExW(
+                0, stackContainerClassName, nil,
+                DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+                0, 0, 0, suggestionContainerHeight,
+                container, nil, context.hInstance, nil
+            )!
+            suggestionContainerHwnd = sugContainer
+
+            // Install subclass to forward WM_COMMAND to root for button clicks
+            SetWindowSubclass(sugContainer, searchableLayoutProc, 5, 0)
+
+            let searchBinding = text
+            for (i, suggestion) in suggestions.enumerated() {
+                let completionText = suggestion.completion ?? suggestion.label
+                let controlID = nextControlID()
+                let btnY = Int32(i) * suggestionRowHeight
+                let btn = suggestion.label.withCString(encodedAs: UTF16.self) { wstr in
+                    win32_CreateChildWindow(
+                        win32_WC_BUTTON(), wstr,
+                        DWORD(BS_PUSHBUTTON | BS_LEFT),
+                        0, btnY, 0, suggestionRowHeight,
+                        sugContainer,
+                        HMENU(bitPattern: UInt(controlID)),
+                        context.hInstance
+                    )
+                }
+                if let btn {
+                    SetWindowSubclass(btn, buttonCleanupProc, 0, DWORD_PTR(controlID))
+                    registerCommandHandler(controlID: controlID, action: {
+                        searchBinding.wrappedValue = completionText
+                    })
+                    let measured = measureText(suggestion.label, hwnd: sugContainer)
+                    suggestionMaxWidth = max(suggestionMaxWidth, measured.width + 24)
+                }
+            }
+        }
+
+        // Content below search field + token row + suggestions (or at top when search is hidden)
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         let contentHwnd = winRenderView(content, in: childContext)
 
@@ -5362,6 +5407,8 @@ extension SearchableView: WinRenderable {
             searchHwnd: searchHwnd,
             tokenRowHwnd: tokenRowHwnd,
             tokenRowHeight: tokenRowHeight,
+            suggestionContainerHwnd: suggestionContainerHwnd,
+            suggestionContainerHeight: suggestionContainerHeight,
             contentHwnd: contentHwnd,
             searchHeight: searchHeight,
             searchVisible: searchVisible
@@ -5380,10 +5427,13 @@ extension SearchableView: WinRenderable {
             contentH = r.bottom - r.top
         }
         contentW = max(contentW, tokenRowWidth)
+        contentW = max(contentW, suggestionMaxWidth)
 
         if searchVisible {
             let tokenExtra = tokenRowHeight > 0 ? tokenRowHeight + 4 : Int32(0)
-            SetWindowPos(container, nil, 0, 0, contentW, searchHeight + 4 + tokenExtra + contentH,
+            let suggestionExtra = suggestionContainerHeight > 0 ? suggestionContainerHeight + 4 : Int32(0)
+            SetWindowPos(container, nil, 0, 0, contentW,
+                         searchHeight + 4 + tokenExtra + suggestionExtra + contentH,
                          UINT(SWP_NOZORDER | SWP_NOMOVE))
         } else {
             SetWindowPos(container, nil, 0, 0, contentW, contentH,
@@ -5401,15 +5451,20 @@ class SearchableLayoutInfo {
     let searchHwnd: HWND?
     let tokenRowHwnd: HWND?
     let tokenRowHeight: Int32
+    let suggestionContainerHwnd: HWND?
+    let suggestionContainerHeight: Int32
     let contentHwnd: HWND?
     let searchHeight: Int32
     let searchVisible: Bool
 
     init(searchHwnd: HWND?, tokenRowHwnd: HWND? = nil, tokenRowHeight: Int32 = 0,
+         suggestionContainerHwnd: HWND? = nil, suggestionContainerHeight: Int32 = 0,
          contentHwnd: HWND?, searchHeight: Int32, searchVisible: Bool) {
         self.searchHwnd = searchHwnd
         self.tokenRowHwnd = tokenRowHwnd
         self.tokenRowHeight = tokenRowHeight
+        self.suggestionContainerHwnd = suggestionContainerHwnd
+        self.suggestionContainerHeight = suggestionContainerHeight
         self.contentHwnd = contentHwnd
         self.searchHeight = searchHeight
         self.searchVisible = searchVisible
@@ -5432,6 +5487,20 @@ func performSearchableLayout(container: HWND, info: SearchableLayoutInfo) {
         if let tr = info.tokenRowHwnd {
             SetWindowPos(tr, nil, 0, nextY, w, info.tokenRowHeight, UINT(SWP_NOZORDER))
             nextY += info.tokenRowHeight + gap
+        }
+        if let sc = info.suggestionContainerHwnd {
+            SetWindowPos(sc, nil, 0, nextY, w, info.suggestionContainerHeight, UINT(SWP_NOZORDER))
+            // Size suggestion buttons to fill width
+            var child = GetWindow(sc, UINT(GW_CHILD))
+            while let c = child {
+                var r = RECT()
+                GetWindowRect(c, &r)
+                var pt = POINT(x: r.left, y: r.top)
+                ScreenToClient(sc, &pt)
+                SetWindowPos(c, nil, 0, pt.y, w, r.bottom - r.top, UINT(SWP_NOZORDER))
+                child = GetWindow(c, UINT(GW_HWNDNEXT))
+            }
+            nextY += info.suggestionContainerHeight + gap
         }
         if let ch = info.contentHwnd {
             SetWindowPos(ch, nil, 0, nextY, w, max(0, h - nextY), UINT(SWP_NOZORDER))
