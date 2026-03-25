@@ -96,7 +96,7 @@ Last updated: 2026-03-25
 | .confirmationDialog() | Y | Y | ~ | ~ | ~ | - | Batch B fallback on GTK/Win32/Web: `titleVisibility == .hidden` and `message` are supported; `.automatic` currently behaves like `.visible`. GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay. |
 | .onAppear() | Y | Y | Y | Y | ~ | - | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
-| .searchable() | Y | Y | ~ | ~ | ~ | - | Batch C fallback on GTK/Win32/Web: search field above content; placement stored but not differentiated yet; tokens and editableTokens render as display-only chips; suggestions render as simple rows with click-to-complete behavior. Win32 suppresses the search UI when `isPresented == false`. |
+| .searchable() | Y | Y | ~ | ~ | ~ | - | Batch D fallback on GTK/Win32/Web: search field above content; placement stored but not differentiated yet; tokens and editableTokens render as display-only chips; suggestions render as simple rows with click-to-complete behavior; scopes render as simple mutually exclusive controls. Search UI is hidden when `isPresented == false`. |
 | .toolbar() | Y | Y | Y | Y | Y | - | GTK: header bar; Win32: nav header; Web: header right area |
 | .gridCellColumns() | Y | Y | Y | Y | Y | - | Column span in Grid/GridRow; Web: grid-column span |
 | .pickerStyle() | Y | Y | Y | Y | Y | - | .automatic (select), .segmented (button row), .palette (alias) |
