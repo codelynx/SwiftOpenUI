@@ -1,3 +1,10 @@
+/// Visibility preference for titles and labels.
+public enum Visibility: Equatable {
+    case automatic
+    case visible
+    case hidden
+}
+
 /// A modifier that presents a confirmation dialog with vertical buttons
 /// when a binding becomes true.
 public struct ConfirmationDialogView<Content: View>: View {
@@ -6,6 +13,8 @@ public struct ConfirmationDialogView<Content: View>: View {
     public let content: Content
     public let title: String
     public let isPresented: Binding<Bool>
+    public let titleVisibility: Visibility
+    public let message: String
     public let buttons: [AlertButton]
 
     public var body: Never { fatalError("ConfirmationDialogView is a primitive view") }
@@ -19,10 +28,45 @@ extension View {
         isPresented: Binding<Bool>,
         actions: [AlertButton]
     ) -> ConfirmationDialogView<Self> {
+        confirmationDialog(
+            title,
+            isPresented: isPresented,
+            titleVisibility: .automatic,
+            actions: actions,
+            message: ""
+        )
+    }
+
+    /// Show a confirmation dialog with explicit title visibility.
+    public func confirmationDialog(
+        _ title: String,
+        isPresented: Binding<Bool>,
+        titleVisibility: Visibility,
+        actions: [AlertButton]
+    ) -> ConfirmationDialogView<Self> {
+        confirmationDialog(
+            title,
+            isPresented: isPresented,
+            titleVisibility: titleVisibility,
+            actions: actions,
+            message: ""
+        )
+    }
+
+    /// Show a confirmation dialog with explicit title visibility and message.
+    public func confirmationDialog(
+        _ title: String,
+        isPresented: Binding<Bool>,
+        titleVisibility: Visibility,
+        actions: [AlertButton],
+        message: String
+    ) -> ConfirmationDialogView<Self> {
         ConfirmationDialogView(
             content: self,
             title: title,
             isPresented: isPresented,
+            titleVisibility: titleVisibility,
+            message: message,
             buttons: actions
         )
     }
