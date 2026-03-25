@@ -36,9 +36,46 @@ extension View {
     public func alert(
         _ title: String,
         isPresented: Binding<Bool>,
+        actions: [AlertButton]
+    ) -> AlertModifierView<Self> {
+        AlertModifierView(
+            content: self,
+            isPresented: isPresented,
+            title: title,
+            message: "",
+            buttons: actions
+        )
+    }
+
+    /// Present an alert dialog when `isPresented` becomes true.
+    public func alert(
+        _ title: String,
+        isPresented: Binding<Bool>,
+        actions: [AlertButton],
+        message: String
+    ) -> AlertModifierView<Self> {
+        AlertModifierView(
+            content: self,
+            isPresented: isPresented,
+            title: title,
+            message: message,
+            buttons: actions
+        )
+    }
+
+    /// Present an alert dialog when `isPresented` becomes true.
+    public func alert(
+        _ title: String,
+        isPresented: Binding<Bool>,
         message: String = "",
         actions: [AlertButton] = [AlertButton("OK")]
     ) -> AlertModifierView<Self> {
-        AlertModifierView(content: self, isPresented: isPresented, title: title, message: message, buttons: actions)
+        AlertModifierView(
+            content: self,
+            isPresented: isPresented,
+            title: title,
+            message: message,
+            buttons: actions
+        )
     }
 }
