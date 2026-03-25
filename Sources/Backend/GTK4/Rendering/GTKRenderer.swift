@@ -3238,7 +3238,11 @@ private class SearchBox {
 extension SearchableView: GTKRenderable, GTKDescribable {
     public func gtkDescribeNode() -> GTK4DescriptorNode {
         GTK4DescriptorNode(
-            kind: .composite, typeName: "SearchableView",
+            kind: .searchable, typeName: "SearchableView",
+            props: .searchable(GTK4SearchableDescriptor(
+                prompt: prompt,
+                placement: placement,
+                isPresented: isPresented?.wrappedValue)),
             children: [gtkDescribeView(content)])
     }
 
