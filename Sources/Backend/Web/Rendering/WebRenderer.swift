@@ -2097,6 +2097,28 @@ extension SearchableView: WebRenderable, WebDescribable {
 
         _ = container.appendChild(input)
 
+        // Render suggestions below the search input
+        if !suggestions.isEmpty {
+            let suggestionsDiv = document.createElement("div")
+            suggestionsDiv.style = "display: flex; flex-direction: column; border: 1px solid #444; border-radius: 4px; overflow: hidden;"
+            for suggestion in suggestions {
+                let row = document.createElement("div")
+                row.textContent = .string(suggestion.label)
+                row.style = "padding: 6px 8px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #333;"
+
+                let completionText = suggestion.completion ?? suggestion.label
+                let textBinding = text
+                let clickHandler = webMakeClosure { _ in
+                    textBinding.wrappedValue = completionText
+                    input.value = .string(completionText)
+                    return .undefined
+                }
+                row.onclick = .object(clickHandler)
+                _ = suggestionsDiv.appendChild(row)
+            }
+            _ = container.appendChild(suggestionsDiv)
+        }
+
         let contentEl = webRenderView(content)
         _ = container.appendChild(contentEl)
 
@@ -2113,7 +2135,10 @@ extension SearchableView: WebRenderable, WebDescribable {
                     placement: webSearchFieldPlacementString(placement),
                     isPresented: isPresented?.wrappedValue,
                     tokens: tokens.map { WebSearchTokenDescriptor(id: $0.id, label: $0.label) },
-                    tokenMode: tokenMode.map { $0 == .editableTokens ? "editableTokens" : "tokens" }
+                    tokenMode: tokenMode.map { $0 == .editableTokens ? "editableTokens" : "tokens" },
+                    suggestions: suggestions.map {
+                        WebSearchSuggestionDescriptor(id: $0.id, label: $0.label, completion: $0.completion)
+                    }
                 )
             ),
             children: [webDescribeView(content)]
