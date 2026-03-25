@@ -21,6 +21,7 @@ public enum SearchTokenMode: Equatable {
 /// Simplified suggestion mode for searchable suggestion families.
 public enum SearchSuggestionMode: Equatable {
     case suggestions
+    case suggestionsFor
 }
 
 /// Simplified scope mode for searchable scope families.
@@ -170,6 +171,18 @@ private func makeSearchScopeValue<Scope: Hashable>(
     )
 }
 
+private func filterSearchSuggestions(
+    _ suggestions: [SearchSuggestionValue],
+    for query: String
+) -> [SearchSuggestionValue] {
+    guard !query.isEmpty else { return suggestions }
+    let needle = query.localizedLowercase
+    return suggestions.filter { suggestion in
+        suggestion.label.localizedLowercase.contains(needle)
+        || suggestion.completion?.localizedLowercase.contains(needle) == true
+    }
+}
+
 extension View {
     /// Adds a search bar above this view.
     public func searchable(text: Binding<String>, prompt: String = "Search") -> SearchableView<Self> {
@@ -303,6 +316,28 @@ extension SearchableView {
             tokenMode: self.tokenMode,
             suggestions: content(),
             suggestionMode: .suggestions,
+            scopes: self.scopes,
+            scopeMode: self.scopeMode,
+            selectedScopeID: self.selectedScopeID,
+            applySelectedScopeID: self.applySelectedScopeID
+        )
+    }
+
+    /// Adds filtered search suggestions based on the current search query.
+    public func searchSuggestions(
+        _ suggestions: [SearchSuggestionValue],
+        for query: String
+    ) -> SearchableView<Content> {
+        SearchableView(
+            content: self.content,
+            text: self.text,
+            prompt: self.prompt,
+            placement: self.placement,
+            isPresented: self.isPresented,
+            tokens: self.tokens,
+            tokenMode: self.tokenMode,
+            suggestions: filterSearchSuggestions(suggestions, for: query),
+            suggestionMode: .suggestionsFor,
             scopes: self.scopes,
             scopeMode: self.scopeMode,
             selectedScopeID: self.selectedScopeID,
