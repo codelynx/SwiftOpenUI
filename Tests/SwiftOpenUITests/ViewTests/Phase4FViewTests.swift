@@ -276,10 +276,42 @@ final class Phase4FViewTests: XCTestCase {
         )
         XCTAssertEqual(dialog.title, "Delete Item?")
         XCTAssertFalse(dialog.isPresented.wrappedValue)
+        XCTAssertEqual(dialog.titleVisibility, .automatic)
+        XCTAssertEqual(dialog.message, "")
         XCTAssertEqual(dialog.buttons.count, 2)
         XCTAssertEqual(dialog.buttons[0].label, "Delete")
         XCTAssertEqual(dialog.buttons[0].role, .destructive)
         XCTAssertEqual(dialog.buttons[1].role, .cancel)
+    }
+
+    func testConfirmationDialogStoresTitleVisibility() {
+        let dialog = Text("Content").confirmationDialog(
+            "Archive?",
+            isPresented: .constant(true),
+            titleVisibility: .hidden,
+            actions: [AlertButton("Archive", role: .destructive)]
+        )
+
+        XCTAssertTrue(dialog.isPresented.wrappedValue)
+        XCTAssertEqual(dialog.title, "Archive?")
+        XCTAssertEqual(dialog.titleVisibility, .hidden)
+        XCTAssertEqual(dialog.message, "")
+        XCTAssertEqual(dialog.buttons.count, 1)
+    }
+
+    func testConfirmationDialogStoresMessage() {
+        let dialog = Text("Content").confirmationDialog(
+            "Archive?",
+            isPresented: .constant(true),
+            titleVisibility: .visible,
+            actions: [AlertButton("Cancel", role: .cancel)],
+            message: "This will move the item to archived status."
+        )
+
+        XCTAssertEqual(dialog.titleVisibility, .visible)
+        XCTAssertEqual(dialog.message, "This will move the item to archived status.")
+        XCTAssertEqual(dialog.buttons.count, 1)
+        XCTAssertEqual(dialog.buttons[0].role, .cancel)
     }
 
     // MARK: - Canvas
