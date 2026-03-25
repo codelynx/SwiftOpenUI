@@ -247,6 +247,42 @@ final class ModifierTests: XCTestCase {
         XCTAssertEqual(view.buttons[0].role, .cancel)
     }
 
+    func testErrorAlertOverloadDerivesTitleMessageAndButtons() {
+        struct SampleError: LocalizedError {
+            var errorDescription: String? { "Sync Failed" }
+            var failureReason: String? { "The server rejected the request." }
+            var recoverySuggestion: String? { "Try again later." }
+        }
+
+        let view = Text("hello").alert(
+            isPresented: .constant(true),
+            error: SampleError()
+        ) { _ in
+            [AlertButton("Retry"), AlertButton("Cancel", role: .cancel)]
+        }
+
+        XCTAssertTrue(view.isPresented.wrappedValue)
+        XCTAssertEqual(view.title, "Sync Failed")
+        XCTAssertEqual(view.message, "The server rejected the request.\nTry again later.")
+        XCTAssertEqual(view.buttons.count, 2)
+        XCTAssertEqual(view.buttons[1].role, .cancel)
+    }
+
+    func testErrorAlertOverloadSuppressesPresentationWhenErrorIsNil() {
+        enum NilError: Error { case missing }
+
+        let view = Text("hello").alert(
+            isPresented: .constant(true),
+            error: Optional<NilError>.none
+        )
+
+        XCTAssertFalse(view.isPresented.wrappedValue)
+        XCTAssertEqual(view.title, "")
+        XCTAssertEqual(view.message, "")
+        XCTAssertEqual(view.buttons.count, 1)
+        XCTAssertEqual(view.buttons[0].label, "OK")
+    }
+
     // MARK: - Environment modifiers
 
     class TestModel: SwiftOpenUI.ObservableObject {
