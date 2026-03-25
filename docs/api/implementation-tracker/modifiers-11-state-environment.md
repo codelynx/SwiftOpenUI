@@ -1,6 +1,6 @@
 # State, Environment, and Deprecated Modifiers
 
-Summary: 34 total, 6 implemented, 2 partial, 26 missing.
+Summary: 34 total, 7 implemented, 1 partial, 26 missing.
 
 ## State and Environment Modifiers (~20)
 
@@ -23,14 +23,14 @@ Summary: 34 total, 6 implemented, 2 partial, 26 missing.
 
 ## Deprecated Modifiers and Replacements (~52)
 
-22 total, 5 implemented, 1 partial, 16 missing.
+22 total, 6 implemented, 0 partial, 16 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
 | `accentColor` | Both | - | Deprecated | Missing | `-` | iOS 17 |
 | `accessibility` | Both | - | Deprecated | Missing | `-` | iOS 14 |
 | `actionSheet` | Both | - | Deprecated | Missing | `-` | iOS 15 |
-| `alert` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/AlertModifier.swift` | Public surface exists, but only 3 overload(s) are present vs 4 in the curated reference families. \| Batch A: title + isPresented + actions/message families via simplified AlertButton[] + String API. Error-based family still missing. GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay. |
+| `alert` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AlertModifier.swift` | Batch B: title + isPresented + actions/message + error families via simplified AlertButton[] + String API. GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay. |
 | `animation` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AnimationModifier.swift` | Preferred \| Win32: D2D only; Android: JSON node |
 | `autocapitalization` | Both | - | Deprecated | Missing | `-` | iOS 15 |
 | `background` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/StyleModifiers.swift` | Modern API \| Color and arbitrary view overloads |

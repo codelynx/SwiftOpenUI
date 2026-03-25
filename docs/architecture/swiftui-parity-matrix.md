@@ -92,7 +92,7 @@ Last updated: 2026-03-25
 | .rotationEffect() | Y | Y | Y | Y | Y | - | GTK/Web: CSS transform; Win32: D2D SetTransform |
 | .overlay() | Y | Y | Y | Y | Y | - | GTK: GtkOverlay; Win32: container; Web: absolute positioning |
 | .sheet() | Y | Y | Y | Y | Y | - | Batch A: `isPresented`, `item`, and `onDismiss` families on GTK/Win32/Web. GTK: modal window; Win32: popup; Web: modal overlay. |
-| .alert() | Y | ~ | ~ | ~ | ~ | - | Batch A: title + `isPresented` + actions/message families via simplified `AlertButton[]` + `String` API. Error-based family still missing. GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay. |
+| .alert() | Y | ~ | ~ | ~ | ~ | - | Batch B: title + `isPresented` + actions/message + error families via simplified `AlertButton[]` + `String` API. GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay. |
 | .confirmationDialog() | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | .onAppear() | Y | Y | Y | Y | ~ | - | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
