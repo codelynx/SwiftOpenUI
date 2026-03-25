@@ -18,6 +18,11 @@ public enum SearchTokenMode: Equatable {
     case editableTokens
 }
 
+/// Simplified suggestion mode for searchable suggestion families.
+public enum SearchSuggestionMode: Equatable {
+    case suggestions
+}
+
 /// Erased token value stored by the searchable primitive.
 public struct SearchTokenValue: Equatable {
     public let id: String
@@ -26,6 +31,51 @@ public struct SearchTokenValue: Equatable {
     public init(id: String, label: String) {
         self.id = id
         self.label = label
+    }
+}
+
+/// Erased suggestion value stored by the searchable primitive.
+public struct SearchSuggestionValue: Equatable {
+    public let id: String
+    public let label: String
+    public let completion: String?
+
+    public init(id: String, label: String, completion: String? = nil) {
+        self.id = id
+        self.label = label
+        self.completion = completion
+    }
+}
+
+/// Result builder that lowers lightweight suggestion content into erased rows.
+@resultBuilder
+public enum SearchSuggestionBuilder {
+    public static func buildBlock(_ components: [SearchSuggestionValue]...) -> [SearchSuggestionValue] {
+        components.flatMap { $0 }
+    }
+
+    public static func buildExpression(_ expression: Text) -> [SearchSuggestionValue] {
+        [SearchSuggestionValue(id: expression.content, label: expression.content)]
+    }
+
+    public static func buildExpression(_ expression: SearchSuggestionValue) -> [SearchSuggestionValue] {
+        [expression]
+    }
+
+    public static func buildOptional(_ component: [SearchSuggestionValue]?) -> [SearchSuggestionValue] {
+        component ?? []
+    }
+
+    public static func buildEither(first component: [SearchSuggestionValue]) -> [SearchSuggestionValue] {
+        component
+    }
+
+    public static func buildEither(second component: [SearchSuggestionValue]) -> [SearchSuggestionValue] {
+        component
+    }
+
+    public static func buildArray(_ components: [[SearchSuggestionValue]]) -> [SearchSuggestionValue] {
+        components.flatMap { $0 }
     }
 }
 
@@ -40,6 +90,8 @@ public struct SearchableView<Content: View>: View, PrimitiveView {
     public let isPresented: Binding<Bool>?
     public let tokens: [SearchTokenValue]
     public let tokenMode: SearchTokenMode?
+    public let suggestions: [SearchSuggestionValue]
+    public let suggestionMode: SearchSuggestionMode?
 
     public var body: Never { fatalError("SearchableView is a primitive view") }
 }
@@ -64,7 +116,9 @@ extension View {
             placement: .automatic,
             isPresented: nil,
             tokens: [],
-            tokenMode: nil
+            tokenMode: nil,
+            suggestions: [],
+            suggestionMode: nil
         )
     }
 
@@ -81,7 +135,9 @@ extension View {
             placement: placement,
             isPresented: nil,
             tokens: [],
-            tokenMode: nil
+            tokenMode: nil,
+            suggestions: [],
+            suggestionMode: nil
         )
     }
 
@@ -99,7 +155,9 @@ extension View {
             placement: placement,
             isPresented: isPresented,
             tokens: [],
-            tokenMode: nil
+            tokenMode: nil,
+            suggestions: [],
+            suggestionMode: nil
         )
     }
 
@@ -118,7 +176,9 @@ extension View {
             placement: placement,
             isPresented: nil,
             tokens: tokens.wrappedValue.map { makeSearchTokenValue(from: $0, label: token) },
-            tokenMode: .tokens
+            tokenMode: .tokens,
+            suggestions: [],
+            suggestionMode: nil
         )
     }
 
@@ -137,7 +197,39 @@ extension View {
             placement: placement,
             isPresented: nil,
             tokens: editableTokens.wrappedValue.map { makeSearchTokenValue(from: $0, label: token) },
-            tokenMode: .editableTokens
+            tokenMode: .editableTokens,
+            suggestions: [],
+            suggestionMode: nil
+        )
+    }
+}
+
+extension SearchableView {
+    /// Adds search suggestions below the searchable field.
+    public func searchSuggestions(
+        @SearchSuggestionBuilder _ content: () -> [SearchSuggestionValue]
+    ) -> SearchableView<Content> {
+        SearchableView(
+            content: self.content,
+            text: self.text,
+            prompt: self.prompt,
+            placement: self.placement,
+            isPresented: self.isPresented,
+            tokens: self.tokens,
+            tokenMode: self.tokenMode,
+            suggestions: content(),
+            suggestionMode: .suggestions
+        )
+    }
+}
+
+extension Text {
+    /// Marks this suggestion row with an explicit completion string.
+    public func searchCompletion(_ completion: String) -> SearchSuggestionValue {
+        SearchSuggestionValue(
+            id: "\(content)|\(completion)",
+            label: content,
+            completion: completion
         )
     }
 }

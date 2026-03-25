@@ -175,6 +175,40 @@ final class Phase4FViewTests: XCTestCase {
         XCTAssertEqual(searchable.tokens[1].label, "Closed")
     }
 
+    func testSearchableStoresSuggestions() {
+        let searchable = Text("Content")
+            .searchable(text: .constant("query"))
+            .searchSuggestions {
+                Text("SwiftUI")
+                Text("UIKit").searchCompletion("UIKit")
+            }
+
+        XCTAssertEqual(searchable.suggestionMode, .suggestions)
+        XCTAssertEqual(
+            searchable.suggestions,
+            [
+                SearchSuggestionValue(id: "SwiftUI", label: "SwiftUI"),
+                SearchSuggestionValue(id: "UIKit|UIKit", label: "UIKit", completion: "UIKit")
+            ]
+        )
+    }
+
+    func testSearchableSuggestionBuilderSupportsConditionals() {
+        let includeSuggestion = true
+        let searchable = Text("Content")
+            .searchable(text: .constant(""))
+            .searchSuggestions {
+                if includeSuggestion {
+                    Text("Alpha")
+                }
+                Text("Beta").searchCompletion("B")
+            }
+
+        XCTAssertEqual(searchable.suggestions.count, 2)
+        XCTAssertEqual(searchable.suggestions[0].label, "Alpha")
+        XCTAssertEqual(searchable.suggestions[1].completion, "B")
+    }
+
     // MARK: - Menu
 
     func testMenuConstruction() {
