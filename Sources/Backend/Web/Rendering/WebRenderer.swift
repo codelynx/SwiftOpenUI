@@ -2143,8 +2143,7 @@ private func webCreateModalOverlay(
     presented: Binding<Bool>,
     message: String? = nil,
     buttons: [AlertButton] = [],
-    sheetContent: JSValue? = nil,
-    onDismiss: (() -> Void)? = nil
+    sheetContent: JSValue? = nil
 ) -> JSValue {
     let overlay = document.createElement("div")
     overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 9999;"
@@ -2171,7 +2170,6 @@ private func webCreateModalOverlay(
         closeBtn.style = "display: block; width: 100%; padding: 8px; margin-top: 12px; cursor: pointer; border: none; border-radius: 4px; font-size: 14px; background: #555; color: white;"
         let handler = webMakeClosure { _ in
             presented.wrappedValue = false
-            onDismiss?()
             return .undefined
         }
         closeBtn.onclick = .object(handler)
@@ -2193,7 +2191,6 @@ private func webCreateModalOverlay(
         let handler = webMakeClosure { _ in
             action()
             presented.wrappedValue = false
-            onDismiss?()
             return .undefined
         }
         btn.onclick = .object(handler)
@@ -2523,17 +2520,23 @@ extension NavigationSplitView: WebRenderable {
 
 // MARK: - Phase C modifiers
 
+/// Pending onDismiss callback for the active sheet.
+/// Fired on rebuild when the sheet transitions from presented to dismissed,
+/// regardless of whether dismissal was user-triggered or programmatic.
+private var _webPendingSheetDismiss: (() -> Void)? = nil
+
 extension SheetModifierView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
 
         if isPresented.wrappedValue {
+            // Register onDismiss for firing on next rebuild where isPresented is false
+            _webPendingSheetDismiss = onDismiss
             let sheetEl = webRenderView(sheetContent)
             let overlay = webCreateModalOverlay(
                 title: "",
                 presented: isPresented,
-                sheetContent: sheetEl,
-                onDismiss: onDismiss
+                sheetContent: sheetEl
             )
             let wrapper = document.createElement("div")
             _ = wrapper.appendChild(child)
@@ -2541,28 +2544,35 @@ extension SheetModifierView: WebRenderable {
             return wrapper
         }
 
+        // Sheet no longer presented — fire pending onDismiss exactly once
+        if let pending = _webPendingSheetDismiss {
+            _webPendingSheetDismiss = nil
+            pending()
+        }
+
         return child
     }
 }
+
+/// Pending onDismiss callback for the active item-based sheet.
+private var _webPendingItemSheetDismiss: (() -> Void)? = nil
 
 extension ItemSheetModifierView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
 
-        if let currentItem = item.wrappedValue {
+        if item.wrappedValue != nil {
+            let currentItem = item.wrappedValue!
+            // Register onDismiss for firing on next rebuild where item is nil
+            _webPendingItemSheetDismiss = onDismiss
             let sheetEl = webRenderView(sheetContent(currentItem))
-            // Create a bool-like dismiss path: set item to nil on close
             let itemBinding = item
-            let dismissCallback = onDismiss
             let overlay = webCreateModalOverlay(
                 title: "",
                 presented: Binding(
                     get: { itemBinding.wrappedValue != nil },
                     set: { newValue in
-                        if !newValue {
-                            itemBinding.wrappedValue = nil
-                            dismissCallback?()
-                        }
+                        if !newValue { itemBinding.wrappedValue = nil }
                     }
                 ),
                 sheetContent: sheetEl
@@ -2571,6 +2581,12 @@ extension ItemSheetModifierView: WebRenderable {
             _ = wrapper.appendChild(child)
             _ = wrapper.appendChild(overlay)
             return wrapper
+        }
+
+        // Item sheet no longer presented — fire pending onDismiss exactly once
+        if let pending = _webPendingItemSheetDismiss {
+            _webPendingItemSheetDismiss = nil
+            pending()
         }
 
         return child
