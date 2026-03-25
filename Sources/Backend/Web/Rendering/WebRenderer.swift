@@ -2722,6 +2722,8 @@ extension ToolbarView: WebRenderable {
 
             // Apply visibility from config (may hide what we just rendered)
             webApplyToolbarConfig(ctx)
+            // Clear consumed config so it doesn't leak to later screens
+            ctx.pendingToolbarConfig = nil
         }
 
         return child
@@ -2743,6 +2745,8 @@ extension ToolbarConfigurationView: WebRenderable {
         // or in case there is no ToolbarView at all.
         if let ctx = _webCurrentNavContext {
             webApplyToolbarConfig(ctx)
+            // Clear consumed config so it doesn't leak to later screens
+            ctx.pendingToolbarConfig = nil
         }
 
         return child
