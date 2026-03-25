@@ -2649,6 +2649,47 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(hwnd, "Searchable with custom prompt should render")
     }
 
+    // MARK: - Confirmation Dialog Batch B
+
+    func testConfirmationDialogRendersContent() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = false
+        let view = Text("Content").confirmationDialog(
+            "Delete?",
+            isPresented: $presented,
+            titleVisibility: .visible,
+            actions: [AlertButton("Delete", role: .destructive)],
+            message: "This cannot be undone."
+        )
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Confirmation dialog with message should render content")
+    }
+
+    func testConfirmationDialogHiddenTitleRendersContent() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = false
+        let view = Text("Content").confirmationDialog(
+            "Title",
+            isPresented: $presented,
+            titleVisibility: .hidden,
+            actions: [AlertButton("OK")]
+        )
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Confirmation dialog with hidden title should render content")
+    }
+
+    func testConfirmationDialogOldOverloadStillWorks() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = false
+        let view = Text("Content").confirmationDialog(
+            "Are you sure?",
+            isPresented: $presented,
+            actions: [AlertButton("Yes"), AlertButton("No", role: .cancel)]
+        )
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Old convenience overload should still render")
+    }
+
     // MARK: - Searchable Batch B (tokens)
 
     private struct TestSearchToken: Identifiable {
