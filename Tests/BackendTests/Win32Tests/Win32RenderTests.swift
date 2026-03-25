@@ -2233,6 +2233,133 @@ final class Win32RenderTests: XCTestCase {
         let handled = dispatchCommand(wParam: tab2ID)
         XCTAssertTrue(handled, "Tab 2 button should have a registered command handler")
     }
+
+    // MARK: - Safe area
+
+    func testIgnoresSafeAreaPassthrough() {
+        let ctx = testContext()
+        let view = Text("Hello").ignoresSafeArea()
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Should produce the same HWND as rendering Text directly (passthrough)
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: 64)
+        defer { buf.deallocate() }
+        GetWindowTextW(hwnd!, buf, 64)
+        let text = String(decodingCString: buf, as: UTF16.self)
+        XCTAssertEqual(text, "Hello")
+    }
+
+    func testSafeAreaInsetTopReservesSpace() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .safeAreaInset(edge: .top) { Text("Top Bar") }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Container should have two children: content and inset
+        let child1 = GetWindow(hwnd!, UINT(GW_CHILD))
+        XCTAssertNotNil(child1)
+        let child2 = GetWindow(child1!, UINT(GW_HWNDNEXT))
+        XCTAssertNotNil(child2)
+
+        // Container height should be sum of both children (no spacing)
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        let containerH = containerRect.bottom - containerRect.top
+        XCTAssertGreaterThan(containerH, 0)
+
+        var r1 = RECT()
+        var r2 = RECT()
+        GetWindowRect(child1!, &r1)
+        GetWindowRect(child2!, &r2)
+        let h1 = r1.bottom - r1.top
+        let h2 = r2.bottom - r2.top
+        XCTAssertEqual(containerH, h1 + h2)
+    }
+
+    func testSafeAreaInsetBottomReservesSpace() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .safeAreaInset(edge: .bottom) { Text("Bottom Bar") }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        let containerH = containerRect.bottom - containerRect.top
+        XCTAssertGreaterThan(containerH, 0)
+    }
+
+    func testSafeAreaInsetLeadingReservesSpace() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .safeAreaInset(edge: .leading) { Text("Side") }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        let containerW = containerRect.right - containerRect.left
+        XCTAssertGreaterThan(containerW, 0)
+    }
+
+    func testSafeAreaInsetTrailingReservesSpace() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .safeAreaInset(edge: .trailing) { Text("Side") }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        let containerW = containerRect.right - containerRect.left
+        XCTAssertGreaterThan(containerW, 0)
+    }
+
+    func testSafeAreaInsetWithSpacing() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .safeAreaInset(edge: .top, spacing: 10) { Text("Top") }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Container height should include the 10px spacing gap
+        let child1 = GetWindow(hwnd!, UINT(GW_CHILD))!
+        let child2 = GetWindow(child1, UINT(GW_HWNDNEXT))!
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        let containerH = containerRect.bottom - containerRect.top
+
+        var r1 = RECT()
+        var r2 = RECT()
+        GetWindowRect(child1, &r1)
+        GetWindowRect(child2, &r2)
+        let h1 = r1.bottom - r1.top
+        let h2 = r2.bottom - r2.top
+        XCTAssertEqual(containerH, h1 + h2 + 10)
+    }
+
+    func testSafeAreaInsetContentDoesNotExpandWithoutFlag() {
+        let ctx = testContext()
+        // Text does not set expand flags — it should keep its natural size
+        let view = Text("Small")
+            .safeAreaInset(edge: .top) { Text("Top") }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Content child is the first child (rendered first)
+        let child1 = GetWindow(hwnd!, UINT(GW_CHILD))
+        XCTAssertNotNil(child1)
+
+        var r = RECT()
+        GetWindowRect(child1!, &r)
+        let childW = r.right - r.left
+        // Text natural width should be modest, not stretched to container
+        XCTAssertGreaterThan(childW, 0)
+        XCTAssertLessThan(childW, 400, "Content should not stretch to parent width without expand flags")
+    }
 }
 
 // MARK: - Test helpers

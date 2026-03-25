@@ -101,8 +101,8 @@ Last updated: 2026-03-24
 | .gridCellColumns() | Y | Y | Y | Y | Y | - | Column span in Grid/GridRow; Web: grid-column span |
 | .pickerStyle() | Y | Y | Y | Y | Y | - | .automatic (select), .segmented (button row), .palette (alias) |
 | .navigationSplitViewColumnWidth() | Y | Y | Y | Y | Y | - | min/ideal/max; Web: pass-through (consumed by NavigationSplitView) |
-| .ignoresSafeArea() | Y | Y | Y | - | - | - | Passthrough in Batch 1 (no native safe area yet) |
-| .safeAreaInset() | Y | Y | Y | - | - | - | Reserved-space GtkBox composition; vertical + horizontal |
+| .ignoresSafeArea() | Y | Y | Y | ~ | - | - | GTK: passthrough; Win32: passthrough pending native safe-area model |
+| .safeAreaInset() | Y | Y | Y | ~ | - | - | GTK: GtkBox reserved-space layout; Win32: all-edge reservation with spacing/alignment |
 | .clipShape() | Y | - | - | - | - | - | |
 | .task() | Y | - | - | - | - | - | Needs async runtime |
 
@@ -178,7 +178,7 @@ Last updated: 2026-03-24
 | Category | SwiftUI Total | Core Implemented | GTK4 | Win32 | Coverage |
 |----------|--------------|-----------------|------|-------|----------|
 | Views | 44 | 43 | 43 | 43 | ~98% |
-| Modifiers | 40 | 38 | 38 | 36 | ~95% |
+| Modifiers | 40 | 38 | 38 | 38 | ~95% |
 | State & Data | 13 | 10 | 10 | 10 | ~77% |
 | Navigation | 8 | 7 | 7 | 7 | 88% |
 | App structure | 9 | 5 | 5 | 5 | ~56% |
