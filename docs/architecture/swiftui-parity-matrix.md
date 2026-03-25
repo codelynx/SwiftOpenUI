@@ -2,7 +2,7 @@
 
 Comparison of SwiftUI features and their SwiftOpenUI implementation status across backends.
 
-Last updated: 2026-03-24
+Last updated: 2026-03-25
 
 ## Legend
 
@@ -96,7 +96,7 @@ Last updated: 2026-03-24
 | .confirmationDialog() | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | .onAppear() | Y | Y | Y | Y | ~ | - | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |
-| .searchable() | Y | Y | Y | Y | Y | - | GTK: SearchEntry; Win32: EDIT; Web: search input |
+| .searchable() | Y | Y | ~ | ~ | ~ | - | Batch A fallback on GTK/Win32/Web: search field above content; placement stored but not differentiated yet. Win32 suppresses field when `isPresented == false`. |
 | .toolbar() | Y | Y | Y | Y | Y | - | GTK: header bar; Win32: nav header; Web: header right area |
 | .gridCellColumns() | Y | Y | Y | Y | Y | - | Column span in Grid/GridRow; Web: grid-column span |
 | .pickerStyle() | Y | Y | Y | Y | Y | - | .automatic (select), .segmented (button row), .palette (alias) |
