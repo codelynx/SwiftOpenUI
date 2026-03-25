@@ -891,6 +891,71 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertNotEqual(oldDesc, newDesc, "Descriptor should differ when tokens change")
     }
 
+    // MARK: - Search Suggestion Tests
+
+    func testSearchSuggestionsRenderButtonRows() throws {
+        try requireGTK()
+
+        var searchText = ""
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content")
+                .searchable(text: Binding(get: { searchText }, set: { searchText = $0 }))
+                .searchSuggestions {
+                    Text("Apple")
+                    Text("Banana")
+                }
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        // Layout: entry, suggestion box, content
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        let suggestionBox = try unwrapNextSibling(of: entry)
+        XCTAssertEqual(gtkWidgetTypeName(suggestionBox), "GtkBox")
+        // Suggestion box has 2 buttons
+        let firstBtn = try unwrapFirstChild(of: suggestionBox)
+        XCTAssertEqual(gtkWidgetTypeName(firstBtn), "GtkButton")
+        let secondBtn = try unwrapNextSibling(of: firstBtn)
+        XCTAssertEqual(gtkWidgetTypeName(secondBtn), "GtkButton")
+    }
+
+    func testSearchSuggestionsEmptyOmitsBox() throws {
+        try requireGTK()
+
+        var searchText = ""
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content")
+                .searchable(text: Binding(get: { searchText }, set: { searchText = $0 }))
+                .searchSuggestions { }
+        ))
+        // With no suggestions: entry then content, no suggestion box
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        let content = try unwrapNextSibling(of: entry)
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: content)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Content")
+    }
+
+    func testSearchSuggestionDescriptorDetectsChange() throws {
+        try requireGTK()
+
+        var searchText = ""
+        let binding = Binding(get: { searchText }, set: { searchText = $0 })
+
+        let oldDesc = gtkDescribeView(
+            Text("X")
+                .searchable(text: binding)
+                .searchSuggestions { Text("A") }
+        )
+        let newDesc = gtkDescribeView(
+            Text("X")
+                .searchable(text: binding)
+                .searchSuggestions { Text("A"); Text("B") }
+        )
+
+        XCTAssertNotEqual(oldDesc, newDesc, "Descriptor should differ when suggestions change")
+    }
+
     // MARK: - Safe Area Padding Tests
 
     func testSafeAreaPaddingAllEdgesNilLengthUsesSyntheticDefault() throws {
