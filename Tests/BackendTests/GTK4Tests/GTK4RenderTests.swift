@@ -1040,6 +1040,49 @@ final class GTK4RenderTests: XCTestCase {
         let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
         XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
     }
+
+    // MARK: - Toolbar Tests
+
+    func testToolbarMultiItemExtractsAllItems() throws {
+        try requireGTK()
+
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .leading) { Text("A") }
+            ToolbarItem(placement: .trailing) { Text("B") }
+            ToolbarItem(placement: .primaryAction) { Text("C") }
+        }
+
+        let items = gtkExtractToolbarItems(from: view)
+        XCTAssertEqual(items.count, 3, "Should extract 3 toolbar items")
+        XCTAssertEqual(items[0].placement, .leading)
+        XCTAssertEqual(items[1].placement, .trailing)
+        XCTAssertEqual(items[2].placement, .primaryAction)
+    }
+
+    func testToolbarWithIdExtractsItems() throws {
+        try requireGTK()
+
+        let view = Text("Content").toolbar(id: "my-toolbar") {
+            ToolbarItem(placement: .leading) { Text("X") }
+        }
+
+        let items = gtkExtractToolbarItems(from: view)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].placement, .leading)
+    }
+
+    func testToolbarRendersContentPassthrough() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Main").toolbar {
+                ToolbarItem(placement: .trailing) { Text("Action") }
+            }
+        ))
+        // ToolbarView renders content; items extracted by NavigationStack
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Main")
+    }
 }
 
 private func requireGTK(
