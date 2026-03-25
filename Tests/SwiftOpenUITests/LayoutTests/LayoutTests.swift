@@ -91,6 +91,20 @@ final class LayoutTests: XCTestCase {
         XCTAssertFalse(v.contains(.leading))
     }
 
+    // MARK: - SafeAreaRegions
+
+    func testSafeAreaRegionsAll() {
+        let all = SafeAreaRegions.all
+        XCTAssertTrue(all.contains(.container))
+        XCTAssertTrue(all.contains(.keyboard))
+    }
+
+    func testSafeAreaRegionsCustomSet() {
+        let regions: SafeAreaRegions = [.container]
+        XCTAssertTrue(regions.contains(.container))
+        XCTAssertFalse(regions.contains(.keyboard))
+    }
+
     // MARK: - EdgeInsets
 
     func testEdgeInsetsDefault() {
@@ -128,6 +142,10 @@ final class LayoutTests: XCTestCase {
         _ = VerticalAlignment.top
         _ = VerticalAlignment.center
         _ = VerticalAlignment.bottom
+        _ = VerticalEdge.top
+        _ = VerticalEdge.bottom
+        _ = HorizontalEdge.leading
+        _ = HorizontalEdge.trailing
     }
 
     // MARK: - ProposedViewSize / ViewSize

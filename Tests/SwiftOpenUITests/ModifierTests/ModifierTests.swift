@@ -114,6 +114,47 @@ final class ModifierTests: XCTestCase {
         XCTAssertEqual(styled.alignment, .topTrailing)
     }
 
+    // MARK: - Safe area modifiers
+
+    func testIgnoresSafeAreaStoresRegionsAndEdges() {
+        let view = Text("hello").ignoresSafeArea([.container], edges: .horizontal)
+        XCTAssertTrue(view.regions.contains(.container))
+        XCTAssertFalse(view.regions.contains(.keyboard))
+        XCTAssertTrue(view.edges.contains(.leading))
+        XCTAssertTrue(view.edges.contains(.trailing))
+        XCTAssertFalse(view.edges.contains(.top))
+    }
+
+    func testSafeAreaInsetVerticalStoresValues() {
+        let view = Text("hello").safeAreaInset(edge: .top, alignment: .leading, spacing: 12) {
+            Text("inset")
+        }
+
+        XCTAssertEqual(view.edge, .top)
+        XCTAssertEqual(view.spacing, 12)
+        XCTAssertEqual(view.inset.content, "inset")
+        if case let .horizontal(alignment) = view.alignment {
+            XCTAssertEqual(alignment, .leading)
+        } else {
+            XCTFail("Expected horizontal alignment")
+        }
+    }
+
+    func testSafeAreaInsetHorizontalStoresValues() {
+        let view = Text("hello").safeAreaInset(edge: .trailing, alignment: .bottom) {
+            Text("inset")
+        }
+
+        XCTAssertEqual(view.edge, .trailing)
+        XCTAssertEqual(view.spacing, 0)
+        XCTAssertEqual(view.inset.content, "inset")
+        if case let .vertical(alignment) = view.alignment {
+            XCTAssertEqual(alignment, .bottom)
+        } else {
+            XCTFail("Expected vertical alignment")
+        }
+    }
+
     // MARK: - Environment modifiers
 
     class TestModel: SwiftOpenUI.ObservableObject {
