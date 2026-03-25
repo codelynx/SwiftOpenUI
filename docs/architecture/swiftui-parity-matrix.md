@@ -103,6 +103,7 @@ Last updated: 2026-03-25
 | .navigationSplitViewColumnWidth() | Y | Y | Y | Y | Y | - | min/ideal/max; Web: pass-through (consumed by NavigationSplitView) |
 | .ignoresSafeArea() | Y | Y | Y | ~ | ~ | - | GTK: passthrough; Win32/Web: passthrough pending safe-area model |
 | .safeAreaInset() | Y | Y | Y | ~ | ~ | - | GTK: GtkBox reserved-space layout; Win32/Web: reservation with spacing/alignment |
+| .safeAreaPadding() | Y | Y | ~ | ~ | ~ | - | Batch A synthetic fallback on GTK/Win32/Web: explicit length uses exact amount; nil length uses synthetic default 16; not measured native safe-area padding. |
 | .clipShape() | Y | - | - | - | - | - | |
 | .task() | Y | - | - | - | - | - | Needs async runtime |
 
