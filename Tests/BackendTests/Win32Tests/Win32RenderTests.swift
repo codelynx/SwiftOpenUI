@@ -2649,6 +2649,104 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(hwnd, "Searchable with custom prompt should render")
     }
 
+    // MARK: - Searchable Batch B (tokens)
+
+    private struct TestSearchToken: Identifiable {
+        let id: String
+        let name: String
+    }
+
+    func testSearchableTokensRenderChips() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let tokens: [TestSearchToken] = [
+            TestSearchToken(id: "1", name: "Swift"),
+            TestSearchToken(id: "2", name: "UI")
+        ]
+        let view = Text("Content").searchable(
+            text: $query,
+            tokens: .constant(tokens)
+        ) { token in
+            Text(token.name)
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Should have search field + token chip statics
+        let chips = collectStaticLabels(in: hwnd!)
+        let chipTexts = chips.map { windowText(of: $0) }
+        XCTAssertTrue(chipTexts.contains("[Swift]"), "Should render chip for 'Swift' token")
+        XCTAssertTrue(chipTexts.contains("[UI]"), "Should render chip for 'UI' token")
+    }
+
+    func testSearchableEditableTokensRenderChips() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let tokens: [TestSearchToken] = [
+            TestSearchToken(id: "a", name: "Open"),
+            TestSearchToken(id: "b", name: "Closed")
+        ]
+        let view = Text("Content").searchable(
+            text: $query,
+            editableTokens: .constant(tokens)
+        ) { token in
+            Text(token.name)
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let chips = collectStaticLabels(in: hwnd!)
+        let chipTexts = chips.map { windowText(of: $0) }
+        XCTAssertTrue(chipTexts.contains("[Open]"), "Should render chip for 'Open' token")
+        XCTAssertTrue(chipTexts.contains("[Closed]"), "Should render chip for 'Closed' token")
+    }
+
+    func testSearchableEmptyTokensNoChips() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let tokens: [TestSearchToken] = []
+        let view = Text("Content").searchable(
+            text: $query,
+            tokens: .constant(tokens)
+        ) { token in
+            Text(token.name)
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // No chip labels should be present
+        let chips = collectStaticLabels(in: hwnd!)
+        let chipTexts = chips.map { windowText(of: $0) }.filter { $0.hasPrefix("[") }
+        XCTAssertEqual(chipTexts.count, 0, "Empty tokens should produce no chip labels")
+    }
+
+    func testSearchableTokensPreserveOrder() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var query = ""
+        let tokens: [TestSearchToken] = [
+            TestSearchToken(id: "1", name: "Alpha"),
+            TestSearchToken(id: "2", name: "Beta"),
+            TestSearchToken(id: "3", name: "Gamma")
+        ]
+        let view = Text("Content").searchable(
+            text: $query,
+            tokens: .constant(tokens)
+        ) { token in
+            Text(token.name)
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Collect chip labels and verify order by X position
+        let chips = collectStaticLabelsWithPositions(in: hwnd!)
+            .filter { $0.text.hasPrefix("[") }
+            .sorted { $0.x < $1.x }
+        XCTAssertEqual(chips.count, 3, "All 3 token chips should render")
+        XCTAssertEqual(chips[0].text, "[Alpha]")
+        XCTAssertEqual(chips[1].text, "[Beta]")
+        XCTAssertEqual(chips[2].text, "[Gamma]")
+    }
+
     // MARK: - Safe area padding
 
     func testSafeAreaPaddingDefaultAllEdges() {
@@ -3024,5 +3122,31 @@ private func collectEditControls(in parent: HWND, into result: inout [HWND]) {
         }
         collectEditControls(in: c, into: &result)
         child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+}
+
+private func collectStaticLabels(in parent: HWND) -> [HWND] {
+    var result: [HWND] = []
+    collectStaticLabelsRecursive(in: parent, into: &result)
+    return result
+}
+
+private func collectStaticLabelsRecursive(in parent: HWND, into result: inout [HWND]) {
+    var child = GetWindow(parent, UINT(GW_CHILD))
+    while let c = child {
+        if className(of: c) == "Static" {
+            result.append(c)
+        }
+        collectStaticLabelsRecursive(in: c, into: &result)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+}
+
+private func collectStaticLabelsWithPositions(in parent: HWND) -> [(text: String, x: Int32)] {
+    let statics = collectStaticLabels(in: parent)
+    return statics.map { hwnd in
+        var r = RECT()
+        GetWindowRect(hwnd, &r)
+        return (text: windowText(of: hwnd), x: r.left)
     }
 }
