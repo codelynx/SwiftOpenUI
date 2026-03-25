@@ -3849,7 +3849,9 @@ extension SafeAreaInsetView: GTKRenderable, GTKDescribable {
             ? [gtkDescribeView(inset), gtkDescribeView(content)]
             : [gtkDescribeView(content), gtkDescribeView(inset)]
         return GTK4DescriptorNode(
-            kind: .composite, typeName: "SafeAreaInsetView",
+            kind: .safeAreaInset, typeName: "SafeAreaInsetView",
+            props: .safeAreaInset(GTK4SafeAreaInsetDescriptor(
+                edge: edge, alignment: alignment, spacing: spacing)),
             children: children)
     }
 
