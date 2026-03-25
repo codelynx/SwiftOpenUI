@@ -986,4 +986,17 @@ final class WebDescriptorTests: XCTestCase {
         )
     }
 
+    func testDescribeSafeAreaPaddingNegativeClampsToZero() {
+        let view = Text("Content").safeAreaPadding(-8)
+        let node = webDescribeView(view)
+
+        // Negative lengths clamp to 0 — CSS padding cannot be negative
+        XCTAssertEqual(
+            node.props,
+            .safeAreaPadding(
+                WebSafeAreaPaddingDescriptor(top: 0, bottom: 0, leading: 0, trailing: 0)
+            )
+        )
+    }
+
 }

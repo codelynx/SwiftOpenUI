@@ -2008,7 +2008,7 @@ private let webSafeAreaPaddingSyntheticDefault = 16
 extension SafeAreaPaddingView: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
-        let amount = length ?? webSafeAreaPaddingSyntheticDefault
+        let amount = max(length ?? webSafeAreaPaddingSyntheticDefault, 0)
 
         let top = edges.contains(.top) ? amount : 0
         let bottom = edges.contains(.bottom) ? amount : 0
@@ -2022,7 +2022,7 @@ extension SafeAreaPaddingView: WebRenderable, WebDescribable {
     }
 
     public func webDescribeNode() -> WebDescriptorNode {
-        let amount = length ?? webSafeAreaPaddingSyntheticDefault
+        let amount = max(length ?? webSafeAreaPaddingSyntheticDefault, 0)
         let top = edges.contains(.top) ? amount : 0
         let bottom = edges.contains(.bottom) ? amount : 0
         let leading = edges.contains(.leading) ? amount : 0
