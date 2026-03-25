@@ -502,6 +502,200 @@ final class GTK4RenderTests: XCTestCase {
         let cStr = gtk_label_get_text(OpaquePointer(label))!
         XCTAssertEqual(String(cString: cStr), "New")
     }
+
+    // MARK: - Safe Area Tests
+
+    func testIgnoresSafeAreaPassthroughRendersContent() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Hello").ignoresSafeArea()
+        ))
+        // Passthrough — the result should contain a label with the text
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Hello")
+    }
+
+    func testSafeAreaInsetTopCreatesVerticalBox() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Main").safeAreaInset(edge: VerticalEdge.top) {
+                Text("Header")
+            }
+        ))
+        // Should be a GtkBox with vertical orientation
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        // First child is the inset (top = inset first), second is content
+        let first = try unwrapFirstChild(of: widget)
+        let second = try unwrapNextSibling(of: first)
+
+        let firstLabel = try unwrapFirstDescendant(ofType: "GtkLabel", in: first)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(firstLabel))), "Header")
+
+        let secondLabel = try unwrapFirstDescendant(ofType: "GtkLabel", in: second)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(secondLabel))), "Main")
+    }
+
+    func testSafeAreaInsetBottomCreatesVerticalBox() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Main").safeAreaInset(edge: VerticalEdge.bottom) {
+                Text("Footer")
+            }
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        // Bottom: content first, then inset
+        let first = try unwrapFirstChild(of: widget)
+        let second = try unwrapNextSibling(of: first)
+
+        let firstLabel = try unwrapFirstDescendant(ofType: "GtkLabel", in: first)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(firstLabel))), "Main")
+
+        let secondLabel = try unwrapFirstDescendant(ofType: "GtkLabel", in: second)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(secondLabel))), "Footer")
+    }
+
+    func testSafeAreaInsetTrailingCreatesHorizontalBox() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Main").safeAreaInset(edge: HorizontalEdge.trailing) {
+                Text("Side")
+            }
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        // Trailing: content first, then inset
+        let first = try unwrapFirstChild(of: widget)
+        let second = try unwrapNextSibling(of: first)
+
+        let firstLabel = try unwrapFirstDescendant(ofType: "GtkLabel", in: first)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(firstLabel))), "Main")
+
+        let secondLabel = try unwrapFirstDescendant(ofType: "GtkLabel", in: second)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(secondLabel))), "Side")
+    }
+
+    func testSafeAreaInsetTopDescriptorOrderMatchesWidgetOrder() throws {
+        try requireGTK()
+
+        // Build a view with safeAreaInset(edge: .top) wrapping a Text
+        var textContent = "Old"
+        let host = GTKViewHost(buildBody: {
+            gtkRenderView(Text(textContent).safeAreaInset(edge: VerticalEdge.top) {
+                Text("Header")
+            })
+        })
+        host.describeBody = {
+            gtkDescribeView(Text(textContent).safeAreaInset(edge: VerticalEdge.top) {
+                Text("Header")
+            })
+        }
+
+        // Initial build
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        // Capture descriptor state
+        let descriptor = gtkDescribeView(Text(textContent).safeAreaInset(edge: VerticalEdge.top) {
+            Text("Header")
+        })
+        let identified = gtkIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(from: identified)
+        executor = gtkCaptureSupportedNativeSlots(from: child, descriptorRoot: identified, executorRoot: executor)
+        host.retainedExecutor = executor
+
+        // The box has two children: [Header(inset), Old(content)]
+        // Find the content label (second child for .top inset)
+        let insetLabel = gtk_widget_get_first_child(child)!
+        let contentLabel = gtk_widget_get_next_sibling(insetLabel)!
+        let contentBefore = UnsafeRawPointer(contentLabel)
+
+        // Change state and rebuild
+        textContent = "New"
+        host.rebuild()
+
+        // Verify in-place mutation: same widget pointer, updated text
+        let insetLabelAfter = gtk_widget_get_first_child(gtk_widget_get_first_child(host.container)!)!
+        let contentLabelAfter = gtk_widget_get_next_sibling(insetLabelAfter)!
+        XCTAssertEqual(UnsafeRawPointer(contentLabelAfter), contentBefore,
+                       "Content widget should be same (in-place mutation, not teardown/rebuild)")
+        let cStr = gtk_label_get_text(OpaquePointer(contentLabelAfter))!
+        XCTAssertEqual(String(cString: cStr), "New")
+    }
+
+    func testSafeAreaInsetLeadingDescriptorOrderMatchesWidgetOrder() throws {
+        try requireGTK()
+
+        var textContent = "Old"
+        let host = GTKViewHost(buildBody: {
+            gtkRenderView(Text(textContent).safeAreaInset(edge: HorizontalEdge.leading) {
+                Text("Side")
+            })
+        })
+        host.describeBody = {
+            gtkDescribeView(Text(textContent).safeAreaInset(edge: HorizontalEdge.leading) {
+                Text("Side")
+            })
+        }
+
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        let descriptor = gtkDescribeView(Text(textContent).safeAreaInset(edge: HorizontalEdge.leading) {
+            Text("Side")
+        })
+        let identified = gtkIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(from: identified)
+        executor = gtkCaptureSupportedNativeSlots(from: child, descriptorRoot: identified, executorRoot: executor)
+        host.retainedExecutor = executor
+
+        // Leading: [inset, content] — content is the second child
+        let insetLabel = gtk_widget_get_first_child(child)!
+        let contentLabel = gtk_widget_get_next_sibling(insetLabel)!
+        let contentBefore = UnsafeRawPointer(contentLabel)
+
+        textContent = "New"
+        host.rebuild()
+
+        let insetLabelAfter = gtk_widget_get_first_child(gtk_widget_get_first_child(host.container)!)!
+        let contentLabelAfter = gtk_widget_get_next_sibling(insetLabelAfter)!
+        XCTAssertEqual(UnsafeRawPointer(contentLabelAfter), contentBefore,
+                       "Content widget should be same (in-place mutation, not teardown/rebuild)")
+        let cStr = gtk_label_get_text(OpaquePointer(contentLabelAfter))!
+        XCTAssertEqual(String(cString: cStr), "New")
+    }
+
+    func testSafeAreaInsetWithSpacing() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Main").safeAreaInset(edge: VerticalEdge.top, spacing: 12) {
+                Text("Header")
+            }
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        // Verify the box has spacing=12
+        let boxSpacing = gtk_box_get_spacing(boxPointer(widget))
+        XCTAssertEqual(boxSpacing, 12)
+    }
 }
 
 private func requireGTK(
