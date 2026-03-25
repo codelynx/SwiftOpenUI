@@ -2143,7 +2143,8 @@ private func webCreateModalOverlay(
     presented: Binding<Bool>,
     message: String? = nil,
     buttons: [AlertButton] = [],
-    sheetContent: JSValue? = nil
+    sheetContent: JSValue? = nil,
+    onDismiss: (() -> Void)? = nil
 ) -> JSValue {
     let overlay = document.createElement("div")
     overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 9999;"
@@ -2170,6 +2171,7 @@ private func webCreateModalOverlay(
         closeBtn.style = "display: block; width: 100%; padding: 8px; margin-top: 12px; cursor: pointer; border: none; border-radius: 4px; font-size: 14px; background: #555; color: white;"
         let handler = webMakeClosure { _ in
             presented.wrappedValue = false
+            onDismiss?()
             return .undefined
         }
         closeBtn.onclick = .object(handler)
@@ -2191,6 +2193,7 @@ private func webCreateModalOverlay(
         let handler = webMakeClosure { _ in
             action()
             presented.wrappedValue = false
+            onDismiss?()
             return .undefined
         }
         btn.onclick = .object(handler)
@@ -2529,6 +2532,39 @@ extension SheetModifierView: WebRenderable {
             let overlay = webCreateModalOverlay(
                 title: "",
                 presented: isPresented,
+                sheetContent: sheetEl,
+                onDismiss: onDismiss
+            )
+            let wrapper = document.createElement("div")
+            _ = wrapper.appendChild(child)
+            _ = wrapper.appendChild(overlay)
+            return wrapper
+        }
+
+        return child
+    }
+}
+
+extension ItemSheetModifierView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+
+        if let currentItem = item.wrappedValue {
+            let sheetEl = webRenderView(sheetContent(currentItem))
+            // Create a bool-like dismiss path: set item to nil on close
+            let itemBinding = item
+            let dismissCallback = onDismiss
+            let overlay = webCreateModalOverlay(
+                title: "",
+                presented: Binding(
+                    get: { itemBinding.wrappedValue != nil },
+                    set: { newValue in
+                        if !newValue {
+                            itemBinding.wrappedValue = nil
+                            dismissCallback?()
+                        }
+                    }
+                ),
                 sheetContent: sheetEl
             )
             let wrapper = document.createElement("div")
