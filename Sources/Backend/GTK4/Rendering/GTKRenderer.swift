@@ -3226,14 +3226,22 @@ extension GeometryReader: GTKRenderable {
 private class SearchBox {
     let entry: UnsafeMutablePointer<GtkWidget>
     let binding: Binding<String>
+    let isPresented: Binding<Bool>?
 
-    init(entry: UnsafeMutablePointer<GtkWidget>, binding: Binding<String>) {
+    init(entry: UnsafeMutablePointer<GtkWidget>, binding: Binding<String>, isPresented: Binding<Bool>? = nil) {
         self.entry = entry
         self.binding = binding
+        self.isPresented = isPresented
     }
 }
 
-extension SearchableView: GTKRenderable {
+extension SearchableView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .composite, typeName: "SearchableView",
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
         let boxPtr = boxPointer(box)
@@ -3248,9 +3256,15 @@ extension SearchableView: GTKRenderable {
             gtk_swift_editable_set_text(entry, text.wrappedValue)
         }
 
+        // Honor isPresented: hide entry when false
+        if let isPresented = isPresented, !isPresented.wrappedValue {
+            gtk_widget_set_visible(entry, 0)
+        }
+
         let binding = text
+        let presentedBinding = isPresented
         let callbackBox = Unmanaged.passRetained(
-            SearchBox(entry: entry, binding: binding)
+            SearchBox(entry: entry, binding: binding, isPresented: presentedBinding)
         ).toOpaque()
 
         g_signal_connect_data(

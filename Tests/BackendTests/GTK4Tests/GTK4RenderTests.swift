@@ -696,6 +696,78 @@ final class GTK4RenderTests: XCTestCase {
         let boxSpacing = gtk_box_get_spacing(boxPointer(widget))
         XCTAssertEqual(boxSpacing, 12)
     }
+
+    // MARK: - Searchable Tests
+
+    func testSearchableRendersSearchEntryAboveContent() throws {
+        try requireGTK()
+
+        var searchText = ""
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(text: Binding(get: { searchText }, set: { searchText = $0 }))
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        // First child should be a search entry, second should be content
+        let first = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(first), "GtkSearchEntry")
+
+        let second = try unwrapNextSibling(of: first)
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: second)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Content")
+    }
+
+    func testSearchableWithPlacementRendersWithoutCrash() throws {
+        try requireGTK()
+
+        var searchText = ""
+        // Non-default placement should still render (advisory in Batch A)
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(
+                text: Binding(get: { searchText }, set: { searchText = $0 }),
+                placement: .toolbar
+            )
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        let first = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(first), "GtkSearchEntry")
+    }
+
+    func testSearchableIsPresentedFalseHidesEntry() throws {
+        try requireGTK()
+
+        var searchText = ""
+        var presented = false
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(
+                text: Binding(get: { searchText }, set: { searchText = $0 }),
+                isPresented: Binding(get: { presented }, set: { presented = $0 })
+            )
+        ))
+
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        XCTAssertEqual(gtk_widget_get_visible(entry), 0, "Entry should be hidden when isPresented is false")
+    }
+
+    func testSearchableIsPresentedTrueShowsEntry() throws {
+        try requireGTK()
+
+        var searchText = ""
+        var presented = true
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(
+                text: Binding(get: { searchText }, set: { searchText = $0 }),
+                isPresented: Binding(get: { presented }, set: { presented = $0 })
+            )
+        ))
+
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        // Default visibility is true (GTK shows widgets by default)
+        XCTAssertNotEqual(gtk_widget_get_visible(entry), 0, "Entry should be visible when isPresented is true")
+    }
 }
 
 private func requireGTK(
