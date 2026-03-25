@@ -22,6 +22,17 @@ public struct SafeAreaInsetView<Content: View, Inset: View>: View, PrimitiveView
     public var body: Never { fatalError("SafeAreaInsetView is a primitive view") }
 }
 
+/// A view that applies safe-area-aware padding around its content.
+public struct SafeAreaPaddingView<Content: View>: View, PrimitiveView {
+    public typealias Body = Never
+
+    public let content: Content
+    public let edges: Edge.Set
+    public let length: Int?
+
+    public var body: Never { fatalError("SafeAreaPaddingView is a primitive view") }
+}
+
 extension View {
     /// Ignore safe-area reservation for the specified regions and edges.
     public func ignoresSafeArea(
@@ -61,5 +72,20 @@ extension View {
             alignment: .vertical(alignment),
             spacing: spacing ?? 0
         )
+    }
+
+    /// Apply synthetic safe-area padding on all edges.
+    public func safeAreaPadding() -> SafeAreaPaddingView<Self> {
+        SafeAreaPaddingView(content: self, edges: .all, length: nil)
+    }
+
+    /// Apply safe-area padding with an explicit length on all edges.
+    public func safeAreaPadding(_ length: Int) -> SafeAreaPaddingView<Self> {
+        SafeAreaPaddingView(content: self, edges: .all, length: length)
+    }
+
+    /// Apply safe-area padding on selected edges with an optional explicit length.
+    public func safeAreaPadding(_ edges: Edge.Set, _ length: Int? = nil) -> SafeAreaPaddingView<Self> {
+        SafeAreaPaddingView(content: self, edges: edges, length: length)
     }
 }

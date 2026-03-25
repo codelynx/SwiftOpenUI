@@ -155,6 +155,42 @@ final class ModifierTests: XCTestCase {
         }
     }
 
+    func testSafeAreaPaddingDefaultStoresAllEdgesAndNilLength() {
+        let view = Text("hello").safeAreaPadding()
+        XCTAssertTrue(view.edges.contains(.top))
+        XCTAssertTrue(view.edges.contains(.bottom))
+        XCTAssertTrue(view.edges.contains(.leading))
+        XCTAssertTrue(view.edges.contains(.trailing))
+        XCTAssertNil(view.length)
+    }
+
+    func testSafeAreaPaddingExplicitLengthStoresAllEdges() {
+        let view = Text("hello").safeAreaPadding(20)
+        XCTAssertTrue(view.edges.contains(.top))
+        XCTAssertTrue(view.edges.contains(.bottom))
+        XCTAssertTrue(view.edges.contains(.leading))
+        XCTAssertTrue(view.edges.contains(.trailing))
+        XCTAssertEqual(view.length, 20)
+    }
+
+    func testSafeAreaPaddingSelectedEdgesStoresValues() {
+        let view = Text("hello").safeAreaPadding(.horizontal, 12)
+        XCTAssertFalse(view.edges.contains(.top))
+        XCTAssertFalse(view.edges.contains(.bottom))
+        XCTAssertTrue(view.edges.contains(.leading))
+        XCTAssertTrue(view.edges.contains(.trailing))
+        XCTAssertEqual(view.length, 12)
+    }
+
+    func testSafeAreaPaddingSelectedEdgesAllowsSyntheticLength() {
+        let view = Text("hello").safeAreaPadding(.vertical)
+        XCTAssertTrue(view.edges.contains(.top))
+        XCTAssertTrue(view.edges.contains(.bottom))
+        XCTAssertFalse(view.edges.contains(.leading))
+        XCTAssertFalse(view.edges.contains(.trailing))
+        XCTAssertNil(view.length)
+    }
+
     // MARK: - Environment modifiers
 
     class TestModel: SwiftOpenUI.ObservableObject {
