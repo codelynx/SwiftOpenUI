@@ -168,10 +168,47 @@ final class Phase4FViewTests: XCTestCase {
                 Button("Save") { }
             }
         }
+        XCTAssertNil(view.toolbarID)
         XCTAssertEqual(view.toolbarItems.count, 1)
         if case .trailing = view.toolbarItems[0].placement {} else {
             XCTFail("Expected .trailing placement")
         }
+    }
+
+    func testToolbarModifierFlattensMultipleItemsInOrder() {
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .leading) {
+                Button("Back") { }
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Edit") { }
+            }
+            ToolbarItem {
+                Button("Done") { }
+            }
+        }
+
+        XCTAssertEqual(view.toolbarItems.count, 3)
+        if case .leading = view.toolbarItems[0].placement {} else {
+            XCTFail("Expected first item to be .leading")
+        }
+        if case .trailing = view.toolbarItems[1].placement {} else {
+            XCTFail("Expected second item to be .trailing")
+        }
+        if case .primaryAction = view.toolbarItems[2].placement {} else {
+            XCTFail("Expected third item to be .primaryAction")
+        }
+    }
+
+    func testToolbarModifierStoresID() {
+        let view = Text("Content").toolbar(id: "detail-toolbar") {
+            ToolbarItem(placement: .trailing) {
+                Button("Save") { }
+            }
+        }
+
+        XCTAssertEqual(view.toolbarID, "detail-toolbar")
+        XCTAssertEqual(view.toolbarItems.count, 1)
     }
 
     // MARK: - ConfirmationDialog
