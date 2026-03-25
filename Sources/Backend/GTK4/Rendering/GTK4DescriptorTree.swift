@@ -126,6 +126,9 @@ public struct GTK4SearchableDescriptor: Equatable {
     public let tokenMode: SearchTokenMode?
     public let suggestions: [SearchSuggestionValue]
     public let suggestionMode: SearchSuggestionMode?
+    public let scopes: [SearchScopeValue]
+    public let scopeMode: SearchScopeMode?
+    public let selectedScopeID: String?
 }
 
 public struct GTK4CanvasDescriptor: Equatable {
