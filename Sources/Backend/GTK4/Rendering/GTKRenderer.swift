@@ -3595,6 +3595,8 @@ extension ConfirmationDialogView: GTKRenderable {
         g_object_ref(gpointer(anchor))
 
         let dialogTitle = title
+        let dialogTitleVisibility = titleVisibility
+        let dialogMessage = message
         let dialogButtons = buttons
         let binding = isPresented
 
@@ -3609,7 +3611,7 @@ extension ConfirmationDialogView: GTKRenderable {
             let box = Unmanaged<ClosureBox>.fromOpaque(userData!).takeRetainedValue()
             box.closure()
             return 0
-        }, Unmanaged.passRetained(ClosureBox { [anchor, dialogTitle, dialogButtons, onDismiss] in
+        }, Unmanaged.passRetained(ClosureBox { [anchor, dialogTitle, dialogTitleVisibility, dialogMessage, dialogButtons, onDismiss] in
             guard let root = gtk_widget_get_root(anchor) else {
                 onDismiss()
                 g_object_unref(gpointer(anchor))
@@ -3633,14 +3635,23 @@ extension ConfirmationDialogView: GTKRenderable {
             gtk_widget_set_margin_start(vbox, 20)
             gtk_widget_set_margin_end(vbox, 20)
 
-            // Title
-            let titleLabel = gtk_label_new(nil)!
-            let escaped = dialogTitle
-                .replacingOccurrences(of: "&", with: "&amp;")
-                .replacingOccurrences(of: "<", with: "&lt;")
-                .replacingOccurrences(of: ">", with: "&gt;")
-            gtk_swift_label_set_markup(titleLabel, "<b>\(escaped)</b>")
-            gtk_box_append(boxPointer(vbox), titleLabel)
+            // Title — honor titleVisibility
+            if dialogTitleVisibility != .hidden {
+                let titleLabel = gtk_label_new(nil)!
+                let escaped = dialogTitle
+                    .replacingOccurrences(of: "&", with: "&amp;")
+                    .replacingOccurrences(of: "<", with: "&lt;")
+                    .replacingOccurrences(of: ">", with: "&gt;")
+                gtk_swift_label_set_markup(titleLabel, "<b>\(escaped)</b>")
+                gtk_box_append(boxPointer(vbox), titleLabel)
+            }
+
+            // Message
+            if !dialogMessage.isEmpty {
+                let msgLabel = gtk_label_new(dialogMessage)!
+                gtk_label_set_wrap(OpaquePointer(msgLabel), 1)
+                gtk_box_append(boxPointer(vbox), msgLabel)
+            }
 
             let sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)!
             gtk_box_append(boxPointer(vbox), sep)
