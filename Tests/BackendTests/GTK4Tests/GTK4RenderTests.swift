@@ -768,6 +768,54 @@ final class GTK4RenderTests: XCTestCase {
         // Default visibility is true (GTK shows widgets by default)
         XCTAssertNotEqual(gtk_widget_get_visible(entry), 0, "Entry should be visible when isPresented is true")
     }
+
+    func testSearchableExternalTextChangeTriggersDescriptorUpdate() throws {
+        try requireGTK()
+
+        var searchText = "old"
+        let binding = Binding(get: { searchText }, set: { searchText = $0 })
+
+        let host = GTKViewHost(buildBody: {
+            gtkRenderView(Text("Content").searchable(text: binding))
+        })
+        host.describeBody = {
+            gtkDescribeView(Text("Content").searchable(text: binding))
+        }
+
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        let descriptor = gtkDescribeView(Text("Content").searchable(text: binding))
+        let identified = gtkIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(from: identified)
+        executor = gtkCaptureSupportedNativeSlots(from: child, descriptorRoot: identified, executorRoot: executor)
+        host.retainedExecutor = executor
+
+        // Verify initial text descriptor includes "old"
+        let oldDesc = gtkDescribeView(Text("Content").searchable(text: binding))
+
+        // Change external text
+        searchText = "new"
+        let newDesc = gtkDescribeView(Text("Content").searchable(text: binding))
+
+        // Descriptors should differ because text changed
+        XCTAssertNotEqual(oldDesc, newDesc,
+                          "Descriptor should change when bound text changes")
+
+        // Verify the plan detects an update, not a reuse
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+        let retained = gtkRetainDescriptorTree(oldId)
+        let plan = gtkPlanDescriptorTree(old: retained, new: newId)
+        XCTAssertNotEqual(plan.kind, .reuse,
+                          "Plan should not be .reuse when text changes")
+    }
 }
 
 private func requireGTK(
