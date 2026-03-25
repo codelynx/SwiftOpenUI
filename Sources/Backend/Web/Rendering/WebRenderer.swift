@@ -2139,7 +2139,13 @@ extension ConfirmationDialogView: WebRenderable {
         let child = webRenderView(content)
 
         if isPresented.wrappedValue {
-            let overlay = webCreateModalOverlay(title: title, presented: isPresented, buttons: buttons)
+            let visibleTitle = titleVisibility == .hidden ? "" : title
+            let overlay = webCreateModalOverlay(
+                title: visibleTitle,
+                presented: isPresented,
+                message: message.isEmpty ? nil : message,
+                buttons: buttons
+            )
             let wrapper = document.createElement("div")
             _ = wrapper.appendChild(child)
             _ = wrapper.appendChild(overlay)
