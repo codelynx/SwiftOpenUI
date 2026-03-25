@@ -933,7 +933,7 @@ let flatButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
 
 /// Create a clickable container that renders a custom label view inside.
 /// This handles Button(action:) { HStack { Text("★").foregroundColor(.yellow); Text("Star") } }
-private func createCustomLabelButton<Label: View>(label: Label, action: @escaping () -> Void, context: RenderContext) -> HWND? {
+func createCustomLabelButton<Label: View>(label: Label, action: @escaping () -> Void, context: RenderContext) -> HWND? {
     registerCustomButtonClassIfNeeded(hInstance: context.hInstance)
 
     // Create a clickable container with WS_TABSTOP for keyboard focus

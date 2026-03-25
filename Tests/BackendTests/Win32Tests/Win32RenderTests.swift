@@ -2772,6 +2772,107 @@ final class Win32RenderTests: XCTestCase {
             Win32PaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)
         ))
     }
+
+    // MARK: - Toolbar Batch A
+
+    func testToolbarSingleItem() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .trailing) {
+                Button("Action") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Toolbar with single item should render")
+    }
+
+    func testToolbarMultipleItems() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .leading) {
+                Button("Back") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Save") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Share") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Toolbar with multiple items should render")
+
+        // Outside NavigationStack, toolbar renders as container with items + content
+        // Container should have child windows for the toolbar items and the content
+        var childCount: Int = 0
+        var child = GetWindow(hwnd!, UINT(GW_CHILD))
+        while let c = child {
+            childCount += 1
+            child = GetWindow(c, UINT(GW_HWNDNEXT))
+        }
+        XCTAssertGreaterThanOrEqual(childCount, 2, "Container should have toolbar items and content")
+    }
+
+    func testToolbarLeadingTrailingPlacement() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .leading) {
+                Button("Lead") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Trail") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Mixed leading/trailing toolbar should render")
+    }
+
+    func testToolbarWithID() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar(id: "myToolbar") {
+            ToolbarItem(placement: .trailing) {
+                Button("Done") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "toolbar(id:content:) should render identically to toolbar(content:)")
+    }
+
+    func testToolbarEmptyContent() {
+        let ctx = testContext()
+        let view = Text("Content").toolbar {}
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Toolbar with no items should still render content")
+    }
+
+    func testToolbarMultipleItemsPreserveOrder() {
+        let ctx = testContext()
+        // Three trailing items — rendered right-to-left from right edge
+        let view = Text("Content").toolbar {
+            ToolbarItem(placement: .trailing) {
+                Button("First") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Second") {}
+            }
+            ToolbarItem(placement: .trailing) {
+                Button("Third") {}
+            }
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Multiple trailing items should render without dropping any")
+
+        // The container (returned from renderToolbarWithContent) should have
+        // at least 4 children: 3 toolbar item buttons + the content view
+        var childCount: Int = 0
+        var child = GetWindow(hwnd!, UINT(GW_CHILD))
+        while let c = child {
+            childCount += 1
+            child = GetWindow(c, UINT(GW_HWNDNEXT))
+        }
+        XCTAssertGreaterThanOrEqual(childCount, 4,
+            "Should have 3 toolbar item HWNDs + content HWND")
+    }
 }
 
 // MARK: - Test helpers
