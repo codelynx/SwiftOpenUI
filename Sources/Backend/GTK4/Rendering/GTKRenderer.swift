@@ -3674,6 +3674,12 @@ extension ToolbarView: GTKRenderable {
     }
 }
 
+extension ToolbarConfigurationView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        gtkRenderView(content)
+    }
+}
+
 // MARK: - ConfirmationDialog GTK extension
 
 extension ConfirmationDialogView: GTKRenderable {
