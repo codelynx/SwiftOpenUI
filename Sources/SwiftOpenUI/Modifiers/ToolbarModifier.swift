@@ -1,8 +1,40 @@
 /// Placement for toolbar items.
-public enum ToolbarItemPlacement {
+public enum ToolbarItemPlacement: Equatable, Hashable {
     case leading
     case trailing
     case primaryAction
+}
+
+/// Visibility state for a toolbar container.
+public enum ToolbarVisibility: Equatable {
+    case automatic
+    case visible
+    case hidden
+}
+
+/// Simplified toolbar container targets.
+public enum ToolbarPlacementTarget: Equatable {
+    case automatic
+    case navigationBar
+    case bottomBar
+    case tabBar
+}
+
+/// Stored toolbar configuration attached to a view tree.
+public struct ToolbarConfiguration: Equatable {
+    public let visibility: ToolbarVisibility?
+    public let visibilityTarget: ToolbarPlacementTarget?
+    public let removedPlacements: [ToolbarItemPlacement]
+
+    public init(
+        visibility: ToolbarVisibility? = nil,
+        visibilityTarget: ToolbarPlacementTarget? = nil,
+        removedPlacements: [ToolbarItemPlacement] = []
+    ) {
+        self.visibility = visibility
+        self.visibilityTarget = visibilityTarget
+        self.removedPlacements = removedPlacements
+    }
 }
 
 /// Flattened toolbar content produced by `ToolbarContentBuilder`.
@@ -93,6 +125,11 @@ public protocol ToolbarProvider {
     var toolbarItems: [AnyToolbarItem] { get }
 }
 
+/// Protocol for views that carry toolbar configuration.
+public protocol ToolbarConfigurationProvider {
+    var toolbarConfiguration: ToolbarConfiguration { get }
+}
+
 /// A view that carries toolbar items alongside its content.
 public struct ToolbarView<Content: View>: View, ToolbarProvider {
     public typealias Body = Never
@@ -102,6 +139,23 @@ public struct ToolbarView<Content: View>: View, ToolbarProvider {
     public let toolbarItems: [AnyToolbarItem]
 
     public var body: Never { fatalError("ToolbarView is a primitive view") }
+}
+
+/// A view wrapper that carries toolbar visibility/removal configuration.
+public struct ToolbarConfigurationView<Content: View>: View, PrimitiveView, ToolbarConfigurationProvider {
+    public typealias Body = Never
+
+    public let content: Content
+    public let toolbarConfiguration: ToolbarConfiguration
+
+    public var body: Never { fatalError("ToolbarConfigurationView is a primitive view") }
+}
+
+private func mergeRemovedPlacements(
+    existing: [ToolbarItemPlacement],
+    incoming: [ToolbarItemPlacement]
+) -> [ToolbarItemPlacement] {
+    existing + incoming.filter { !existing.contains($0) }
 }
 
 extension View {
@@ -120,5 +174,65 @@ extension View {
     ) -> ToolbarView<Self> {
         let toolbarContent = content()
         return ToolbarView(content: self, toolbarID: id, toolbarItems: toolbarContent.items)
+    }
+
+    /// Stores toolbar visibility for a target container.
+    public func toolbar(
+        _ visibility: ToolbarVisibility,
+        for target: ToolbarPlacementTarget
+    ) -> ToolbarConfigurationView<Self> {
+        ToolbarConfigurationView(
+            content: self,
+            toolbarConfiguration: ToolbarConfiguration(
+                visibility: visibility,
+                visibilityTarget: target
+            )
+        )
+    }
+
+    /// Stores item placements that should be removed from the toolbar.
+    public func toolbar(
+        removing placements: ToolbarItemPlacement...
+    ) -> ToolbarConfigurationView<Self> {
+        ToolbarConfigurationView(
+            content: self,
+            toolbarConfiguration: ToolbarConfiguration(
+                removedPlacements: placements
+            )
+        )
+    }
+}
+
+extension ToolbarConfigurationView {
+    /// Updates toolbar visibility while preserving other stored toolbar configuration.
+    public func toolbar(
+        _ visibility: ToolbarVisibility,
+        for target: ToolbarPlacementTarget
+    ) -> ToolbarConfigurationView<Content> {
+        ToolbarConfigurationView(
+            content: content,
+            toolbarConfiguration: ToolbarConfiguration(
+                visibility: visibility,
+                visibilityTarget: target,
+                removedPlacements: toolbarConfiguration.removedPlacements
+            )
+        )
+    }
+
+    /// Adds removed placements while preserving stored toolbar visibility.
+    public func toolbar(
+        removing placements: ToolbarItemPlacement...
+    ) -> ToolbarConfigurationView<Content> {
+        ToolbarConfigurationView(
+            content: content,
+            toolbarConfiguration: ToolbarConfiguration(
+                visibility: toolbarConfiguration.visibility,
+                visibilityTarget: toolbarConfiguration.visibilityTarget,
+                removedPlacements: mergeRemovedPlacements(
+                    existing: toolbarConfiguration.removedPlacements,
+                    incoming: placements
+                )
+            )
+        )
     }
 }
