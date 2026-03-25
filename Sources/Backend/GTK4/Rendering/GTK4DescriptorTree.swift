@@ -122,6 +122,8 @@ public struct GTK4SearchableDescriptor: Equatable {
     public let prompt: String
     public let placement: SearchFieldPlacement
     public let isPresented: Bool?
+    public let tokens: [SearchTokenValue]
+    public let tokenMode: SearchTokenMode?
 }
 
 public struct GTK4CanvasDescriptor: Equatable {

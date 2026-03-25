@@ -817,6 +817,80 @@ final class GTK4RenderTests: XCTestCase {
                           "Plan should not be .reuse when text changes")
     }
 
+    // MARK: - Searchable Token Tests
+
+    func testSearchableWithTokensRendersTokenRow() throws {
+        try requireGTK()
+
+        struct Tag: Identifiable { let id: String; let name: String }
+        var searchText = ""
+        var tags = [Tag(id: "a", name: "Alpha"), Tag(id: "b", name: "Beta")]
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(
+                text: Binding(get: { searchText }, set: { searchText = $0 }),
+                tokens: Binding(get: { tags }, set: { tags = $0 })
+            ) { tag in
+                Text(tag.name)
+            }
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        // First child: search entry, second: token row, third: content
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        let tokenRow = try unwrapNextSibling(of: entry)
+        XCTAssertEqual(gtkWidgetTypeName(tokenRow), "GtkBox")
+        // Token row should have 2 labels
+        let firstLabel = try unwrapFirstChild(of: tokenRow)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(firstLabel))), "Alpha")
+        let secondLabel = try unwrapNextSibling(of: firstLabel)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(secondLabel))), "Beta")
+    }
+
+    func testSearchableWithEmptyTokensOmitsTokenRow() throws {
+        try requireGTK()
+
+        var searchText = ""
+        struct Tag: Identifiable { let id: String; let name: String }
+        var tags: [Tag] = []
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(
+                text: Binding(get: { searchText }, set: { searchText = $0 }),
+                tokens: Binding(get: { tags }, set: { tags = $0 })
+            ) { tag in
+                Text(tag.name)
+            }
+        ))
+
+        // With no tokens: search entry then content directly, no token row
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        let content = try unwrapNextSibling(of: entry)
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: content)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Content")
+    }
+
+    func testSearchableTokenDescriptorDetectsTokenChange() throws {
+        try requireGTK()
+
+        struct Tag: Identifiable { let id: String; let name: String }
+        var searchText = ""
+        var tags = [Tag(id: "a", name: "Alpha")]
+        let binding = Binding(get: { searchText }, set: { searchText = $0 })
+        let tagsBinding = Binding(get: { tags }, set: { tags = $0 })
+
+        let oldDesc = gtkDescribeView(
+            Text("X").searchable(text: binding, tokens: tagsBinding) { t in Text(t.name) }
+        )
+
+        tags = [Tag(id: "a", name: "Alpha"), Tag(id: "b", name: "Beta")]
+        let newDesc = gtkDescribeView(
+            Text("X").searchable(text: binding, tokens: tagsBinding) { t in Text(t.name) }
+        )
+
+        XCTAssertNotEqual(oldDesc, newDesc, "Descriptor should differ when tokens change")
+    }
+
     // MARK: - Safe Area Padding Tests
 
     func testSafeAreaPaddingAllEdgesNilLengthUsesSyntheticDefault() throws {

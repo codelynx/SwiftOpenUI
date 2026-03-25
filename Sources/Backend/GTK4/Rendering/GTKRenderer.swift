@@ -3367,7 +3367,9 @@ extension SearchableView: GTKRenderable, GTKDescribable {
                 text: text.wrappedValue,
                 prompt: prompt,
                 placement: placement,
-                isPresented: isPresented?.wrappedValue)),
+                isPresented: isPresented?.wrappedValue,
+                tokens: tokens,
+                tokenMode: tokenMode)),
             children: [gtkDescribeView(content)])
     }
 
@@ -3413,6 +3415,21 @@ extension SearchableView: GTKRenderable, GTKDescribable {
             },
             GConnectFlags(rawValue: 0)
         )
+
+        // Render token labels between search entry and content
+        if !tokens.isEmpty {
+            let tokenRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4)!
+            gtk_widget_set_margin_start(tokenRow, 4)
+            gtk_widget_set_margin_end(tokenRow, 4)
+            gtk_widget_set_margin_top(tokenRow, 2)
+            gtk_widget_set_margin_bottom(tokenRow, 2)
+            for token in tokens {
+                let label = gtk_label_new(token.label)!
+                gtk_widget_add_css_class(label, "dim-label")
+                gtk_box_append(boxPointer(tokenRow), label)
+            }
+            gtk_box_append(boxPtr, tokenRow)
+        }
 
         let contentWidget = widgetFromOpaque(gtkRenderView(content))
         gtk_widget_set_vexpand(contentWidget, 1)
