@@ -3347,6 +3347,18 @@ extension GeometryReader: GTKRenderable {
 
 // MARK: - Searchable GTK extension
 
+private class SearchSuggestionActionBox {
+    let completion: String
+    let textBinding: Binding<String>
+    let entry: UnsafeMutablePointer<GtkWidget>
+
+    init(completion: String, textBinding: Binding<String>, entry: UnsafeMutablePointer<GtkWidget>) {
+        self.completion = completion
+        self.textBinding = textBinding
+        self.entry = entry
+    }
+}
+
 private class SearchBox {
     let entry: UnsafeMutablePointer<GtkWidget>
     let binding: Binding<String>
@@ -3369,7 +3381,9 @@ extension SearchableView: GTKRenderable, GTKDescribable {
                 placement: placement,
                 isPresented: isPresented?.wrappedValue,
                 tokens: tokens,
-                tokenMode: tokenMode)),
+                tokenMode: tokenMode,
+                suggestions: suggestions,
+                suggestionMode: suggestionMode)),
             children: [gtkDescribeView(content)])
     }
 
@@ -3387,8 +3401,9 @@ extension SearchableView: GTKRenderable, GTKDescribable {
             gtk_swift_editable_set_text(entry, text.wrappedValue)
         }
 
-        // Honor isPresented: hide entry when false
-        if let isPresented = isPresented, !isPresented.wrappedValue {
+        // Honor isPresented: hide entire search UI surface when false
+        let isDismissed = isPresented.map { !$0.wrappedValue } ?? false
+        if isDismissed {
             gtk_widget_set_visible(entry, 0)
         }
 
@@ -3428,7 +3443,42 @@ extension SearchableView: GTKRenderable, GTKDescribable {
                 gtk_widget_add_css_class(label, "dim-label")
                 gtk_box_append(boxPointer(tokenRow), label)
             }
+            if isDismissed { gtk_widget_set_visible(tokenRow, 0) }
             gtk_box_append(boxPtr, tokenRow)
+        }
+
+        // Render suggestion rows as clickable buttons
+        if !suggestions.isEmpty {
+            let suggestionBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2)!
+            gtk_widget_set_margin_start(suggestionBox, 4)
+            gtk_widget_set_margin_end(suggestionBox, 4)
+            for suggestion in suggestions {
+                let btn = gtk_button_new_with_label(suggestion.label)!
+                gtk_widget_set_halign(btn, GTK_ALIGN_START)
+                let completionText = suggestion.completion ?? suggestion.label
+                let textBinding = text
+                let searchEntry = entry
+                let actionBox = Unmanaged.passRetained(
+                    SearchSuggestionActionBox(completion: completionText, textBinding: textBinding, entry: searchEntry)
+                ).toOpaque()
+                g_signal_connect_data(
+                    gpointer(btn),
+                    "clicked",
+                    unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                        let box = Unmanaged<SearchSuggestionActionBox>.fromOpaque(userData!).takeUnretainedValue()
+                        box.textBinding.wrappedValue = box.completion
+                        gtk_swift_editable_set_text(box.entry, box.completion)
+                    } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                    actionBox,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<SearchSuggestionActionBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+                gtk_box_append(boxPointer(suggestionBox), btn)
+            }
+            if isDismissed { gtk_widget_set_visible(suggestionBox, 0) }
+            gtk_box_append(boxPtr, suggestionBox)
         }
 
         let contentWidget = widgetFromOpaque(gtkRenderView(content))
