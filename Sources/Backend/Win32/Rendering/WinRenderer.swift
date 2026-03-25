@@ -1590,8 +1590,9 @@ extension PaddedView: WinRenderable {
 extension SafeAreaPaddingView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         // Batch A: lower to padding with synthetic default of 16 when length is nil.
+        // Negative lengths are clamped to 0 (cross-platform Batch A rule).
         // No native/measured safe-area insets in this batch.
-        let amount = Int32(length ?? 16)
+        let amount = max(0, Int32(length ?? 16))
         let padTop     = edges.contains(.top)      ? amount : 0
         let padBottom  = edges.contains(.bottom)   ? amount : 0
         let padLeading = edges.contains(.leading)  ? amount : 0
@@ -2863,6 +2864,29 @@ extension PaddedView: WinDescribable {
                     bottom: bottom,
                     leading: leading,
                     trailing: trailing
+                )
+            ),
+            children: [winDescribeView(content)]
+        )
+    }
+}
+
+extension SafeAreaPaddingView: WinDescribable {
+    public func winDescribeNode() -> Win32DescriptorNode {
+        let amount = max(0, Int32(length ?? 16))
+        let padTop     = edges.contains(.top)      ? Int(amount) : 0
+        let padBottom  = edges.contains(.bottom)   ? Int(amount) : 0
+        let padLeading = edges.contains(.leading)  ? Int(amount) : 0
+        let padTrailing = edges.contains(.trailing) ? Int(amount) : 0
+        return Win32DescriptorNode(
+            kind: .padding,
+            typeName: String(describing: Self.self),
+            props: .padding(
+                Win32PaddingDescriptor(
+                    top: padTop,
+                    bottom: padBottom,
+                    leading: padLeading,
+                    trailing: padTrailing
                 )
             ),
             children: [winDescribeView(content)]

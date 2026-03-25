@@ -2513,6 +2513,43 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(extraW, 24, "Horizontal padding(12) should add 12px leading + 12px trailing")
         XCTAssertEqual(extraH, 0, "Horizontal-only padding should not add vertical space")
     }
+
+    func testSafeAreaPaddingNegativeLengthClamps() {
+        let ctx = testContext()
+        let view = Text("Hello").safeAreaPadding(-5)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let child = GetWindow(hwnd!, UINT(GW_CHILD))
+        XCTAssertNotNil(child)
+
+        var containerRect = RECT()
+        GetWindowRect(hwnd!, &containerRect)
+        var childRect = RECT()
+        GetWindowRect(child!, &childRect)
+
+        let extraW = (containerRect.right - containerRect.left) - (childRect.right - childRect.left)
+        let extraH = (containerRect.bottom - containerRect.top) - (childRect.bottom - childRect.top)
+        XCTAssertEqual(extraW, 0, "Negative length should clamp to 0")
+        XCTAssertEqual(extraH, 0, "Negative length should clamp to 0")
+    }
+
+    func testSafeAreaPaddingDescriptor() {
+        let node = winDescribeView(Text("Hello").safeAreaPadding(.top, 20))
+        XCTAssertEqual(node.kind, .padding)
+        XCTAssertEqual(node.props, .padding(
+            Win32PaddingDescriptor(top: 20, bottom: 0, leading: 0, trailing: 0)
+        ))
+        XCTAssertEqual(node.children.count, 1)
+    }
+
+    func testSafeAreaPaddingDescriptorDefault() {
+        let node = winDescribeView(Text("Hello").safeAreaPadding())
+        XCTAssertEqual(node.kind, .padding)
+        XCTAssertEqual(node.props, .padding(
+            Win32PaddingDescriptor(top: 16, bottom: 16, leading: 16, trailing: 16)
+        ))
+    }
 }
 
 // MARK: - Test helpers
