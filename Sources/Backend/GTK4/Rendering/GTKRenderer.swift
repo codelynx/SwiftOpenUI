@@ -3359,6 +3359,18 @@ private class SearchSuggestionActionBox {
     }
 }
 
+private class SearchScopeActionBox {
+    let scopeID: String
+    let button: UnsafeMutablePointer<GtkWidget>
+    let selectScope: (String) -> Void
+
+    init(scopeID: String, button: UnsafeMutablePointer<GtkWidget>, selectScope: @escaping (String) -> Void) {
+        self.scopeID = scopeID
+        self.button = button
+        self.selectScope = selectScope
+    }
+}
+
 private class SearchBox {
     let entry: UnsafeMutablePointer<GtkWidget>
     let binding: Binding<String>
@@ -3383,7 +3395,10 @@ extension SearchableView: GTKRenderable, GTKDescribable {
                 tokens: tokens,
                 tokenMode: tokenMode,
                 suggestions: suggestions,
-                suggestionMode: suggestionMode)),
+                suggestionMode: suggestionMode,
+                scopes: scopes,
+                scopeMode: scopeMode,
+                selectedScopeID: selectedScopeID)),
             children: [gtkDescribeView(content)])
     }
 
@@ -3479,6 +3494,50 @@ extension SearchableView: GTKRenderable, GTKDescribable {
             }
             if isDismissed { gtk_widget_set_visible(suggestionBox, 0) }
             gtk_box_append(boxPtr, suggestionBox)
+        }
+
+        // Render scope row as horizontal toggle buttons
+        if !scopes.isEmpty {
+            let scopeRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4)!
+            gtk_widget_set_margin_start(scopeRow, 4)
+            gtk_widget_set_margin_end(scopeRow, 4)
+            gtk_widget_set_margin_top(scopeRow, 2)
+            gtk_widget_set_margin_bottom(scopeRow, 2)
+            let scopeSelector: (String) -> Void = { [self] id in self.selectScope(id: id) }
+            var firstScopeBtn: UnsafeMutablePointer<GtkWidget>? = nil
+            for scope in scopes {
+                let btn = gtk_toggle_button_new_with_label(scope.label)!
+                // Group all scope buttons so only one can be active
+                if let group = firstScopeBtn {
+                    gtk_swift_toggle_button_set_group(btn, group)
+                } else {
+                    firstScopeBtn = btn
+                }
+                if selectedScopeID == scope.id {
+                    gtk_swift_toggle_button_set_active(btn, 1)
+                }
+                let actionBox = Unmanaged.passRetained(
+                    SearchScopeActionBox(scopeID: scope.id, button: btn, selectScope: scopeSelector)
+                ).toOpaque()
+                g_signal_connect_data(
+                    gpointer(btn),
+                    "toggled",
+                    unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                        let box = Unmanaged<SearchScopeActionBox>.fromOpaque(userData!).takeUnretainedValue()
+                        // Only write back when toggling on, not off
+                        guard gtk_swift_toggle_button_get_active(box.button) != 0 else { return }
+                        box.selectScope(box.scopeID)
+                    } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                    actionBox,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<SearchScopeActionBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+                gtk_box_append(boxPointer(scopeRow), btn)
+            }
+            if isDismissed { gtk_widget_set_visible(scopeRow, 0) }
+            gtk_box_append(boxPtr, scopeRow)
         }
 
         let contentWidget = widgetFromOpaque(gtkRenderView(content))

@@ -982,6 +982,63 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(gtk_widget_get_visible(suggestionBox), 0, "Suggestion box should be hidden when dismissed")
     }
 
+    // MARK: - Search Scope Tests
+
+    func testSearchScopesRenderToggleButtons() throws {
+        try requireGTK()
+
+        var searchText = ""
+        var selection = "all"
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content")
+                .searchable(text: Binding(get: { searchText }, set: { searchText = $0 }))
+                .searchScopes(
+                    Binding(get: { selection }, set: { selection = $0 }),
+                    scopes: ["all", "docs", "code"]
+                ) { scope in
+                    Text(scope)
+                }
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        // Layout: entry, scope row, content
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        let scopeRow = try unwrapNextSibling(of: entry)
+        XCTAssertEqual(gtkWidgetTypeName(scopeRow), "GtkBox")
+        // Scope row has 3 toggle buttons
+        let firstBtn = try unwrapFirstChild(of: scopeRow)
+        XCTAssertEqual(gtkWidgetTypeName(firstBtn), "GtkToggleButton")
+        let secondBtn = try unwrapNextSibling(of: firstBtn)
+        XCTAssertEqual(gtkWidgetTypeName(secondBtn), "GtkToggleButton")
+        let thirdBtn = try unwrapNextSibling(of: secondBtn)
+        XCTAssertEqual(gtkWidgetTypeName(thirdBtn), "GtkToggleButton")
+    }
+
+    func testSearchScopeDescriptorDetectsSelectionChange() throws {
+        try requireGTK()
+
+        var searchText = ""
+        var selection = "all"
+        let textBinding = Binding(get: { searchText }, set: { searchText = $0 })
+        let selBinding = Binding(get: { selection }, set: { selection = $0 })
+
+        let oldDesc = gtkDescribeView(
+            Text("X")
+                .searchable(text: textBinding)
+                .searchScopes(selBinding, scopes: ["all", "docs"]) { s in Text(s) }
+        )
+
+        selection = "docs"
+        let newDesc = gtkDescribeView(
+            Text("X")
+                .searchable(text: textBinding)
+                .searchScopes(selBinding, scopes: ["all", "docs"]) { s in Text(s) }
+        )
+
+        XCTAssertNotEqual(oldDesc, newDesc, "Descriptor should differ when scope selection changes")
+    }
+
     // MARK: - Safe Area Padding Tests
 
     func testSafeAreaPaddingAllEdgesNilLengthUsesSyntheticDefault() throws {
