@@ -2708,21 +2708,28 @@ extension ToolbarView: WebRenderable {
         let child = webRenderView(content)
 
         // Inject toolbar items into the current NavigationStack header.
-        // Always restore default visibility in case a previous screen hid it.
+        // Use the merged config from core (covers both modifier orders).
         if let ctx = _webCurrentNavContext {
             ctx.toolbarArea.style = .string(webToolbarAreaDefaultStyle)
             ctx.toolbarArea.innerHTML = ""
 
-            // Filter out removed placements if a config exists
-            let removedSet = ctx.pendingToolbarConfig.map { Set($0.removedPlacements) } ?? []
+            // Filter out removed placements from the merged config
+            let config = toolbarConfiguration
+            let removedSet = Set(config.removedPlacements)
             for item in toolbarItems where !removedSet.contains(item.placement) {
                 let rendered = webRenderAnyView(item.wrapped)
                 _ = ctx.toolbarArea.appendChild(rendered)
             }
 
-            // Apply visibility from config (may hide what we just rendered)
-            webApplyToolbarConfig(ctx)
-            // Clear consumed config so it doesn't leak to later screens
+            // Apply visibility from the merged config
+            switch config.visibility {
+            case .hidden:
+                ctx.toolbarArea.style = "display: none;"
+            case .visible, .automatic, nil:
+                break // already set to default above
+            }
+
+            // Also consume any pending config from ToolbarConfigurationView
             ctx.pendingToolbarConfig = nil
         }
 
