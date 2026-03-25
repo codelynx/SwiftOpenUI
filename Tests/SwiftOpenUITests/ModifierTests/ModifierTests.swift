@@ -3,6 +3,11 @@ import XCTest
 
 final class ModifierTests: XCTestCase {
 
+    struct TestIdentifiableItem: Identifiable {
+        let id: Int
+        let title: String
+    }
+
     // MARK: - ViewModifier preserves content
 
     struct RedBackground: ViewModifier {
@@ -189,6 +194,57 @@ final class ModifierTests: XCTestCase {
         XCTAssertFalse(view.edges.contains(.leading))
         XCTAssertFalse(view.edges.contains(.trailing))
         XCTAssertNil(view.length)
+    }
+
+    // MARK: - Presentation modifiers
+
+    func testSheetOnDismissStoresClosure() {
+        let binding = Binding.constant(true)
+        let view = Text("hello").sheet(isPresented: binding, onDismiss: {}) {
+            Text("sheet")
+        }
+
+        XCTAssertTrue(view.isPresented.wrappedValue)
+        XCTAssertNotNil(view.onDismiss)
+        XCTAssertEqual(view.sheetContent.content, "sheet")
+    }
+
+    func testItemSheetStoresItemBindingAndBuilder() {
+        let binding = Binding.constant(TestIdentifiableItem(id: 7, title: "Record") as TestIdentifiableItem?)
+        let view = Text("hello").sheet(item: binding, onDismiss: {}) { item in
+            Text(item.title)
+        }
+
+        XCTAssertEqual(view.item.wrappedValue?.id, 7)
+        XCTAssertNotNil(view.onDismiss)
+        XCTAssertEqual(view.sheetContent(TestIdentifiableItem(id: 9, title: "Preview")).content, "Preview")
+    }
+
+    func testAlertActionsOverloadStoresButtonsAndEmptyMessage() {
+        let view = Text("hello").alert(
+            "Delete",
+            isPresented: .constant(true),
+            actions: [AlertButton("Delete", role: .destructive)]
+        )
+
+        XCTAssertEqual(view.title, "Delete")
+        XCTAssertEqual(view.message, "")
+        XCTAssertEqual(view.buttons.count, 1)
+        XCTAssertEqual(view.buttons[0].role, .destructive)
+    }
+
+    func testAlertActionsMessageOverloadStoresMessage() {
+        let view = Text("hello").alert(
+            "Delete",
+            isPresented: .constant(true),
+            actions: [AlertButton("Cancel", role: .cancel)],
+            message: "This cannot be undone."
+        )
+
+        XCTAssertEqual(view.title, "Delete")
+        XCTAssertEqual(view.message, "This cannot be undone.")
+        XCTAssertEqual(view.buttons.count, 1)
+        XCTAssertEqual(view.buttons[0].role, .cancel)
     }
 
     // MARK: - Environment modifiers
