@@ -131,12 +131,13 @@ public protocol ToolbarConfigurationProvider {
 }
 
 /// A view that carries toolbar items alongside its content.
-public struct ToolbarView<Content: View>: View, ToolbarProvider {
+public struct ToolbarView<Content: View>: View, ToolbarProvider, ToolbarConfigurationProvider {
     public typealias Body = Never
 
     public let content: Content
     public let toolbarID: String?
     public let toolbarItems: [AnyToolbarItem]
+    public let toolbarConfiguration: ToolbarConfiguration
 
     public var body: Never { fatalError("ToolbarView is a primitive view") }
 }
@@ -164,7 +165,12 @@ extension View {
         @ToolbarContentBuilder content: () -> ToolbarContent
     ) -> ToolbarView<Self> {
         let toolbarContent = content()
-        return ToolbarView(content: self, toolbarID: nil, toolbarItems: toolbarContent.items)
+        return ToolbarView(
+            content: self,
+            toolbarID: nil,
+            toolbarItems: toolbarContent.items,
+            toolbarConfiguration: ToolbarConfiguration()
+        )
     }
 
     /// Adds one or more toolbar items with a stored toolbar identifier.
@@ -173,7 +179,12 @@ extension View {
         @ToolbarContentBuilder content: () -> ToolbarContent
     ) -> ToolbarView<Self> {
         let toolbarContent = content()
-        return ToolbarView(content: self, toolbarID: id, toolbarItems: toolbarContent.items)
+        return ToolbarView(
+            content: self,
+            toolbarID: id,
+            toolbarItems: toolbarContent.items,
+            toolbarConfiguration: ToolbarConfiguration()
+        )
     }
 
     /// Stores toolbar visibility for a target container.
@@ -204,6 +215,33 @@ extension View {
 }
 
 extension ToolbarConfigurationView {
+    /// Adds one or more toolbar items while preserving stored toolbar configuration.
+    public func toolbar(
+        @ToolbarContentBuilder content: () -> ToolbarContent
+    ) -> ToolbarView<Content> {
+        let toolbarContent = content()
+        return ToolbarView(
+            content: self.content,
+            toolbarID: nil,
+            toolbarItems: toolbarContent.items,
+            toolbarConfiguration: toolbarConfiguration
+        )
+    }
+
+    /// Adds one or more toolbar items with a stored identifier while preserving toolbar configuration.
+    public func toolbar(
+        id: String,
+        @ToolbarContentBuilder content: () -> ToolbarContent
+    ) -> ToolbarView<Content> {
+        let toolbarContent = content()
+        return ToolbarView(
+            content: self.content,
+            toolbarID: id,
+            toolbarItems: toolbarContent.items,
+            toolbarConfiguration: toolbarConfiguration
+        )
+    }
+
     /// Updates toolbar visibility while preserving other stored toolbar configuration.
     public func toolbar(
         _ visibility: ToolbarVisibility,
@@ -225,6 +263,44 @@ extension ToolbarConfigurationView {
     ) -> ToolbarConfigurationView<Content> {
         ToolbarConfigurationView(
             content: content,
+            toolbarConfiguration: ToolbarConfiguration(
+                visibility: toolbarConfiguration.visibility,
+                visibilityTarget: toolbarConfiguration.visibilityTarget,
+                removedPlacements: mergeRemovedPlacements(
+                    existing: toolbarConfiguration.removedPlacements,
+                    incoming: placements
+                )
+            )
+        )
+    }
+}
+
+extension ToolbarView {
+    /// Updates toolbar visibility while preserving stored items and toolbar configuration.
+    public func toolbar(
+        _ visibility: ToolbarVisibility,
+        for target: ToolbarPlacementTarget
+    ) -> ToolbarView<Content> {
+        ToolbarView(
+            content: content,
+            toolbarID: toolbarID,
+            toolbarItems: toolbarItems,
+            toolbarConfiguration: ToolbarConfiguration(
+                visibility: visibility,
+                visibilityTarget: target,
+                removedPlacements: toolbarConfiguration.removedPlacements
+            )
+        )
+    }
+
+    /// Adds removed placements while preserving stored items and toolbar configuration.
+    public func toolbar(
+        removing placements: ToolbarItemPlacement...
+    ) -> ToolbarView<Content> {
+        ToolbarView(
+            content: content,
+            toolbarID: toolbarID,
+            toolbarItems: toolbarItems,
             toolbarConfiguration: ToolbarConfiguration(
                 visibility: toolbarConfiguration.visibility,
                 visibilityTarget: toolbarConfiguration.visibilityTarget,

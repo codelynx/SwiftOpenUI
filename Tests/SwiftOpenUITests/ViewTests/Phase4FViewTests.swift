@@ -371,6 +371,7 @@ final class Phase4FViewTests: XCTestCase {
         }
         XCTAssertNil(view.toolbarID)
         XCTAssertEqual(view.toolbarItems.count, 1)
+        XCTAssertEqual(view.toolbarConfiguration, ToolbarConfiguration())
         if case .trailing = view.toolbarItems[0].placement {} else {
             XCTFail("Expected .trailing placement")
         }
@@ -410,6 +411,7 @@ final class Phase4FViewTests: XCTestCase {
 
         XCTAssertEqual(view.toolbarID, "detail-toolbar")
         XCTAssertEqual(view.toolbarItems.count, 1)
+        XCTAssertEqual(view.toolbarConfiguration, ToolbarConfiguration())
     }
 
     func testToolbarVisibilityConfigurationStored() {
@@ -444,9 +446,7 @@ final class Phase4FViewTests: XCTestCase {
 
         XCTAssertEqual(configured.toolbarConfiguration.visibility, .hidden)
         XCTAssertEqual(configured.toolbarConfiguration.visibilityTarget, .navigationBar)
-        XCTAssertTrue(configured.content is ToolbarView<Text>)
-        let wrapped = configured.content as! ToolbarView<Text>
-        XCTAssertEqual(wrapped.toolbarItems.count, 1)
+        XCTAssertEqual(configured.toolbarItems.count, 1)
     }
 
     func testToolbarConfigurationCanMergeVisibilityAndRemovals() {
@@ -461,6 +461,31 @@ final class Phase4FViewTests: XCTestCase {
             configured.toolbarConfiguration.removedPlacements,
             [.trailing, .primaryAction]
         )
+    }
+
+    func testToolbarConfigurationAndItemsComposeInEitherOrder() {
+        let configured = Text("Content")
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .leading) {
+                    Button("Lead") { }
+                }
+                ToolbarItem(placement: .trailing) {
+                    Button("Trail") { }
+                }
+            }
+            .toolbar(removing: .leading)
+
+        XCTAssertEqual(configured.toolbarConfiguration.visibility, .hidden)
+        XCTAssertEqual(configured.toolbarConfiguration.visibilityTarget, .navigationBar)
+        XCTAssertEqual(configured.toolbarConfiguration.removedPlacements, [.leading])
+        XCTAssertEqual(configured.toolbarItems.count, 2)
+        if case .leading = configured.toolbarItems[0].placement {} else {
+            XCTFail("Expected first item to be .leading")
+        }
+        if case .trailing = configured.toolbarItems[1].placement {} else {
+            XCTFail("Expected second item to be .trailing")
+        }
     }
 
     // MARK: - ConfirmationDialog
