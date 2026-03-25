@@ -120,12 +120,19 @@ public struct WebSearchTokenDescriptor: Equatable {
     public let label: String
 }
 
+public struct WebSearchSuggestionDescriptor: Equatable {
+    public let id: String
+    public let label: String
+    public let completion: String?
+}
+
 public struct WebSearchableDescriptor: Equatable {
     public let prompt: String
     public let placement: String
     public let isPresented: Bool?
     public let tokens: [WebSearchTokenDescriptor]
     public let tokenMode: String?
+    public let suggestions: [WebSearchSuggestionDescriptor]
 }
 
 public struct WebSafeAreaPaddingDescriptor: Equatable {

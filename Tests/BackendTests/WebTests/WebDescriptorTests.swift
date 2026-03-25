@@ -805,7 +805,8 @@ final class WebDescriptorTests: XCTestCase {
                     placement: "automatic",
                     isPresented: nil,
                     tokens: [],
-                    tokenMode: nil
+                    tokenMode: nil,
+                    suggestions: []
                 )
             )
         )
@@ -832,7 +833,8 @@ final class WebDescriptorTests: XCTestCase {
                     placement: "toolbar",
                     isPresented: nil,
                     tokens: [],
-                    tokenMode: nil
+                    tokenMode: nil,
+                    suggestions: []
                 )
             )
         )
@@ -857,7 +859,8 @@ final class WebDescriptorTests: XCTestCase {
                     placement: "automatic",
                     isPresented: true,
                     tokens: [],
-                    tokenMode: nil
+                    tokenMode: nil,
+                    suggestions: []
                 )
             )
         )
@@ -880,7 +883,8 @@ final class WebDescriptorTests: XCTestCase {
                     placement: "automatic",
                     isPresented: false,
                     tokens: [],
-                    tokenMode: nil
+                    tokenMode: nil,
+                    suggestions: []
                 )
             )
         )
@@ -902,7 +906,8 @@ final class WebDescriptorTests: XCTestCase {
                     placement: "navigationBarDrawerAlways",
                     isPresented: nil,
                     tokens: [],
-                    tokenMode: nil
+                    tokenMode: nil,
+                    suggestions: []
                 )
             )
         )
@@ -924,7 +929,8 @@ final class WebDescriptorTests: XCTestCase {
                     placement: "sidebar",
                     isPresented: nil,
                     tokens: [],
-                    tokenMode: nil
+                    tokenMode: nil,
+                    suggestions: []
                 )
             )
         )
@@ -1167,7 +1173,8 @@ final class WebDescriptorTests: XCTestCase {
                         WebSearchTokenDescriptor(id: "1", label: "Swift"),
                         WebSearchTokenDescriptor(id: "2", label: "Rust"),
                     ],
-                    tokenMode: "tokens"
+                    tokenMode: "tokens",
+                    suggestions: []
                 )
             )
         )
@@ -1197,7 +1204,8 @@ final class WebDescriptorTests: XCTestCase {
                     tokens: [
                         WebSearchTokenDescriptor(id: "a", label: "Tag A"),
                     ],
-                    tokenMode: "editableTokens"
+                    tokenMode: "editableTokens",
+                    suggestions: []
                 )
             )
         )
@@ -1223,7 +1231,88 @@ final class WebDescriptorTests: XCTestCase {
                     placement: "automatic",
                     isPresented: nil,
                     tokens: [],
-                    tokenMode: "tokens"
+                    tokenMode: "tokens",
+                    suggestions: []
+                )
+            )
+        )
+    }
+
+    // MARK: - Search Suggestions Descriptor Tests
+
+    func testDescribeSearchableWithSuggestions() {
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchSuggestions {
+                Text("Apple")
+                Text("Banana")
+            }
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(node.kind, .composite)
+        XCTAssertEqual(node.typeName, "SearchableView")
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: nil,
+                    suggestions: [
+                        WebSearchSuggestionDescriptor(id: "Apple", label: "Apple", completion: nil),
+                        WebSearchSuggestionDescriptor(id: "Banana", label: "Banana", completion: nil),
+                    ]
+                )
+            )
+        )
+    }
+
+    func testDescribeSearchableWithSearchCompletion() {
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchSuggestions {
+                Text("Show me apples").searchCompletion("apple")
+            }
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: nil,
+                    suggestions: [
+                        WebSearchSuggestionDescriptor(id: "Show me apples|apple", label: "Show me apples", completion: "apple"),
+                    ]
+                )
+            )
+        )
+    }
+
+    func testDescribeSearchableWithEmptySuggestions() {
+        @SwiftOpenUI.State var query = ""
+        let view = Text("Content")
+            .searchable(text: $query)
+            .searchSuggestions { }
+        let node = webDescribeView(view)
+
+        XCTAssertEqual(
+            node.props,
+            .searchable(
+                WebSearchableDescriptor(
+                    prompt: "Search",
+                    placement: "automatic",
+                    isPresented: nil,
+                    tokens: [],
+                    tokenMode: nil,
+                    suggestions: []
                 )
             )
         )
