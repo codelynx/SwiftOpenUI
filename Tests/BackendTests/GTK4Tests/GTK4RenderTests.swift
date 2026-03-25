@@ -903,6 +903,85 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(props.leading, 0)
         XCTAssertEqual(props.trailing, 0)
     }
+
+    // MARK: - Presentation Tests
+
+    func testSheetWithOnDismissRendersContent() throws {
+        try requireGTK()
+
+        var presented = false
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").sheet(isPresented: Binding(get: { presented }, set: { presented = $0 }),
+                               onDismiss: {}) {
+                Text("Sheet")
+            }
+        ))
+        // When not presented, should just render the base content
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
+    func testSheetWithOnDismissPresentedRendersContent() throws {
+        try requireGTK()
+
+        var presented = true
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").sheet(isPresented: Binding(get: { presented }, set: { presented = $0 }),
+                               onDismiss: {}) {
+                Text("Sheet")
+            }
+        ))
+        // Content widget is always returned (sheet is presented via g_idle_add)
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
+    func testItemSheetNilItemRendersContent() throws {
+        try requireGTK()
+
+        struct TestItem: Identifiable { let id: Int; let name: String }
+        var item: TestItem? = nil
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").sheet(
+                item: Binding(get: { item }, set: { item = $0 })
+            ) { i in
+                Text(i.name)
+            }
+        ))
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
+    func testItemSheetNonNilItemRendersContent() throws {
+        try requireGTK()
+
+        struct TestItem: Identifiable { let id: Int; let name: String }
+        var item: TestItem? = TestItem(id: 1, name: "Hello")
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").sheet(
+                item: Binding(get: { item }, set: { item = $0 })
+            ) { i in
+                Text(i.name)
+            }
+        ))
+        // Content widget is returned; sheet presented via g_idle_add
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
+    func testAlertWithActionsAndMessageRendersContent() throws {
+        try requireGTK()
+
+        var presented = false
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").alert("Title",
+                               isPresented: Binding(get: { presented }, set: { presented = $0 }),
+                               actions: [AlertButton("OK")],
+                               message: "Details")
+        ))
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
 }
 
 private func requireGTK(

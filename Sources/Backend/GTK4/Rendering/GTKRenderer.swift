@@ -1402,6 +1402,7 @@ extension SheetModifierView: GTKRenderable {
 
         let sheetView = sheetContent
         let binding = isPresented
+        let userOnDismiss = onDismiss
         let info = Unmanaged.passRetained(SheetInfo(
             anchor: anchor,
             render: { gtkRenderView(sheetView) },
@@ -1410,6 +1411,7 @@ extension SheetModifierView: GTKRenderable {
                 g_object_set_data(obj, "swift-sheet-active", nil)
                 g_object_set_data(obj, "swift-sheet-window", nil)
                 binding.wrappedValue = false
+                userOnDismiss?()
             }
         )).toOpaque()
 
@@ -1432,6 +1434,103 @@ extension SheetModifierView: GTKRenderable {
             )
 
             // Inject dismiss action into environment
+            let previous = getCurrentEnvironment()
+            var env = previous
+            env.dismiss = DismissAction { gtk_window_destroy(dialogWin) }
+            setCurrentEnvironment(env)
+            let sheetWidget = widgetFromOpaque(info.render())
+            setCurrentEnvironment(previous)
+            gtk_window_set_child(dialogWin, sheetWidget)
+
+            let anchorObj = UnsafeMutableRawPointer(info.anchor).assumingMemoryBound(to: GObject.self)
+            g_object_set_data(anchorObj, "swift-sheet-window", gpointer(dialogWin))
+
+            let dismissBox = Unmanaged.passRetained(ClosureBox(info.onDismiss)).toOpaque()
+            g_signal_connect_data(
+                gpointer(dialog),
+                "close-request",
+                unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
+                    return 0
+                } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
+                dismissBox,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+
+            gtk_window_present(dialogWin)
+            g_object_unref(gpointer(info.anchor))
+            return 0
+        }, info)
+
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension ItemSheetModifierView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+
+        let anchor: UnsafeMutablePointer<GtkWidget>
+        if let host = GTKViewHost.getCurrentRebuilding() {
+            anchor = host.container
+        } else {
+            anchor = widget
+        }
+        let gobject = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+
+        guard let currentItem = item.wrappedValue else {
+            // Dismiss active sheet if item became nil
+            if let dialogPtr = g_object_get_data(gobject, "swift-sheet-window") {
+                let dialog = dialogPtr.assumingMemoryBound(to: GtkWindow.self)
+                g_object_set_data(gobject, "swift-sheet-window", nil)
+                gtk_window_destroy(dialog)
+            }
+            return opaqueFromWidget(widget)
+        }
+
+        // Guard against duplicate presentation on rebuild
+        guard g_object_get_data(gobject, "swift-sheet-active") == nil else {
+            return opaqueFromWidget(widget)
+        }
+        g_object_set_data(gobject, "swift-sheet-active", gpointer(bitPattern: 1))
+        g_object_ref(gpointer(anchor))
+
+        let sheetBuilder = sheetContent
+        let itemBinding = item
+        let userOnDismiss = onDismiss
+        let info = Unmanaged.passRetained(SheetInfo(
+            anchor: anchor,
+            render: { gtkRenderView(sheetBuilder(currentItem)) },
+            onDismiss: {
+                let obj = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+                g_object_set_data(obj, "swift-sheet-active", nil)
+                g_object_set_data(obj, "swift-sheet-window", nil)
+                itemBinding.wrappedValue = nil
+                userOnDismiss?()
+            }
+        )).toOpaque()
+
+        g_idle_add({ userData -> gboolean in
+            let info = Unmanaged<SheetInfo>.fromOpaque(userData!).takeRetainedValue()
+            guard let root = gtk_widget_get_root(info.anchor) else {
+                info.onDismiss()
+                g_object_unref(gpointer(info.anchor))
+                return 0
+            }
+
+            let dialog = gtk_window_new()!
+            let dialogWin = windowPointer(dialog)
+            gtk_window_set_modal(dialogWin, 1)
+            gtk_window_set_title(dialogWin, "")
+            gtk_window_set_default_size(dialogWin, 400, 300)
+            gtk_window_set_transient_for(
+                dialogWin,
+                UnsafeMutableRawPointer(root).assumingMemoryBound(to: GtkWindow.self)
+            )
+
             let previous = getCurrentEnvironment()
             var env = previous
             env.dismiss = DismissAction { gtk_window_destroy(dialogWin) }
