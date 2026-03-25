@@ -1491,17 +1491,33 @@ extension ItemSheetModifierView: GTKRenderable {
                 let dialog = dialogPtr.assumingMemoryBound(to: GtkWindow.self)
                 g_object_set_data(gobject, "swift-sheet-active", nil)
                 g_object_set_data(gobject, "swift-sheet-window", nil)
+                g_object_set_data(gobject, "swift-sheet-item-id", nil)
                 gtk_window_destroy(dialog)
                 onDismiss?()
             }
             return opaqueFromWidget(widget)
         }
 
-        // Guard against duplicate presentation on rebuild
-        guard g_object_get_data(gobject, "swift-sheet-active") == nil else {
-            return opaqueFromWidget(widget)
+        // Check if the item identity changed while a sheet is already active
+        let currentIdHash = currentItem.id.hashValue
+        if g_object_get_data(gobject, "swift-sheet-active") != nil {
+            let storedHash = Int(bitPattern: g_object_get_data(gobject, "swift-sheet-item-id"))
+            if storedHash == currentIdHash {
+                // Same item — no change needed
+                return opaqueFromWidget(widget)
+            }
+            // Different item — dismiss old sheet, then fall through to present new one
+            if let dialogPtr = g_object_get_data(gobject, "swift-sheet-window") {
+                let dialog = dialogPtr.assumingMemoryBound(to: GtkWindow.self)
+                g_object_set_data(gobject, "swift-sheet-active", nil)
+                g_object_set_data(gobject, "swift-sheet-window", nil)
+                g_object_set_data(gobject, "swift-sheet-item-id", nil)
+                gtk_window_destroy(dialog)
+                onDismiss?()
+            }
         }
         g_object_set_data(gobject, "swift-sheet-active", gpointer(bitPattern: 1))
+        g_object_set_data(gobject, "swift-sheet-item-id", gpointer(bitPattern: currentIdHash))
         g_object_ref(gpointer(anchor))
 
         let sheetBuilder = sheetContent
@@ -1516,6 +1532,7 @@ extension ItemSheetModifierView: GTKRenderable {
                 guard g_object_get_data(obj, "swift-sheet-active") != nil else { return }
                 g_object_set_data(obj, "swift-sheet-active", nil)
                 g_object_set_data(obj, "swift-sheet-window", nil)
+                g_object_set_data(obj, "swift-sheet-item-id", nil)
                 itemBinding.wrappedValue = nil
                 userOnDismiss?()
             }
