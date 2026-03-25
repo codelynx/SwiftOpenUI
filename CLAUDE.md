@@ -21,12 +21,40 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 - `develop` — active development, all work happens here
 - `experimental/*` — experimental features (e.g. `experimental/web-wasm-poc`)
 
+## Multi-Platform Branch Protocol
+
+- Coordinator creates one pushed core/base branch per batch and declares the exact base commit hash.
+- Every platform handoff must include:
+  - branch
+  - commit
+  - base commit
+  - changed files
+  - tests run
+- Platform branches may edit only backend-owned files and backend tests.
+- Platform branches must not update shared truth docs:
+  - `docs/api/implementation-tracker/**`
+  - `docs/architecture/swiftui-parity-matrix.md`
+  - repo status docs such as `CLAUDE.md`
+- Once any platform branch from a batch is merged into `develop`, sibling platform branches are stale by default.
+- After that point, further platform work must be:
+  - rebased onto current `develop`, or
+  - delivered as focused cherry-pickable commits
+- Use this decision rule:
+  - `batch/*` branch: created from the coordinator’s batch base, intended for one merge
+  - `fix/*` branch: created from current `develop`, intended for quick merge or cherry-pick
+- Coordinator owns:
+  - core API design
+  - merge conflict resolution
+  - tracker regeneration
+  - parity/doc truth
+- If a platform report arrives after the batch is already integrated, coordinator should prefer cherry-picking the focused fix commit instead of merging the stale platform branch head.
+
 ## Build & Test
 
 ```bash
 # macOS (uses real SwiftUI for examples)
 swift build
-swift test                   # 288 tests
+swift test                   # 310 tests
 
 # WebAssembly (requires open-source Swift toolchain, not Xcode's)
 source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
