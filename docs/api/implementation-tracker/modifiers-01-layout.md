@@ -29,6 +29,6 @@ Summary: 24 total, 5 implemented, 2 partial, 17 missing.
 | `padding3D` | Curated only | visionOS 1 | Current | Missing | `-` | 3D padding |
 | `position` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `safeAreaInset` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/SafeAreaModifiers.swift` | GTK: GtkBox reserved-space layout; Win32/Web: reservation with spacing/alignment |
-| `safeAreaPadding` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/SafeAreaModifiers.swift` | New iOS 17 |
+| `safeAreaPadding` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/SafeAreaModifiers.swift` | New iOS 17 \| Batch A synthetic fallback on GTK/Win32/Web: explicit length uses exact amount; nil length uses synthetic default 16; not measured native safe-area padding. |
 | `scenePadding` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `zIndex` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
