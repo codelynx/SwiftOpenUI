@@ -414,6 +414,63 @@ final class Phase4FViewTests: XCTestCase {
         XCTAssertEqual(view.toolbarConfiguration, ToolbarConfiguration())
     }
 
+    func testToolbarModifierChainsMergeItemsInOrder() {
+        let view = Text("Content")
+            .toolbar {
+                ToolbarItem(placement: .leading) {
+                    Button("Lead") { }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .trailing) {
+                    Button("Trail") { }
+                }
+            }
+
+        XCTAssertNil(view.toolbarID)
+        XCTAssertEqual(view.toolbarItems.count, 2)
+        if case .leading = view.toolbarItems[0].placement {} else {
+            XCTFail("Expected first item to be .leading")
+        }
+        if case .trailing = view.toolbarItems[1].placement {} else {
+            XCTFail("Expected second item to be .trailing")
+        }
+    }
+
+    func testToolbarModifierChainsPreserveExistingID() {
+        let view = Text("Content")
+            .toolbar(id: "detail-toolbar") {
+                ToolbarItem(placement: .leading) {
+                    Button("Lead") { }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .trailing) {
+                    Button("Trail") { }
+                }
+            }
+
+        XCTAssertEqual(view.toolbarID, "detail-toolbar")
+        XCTAssertEqual(view.toolbarItems.count, 2)
+    }
+
+    func testToolbarModifierChainsCanReplaceID() {
+        let view = Text("Content")
+            .toolbar {
+                ToolbarItem(placement: .leading) {
+                    Button("Lead") { }
+                }
+            }
+            .toolbar(id: "secondary-toolbar") {
+                ToolbarItem(placement: .trailing) {
+                    Button("Trail") { }
+                }
+            }
+
+        XCTAssertEqual(view.toolbarID, "secondary-toolbar")
+        XCTAssertEqual(view.toolbarItems.count, 2)
+    }
+
     func testToolbarVisibilityConfigurationStored() {
         let view = Text("Content").toolbar(.hidden, for: .navigationBar)
 
@@ -470,6 +527,33 @@ final class Phase4FViewTests: XCTestCase {
                 ToolbarItem(placement: .leading) {
                     Button("Lead") { }
                 }
+                ToolbarItem(placement: .trailing) {
+                    Button("Trail") { }
+                }
+            }
+            .toolbar(removing: .leading)
+
+        XCTAssertEqual(configured.toolbarConfiguration.visibility, .hidden)
+        XCTAssertEqual(configured.toolbarConfiguration.visibilityTarget, .navigationBar)
+        XCTAssertEqual(configured.toolbarConfiguration.removedPlacements, [.leading])
+        XCTAssertEqual(configured.toolbarItems.count, 2)
+        if case .leading = configured.toolbarItems[0].placement {} else {
+            XCTFail("Expected first item to be .leading")
+        }
+        if case .trailing = configured.toolbarItems[1].placement {} else {
+            XCTFail("Expected second item to be .trailing")
+        }
+    }
+
+    func testToolbarItemsAndConfigurationComposeAcrossRepeatedToolbarCalls() {
+        let configured = Text("Content")
+            .toolbar {
+                ToolbarItem(placement: .leading) {
+                    Button("Lead") { }
+                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbar {
                 ToolbarItem(placement: .trailing) {
                     Button("Trail") { }
                 }

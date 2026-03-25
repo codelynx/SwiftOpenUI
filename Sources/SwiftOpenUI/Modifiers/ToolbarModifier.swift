@@ -276,6 +276,33 @@ extension ToolbarConfigurationView {
 }
 
 extension ToolbarView {
+    /// Adds one or more toolbar items while preserving existing items and configuration.
+    public func toolbar(
+        @ToolbarContentBuilder content: () -> ToolbarContent
+    ) -> ToolbarView<Content> {
+        let toolbarContent = content()
+        return ToolbarView(
+            content: self.content,
+            toolbarID: toolbarID,
+            toolbarItems: toolbarItems + toolbarContent.items,
+            toolbarConfiguration: toolbarConfiguration
+        )
+    }
+
+    /// Adds one or more toolbar items with a stored identifier while preserving configuration.
+    public func toolbar(
+        id: String,
+        @ToolbarContentBuilder content: () -> ToolbarContent
+    ) -> ToolbarView<Content> {
+        let toolbarContent = content()
+        return ToolbarView(
+            content: self.content,
+            toolbarID: id,
+            toolbarItems: toolbarItems + toolbarContent.items,
+            toolbarConfiguration: toolbarConfiguration
+        )
+    }
+
     /// Updates toolbar visibility while preserving stored items and toolbar configuration.
     public func toolbar(
         _ visibility: ToolbarVisibility,

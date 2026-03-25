@@ -42,7 +42,7 @@ SwiftOpenUI now tracks parity at two levels:
 Use the matrix when you want to know how a feature behaves on a specific backend. Use the implementation tracker when you want to know whether a SwiftUI view or modifier family exists in SwiftOpenUI at all.
 
 Current examples:
-- `.searchable()` is in Batch A on GTK4, Win32, and Web: the search field works, but placement is still fallback-level.
+- `.searchable()` is implemented on GTK4, Win32, and Web, with fallback-level placement and lightweight token/suggestion/scope UI documented in the matrix.
 - `.safeAreaInset()` and `.safeAreaPadding()` exist on GTK4, Win32, and Web, with synthetic or partial backend behavior documented in the matrix.
 - `.toolbar()` and `.sheet()` have working GTK4, Win32, and Web support, while the tracker shows which overload families are implemented vs still pending.
 
