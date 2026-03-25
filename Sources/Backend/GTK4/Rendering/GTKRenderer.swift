@@ -1410,6 +1410,8 @@ extension SheetModifierView: GTKRenderable {
             render: { gtkRenderView(sheetView) },
             onDismiss: {
                 let obj = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+                // Idempotent: guard against double-dismiss from both programmatic and signal paths
+                guard g_object_get_data(obj, "swift-sheet-active") != nil else { return }
                 g_object_set_data(obj, "swift-sheet-active", nil)
                 g_object_set_data(obj, "swift-sheet-window", nil)
                 binding.wrappedValue = false
@@ -1510,6 +1512,8 @@ extension ItemSheetModifierView: GTKRenderable {
             render: { gtkRenderView(sheetBuilder(currentItem)) },
             onDismiss: {
                 let obj = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
+                // Idempotent: guard against double-dismiss from both programmatic and signal paths
+                guard g_object_get_data(obj, "swift-sheet-active") != nil else { return }
                 g_object_set_data(obj, "swift-sheet-active", nil)
                 g_object_set_data(obj, "swift-sheet-window", nil)
                 itemBinding.wrappedValue = nil
