@@ -2695,6 +2695,58 @@ extension ToolbarView: WebRenderable {
     }
 }
 
+extension ToolbarConfigurationView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+
+        if let ctx = _webCurrentNavContext {
+            let config = toolbarConfiguration
+
+            // Honor hidden visibility: hide the toolbar area
+            if config.visibility == .hidden {
+                ctx.toolbarArea.style = "display: none;"
+            } else if config.visibility == .visible {
+                ctx.toolbarArea.style = "display: flex; align-items: center; gap: 4px;"
+            }
+
+            // Remove items matching removed placements
+            if !config.removedPlacements.isEmpty {
+                // Walk up the view tree to find the nearest ToolbarView's items
+                // and filter them. Since toolbar items are already rendered by
+                // ToolbarView, we remove matching children from the toolbar area.
+                let removedSet = Set(config.removedPlacements)
+                // Re-render toolbar area without removed placements if a
+                // ToolbarProvider is in the content tree
+                if let provider = findToolbarProvider(in: content) {
+                    ctx.toolbarArea.innerHTML = ""
+                    for item in provider.toolbarItems where !removedSet.contains(item.placement) {
+                        let rendered = webRenderAnyView(item.wrapped)
+                        _ = ctx.toolbarArea.appendChild(rendered)
+                    }
+                }
+            }
+        }
+
+        return child
+    }
+}
+
+/// Walk a view's body to find the nearest ToolbarProvider.
+private func findToolbarProvider<V: View>(in view: V) -> ToolbarProvider? {
+    if let provider = view as? ToolbarProvider {
+        return provider
+    }
+    if V.Body.self != Never.self {
+        return findToolbarProviderAny(view.body)
+    }
+    return nil
+}
+
+private func findToolbarProviderAny(_ view: any View) -> ToolbarProvider? {
+    func find<V: View>(_ v: V) -> ToolbarProvider? { findToolbarProvider(in: v) }
+    return find(view)
+}
+
 // MARK: - Canvas
 
 /// Wraps a JS CanvasRenderingContext2D for use as DrawingContext.cr
