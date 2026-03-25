@@ -696,6 +696,126 @@ final class GTK4RenderTests: XCTestCase {
         let boxSpacing = gtk_box_get_spacing(boxPointer(widget))
         XCTAssertEqual(boxSpacing, 12)
     }
+
+    // MARK: - Searchable Tests
+
+    func testSearchableRendersSearchEntryAboveContent() throws {
+        try requireGTK()
+
+        var searchText = ""
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(text: Binding(get: { searchText }, set: { searchText = $0 }))
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        // First child should be a search entry, second should be content
+        let first = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(first), "GtkSearchEntry")
+
+        let second = try unwrapNextSibling(of: first)
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: second)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Content")
+    }
+
+    func testSearchableWithPlacementRendersWithoutCrash() throws {
+        try requireGTK()
+
+        var searchText = ""
+        // Non-default placement should still render (advisory in Batch A)
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(
+                text: Binding(get: { searchText }, set: { searchText = $0 }),
+                placement: .toolbar
+            )
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkBox")
+
+        let first = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(first), "GtkSearchEntry")
+    }
+
+    func testSearchableIsPresentedFalseHidesEntry() throws {
+        try requireGTK()
+
+        var searchText = ""
+        var presented = false
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(
+                text: Binding(get: { searchText }, set: { searchText = $0 }),
+                isPresented: Binding(get: { presented }, set: { presented = $0 })
+            )
+        ))
+
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        XCTAssertEqual(gtk_widget_get_visible(entry), 0, "Entry should be hidden when isPresented is false")
+    }
+
+    func testSearchableIsPresentedTrueShowsEntry() throws {
+        try requireGTK()
+
+        var searchText = ""
+        var presented = true
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Content").searchable(
+                text: Binding(get: { searchText }, set: { searchText = $0 }),
+                isPresented: Binding(get: { presented }, set: { presented = $0 })
+            )
+        ))
+
+        let entry = try unwrapFirstChild(of: widget)
+        XCTAssertEqual(gtkWidgetTypeName(entry), "GtkSearchEntry")
+        // Default visibility is true (GTK shows widgets by default)
+        XCTAssertNotEqual(gtk_widget_get_visible(entry), 0, "Entry should be visible when isPresented is true")
+    }
+
+    func testSearchableExternalTextChangeTriggersDescriptorUpdate() throws {
+        try requireGTK()
+
+        var searchText = "old"
+        let binding = Binding(get: { searchText }, set: { searchText = $0 })
+
+        let host = GTKViewHost(buildBody: {
+            gtkRenderView(Text("Content").searchable(text: binding))
+        })
+        host.describeBody = {
+            gtkDescribeView(Text("Content").searchable(text: binding))
+        }
+
+        let previousHost = GTKViewHost.getCurrentRebuilding()
+        GTKViewHost.setCurrentRebuilding(host)
+        let widget = host.buildBodyWithTracking()
+        GTKViewHost.setCurrentRebuilding(previousHost)
+
+        let child = widgetFromOpaque(widget)
+        gtk_box_append(boxPointer(host.container), child)
+
+        let descriptor = gtkDescribeView(Text("Content").searchable(text: binding))
+        let identified = gtkIdentifyDescriptorTree(descriptor)
+        host.lastRetainedDescriptor = gtkRetainDescriptorTree(identified)
+        var executor = gtkMakeExecutorTree(from: identified)
+        executor = gtkCaptureSupportedNativeSlots(from: child, descriptorRoot: identified, executorRoot: executor)
+        host.retainedExecutor = executor
+
+        // Verify initial text descriptor includes "old"
+        let oldDesc = gtkDescribeView(Text("Content").searchable(text: binding))
+
+        // Change external text
+        searchText = "new"
+        let newDesc = gtkDescribeView(Text("Content").searchable(text: binding))
+
+        // Descriptors should differ because text changed
+        XCTAssertNotEqual(oldDesc, newDesc,
+                          "Descriptor should change when bound text changes")
+
+        // Verify the plan detects an update, not a reuse
+        let oldId = gtkIdentifyDescriptorTree(oldDesc)
+        let newId = gtkIdentifyDescriptorTree(newDesc)
+        let retained = gtkRetainDescriptorTree(oldId)
+        let plan = gtkPlanDescriptorTree(old: retained, new: newId)
+        XCTAssertNotEqual(plan.kind, .reuse,
+                          "Plan should not be .reuse when text changes")
+    }
 }
 
 private func requireGTK(

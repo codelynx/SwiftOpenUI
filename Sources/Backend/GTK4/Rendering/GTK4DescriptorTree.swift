@@ -14,6 +14,7 @@ public enum GTK4DescriptorKind: Equatable {
     case composite
     case divider
     case safeAreaInset
+    case searchable
     case font
     case text
     case color
@@ -108,6 +109,13 @@ public struct GTK4SafeAreaInsetDescriptor: Equatable {
     public let spacing: Int
 }
 
+public struct GTK4SearchableDescriptor: Equatable {
+    public let text: String
+    public let prompt: String
+    public let placement: SearchFieldPlacement
+    public let isPresented: Bool?
+}
+
 public struct GTK4CanvasDescriptor: Equatable {
     public let width: Int
     public let height: Int
@@ -149,6 +157,7 @@ public enum GTK4DescriptorProps: Equatable {
     case slider(GTK4SliderDescriptor)
     case vStack(GTK4VStackDescriptor)
     case safeAreaInset(GTK4SafeAreaInsetDescriptor)
+    case searchable(GTK4SearchableDescriptor)
     case zStack(GTK4ZStackDescriptor)
 }
 
@@ -283,6 +292,7 @@ public enum GTK4DescriptorUpdateIntent: Equatable {
     case hStackLayout
     case paddingLayout
     case safeAreaInsetLayout
+    case searchableLayout
     case sliderConfiguration
     case sliderValue
     case textContent
@@ -594,6 +604,7 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
     case .spacer:        return .none
     case .composite:     return .none
     case .safeAreaInset: return .safeAreaInsetLayout
+    case .searchable:    return .searchableLayout
     }
 }
 
@@ -722,7 +733,7 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
     case .paddingLayout:
         return gtkPaddingLayoutHook(action: action, performMutation: performMutation)
     case .backgroundColor, .borderStyle, .fontStyle, .frameLayout, .foregroundColor,
-         .hStackLayout, .safeAreaInsetLayout, .sliderConfiguration,
+         .hStackLayout, .safeAreaInsetLayout, .searchableLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet
         return gtkUpdatedHookResult(action: action, intent: action.updateIntent,
