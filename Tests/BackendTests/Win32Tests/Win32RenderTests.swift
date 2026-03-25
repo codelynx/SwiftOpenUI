@@ -3352,6 +3352,85 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotEqual(pt0.x, pt1.x,
             "Leading and trailing items should be at different X positions")
     }
+
+    // MARK: - Toolbar Batch B (visibility and removal)
+
+    func testToolbarHiddenVisibilitySkipsRendering() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .toolbar {
+                ToolbarItem(placement: .trailing) {
+                    Button("Action") {}
+                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // With hidden visibility, the toolbar items should not be rendered.
+        // The result should be the content HWND directly, no toolbar container.
+        let childCount = countDirectChildren(of: hwnd!)
+        // A toolbar container would have toolbar items + content as children.
+        // Without toolbar, content renders directly with no extra wrapper.
+        XCTAssertEqual(childCount, 0,
+            "Hidden toolbar should not create a toolbar container with children")
+    }
+
+    func testToolbarRemovingPlacementFiltersItems() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .toolbar {
+                ToolbarItem(placement: .leading) {
+                    Button("Lead") {}
+                }
+                ToolbarItem(placement: .trailing) {
+                    Button("Trail") {}
+                }
+            }
+            .toolbar(removing: .leading)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Only the trailing item should remain.
+        // Fallback toolbar renders items at y=0 in a container.
+        let items = collectToolbarBarChildren(in: hwnd!)
+        XCTAssertEqual(items.count, 1,
+            "Only trailing item should remain after removing .leading")
+    }
+
+    func testToolbarRemovingAllPlacementsReturnsContent() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .toolbar {
+                ToolbarItem(placement: .trailing) {
+                    Button("Action") {}
+                }
+            }
+            .toolbar(removing: .trailing)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // All items removed — no toolbar container, just content
+        let childCount = countDirectChildren(of: hwnd!)
+        XCTAssertEqual(childCount, 0,
+            "Removing all placements should return content without toolbar")
+    }
+
+    func testToolbarVisibleExplicitStillRenders() {
+        let ctx = testContext()
+        let view = Text("Content")
+            .toolbar {
+                ToolbarItem(placement: .trailing) {
+                    Button("Action") {}
+                }
+            }
+            .toolbar(.visible, for: .navigationBar)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let items = collectToolbarBarChildren(in: hwnd!)
+        XCTAssertEqual(items.count, 1, "Visible toolbar should still render items")
+    }
 }
 
 // MARK: - Test helpers
@@ -3440,6 +3519,16 @@ private let testCommandDispatchProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lPara
         return 0
     }
     return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
+private func countDirectChildren(of parent: HWND) -> Int {
+    var count = 0
+    var child = GetWindow(parent, UINT(GW_CHILD))
+    while let c = child {
+        count += 1
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+    return count
 }
 
 private func collectButtonControls(in parent: HWND, into result: inout [HWND]) {
