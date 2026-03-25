@@ -2143,8 +2143,7 @@ private func webCreateModalOverlay(
     presented: Binding<Bool>,
     message: String? = nil,
     buttons: [AlertButton] = [],
-    sheetContent: JSValue? = nil,
-    onDismiss: (() -> Void)? = nil
+    sheetContent: JSValue? = nil
 ) -> JSValue {
     let overlay = document.createElement("div")
     overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 9999;"
@@ -2171,7 +2170,6 @@ private func webCreateModalOverlay(
         closeBtn.style = "display: block; width: 100%; padding: 8px; margin-top: 12px; cursor: pointer; border: none; border-radius: 4px; font-size: 14px; background: #555; color: white;"
         let handler = webMakeClosure { _ in
             presented.wrappedValue = false
-            onDismiss?()
             return .undefined
         }
         closeBtn.onclick = .object(handler)
@@ -2193,7 +2191,6 @@ private func webCreateModalOverlay(
         let handler = webMakeClosure { _ in
             action()
             presented.wrappedValue = false
-            onDismiss?()
             return .undefined
         }
         btn.onclick = .object(handler)
@@ -2526,14 +2523,17 @@ extension NavigationSplitView: WebRenderable {
 extension SheetModifierView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
+        let host = WebViewHost.currentRebuilding
+        let sheetKey = host?.nextSheetKey() ?? -1
 
         if isPresented.wrappedValue {
+            // Register this sheet as active for transition detection
+            host?.currentSheetState[sheetKey] = onDismiss
             let sheetEl = webRenderView(sheetContent)
             let overlay = webCreateModalOverlay(
                 title: "",
                 presented: isPresented,
-                sheetContent: sheetEl,
-                onDismiss: onDismiss
+                sheetContent: sheetEl
             )
             let wrapper = document.createElement("div")
             _ = wrapper.appendChild(child)
@@ -2541,6 +2541,7 @@ extension SheetModifierView: WebRenderable {
             return wrapper
         }
 
+        // Not presenting — host post-render check handles onDismiss transition
         return child
     }
 }
@@ -2548,20 +2549,20 @@ extension SheetModifierView: WebRenderable {
 extension ItemSheetModifierView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
+        let host = WebViewHost.currentRebuilding
+        let sheetKey = host?.nextSheetKey() ?? -1
 
         if let currentItem = item.wrappedValue {
+            // Register this item sheet as active for transition detection
+            host?.currentSheetState[sheetKey] = onDismiss
             let sheetEl = webRenderView(sheetContent(currentItem))
             let itemBinding = item
-            let dismissCallback = onDismiss
             let overlay = webCreateModalOverlay(
                 title: "",
                 presented: Binding(
                     get: { itemBinding.wrappedValue != nil },
                     set: { newValue in
-                        if !newValue {
-                            itemBinding.wrappedValue = nil
-                            dismissCallback?()
-                        }
+                        if !newValue { itemBinding.wrappedValue = nil }
                     }
                 ),
                 sheetContent: sheetEl
@@ -2572,6 +2573,7 @@ extension ItemSheetModifierView: WebRenderable {
             return wrapper
         }
 
+        // Not presenting — host post-render check handles onDismiss transition
         return child
     }
 }

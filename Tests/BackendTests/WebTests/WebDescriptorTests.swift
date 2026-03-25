@@ -999,4 +999,125 @@ final class WebDescriptorTests: XCTestCase {
         )
     }
 
+    // MARK: - Sheet Dismiss Transition Tracking Tests
+    //
+    // These test the transition detection algorithm directly using plain
+    // dictionaries, matching the logic in WebViewHost.rebuild(). We cannot
+    // instantiate WebViewHost in unit tests (requires JavaScriptKit runtime).
+
+    func testSheetTransitionTrackingPresentedThenDismissed() {
+        var previousState: [Int: (() -> Void)?] = [:]
+        var currentState: [Int: (() -> Void)?] = [:]
+        var counter = 0
+
+        // First render: sheet presenting at key 0
+        var dismissed = false
+        currentState[counter] = { dismissed = true }
+        counter += 1
+
+        // Swap for next render
+        previousState = currentState
+        currentState = [:]
+        counter = 0
+
+        // Second render: sheet not presenting (key 0 not registered)
+        counter += 1 // still consume the key slot
+
+        // Detect transition
+        for (k, callback) in previousState {
+            if currentState[k] == nil, let dismiss = callback {
+                dismiss()
+            }
+        }
+
+        XCTAssertTrue(dismissed, "onDismiss should fire on presented→dismissed transition")
+    }
+
+    func testSheetTransitionTrackingStaysPresented() {
+        var previousState: [Int: (() -> Void)?] = [:]
+        var currentState: [Int: (() -> Void)?] = [:]
+
+        // First render: sheet presenting at key 0
+        currentState[0] = { XCTFail("onDismiss should not fire while still presented") }
+
+        // Swap
+        previousState = currentState
+        currentState = [:]
+
+        // Second render: sheet still presenting at key 0
+        currentState[0] = { XCTFail("onDismiss should not fire") }
+
+        // Detect transition — should NOT fire
+        for (k, callback) in previousState {
+            if currentState[k] == nil, let dismiss = callback {
+                dismiss()
+            }
+        }
+    }
+
+    func testSheetTransitionTrackingNeverPresented() {
+        let previousState: [Int: (() -> Void)?] = [:]
+        let currentState: [Int: (() -> Void)?] = [:]
+
+        // Detect transition — should NOT fire (empty dictionaries)
+        for (k, callback) in previousState {
+            if currentState[k] == nil, let dismiss = callback {
+                dismiss()
+            }
+        }
+    }
+
+    func testSheetTransitionTrackingNoCrossTalkBetweenSiblings() {
+        var previousState: [Int: (() -> Void)?] = [:]
+        var currentState: [Int: (() -> Void)?] = [:]
+
+        // First render: sheet A (key 0) presenting, sheet B (key 1) not
+        var aDismissed = false
+        currentState[0] = { aDismissed = true }
+
+        // Swap
+        previousState = currentState
+        currentState = [:]
+
+        // Second render: A still presenting, B still not
+        currentState[0] = { XCTFail("A is still presenting") }
+
+        // Detect transition
+        for (k, callback) in previousState {
+            if currentState[k] == nil, let dismiss = callback {
+                dismiss()
+            }
+        }
+
+        XCTAssertFalse(aDismissed, "Sheet A should not have onDismiss fired — it's still presenting")
+    }
+
+    func testSheetTransitionTrackingOnlyDismissedSheetFires() {
+        var previousState: [Int: (() -> Void)?] = [:]
+        var currentState: [Int: (() -> Void)?] = [:]
+
+        // First render: both sheets presenting
+        var aDismissed = false
+        var bDismissed = false
+        currentState[0] = { aDismissed = true }
+        currentState[1] = { bDismissed = true }
+
+        // Swap
+        previousState = currentState
+        currentState = [:]
+
+        // Second render: A dismissed, B still presenting
+        currentState[1] = { XCTFail("B is still presenting") }
+
+        // Detect transition
+        for (k, callback) in previousState {
+            if currentState[k] == nil, let dismiss = callback {
+                dismiss()
+            }
+        }
+
+        XCTAssertTrue(aDismissed, "Sheet A should have onDismiss fired")
+        XCTAssertFalse(bDismissed, "Sheet B should NOT have onDismiss fired — still presenting")
+    }
+
 }

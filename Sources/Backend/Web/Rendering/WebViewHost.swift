@@ -23,6 +23,19 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
     /// Per-host slot table — isolates slot ownership so rebuilding
     /// one host does not invalidate slots for unrelated hosts.
     let slotTable = WebSlotTable()
+    /// Per-host sheet dismiss tracking for detecting programmatic dismissal.
+    /// Keyed by render-order counter — stable as long as the view tree structure
+    /// is deterministic (same as SwiftUI's structural identity model).
+    var previousSheetState: [Int: (() -> Void)?] = [:]
+    var currentSheetState: [Int: (() -> Void)?] = [:]
+    var sheetCounter: Int = 0
+
+    func nextSheetKey() -> Int {
+        let key = sheetCounter
+        sheetCounter += 1
+        return key
+    }
+
     private var scheduled = false
     private var interactiveUpdateDepth = 0
     private var rebuildDeferredDuringInteraction = false
@@ -150,6 +163,11 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         // Release old state before new render pass to free memory
         clear()
 
+        // Prepare sheet transition tracking for this render pass
+        previousSheetState = currentSheetState
+        currentSheetState = [:]
+        sheetCounter = 0
+
         // Remove old children
         container.innerHTML = ""
 
@@ -165,6 +183,14 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
             setCurrentEnvironment(previousEnv)
 
             _ = container.appendChild(element)
+        }
+
+        // Detect sheet transitions: fire onDismiss for sheets that were
+        // presenting last render but are not presenting now.
+        for (key, callback) in previousSheetState {
+            if currentSheetState[key] == nil, let dismiss = callback {
+                dismiss()
+            }
         }
 
         // Capture descriptor state for next rebuild's narrow mutation path
