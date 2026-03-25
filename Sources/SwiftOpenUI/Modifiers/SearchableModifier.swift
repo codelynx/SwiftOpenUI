@@ -23,6 +23,11 @@ public enum SearchSuggestionMode: Equatable {
     case suggestions
 }
 
+/// Simplified scope mode for searchable scope families.
+public enum SearchScopeMode: Equatable {
+    case scopes
+}
+
 /// Erased token value stored by the searchable primitive.
 public struct SearchTokenValue: Equatable {
     public let id: String
@@ -44,6 +49,17 @@ public struct SearchSuggestionValue: Equatable {
         self.id = id
         self.label = label
         self.completion = completion
+    }
+}
+
+/// Erased scope value stored by the searchable primitive.
+public struct SearchScopeValue: Equatable {
+    public let id: String
+    public let label: String
+
+    public init(id: String, label: String) {
+        self.id = id
+        self.label = label
     }
 }
 
@@ -92,8 +108,46 @@ public struct SearchableView<Content: View>: View, PrimitiveView {
     public let tokenMode: SearchTokenMode?
     public let suggestions: [SearchSuggestionValue]
     public let suggestionMode: SearchSuggestionMode?
+    public let scopes: [SearchScopeValue]
+    public let scopeMode: SearchScopeMode?
+    public let selectedScopeID: String?
+    private let applySelectedScopeID: ((String) -> Void)?
+
+    init(
+        content: Content,
+        text: Binding<String>,
+        prompt: String,
+        placement: SearchFieldPlacement,
+        isPresented: Binding<Bool>?,
+        tokens: [SearchTokenValue],
+        tokenMode: SearchTokenMode?,
+        suggestions: [SearchSuggestionValue],
+        suggestionMode: SearchSuggestionMode?,
+        scopes: [SearchScopeValue],
+        scopeMode: SearchScopeMode?,
+        selectedScopeID: String?,
+        applySelectedScopeID: ((String) -> Void)?
+    ) {
+        self.content = content
+        self.text = text
+        self.prompt = prompt
+        self.placement = placement
+        self.isPresented = isPresented
+        self.tokens = tokens
+        self.tokenMode = tokenMode
+        self.suggestions = suggestions
+        self.suggestionMode = suggestionMode
+        self.scopes = scopes
+        self.scopeMode = scopeMode
+        self.selectedScopeID = selectedScopeID
+        self.applySelectedScopeID = applySelectedScopeID
+    }
 
     public var body: Never { fatalError("SearchableView is a primitive view") }
+
+    public func selectScope(id: String) {
+        applySelectedScopeID?(id)
+    }
 }
 
 private func makeSearchTokenValue<Token: Identifiable>(
@@ -103,6 +157,16 @@ private func makeSearchTokenValue<Token: Identifiable>(
     SearchTokenValue(
         id: String(describing: token.id),
         label: label(token).content
+    )
+}
+
+private func makeSearchScopeValue<Scope: Hashable>(
+    from scope: Scope,
+    label: (Scope) -> Text
+) -> SearchScopeValue {
+    SearchScopeValue(
+        id: String(describing: scope),
+        label: label(scope).content
     )
 }
 
@@ -118,7 +182,11 @@ extension View {
             tokens: [],
             tokenMode: nil,
             suggestions: [],
-            suggestionMode: nil
+            suggestionMode: nil,
+            scopes: [],
+            scopeMode: nil,
+            selectedScopeID: nil,
+            applySelectedScopeID: nil
         )
     }
 
@@ -137,7 +205,11 @@ extension View {
             tokens: [],
             tokenMode: nil,
             suggestions: [],
-            suggestionMode: nil
+            suggestionMode: nil,
+            scopes: [],
+            scopeMode: nil,
+            selectedScopeID: nil,
+            applySelectedScopeID: nil
         )
     }
 
@@ -157,7 +229,11 @@ extension View {
             tokens: [],
             tokenMode: nil,
             suggestions: [],
-            suggestionMode: nil
+            suggestionMode: nil,
+            scopes: [],
+            scopeMode: nil,
+            selectedScopeID: nil,
+            applySelectedScopeID: nil
         )
     }
 
@@ -178,7 +254,11 @@ extension View {
             tokens: tokens.wrappedValue.map { makeSearchTokenValue(from: $0, label: token) },
             tokenMode: .tokens,
             suggestions: [],
-            suggestionMode: nil
+            suggestionMode: nil,
+            scopes: [],
+            scopeMode: nil,
+            selectedScopeID: nil,
+            applySelectedScopeID: nil
         )
     }
 
@@ -199,7 +279,11 @@ extension View {
             tokens: editableTokens.wrappedValue.map { makeSearchTokenValue(from: $0, label: token) },
             tokenMode: .editableTokens,
             suggestions: [],
-            suggestionMode: nil
+            suggestionMode: nil,
+            scopes: [],
+            scopeMode: nil,
+            selectedScopeID: nil,
+            applySelectedScopeID: nil
         )
     }
 }
@@ -218,7 +302,40 @@ extension SearchableView {
             tokens: self.tokens,
             tokenMode: self.tokenMode,
             suggestions: content(),
-            suggestionMode: .suggestions
+            suggestionMode: .suggestions,
+            scopes: self.scopes,
+            scopeMode: self.scopeMode,
+            selectedScopeID: self.selectedScopeID,
+            applySelectedScopeID: self.applySelectedScopeID
+        )
+    }
+
+    /// Adds mutually exclusive search scopes below the searchable field.
+    public func searchScopes<Scope: Hashable>(
+        _ selection: Binding<Scope>,
+        scopes: [Scope],
+        scope: (Scope) -> Text
+    ) -> SearchableView<Content> {
+        let scopeValues = scopes.map { makeSearchScopeValue(from: $0, label: scope) }
+        let selectionMap = Dictionary(uniqueKeysWithValues: zip(scopeValues.map(\.id), scopes))
+        return SearchableView(
+            content: self.content,
+            text: self.text,
+            prompt: self.prompt,
+            placement: self.placement,
+            isPresented: self.isPresented,
+            tokens: self.tokens,
+            tokenMode: self.tokenMode,
+            suggestions: self.suggestions,
+            suggestionMode: self.suggestionMode,
+            scopes: scopeValues,
+            scopeMode: .scopes,
+            selectedScopeID: String(describing: selection.wrappedValue),
+            applySelectedScopeID: { selectedID in
+                if let scopeValue = selectionMap[selectedID] {
+                    selection.wrappedValue = scopeValue
+                }
+            }
         )
     }
 }

@@ -209,6 +209,52 @@ final class Phase4FViewTests: XCTestCase {
         XCTAssertEqual(searchable.suggestions[1].completion, "B")
     }
 
+    func testSearchableStoresScopes() {
+        enum Scope: String, Hashable {
+            case all
+            case open
+            case closed
+        }
+
+        let selected = Binding.constant(Scope.open)
+        let searchable = Text("Content")
+            .searchable(text: .constant("query"))
+            .searchScopes(selected, scopes: [Scope.all, Scope.open, Scope.closed]) { scope in
+                Text(scope.rawValue.capitalized)
+            }
+
+        XCTAssertEqual(searchable.scopeMode, .scopes)
+        XCTAssertEqual(searchable.selectedScopeID, "open")
+        XCTAssertEqual(
+            searchable.scopes,
+            [
+                SearchScopeValue(id: "all", label: "All"),
+                SearchScopeValue(id: "open", label: "Open"),
+                SearchScopeValue(id: "closed", label: "Closed")
+            ]
+        )
+    }
+
+    func testSearchableScopeSelectionWritesBack() {
+        enum Scope: String, Hashable {
+            case all
+            case favorites
+        }
+
+        var selected = Scope.all
+        let searchable = Text("Content")
+            .searchable(text: .constant(""))
+            .searchScopes(
+                Binding(get: { selected }, set: { selected = $0 }),
+                scopes: [.all, .favorites]
+            ) { scope in
+                Text(scope.rawValue.capitalized)
+            }
+
+        searchable.selectScope(id: "favorites")
+        XCTAssertEqual(selected, .favorites)
+    }
+
     // MARK: - Menu
 
     func testMenuConstruction() {
