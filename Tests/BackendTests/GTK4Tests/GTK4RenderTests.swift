@@ -1157,6 +1157,61 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
     }
 
+    // MARK: - Confirmation Dialog Batch B Tests
+
+    // Smoke tests: verify new overloads render without crash and return base content.
+    // Actual dialog title/message rendering happens in deferred g_idle_add and is
+    // not observable in headless GTK tests.
+
+    func testConfirmationDialogWithTitleVisibilitySmoke() throws {
+        try requireGTK()
+
+        var presented = true
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").confirmationDialog(
+                "Delete?",
+                isPresented: Binding(get: { presented }, set: { presented = $0 }),
+                titleVisibility: .visible,
+                actions: [AlertButton("Delete", role: .destructive)]
+            )
+        ))
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
+    func testConfirmationDialogWithHiddenTitleSmoke() throws {
+        try requireGTK()
+
+        var presented = true
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").confirmationDialog(
+                "Hidden Title",
+                isPresented: Binding(get: { presented }, set: { presented = $0 }),
+                titleVisibility: .hidden,
+                actions: [AlertButton("OK")]
+            )
+        ))
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
+    func testConfirmationDialogWithMessageSmoke() throws {
+        try requireGTK()
+
+        var presented = true
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").confirmationDialog(
+                "Confirm",
+                isPresented: Binding(get: { presented }, set: { presented = $0 }),
+                titleVisibility: .automatic,
+                actions: [AlertButton("Yes"), AlertButton("No")],
+                message: "Are you sure?"
+            )
+        ))
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
     // MARK: - Toolbar Tests
 
     func testToolbarMultiItemExtractsAllItems() throws {
