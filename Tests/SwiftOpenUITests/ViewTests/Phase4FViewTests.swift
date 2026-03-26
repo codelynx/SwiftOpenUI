@@ -81,6 +81,54 @@ final class Phase4FViewTests: XCTestCase {
         XCTAssertTrue(view is Text)
     }
 
+    // MARK: - ViewThatFits
+
+    func testViewThatFitsStoresChildrenInSourceOrder() {
+        let view = ViewThatFits {
+            Text("Wide")
+            Text("Compact")
+            Button("Fallback") { }
+        }
+
+        XCTAssertEqual(view.children.count, 3)
+        XCTAssertEqual((view.children[0].wrapped as? Text)?.content, "Wide")
+        XCTAssertEqual((view.children[1].wrapped as? Text)?.content, "Compact")
+        XCTAssertNotNil(view.children[2].wrapped as? Button<Text>)
+    }
+
+    func testViewThatFitsBuilderSupportsConditionals() {
+        let includeCompact = true
+        let view = ViewThatFits {
+            Text("Primary")
+            if includeCompact {
+                Text("Compact")
+            }
+        }
+
+        XCTAssertEqual(view.children.count, 2)
+        XCTAssertEqual((view.children[0].wrapped as? Text)?.content, "Primary")
+        XCTAssertEqual((view.children[1].wrapped as? Text)?.content, "Compact")
+    }
+
+    func testViewThatFitsBuilderSupportsLoops() {
+        let labels = ["One", "Two", "Three"]
+        let view = ViewThatFits {
+            for label in labels {
+                Text(label)
+            }
+        }
+
+        XCTAssertEqual(view.children.count, 3)
+        XCTAssertEqual((view.children[0].wrapped as? Text)?.content, "One")
+        XCTAssertEqual((view.children[1].wrapped as? Text)?.content, "Two")
+        XCTAssertEqual((view.children[2].wrapped as? Text)?.content, "Three")
+    }
+
+    func testViewThatFitsAllowsEmptyContent() {
+        let view = ViewThatFits {}
+        XCTAssertTrue(view.children.isEmpty)
+    }
+
     // MARK: - Searchable
 
     func testSearchableModifier() {
