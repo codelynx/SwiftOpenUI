@@ -2783,6 +2783,110 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNil(sheetAfter, "Programmatic dismiss should still close sheet")
     }
 
+    func testDismissalConfirmationConfirmClosesInterceptedSheet() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = true
+        @SwiftOpenUI.State var shouldPresent = false
+        var confirmed = false
+        let view = Text("Background").sheet(isPresented: $presented) {
+            Text("Sheet Content")
+                .dismissalConfirmationDialog(
+                    "Discard?",
+                    shouldPresent: $shouldPresent,
+                    actions: [
+                        AlertButton("Discard", role: .destructive) { confirmed = true },
+                        AlertButton("Keep Editing", role: .cancel)
+                    ]
+                )
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let root = findRootWindow(from: hwnd!)
+        let sheetHwnd = win32ActiveSheetWindow(for: root)
+        XCTAssertNotNil(sheetHwnd, "Sheet should be presented")
+
+        if let sheet = sheetHwnd {
+            SendMessageW(sheet, UINT(WM_CLOSE), 0, 0)
+        }
+        XCTAssertTrue(shouldPresent, "Intercepted close should request confirmation")
+
+        win32ConfirmationDialogTestHook = { _, _, _, _ in Int32(IDYES) }
+        defer { win32ConfirmationDialogTestHook = nil }
+
+        if let sheet = win32ActiveSheetWindow(for: root) {
+            let sheetContext = RenderContext(parent: sheet, hInstance: testHInstance)
+            let dialog = Text("Sheet Content").dismissalConfirmationDialog(
+                "Discard?",
+                shouldPresent: $shouldPresent,
+                actions: [
+                    AlertButton("Discard", role: .destructive) { confirmed = true },
+                    AlertButton("Keep Editing", role: .cancel)
+                ]
+            )
+            XCTAssertNotNil(winRenderView(dialog, in: sheetContext))
+        } else {
+            XCTFail("Expected intercepted sheet to remain open")
+        }
+        pumpInvokeMessages(for: root)
+
+        XCTAssertTrue(confirmed, "Confirm action should run before dismissal")
+        XCTAssertFalse(presented, "Confirming dismissal should clear the sheet binding")
+        XCTAssertNil(win32ActiveSheetWindow(for: root), "Confirming should close the intercepted sheet")
+    }
+
+    func testDismissalConfirmationCancelLeavesInterceptedSheetOpen() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = true
+        @SwiftOpenUI.State var shouldPresent = false
+        var cancelled = false
+        let view = Text("Background").sheet(isPresented: $presented) {
+            Text("Sheet Content")
+                .dismissalConfirmationDialog(
+                    "Discard?",
+                    shouldPresent: $shouldPresent,
+                    actions: [
+                        AlertButton("Discard", role: .destructive),
+                        AlertButton("Keep Editing", role: .cancel) { cancelled = true }
+                    ]
+                )
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let root = findRootWindow(from: hwnd!)
+        let sheetHwnd = win32ActiveSheetWindow(for: root)
+        XCTAssertNotNil(sheetHwnd, "Sheet should be presented")
+
+        if let sheet = sheetHwnd {
+            SendMessageW(sheet, UINT(WM_CLOSE), 0, 0)
+        }
+        XCTAssertTrue(shouldPresent, "Intercepted close should request confirmation")
+
+        win32ConfirmationDialogTestHook = { _, _, _, _ in Int32(IDNO) }
+        defer { win32ConfirmationDialogTestHook = nil }
+
+        if let sheet = win32ActiveSheetWindow(for: root) {
+            let sheetContext = RenderContext(parent: sheet, hInstance: testHInstance)
+            let dialog = Text("Sheet Content").dismissalConfirmationDialog(
+                "Discard?",
+                shouldPresent: $shouldPresent,
+                actions: [
+                    AlertButton("Discard", role: .destructive),
+                    AlertButton("Keep Editing", role: .cancel) { cancelled = true }
+                ]
+            )
+            XCTAssertNotNil(winRenderView(dialog, in: sheetContext))
+        } else {
+            XCTFail("Expected intercepted sheet to remain open")
+        }
+        pumpInvokeMessages(for: root)
+
+        XCTAssertTrue(cancelled, "Cancel action should run for a rejected dismissal")
+        XCTAssertTrue(presented, "Cancel should leave the sheet presented")
+        XCTAssertNotNil(win32ActiveSheetWindow(for: root), "Cancel should leave the intercepted sheet open")
+    }
+
     func testSheetWithoutDismissalConfigStillCloses() {
         let ctx = testContext()
         @SwiftOpenUI.State var presented = true
@@ -3706,6 +3810,10 @@ private func countDirectChildren(of parent: HWND) -> Int {
         child = GetWindow(c, UINT(GW_HWNDNEXT))
     }
     return count
+}
+
+private func pumpInvokeMessages(for hwnd: HWND) {
+    win32PumpInvokeMessages(for: hwnd)
 }
 
 private func collectButtonControls(in parent: HWND, into result: inout [HWND]) {

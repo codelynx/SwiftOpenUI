@@ -3620,6 +3620,17 @@ private func win32RefreshSheetOnDismiss(for sheet: HWND?, onDismiss: (() -> Void
     dismissInfo.onDismiss = onDismiss
 }
 
+private func win32ContainingSheetWindow(from hwnd: HWND?) -> HWND? {
+    var current = hwnd
+    while let window = current {
+        if GetPropW(window, sheetInfoPropName) != nil {
+            return window
+        }
+        current = GetParent(window)
+    }
+    return nil
+}
+
 private func win32ExtractDismissalConfirmationConfiguration(from view: any View)
 -> DismissalConfirmationConfiguration? {
     func extract<V: View>(_ current: V) -> DismissalConfirmationConfiguration? {
@@ -3656,6 +3667,32 @@ private func win32ExtractDismissalConfirmationConfiguration(from view: any View)
     }
 
     return extract(view)
+}
+
+var win32ConfirmationDialogTestHook:
+((HWND, String, String, UINT) -> Int32)?
+
+private func win32RunConfirmationDialog(
+    root: HWND,
+    title: String,
+    message: String,
+    flags: UINT
+) -> Int32 {
+    if let hook = win32ConfirmationDialogTestHook {
+        return hook(root, title, message, flags)
+    }
+    return title.withCString(encodedAs: UTF16.self) { titlePtr in
+        message.withCString(encodedAs: UTF16.self) { msgPtr in
+            MessageBoxW(root, msgPtr, titlePtr, flags)
+        }
+    }
+}
+
+func win32PumpInvokeMessages(for hwnd: HWND) {
+    var msg = MSG()
+    while PeekMessageW(&msg, hwnd, WM_SWIFTUI_INVOKE, WM_SWIFTUI_INVOKE, UINT(PM_REMOVE)) {
+        dispatchInvoke(lParam: msg.lParam)
+    }
 }
 
 private func win32PresentSheet<Sheet: View>(
@@ -3956,16 +3993,23 @@ extension ConfirmationDialogView: WinRenderable {
             let dlgMessage = message.isEmpty ? dlgTitle : message
             let dlgButtons = buttons
             let root = findRootWindow(from: context.parent)
+            let interceptedSheet = participatesInDismissalInterception
+                ? win32ContainingSheetWindow(from: context.parent)
+                : nil
             runOnMainThread(hwnd: root) {
                 guard binding.wrappedValue else { return }
                 binding.wrappedValue = false
-                let result = dlgTitle.withCString(encodedAs: UTF16.self) { titlePtr in
-                    dlgMessage.withCString(encodedAs: UTF16.self) { msgPtr in
-                        MessageBoxW(root, msgPtr, titlePtr, UINT(MB_YESNO | MB_ICONQUESTION))
-                    }
-                }
+                let result = win32RunConfirmationDialog(
+                    root: root,
+                    title: dlgTitle,
+                    message: dlgMessage,
+                    flags: UINT(MB_YESNO | MB_ICONQUESTION)
+                )
                 if result == IDYES {
                     dlgButtons.first?.action()
+                    if let interceptedSheet, IsWindow(interceptedSheet) {
+                        DestroyWindow(interceptedSheet)
+                    }
                 } else {
                     dlgButtons.first(where: { $0.role == .cancel })?.action()
                 }
