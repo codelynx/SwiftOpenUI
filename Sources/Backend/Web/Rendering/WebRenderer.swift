@@ -187,7 +187,9 @@ extension SwiftOpenUI.TextField: WebRenderable {
         input.type = "text"
         input.value = .string(text.wrappedValue)
         input.placeholder = .string(title)
-        input.style = "padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box;"
+        let disabled = webIsDisabled()
+        input.style = .string("padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box; opacity: \(disabled ? 0.4 : 1.0);")
+        if disabled { input.disabled = .boolean(true) }
 
         // Wire text changes back through Binding<String>
         let binding = text
@@ -780,7 +782,10 @@ extension DragGestureView: WebRenderable {
 extension SwiftOpenUI.Button: WebRenderable {
     public func webCreateElement() -> JSValue {
         let button = document.createElement("button")
-        button.style = "padding: 6px 12px; cursor: pointer; border: none; background: none; color: inherit; font: inherit; display: flex; align-items: center; justify-content: center;"
+        let disabled = webIsDisabled()
+        let cursorStyle = disabled ? "default" : "pointer"
+        button.style = .string("padding: 6px 12px; cursor: \(cursorStyle); border: none; background: none; color: inherit; font: inherit; display: flex; align-items: center; justify-content: center; opacity: \(disabled ? 0.4 : 1.0);")
+        if disabled { button.disabled = .boolean(true) }
 
         // Render label content
         let labelElement = webRenderView(label)
@@ -1057,6 +1062,30 @@ extension ViewThatFits: WebRenderable {
     }
 }
 
+// MARK: - Disabled modifier
+
+/// Read the current isEnabled state from the environment.
+private func webIsDisabled() -> Bool {
+    !getCurrentEnvironment().isEnabled
+}
+
+extension DisabledView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        // Update environment: if this wrapper disables, set isEnabled false.
+        // Ancestor disabled(true) cannot be undone by child disabled(false).
+        let previousEnv = getCurrentEnvironment()
+        var env = previousEnv
+        if isDisabled {
+            env.isEnabled = false
+        }
+        // If already disabled by ancestor, child disabled(false) is a no-op
+        setCurrentEnvironment(env)
+        let child = webRenderView(content)
+        setCurrentEnvironment(previousEnv)
+        return child
+    }
+}
+
 // MARK: - Modifier views
 
 extension PaddedView: WebRenderable, WebDescribable {
@@ -1302,12 +1331,14 @@ extension EnvironmentModifierView: WebRenderable {
 
 extension Toggle: WebRenderable {
     public func webCreateElement() -> JSValue {
+        let disabled = webIsDisabled()
         let container = document.createElement("label")
-        container.style = "display: flex; align-items: center; gap: 8px; cursor: pointer;"
+        container.style = .string("display: flex; align-items: center; gap: 8px; cursor: \(disabled ? "default" : "pointer"); opacity: \(disabled ? 0.4 : 1.0);")
 
         let input = document.createElement("input")
         input.type = "checkbox"
         input.checked = .boolean(isOn.wrappedValue)
+        if disabled { input.disabled = .boolean(true) }
 
         let binding = isOn
         let handler = webMakeClosure { _ in
@@ -1330,8 +1361,10 @@ extension Slider: WebRenderable, WebDescribable {
         input.min = .string("\(range.lowerBound)")
         input.max = .string("\(range.upperBound)")
         input.step = .string("\(step)")
+        let disabled = webIsDisabled()
+        if disabled { input.disabled = .boolean(true) }
         input.value = .string("\(value.wrappedValue)")
-        input.style = "width: 100%;"
+        input.style = .string("width: 100%; opacity: \(disabled ? 0.4 : 1.0);")
 
         let binding = value
         let handler = webMakeClosure { _ in
@@ -1393,7 +1426,9 @@ extension SecureField: WebRenderable {
         input.type = "password"
         input.value = .string(text.wrappedValue)
         input.placeholder = .string(placeholder)
-        input.style = "padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box;"
+        let disabled = webIsDisabled()
+        input.style = .string("padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box; opacity: \(disabled ? 0.4 : 1.0);")
+        if disabled { input.disabled = .boolean(true) }
 
         let binding = text
         let handler = webMakeClosure { _ in
@@ -1413,7 +1448,9 @@ extension TextEditor: WebRenderable {
     public func webCreateElement() -> JSValue {
         let textarea = document.createElement("textarea")
         textarea.value = .string(text.wrappedValue)
-        textarea.style = "padding: 6px 8px; font-size: 16px; width: 100%; min-height: 80px; box-sizing: border-box; resize: vertical;"
+        let disabled = webIsDisabled()
+        textarea.style = .string("padding: 6px 8px; font-size: 16px; width: 100%; min-height: 80px; box-sizing: border-box; resize: vertical; opacity: \(disabled ? 0.4 : 1.0);")
+        if disabled { textarea.disabled = .boolean(true) }
 
         let binding = text
         let handler = webMakeClosure { _ in
@@ -1575,8 +1612,9 @@ extension ProgressView: WebRenderable {
 
 extension Stepper: WebRenderable {
     public func webCreateElement() -> JSValue {
+        let disabled = webIsDisabled()
         let container = document.createElement("div")
-        container.style = "display: flex; align-items: center; gap: 8px;"
+        container.style = .string("display: flex; align-items: center; gap: 8px; opacity: \(disabled ? 0.4 : 1.0);")
 
         if !label.isEmpty {
             let labelSpan = document.createElement("span")
@@ -1590,7 +1628,8 @@ extension Stepper: WebRenderable {
 
         let minus = document.createElement("button")
         minus.textContent = "-"
-        minus.style = "width: 28px; height: 28px; cursor: pointer;"
+        minus.style = .string("width: 28px; height: 28px; cursor: \(disabled ? "default" : "pointer");")
+        if disabled { minus.disabled = .boolean(true) }
         let minusHandler = webMakeClosure { _ in
             let newVal = max(rng.lowerBound, binding.wrappedValue - stp)
             binding.wrappedValue = newVal
@@ -1604,7 +1643,8 @@ extension Stepper: WebRenderable {
 
         let plus = document.createElement("button")
         plus.textContent = "+"
-        plus.style = "width: 28px; height: 28px; cursor: pointer;"
+        plus.style = .string("width: 28px; height: 28px; cursor: \(disabled ? "default" : "pointer");")
+        if disabled { plus.disabled = .boolean(true) }
         let plusHandler = webMakeClosure { _ in
             let newVal = min(rng.upperBound, binding.wrappedValue + stp)
             binding.wrappedValue = newVal
@@ -1675,8 +1715,9 @@ extension DisclosureGroup: WebRenderable {
 
 extension Picker: WebRenderable {
     public func webCreateElement() -> JSValue {
+        let disabled = webIsDisabled()
         let container = document.createElement("div")
-        container.style = "display: flex; align-items: center; gap: 8px;"
+        container.style = .string("display: flex; align-items: center; gap: 8px; opacity: \(disabled ? 0.4 : 1.0);")
 
         if !label.isEmpty {
             let labelEl = document.createElement("label")
@@ -1695,13 +1736,15 @@ extension Picker: WebRenderable {
                 let isActive = i == selected
                 let bg = isActive ? "#0a84ff" : "#444"
                 let color = isActive ? "white" : "#ccc"
-                var btnStyle = "padding: 4px 12px; font-size: 13px; cursor: pointer; border: 1px solid #555; background: \(bg); color: \(color);"
+                let cursor = disabled ? "default" : "pointer"
+                var btnStyle = "padding: 4px 12px; font-size: 13px; cursor: \(cursor); border: 1px solid #555; background: \(bg); color: \(color);"
                 if i == 0 { btnStyle += " border-radius: 4px 0 0 4px;" }
                 else if i == options.count - 1 { btnStyle += " border-radius: 0 4px 4px 0; border-left: none;" }
                 else { btnStyle += " border-radius: 0; border-left: none;" }
                 btn.style = .string(btnStyle)
+                if disabled { btn.disabled = .boolean(true) }
 
-                if let callback = onChanged {
+                if !disabled, let callback = onChanged {
                     let idx = i
                     let handler = webMakeClosure { _ in
                         callback(idx)
@@ -1720,6 +1763,7 @@ extension Picker: WebRenderable {
 
         let select = document.createElement("select")
         select.style = "padding: 4px 8px; font-size: 14px;"
+        if disabled { select.disabled = .boolean(true) }
         for (i, option) in options.enumerated() {
             let opt = document.createElement("option")
             opt.value = .string("\(i)")
@@ -1747,8 +1791,9 @@ extension Picker: WebRenderable {
 
 extension DatePicker: WebRenderable {
     public func webCreateElement() -> JSValue {
+        let disabled = webIsDisabled()
         let container = document.createElement("div")
-        container.style = "display: flex; align-items: center; gap: 8px;"
+        container.style = .string("display: flex; align-items: center; gap: 8px; opacity: \(disabled ? 0.4 : 1.0);")
 
         if !title.isEmpty {
             let labelEl = document.createElement("label")
@@ -1758,6 +1803,7 @@ extension DatePicker: WebRenderable {
 
         let input = document.createElement("input")
         input.type = "date"
+        if disabled { input.disabled = .boolean(true) }
 
         // Set initial value from binding or default to today
         if let sel = selection {
