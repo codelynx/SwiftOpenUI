@@ -21,6 +21,22 @@ public struct ConfirmationDialogView<Content: View>: View {
 }
 
 extension View {
+    /// Show a dismissal confirmation dialog when `shouldPresent` becomes true.
+    public func dismissalConfirmationDialog(
+        _ title: String,
+        shouldPresent: Binding<Bool>,
+        actions: [AlertButton]
+    ) -> ConfirmationDialogView<Self> {
+        ConfirmationDialogView(
+            content: self,
+            title: title,
+            isPresented: shouldPresent,
+            titleVisibility: .automatic,
+            message: "",
+            buttons: actions
+        )
+    }
+
     /// Show a confirmation dialog when `isPresented` becomes true.
     /// Buttons are displayed vertically (action sheet style).
     public func confirmationDialog(

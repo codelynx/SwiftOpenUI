@@ -623,6 +623,27 @@ final class Phase4FViewTests: XCTestCase {
         XCTAssertEqual(dialog.buttons[0].role, .cancel)
     }
 
+    func testDismissalConfirmationDialogConstruction() {
+        let dialog = Text("Content").dismissalConfirmationDialog(
+            "Discard changes?",
+            shouldPresent: .constant(true),
+            actions: [
+                AlertButton("Discard", role: .destructive) { },
+                AlertButton("Keep Editing", role: .cancel) { }
+            ]
+        )
+
+        XCTAssertEqual(dialog.title, "Discard changes?")
+        XCTAssertTrue(dialog.isPresented.wrappedValue)
+        XCTAssertEqual(dialog.titleVisibility, .automatic)
+        XCTAssertEqual(dialog.message, "")
+        XCTAssertEqual(dialog.buttons.count, 2)
+        XCTAssertEqual(dialog.buttons[0].label, "Discard")
+        XCTAssertEqual(dialog.buttons[0].role, .destructive)
+        XCTAssertEqual(dialog.buttons[1].label, "Keep Editing")
+        XCTAssertEqual(dialog.buttons[1].role, .cancel)
+    }
+
     // MARK: - Canvas
 
     func testCanvasConstruction() {
