@@ -4501,6 +4501,145 @@ extension ToolbarItem: WinRenderable {
     }
 }
 
+// MARK: - ViewThatFits
+
+extension ViewThatFits: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard !children.isEmpty else { return nil }
+        registerStackClassIfNeeded(hInstance: context.hInstance)
+
+        let container = CreateWindowExW(
+            0, stackContainerClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            0, 0, 0, 0,
+            context.parent, nil, context.hInstance, nil
+        )!
+
+        // Determine available space from parent. Many Win32 parents (VStack,
+        // HStack) are still 0x0 during child rendering, so fall back to the
+        // primary monitor work area when the parent has no size yet.
+        var parentRect = RECT()
+        GetClientRect(context.parent, &parentRect)
+        var availW = parentRect.right - parentRect.left
+        var availH = parentRect.bottom - parentRect.top
+        if availW <= 0 || availH <= 0 {
+            var workArea = RECT()
+            SystemParametersInfoW(UINT(SPI_GETWORKAREA), 0, &workArea,
+                                  UINT(SPIF_SENDCHANGE))
+            availW = workArea.right - workArea.left
+            availH = workArea.bottom - workArea.top
+            if availW <= 0 { availW = 1920 }
+            if availH <= 0 { availH = 1080 }
+        }
+
+        let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+        var selectedHwnd: HWND? = nil
+        var selectedW: Int32 = 0
+        var selectedH: Int32 = 0
+
+        for (i, child) in children.enumerated() {
+            guard let childHwnd = winRenderAnyView(child, in: childContext) else { continue }
+            var r = RECT()
+            GetWindowRect(childHwnd, &r)
+            let childW = r.right - r.left
+            let childH = r.bottom - r.top
+            let isLast = i == children.count - 1
+
+            if childW <= availW && childH <= availH || isLast {
+                // This child fits, or it's the last fallback
+                selectedHwnd = childHwnd
+                selectedW = childW
+                selectedH = childH
+                // Destroy any remaining candidates (they won't be rendered)
+                break
+            } else {
+                DestroyWindow(childHwnd)
+            }
+        }
+
+        if let sel = selectedHwnd {
+            SetWindowPos(sel, nil, 0, 0, selectedW, selectedH, UINT(SWP_NOZORDER))
+            SetWindowPos(container, nil, 0, 0, selectedW, selectedH,
+                         UINT(SWP_NOZORDER | SWP_NOMOVE))
+        }
+
+        // Store info for re-evaluation on resize
+        let info = ViewThatFitsInfo(
+            children: children,
+            hInstance: context.hInstance,
+            selectedHwnd: selectedHwnd
+        )
+        let infoPtr = Unmanaged.passRetained(info).toOpaque()
+        SetWindowSubclass(container, viewThatFitsResizeProc, 7,
+                          DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+        return container
+    }
+}
+
+private class ViewThatFitsInfo {
+    let children: [AnyView]
+    let hInstance: HINSTANCE
+    var selectedHwnd: HWND?
+
+    init(children: [AnyView], hInstance: HINSTANCE, selectedHwnd: HWND?) {
+        self.children = children
+        self.hInstance = hInstance
+        self.selectedHwnd = selectedHwnd
+    }
+}
+
+private let viewThatFitsResizeProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_SIZE):
+        if dwRefData != 0 {
+            let info = Unmanaged<ViewThatFitsInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+
+            let availW = Int32(win32_LOWORD(DWORD_PTR(lParam)))
+            let availH = Int32(win32_HIWORD(DWORD_PTR(lParam)))
+
+            // Destroy current selection
+            if let sel = info.selectedHwnd {
+                DestroyWindow(sel)
+                info.selectedHwnd = nil
+            }
+
+            let childContext = RenderContext(parent: hwnd!, hInstance: info.hInstance)
+            for (i, child) in info.children.enumerated() {
+                guard let childHwnd = winRenderAnyView(child, in: childContext) else { continue }
+                var r = RECT()
+                GetWindowRect(childHwnd, &r)
+                let childW = r.right - r.left
+                let childH = r.bottom - r.top
+                let isLast = i == info.children.count - 1
+
+                if childW <= availW && childH <= availH || isLast {
+                    info.selectedHwnd = childHwnd
+                    SetWindowPos(childHwnd, nil, 0, 0, childW, childH, UINT(SWP_NOZORDER))
+                    break
+                } else {
+                    DestroyWindow(childHwnd)
+                }
+            }
+        }
+        return 0
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            Unmanaged<ViewThatFitsInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).release()
+        }
+        RemoveWindowSubclass(hwnd, viewThatFitsResizeProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
 // MARK: - Phase 4D views
 
 extension Menu: WinRenderable {
