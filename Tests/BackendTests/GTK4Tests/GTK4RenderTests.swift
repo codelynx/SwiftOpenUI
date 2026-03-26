@@ -1652,6 +1652,50 @@ final class GTK4RenderTests: XCTestCase {
         let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
         XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Only child")
     }
+
+    // MARK: - Disabled Tests
+
+    func testDisabledButtonIsSensitiveFalse() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Button("Tap") {}.disabled(true)
+        ))
+        XCTAssertEqual(gtk_widget_get_sensitive(widget), 0,
+                       "Disabled button should have sensitivity = false")
+    }
+
+    func testEnabledButtonIsSensitiveTrue() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Button("Tap") {}.disabled(false)
+        ))
+        XCTAssertNotEqual(gtk_widget_get_sensitive(widget), 0,
+                          "Enabled button should have sensitivity = true")
+    }
+
+    func testNestedDisabledCannotReEnable() throws {
+        try requireGTK()
+
+        // Parent disabled(true) wraps child disabled(false) — should still be disabled
+        let widget = widgetFromOpaque(gtkRenderView(
+            Button("Tap") {}.disabled(false).disabled(true)
+        ))
+        XCTAssertEqual(gtk_widget_get_sensitive(widget), 0,
+                       "Ancestor disabled(true) should not be undone by child disabled(false)")
+    }
+
+    func testDisabledTextFieldIsSensitiveFalse() throws {
+        try requireGTK()
+
+        var text = ""
+        let widget = widgetFromOpaque(gtkRenderView(
+            TextField("Name", text: Binding(get: { text }, set: { text = $0 })).disabled(true)
+        ))
+        XCTAssertEqual(gtk_widget_get_sensitive(widget), 0,
+                       "Disabled text field should have sensitivity = false")
+    }
 }
 
 private func requireGTK(

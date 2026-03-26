@@ -182,6 +182,7 @@ extension TextField: GTKRenderable {
             GConnectFlags(rawValue: 0)
         )
 
+        gtkApplyEnabledState(to: entry)
         return opaqueFromWidget(entry)
     }
 }
@@ -367,6 +368,7 @@ extension Button: GTKRenderable, GTKDescribable {
             },
             GConnectFlags(rawValue: 0)
         )
+        gtkApplyEnabledState(to: button)
         return opaqueFromWidget(button)
     }
 }
@@ -1965,6 +1967,7 @@ extension SecureField: GTKRenderable {
             GConnectFlags(rawValue: 0)
         )
 
+        gtkApplyEnabledState(to: entry)
         return opaqueFromWidget(entry)
     }
 }
@@ -2017,6 +2020,7 @@ extension TextEditor: GTKRenderable {
         gtk_widget_set_vexpand(scrolled, 1)
         gtk_widget_set_hexpand(scrolled, 1)
 
+        gtkApplyEnabledState(to: textView)
         return opaqueFromWidget(scrolled)
     }
 }
@@ -2076,9 +2080,11 @@ extension Stepper: GTKRenderable {
             let lbl = gtk_label_new(label)!
             gtk_box_append(boxPointer(hbox), lbl)
             gtk_box_append(boxPointer(hbox), spin)
+            gtkApplyEnabledState(to: spin)
             return opaqueFromWidget(hbox)
         }
 
+        gtkApplyEnabledState(to: spin)
         return opaqueFromWidget(spin)
     }
 }
@@ -2221,6 +2227,7 @@ extension Toggle: GTKRenderable {
             GConnectFlags(rawValue: 0)
         )
 
+        gtkApplyEnabledState(to: check)
         return opaqueFromWidget(check)
     }
 }
@@ -2318,6 +2325,7 @@ extension Slider: GTKRenderable, GTKDescribable {
         // interactiveUpdateDepth stuck > 0, blocking all future rebuilds.
         // The debounced commit (150ms) already prevents constant rebuilds.
 
+        gtkApplyEnabledState(to: scale)
         return opaqueFromWidget(scale)
     }
 }
@@ -2469,6 +2477,35 @@ extension EnvironmentModifierView: GTKRenderable {
         let widget = gtkRenderView(content)
         setCurrentEnvironment(prev)
         return widget
+    }
+}
+
+extension DisabledView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .disabled, typeName: "DisabledView",
+            props: .disabled(GTK4DisabledDescriptor(isDisabled: isDisabled)),
+            children: [gtkDescribeView(content)])
+    }
+
+    public func gtkCreateWidget() -> OpaquePointer {
+        var env = getCurrentEnvironment()
+        // Ancestor composition: parent disabled(true) cannot be undone by child disabled(false)
+        let effectiveIsEnabled = env.isEnabled && !isDisabled
+        env.isEnabled = effectiveIsEnabled
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let widget = gtkRenderView(content)
+        setCurrentEnvironment(prev)
+        return widget
+    }
+}
+
+/// Apply GTK sensitivity from the current environment's isEnabled state.
+private func gtkApplyEnabledState(to widget: UnsafeMutablePointer<GtkWidget>) {
+    let env = getCurrentEnvironment()
+    if !env.isEnabled {
+        gtk_widget_set_sensitive(widget, 0)
     }
 }
 
@@ -3206,12 +3243,15 @@ private class SegmentClosureBox {
 
 extension Picker: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
+        let widget: OpaquePointer
         switch style {
         case .segmented, .palette:
-            return gtkCreateSegmentedWidget()
+            widget = gtkCreateSegmentedWidget()
         default:
-            return gtkCreateDropdownWidget()
+            widget = gtkCreateDropdownWidget()
         }
+        gtkApplyEnabledState(to: widgetFromOpaque(widget))
+        return widget
     }
 
     private func gtkCreateDropdownWidget() -> OpaquePointer {
@@ -3378,6 +3418,7 @@ extension DatePicker: GTKRenderable {
             GConnectFlags(rawValue: 0)
         )
 
+        gtkApplyEnabledState(to: box)
         return opaqueFromWidget(box)
     }
 }

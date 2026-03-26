@@ -12,6 +12,7 @@ public enum GTK4DescriptorKind: Equatable {
     case button
     case canvas
     case composite
+    case disabled
     case divider
     case safeAreaInset
     case safeAreaPadding
@@ -27,6 +28,10 @@ public enum GTK4DescriptorKind: Equatable {
     case spacer
     case vStack
     case zStack
+}
+
+public struct GTK4DisabledDescriptor: Equatable {
+    public let isDisabled: Bool
 }
 
 public struct GTK4TextDescriptor: Equatable {
@@ -159,6 +164,7 @@ public final class GTK4CanvasPayload {
 
 public enum GTK4DescriptorProps: Equatable {
     case none
+    case disabled(GTK4DisabledDescriptor)
     case background(GTK4ColorDescriptor)
     case border(GTK4BorderDescriptor)
     case canvas(GTK4CanvasDescriptor)
@@ -307,6 +313,7 @@ public enum GTK4DescriptorUpdateIntent: Equatable {
     case foregroundColor
     case hStackLayout
     case paddingLayout
+    case disabledState
     case safeAreaInsetLayout
     case safeAreaPaddingLayout
     case searchableLayout
@@ -620,6 +627,7 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
     case .font:          return .fontStyle
     case .spacer:        return .none
     case .composite:     return .none
+    case .disabled:      return .disabledState
     case .safeAreaInset:   return .safeAreaInsetLayout
     case .safeAreaPadding: return .safeAreaPaddingLayout
     case .searchable:      return .searchableLayout
@@ -751,7 +759,7 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
     case .paddingLayout:
         return gtkPaddingLayoutHook(action: action, performMutation: performMutation)
     case .backgroundColor, .borderStyle, .fontStyle, .frameLayout, .foregroundColor,
-         .hStackLayout, .safeAreaInsetLayout, .safeAreaPaddingLayout, .searchableLayout, .sliderConfiguration,
+         .disabledState, .hStackLayout, .safeAreaInsetLayout, .safeAreaPaddingLayout, .searchableLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet
         return gtkUpdatedHookResult(action: action, intent: action.updateIntent,
