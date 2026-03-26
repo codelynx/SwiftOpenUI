@@ -4428,3 +4428,107 @@ extension SafeAreaPaddingView: GTKRenderable, GTKDescribable {
         return opaqueFromWidget(wrapper)
     }
 }
+
+// MARK: - ViewThatFits GTK extension
+
+private class GTKViewThatFitsContext {
+    let stack: UnsafeMutablePointer<GtkWidget>
+    let childWidgets: [UnsafeMutablePointer<GtkWidget>]
+    let childCount: Int
+    private var currentIndex: Int = 0
+    private var lastWidth: Int = -1
+    private var lastHeight: Int = -1
+
+    init(stack: UnsafeMutablePointer<GtkWidget>,
+         childWidgets: [UnsafeMutablePointer<GtkWidget>],
+         childCount: Int) {
+        self.stack = stack
+        self.childWidgets = childWidgets
+        self.childCount = childCount
+    }
+
+    /// Called each frame via tick callback. Re-evaluates only when size changes.
+    func tickCheck() {
+        guard childCount > 0 else { return }
+        let w = Int(gtk_widget_get_width(stack))
+        let h = Int(gtk_widget_get_height(stack))
+        guard w > 0 && h > 0 else { return }
+        guard w != lastWidth || h != lastHeight else { return }
+        lastWidth = w
+        lastHeight = h
+        selectBestFit(allocWidth: w, allocHeight: h)
+    }
+
+    private func selectBestFit(allocWidth: Int, allocHeight: Int) {
+        var bestIndex = childCount - 1 // fallback to last
+        for i in 0..<childCount {
+            let child = childWidgets[i]
+            var naturalWidth: gint = 0
+            var naturalHeight: gint = 0
+            gtk_widget_measure(child, GTK_ORIENTATION_HORIZONTAL, -1,
+                               nil, &naturalWidth, nil, nil)
+            gtk_widget_measure(child, GTK_ORIENTATION_VERTICAL, gint(allocWidth),
+                               nil, &naturalHeight, nil, nil)
+
+            if Int(naturalWidth) <= allocWidth && Int(naturalHeight) <= allocHeight {
+                bestIndex = i
+                break
+            }
+        }
+
+        if bestIndex != currentIndex {
+            currentIndex = bestIndex
+            gtk_stack_set_visible_child_name(
+                OpaquePointer(stack), "vtf-\(bestIndex)")
+        }
+    }
+}
+
+/// Tick callback for ViewThatFits — re-evaluates child selection on size changes.
+private func gtkViewThatFitsTickCallback(
+    _ widget: UnsafeMutablePointer<GtkWidget>?,
+    _ frameClock: OpaquePointer?,
+    _ userData: gpointer?
+) -> gboolean {
+    guard let userData = userData else { return 1 }
+    let ctx = Unmanaged<GTKViewThatFitsContext>.fromOpaque(userData).takeUnretainedValue()
+    ctx.tickCheck()
+    return 1 // keep running
+}
+
+extension ViewThatFits: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let stack = gtk_stack_new()!
+        let stackOp = OpaquePointer(stack)
+        gtk_stack_set_transition_type(stackOp, GTK_STACK_TRANSITION_TYPE_NONE)
+
+        var childWidgets: [UnsafeMutablePointer<GtkWidget>] = []
+        for (i, child) in children.enumerated() {
+            let widget = widgetFromOpaque(gtkRenderAnyView(child))
+            gtk_stack_add_named(stackOp, widget, "vtf-\(i)")
+            childWidgets.append(widget)
+        }
+
+        if !children.isEmpty {
+            gtk_stack_set_visible_child_name(stackOp, "vtf-0")
+        }
+
+        let context = GTKViewThatFitsContext(
+            stack: stack,
+            childWidgets: childWidgets,
+            childCount: children.count
+        )
+
+        // Tick callback re-evaluates which child fits on each frame when size changes.
+        // Automatically paused when the widget is unmapped.
+        let contextPtr = Unmanaged.passRetained(context).toOpaque()
+        _ = gtk_widget_add_tick_callback(
+            stack,
+            gtkViewThatFitsTickCallback,
+            contextPtr,
+            { userData in Unmanaged<GTKViewThatFitsContext>.fromOpaque(userData!).release() }
+        )
+
+        return opaqueFromWidget(stack)
+    }
+}

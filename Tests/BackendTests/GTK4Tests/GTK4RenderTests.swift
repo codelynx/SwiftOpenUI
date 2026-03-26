@@ -1594,6 +1594,64 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(filtered.count, 1, "Leading item should still be removed in the mixed chain")
         XCTAssertEqual(filtered[0].placement, .trailing)
     }
+
+    // MARK: - ViewThatFits Tests
+
+    func testViewThatFitsRendersAsGtkStack() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            ViewThatFits {
+                Text("Wide layout with lots of text")
+                Text("Compact")
+            }
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkStack",
+                       "ViewThatFits should render as a GtkStack")
+    }
+
+    func testViewThatFitsShowsFirstChildInitially() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            ViewThatFits {
+                Text("First")
+                Text("Second")
+                Text("Third")
+            }
+        ))
+        // Initial visible child should be vtf-0
+        let visibleName = gtk_stack_get_visible_child_name(OpaquePointer(widget))
+        XCTAssertNotNil(visibleName)
+        if let name = visibleName {
+            XCTAssertEqual(String(cString: name), "vtf-0",
+                           "Should show first child initially")
+        }
+    }
+
+    func testViewThatFitsEmptyContentRendersEmptyStack() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            ViewThatFits { }
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkStack")
+        // No children — should not crash
+        XCTAssertNil(gtk_widget_get_first_child(widget))
+    }
+
+    func testViewThatFitsSingleChildRendersIt() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            ViewThatFits {
+                Text("Only child")
+            }
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkStack")
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Only child")
+    }
 }
 
 private func requireGTK(
