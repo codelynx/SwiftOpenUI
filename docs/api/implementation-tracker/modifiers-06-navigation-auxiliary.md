@@ -23,7 +23,7 @@ Summary: 24 total, 3 implemented, 1 partial, 20 missing.
 | `tabViewCustomization` | Both | iOS 18 / macOS 15 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `tabViewSidebarFooter` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `tabViewSidebarHeader` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
-| `toolbar` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ToolbarModifier.swift` | GTK: header bar; Win32: nav header; Web: header right area |
+| `toolbar` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ToolbarModifier.swift` | Batch B fallback on GTK/Win32/Web: toolbar(_:for:) and toolbar(removing:) are supported for the active navigation/header toolbar surface; target handling is narrower than SwiftUI. GTK: header bar; Win32: nav header; Web: header right area. |
 | `toolbarBackground` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `toolbarBackgroundVisibility` | Both | iOS 18 / macOS 15 / watchOS 11 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `toolbarColorScheme` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
