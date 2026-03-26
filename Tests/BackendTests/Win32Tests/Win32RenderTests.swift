@@ -2649,6 +2649,76 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(hwnd, "Searchable with custom prompt should render")
     }
 
+    // MARK: - Disabled Batch A
+
+    func testDisabledButtonIsNotEnabled() {
+        let ctx = testContext()
+        let view = Button("Click") {}.disabled(true)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertFalse(IsWindowEnabled(hwnd!), "Disabled button should not be enabled")
+    }
+
+    func testEnabledButtonIsEnabled() {
+        let ctx = testContext()
+        let view = Button("Click") {}.disabled(false)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertTrue(IsWindowEnabled(hwnd!), "Non-disabled button should be enabled")
+    }
+
+    func testDisabledTextFieldIsNotEnabled() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var text = ""
+        let view = TextField("Placeholder", text: $text).disabled(true)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // TextField renders as an Edit control — check it's disabled
+        var edits: [HWND] = []
+        collectEditControls(in: hwnd!, into: &edits)
+        if let edit = edits.first {
+            XCTAssertFalse(IsWindowEnabled(edit), "Disabled TextField should have disabled Edit control")
+        }
+    }
+
+    func testDisabledToggleIsNotEnabled() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var on = false
+        let view = Toggle("Switch", isOn: $on).disabled(true)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertFalse(IsWindowEnabled(hwnd!), "Disabled toggle should not be enabled")
+    }
+
+    func testNestedDisabledCannotReEnable() {
+        let ctx = testContext()
+        // Parent disabled(true) must not be undone by child disabled(false)
+        let view = Button("Click") {}.disabled(false).disabled(true)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+        XCTAssertFalse(IsWindowEnabled(hwnd!),
+            "Ancestor disabled(true) should not be overridden by child disabled(false)")
+    }
+
+    func testDisabledVStackDisablesChildren() {
+        let ctx = testContext()
+        let view = VStack {
+            Button("One") {}
+            Button("Two") {}
+        }.disabled(true)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // All children in the tree should be disabled
+        XCTAssertFalse(IsWindowEnabled(hwnd!), "Container should be disabled")
+        var child = GetWindow(hwnd!, UINT(GW_CHILD))
+        while let c = child {
+            XCTAssertFalse(IsWindowEnabled(c), "Child should be disabled")
+            child = GetWindow(c, UINT(GW_HWNDNEXT))
+        }
+    }
+
     // MARK: - ViewThatFits Batch A
 
     func testViewThatFitsRendersFirstChild() {

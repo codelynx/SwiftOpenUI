@@ -4501,6 +4501,40 @@ extension ToolbarItem: WinRenderable {
     }
 }
 
+// MARK: - Disabled
+
+extension DisabledView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Compose disabled state: once disabled by an ancestor, child cannot re-enable
+        let previousEnv = getCurrentEnvironment()
+        var env = previousEnv
+        let effectiveIsEnabled = previousEnv.isEnabled && !isDisabled
+        env.isEnabled = effectiveIsEnabled
+        setCurrentEnvironment(env)
+
+        let hwnd = winRenderView(content, in: context)
+
+        setCurrentEnvironment(previousEnv)
+
+        // Apply Win32 enabled/disabled state to all rendered controls
+        if let hwnd, !effectiveIsEnabled {
+            win32DisableTree(hwnd)
+        }
+
+        return hwnd
+    }
+}
+
+/// Recursively disable a window and all its children via EnableWindow.
+private func win32DisableTree(_ hwnd: HWND) {
+    EnableWindow(hwnd, false)
+    var child = GetWindow(hwnd, UINT(GW_CHILD))
+    while let c = child {
+        win32DisableTree(c)
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+}
+
 // MARK: - ViewThatFits
 
 extension ViewThatFits: WinRenderable {
