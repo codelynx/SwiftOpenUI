@@ -642,6 +642,26 @@ final class Phase4FViewTests: XCTestCase {
         XCTAssertEqual(dialog.buttons[0].role, .destructive)
         XCTAssertEqual(dialog.buttons[1].label, "Keep Editing")
         XCTAssertEqual(dialog.buttons[1].role, .cancel)
+        XCTAssertTrue(dialog.participatesInDismissalInterception)
+
+        let config = dialog.dismissalConfirmationConfiguration
+        XCTAssertNotNil(config)
+        XCTAssertEqual(config?.title, "Discard changes?")
+        XCTAssertTrue(config?.isPresented.wrappedValue ?? false)
+        XCTAssertEqual(config?.titleVisibility, .automatic)
+        XCTAssertEqual(config?.message, "")
+        XCTAssertEqual(config?.buttons.count, 2)
+    }
+
+    func testStandardConfirmationDialogDoesNotExposeDismissalInterceptionConfiguration() {
+        let dialog = Text("Content").confirmationDialog(
+            "Archive?",
+            isPresented: .constant(true),
+            actions: [AlertButton("Cancel", role: .cancel)]
+        )
+
+        XCTAssertFalse(dialog.participatesInDismissalInterception)
+        XCTAssertNil(dialog.dismissalConfirmationConfiguration)
     }
 
     // MARK: - Canvas

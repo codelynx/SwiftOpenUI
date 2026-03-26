@@ -2690,6 +2690,121 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(hwnd, "Old convenience overload should still render")
     }
 
+    // MARK: - Dismissal Confirmation Dialog Batch D
+
+    func testDismissalInterceptionSetsBinding() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = true
+        @SwiftOpenUI.State var shouldPresent = false
+        let view = Text("Background").sheet(isPresented: $presented) {
+            Text("Sheet Content")
+                .dismissalConfirmationDialog(
+                    "Discard changes?",
+                    shouldPresent: $shouldPresent,
+                    actions: [AlertButton("Discard", role: .destructive)]
+                )
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Sheet should be presented
+        let root = findRootWindow(from: hwnd!)
+        let sheetHwnd = win32ActiveSheetWindow(for: root)
+        XCTAssertNotNil(sheetHwnd, "Sheet should be presented")
+
+        // Simulate user close (WM_CLOSE) — should intercept, not destroy
+        if let sheet = sheetHwnd {
+            SendMessageW(sheet, UINT(WM_CLOSE), 0, 0)
+        }
+
+        XCTAssertTrue(shouldPresent,
+            "WM_CLOSE should set shouldPresent = true instead of closing sheet")
+
+        // Sheet should still exist after interception
+        let sheetAfter = win32ActiveSheetWindow(for: root)
+        XCTAssertNotNil(sheetAfter, "Sheet should remain open after interception")
+    }
+
+    func testDismissalInterceptionWrappedContentSetsBinding() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = true
+        @SwiftOpenUI.State var shouldPresent = false
+        let view = Text("Background").sheet(isPresented: $presented) {
+            Text("Sheet Content")
+                .dismissalConfirmationDialog(
+                    "Discard changes?",
+                    shouldPresent: $shouldPresent,
+                    actions: [AlertButton("Discard", role: .destructive)]
+                )
+                .padding()
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let root = findRootWindow(from: hwnd!)
+        let sheetHwnd = win32ActiveSheetWindow(for: root)
+        XCTAssertNotNil(sheetHwnd, "Wrapped sheet should be presented")
+
+        if let sheet = sheetHwnd {
+            SendMessageW(sheet, UINT(WM_CLOSE), 0, 0)
+        }
+
+        XCTAssertTrue(shouldPresent,
+            "Wrapped dismissal confirmation should still intercept WM_CLOSE")
+        XCTAssertNotNil(win32ActiveSheetWindow(for: root),
+            "Wrapped sheet should remain open after interception")
+    }
+
+    func testProgrammaticDismissStillClosesWithInterception() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = true
+        @SwiftOpenUI.State var shouldPresent = false
+        let view = Text("Background").sheet(isPresented: $presented) {
+            Text("Sheet Content")
+                .dismissalConfirmationDialog(
+                    "Discard?",
+                    shouldPresent: $shouldPresent,
+                    actions: [AlertButton("OK")]
+                )
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let root = findRootWindow(from: hwnd!)
+        let sheetHwnd = win32ActiveSheetWindow(for: root)
+        XCTAssertNotNil(sheetHwnd, "Sheet should be presented")
+
+        // Programmatic dismiss: set isPresented = false and re-render
+        presented = false
+        let hwnd2 = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd2)
+
+        let sheetAfter = win32ActiveSheetWindow(for: root)
+        XCTAssertNil(sheetAfter, "Programmatic dismiss should still close sheet")
+    }
+
+    func testSheetWithoutDismissalConfigStillCloses() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = true
+        let view = Text("Background").sheet(isPresented: $presented) {
+            Text("Plain sheet")
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let root = findRootWindow(from: hwnd!)
+        let sheetHwnd = win32ActiveSheetWindow(for: root)
+        XCTAssertNotNil(sheetHwnd, "Sheet should be presented")
+
+        // WM_CLOSE without dismissal config should destroy normally
+        if let sheet = sheetHwnd {
+            SendMessageW(sheet, UINT(WM_CLOSE), 0, 0)
+        }
+
+        let sheetAfter = win32ActiveSheetWindow(for: root)
+        XCTAssertNil(sheetAfter, "Sheet without dismissal config should close on WM_CLOSE")
+    }
+
     // MARK: - Searchable Batch B (tokens)
 
     private struct TestSearchToken: Identifiable {
