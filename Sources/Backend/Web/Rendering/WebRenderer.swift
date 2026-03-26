@@ -985,6 +985,78 @@ extension Optional: WebDescribable where Wrapped: View {
     }
 }
 
+// MARK: - ViewThatFits
+
+extension ViewThatFits: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        guard !children.isEmpty else {
+            return document.createElement("div")
+        }
+
+        // Best-effort first-fit adaptive container.
+        //
+        // All children are rendered into hidden wrapper divs inside the
+        // container. After mount (via requestAnimationFrame), each candidate's
+        // scrollWidth is compared against the container's clientWidth. The
+        // first child that fits is shown; all others are removed. If none
+        // fit, the last child is shown as fallback.
+        //
+        // Selection is one-shot at initial mount. Resize re-evaluation is
+        // not supported because removed children cannot be re-measured.
+        //
+        // Known limitation: lifecycle hooks (onAppear) fire for all candidates
+        // during rendering, not just the chosen one. A side-effect-free
+        // measurement path does not exist in the Web renderer yet.
+
+        let container = document.createElement("div")
+        container.style = "overflow: hidden; width: 100%;"
+
+        // Render all children into hidden wrappers inside the container
+        var wrappers: [JSValue] = []
+        for child in children {
+            let wrapper = document.createElement("div")
+            wrapper.style = "display: none; width: max-content;"
+            let el = webRenderAnyView(child)
+            _ = wrapper.appendChild(el)
+            _ = container.appendChild(wrapper)
+            wrappers.append(wrapper)
+        }
+
+        // Show the first child initially (will be corrected after mount)
+        wrappers[0].style = "display: block; width: max-content;"
+
+        // Post-mount measurement and selection
+        let selectFit = webMakeClosure { [wrappers] _ in
+            let availableWidth = container.clientWidth.number ?? (JSObject.global.window.innerWidth.number ?? 9999)
+
+            // Briefly show all for measurement
+            for w in wrappers { w.style = "display: block; width: max-content;" }
+
+            var chosenIndex = wrappers.count - 1 // fallback to last
+            for i in 0..<wrappers.count {
+                let childWidth = wrappers[i].scrollWidth.number ?? 0
+                if childWidth <= availableWidth {
+                    chosenIndex = i
+                    break
+                }
+            }
+
+            // Show only the chosen child, remove others from DOM
+            for (i, w) in wrappers.enumerated() {
+                if i == chosenIndex {
+                    w.style = "display: block;"
+                } else {
+                    _ = container.removeChild(w)
+                }
+            }
+            return .undefined
+        }
+        _ = JSObject.global.requestAnimationFrame!(selectFit)
+
+        return container
+    }
+}
+
 // MARK: - Modifier views
 
 extension PaddedView: WebRenderable, WebDescribable {
