@@ -2649,6 +2649,72 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(hwnd, "Searchable with custom prompt should render")
     }
 
+    // MARK: - ViewThatFits Batch A
+
+    func testViewThatFitsRendersFirstChild() {
+        let ctx = testContext()
+        let view = ViewThatFits {
+            Text("Short")
+            Text("LongerFallback")
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "ViewThatFits should render")
+
+        let childCount = countDirectChildren(of: hwnd!)
+        XCTAssertEqual(childCount, 1, "Should render only one selected child")
+
+        // Verify the first child ("Short") was selected, not the fallback
+        let statics = collectStaticLabels(in: hwnd!)
+        let texts = statics.map { windowText(of: $0) }
+        XCTAssertTrue(texts.contains("Short"),
+            "First fitting child should be selected")
+        XCTAssertFalse(texts.contains("LongerFallback"),
+            "Fallback should not be rendered when first child fits")
+    }
+
+    func testViewThatFitsFallsBackToLast() {
+        let ctx = testContext()
+        // First child is wider than any screen; fallback to last
+        let view = ViewThatFits {
+            Text("TooWide").frame(width: 99999)
+            Text("Fallback")
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "ViewThatFits should render fallback")
+
+        let childCount = countDirectChildren(of: hwnd!)
+        XCTAssertEqual(childCount, 1, "Should render exactly one child (fallback)")
+
+        // Verify the fallback child was selected
+        let statics = collectStaticLabels(in: hwnd!)
+        let texts = statics.map { windowText(of: $0) }
+        XCTAssertTrue(texts.contains("Fallback"),
+            "Last child should be selected as fallback")
+    }
+
+    func testViewThatFitsEmptyChildrenReturnsNil() {
+        let ctx = testContext()
+        let view = ViewThatFits { }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNil(hwnd, "ViewThatFits with no children should return nil")
+    }
+
+    func testViewThatFitsSingleChild() {
+        let ctx = testContext()
+        let view = ViewThatFits {
+            Text("Only child")
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "ViewThatFits with one child should render it")
+
+        let childCount = countDirectChildren(of: hwnd!)
+        XCTAssertEqual(childCount, 1, "Single child should be selected")
+
+        let statics = collectStaticLabels(in: hwnd!)
+        XCTAssertTrue(statics.map { windowText(of: $0) }.contains("Only child"),
+            "The single child should be the one rendered")
+    }
+
     // MARK: - Confirmation Dialog Batch B
 
     func testConfirmationDialogRendersContent() {
