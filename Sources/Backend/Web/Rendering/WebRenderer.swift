@@ -993,48 +993,21 @@ extension ViewThatFits: WebRenderable {
             return document.createElement("div")
         }
 
-        // Container that will hold the chosen child
+        // Best-effort first-fit: render only the first child.
+        //
+        // True measurement-driven selection would require rendering all
+        // candidates, which triggers side effects (onAppear, retained hosts,
+        // timers) for non-chosen branches. The Web renderer has no
+        // side-effect-free measurement path, so Batch A renders only the
+        // first child as the preferred layout.
+        //
+        // This is correct for the most common ViewThatFits usage pattern
+        // (preferred wide layout first, compact fallback last). Real
+        // measurement-driven switching would need a lightweight probe that
+        // doesn't execute lifecycle hooks or retain hosts.
         let container = document.createElement("div")
-        container.style = "overflow: hidden;"
-
-        // Render all children into off-screen measurement wrappers.
-        // Each wrapper is positioned absolutely so it doesn't affect layout,
-        // with visibility:hidden so it's measured but not painted.
-        var measurements: [(element: JSValue, wrapper: JSValue)] = []
-        for child in children {
-            let wrapper = document.createElement("div")
-            wrapper.style = "position: absolute; visibility: hidden; width: max-content; height: max-content;"
-            let el = webRenderAnyView(child)
-            _ = wrapper.appendChild(el)
-            _ = document.body.appendChild(wrapper)
-            measurements.append((element: el, wrapper: wrapper))
-        }
-
-        // Measure: pick the first child whose scrollWidth fits within the
-        // container's available width. Since the container isn't in the DOM
-        // yet, use the parent's width via window.innerWidth as a proxy.
-        // This is best-effort — real layout-driven measurement would require
-        // a ResizeObserver lifecycle that's beyond Batch A scope.
-        let availableWidth = JSObject.global.window.innerWidth.number ?? 9999
-
-        var chosenIndex = children.count - 1 // fallback to last
-        for i in 0..<measurements.count {
-            let measuredWidth = measurements[i].wrapper.scrollWidth.number ?? 0
-            if measuredWidth <= availableWidth {
-                chosenIndex = i
-                break
-            }
-        }
-
-        // Clean up measurement wrappers and adopt the chosen child
-        for (i, m) in measurements.enumerated() {
-            _ = m.wrapper.removeChild(m.element)
-            _ = document.body.removeChild(m.wrapper)
-            if i == chosenIndex {
-                _ = container.appendChild(m.element)
-            }
-        }
-
+        let el = webRenderAnyView(children[0])
+        _ = container.appendChild(el)
         return container
     }
 }
