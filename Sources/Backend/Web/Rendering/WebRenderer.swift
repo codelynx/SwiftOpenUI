@@ -2609,12 +2609,23 @@ extension NavigationSplitView: WebRenderable {
 // MARK: - Phase C modifiers
 
 /// Find dismissal-confirmation config in a view tree.
+/// Walks through primitive wrappers (PaddedView, FrameView, etc.) by
+/// inspecting stored `content` fields via Mirror, since these have Body == Never.
 private func webFindDismissalConfig<V: View>(_ view: V) -> DismissalConfirmationConfiguration? {
     if let provider = view as? DismissalConfirmationProvider {
         return provider.dismissalConfirmationConfiguration
     }
     if V.Body.self != Never.self {
         return webFindDismissalConfigAny(view.body)
+    }
+    // For primitive wrappers (Body == Never), check stored child views via reflection
+    let mirror = Mirror(reflecting: view)
+    for child in mirror.children {
+        if let childView = child.value as? any View {
+            if let config = webFindDismissalConfigAny(childView) {
+                return config
+            }
+        }
     }
     return nil
 }
