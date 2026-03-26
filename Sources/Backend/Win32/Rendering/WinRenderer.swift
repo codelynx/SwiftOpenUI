@@ -3620,6 +3620,44 @@ private func win32RefreshSheetOnDismiss(for sheet: HWND?, onDismiss: (() -> Void
     dismissInfo.onDismiss = onDismiss
 }
 
+private func win32ExtractDismissalConfirmationConfiguration(from view: any View)
+-> DismissalConfirmationConfiguration? {
+    func extract<V: View>(_ current: V) -> DismissalConfirmationConfiguration? {
+        if let provider = current as? DismissalConfirmationProvider,
+           let config = provider.dismissalConfirmationConfiguration {
+            return config
+        }
+        if let multi = current as? MultiChildView {
+            for child in multi.children {
+                if let found = win32ExtractDismissalConfirmationConfiguration(from: child) {
+                    return found
+                }
+            }
+        }
+        // Primitive wrappers like PaddedView store child content directly, so
+        // walk stored view properties before falling back to computed body.
+        for child in Mirror(reflecting: current).children {
+            if let nested = child.value as? any View,
+               let found = win32ExtractDismissalConfirmationConfiguration(from: nested) {
+                return found
+            }
+            if let nestedViews = child.value as? [any View] {
+                for nested in nestedViews {
+                    if let found = win32ExtractDismissalConfirmationConfiguration(from: nested) {
+                        return found
+                    }
+                }
+            }
+        }
+        if V.Body.self != Never.self {
+            return extract(current.body)
+        }
+        return nil
+    }
+
+    return extract(view)
+}
+
 private func win32PresentSheet<Sheet: View>(
     sheet: Sheet,
     root: HWND,
@@ -3645,7 +3683,7 @@ private func win32PresentSheet<Sheet: View>(
     // This is snapshotted once at sheet creation and not refreshed while the sheet
     // remains open, matching the current Win32 sheet-rendering model (sheets are
     // rendered once, not re-rendered on content changes).
-    let dismissalConfig = (sheet as? DismissalConfirmationProvider)?.dismissalConfirmationConfiguration
+    let dismissalConfig = win32ExtractDismissalConfirmationConfiguration(from: sheet)
     dismissInfo.dismissalConfig = dismissalConfig
 
     let sheetContext = RenderContext(parent: sheetHwnd, hInstance: hInstance)

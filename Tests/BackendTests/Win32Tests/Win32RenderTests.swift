@@ -2725,6 +2725,36 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(sheetAfter, "Sheet should remain open after interception")
     }
 
+    func testDismissalInterceptionWrappedContentSetsBinding() {
+        let ctx = testContext()
+        @SwiftOpenUI.State var presented = true
+        @SwiftOpenUI.State var shouldPresent = false
+        let view = Text("Background").sheet(isPresented: $presented) {
+            Text("Sheet Content")
+                .dismissalConfirmationDialog(
+                    "Discard changes?",
+                    shouldPresent: $shouldPresent,
+                    actions: [AlertButton("Discard", role: .destructive)]
+                )
+                .padding()
+        }
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let root = findRootWindow(from: hwnd!)
+        let sheetHwnd = win32ActiveSheetWindow(for: root)
+        XCTAssertNotNil(sheetHwnd, "Wrapped sheet should be presented")
+
+        if let sheet = sheetHwnd {
+            SendMessageW(sheet, UINT(WM_CLOSE), 0, 0)
+        }
+
+        XCTAssertTrue(shouldPresent,
+            "Wrapped dismissal confirmation should still intercept WM_CLOSE")
+        XCTAssertNotNil(win32ActiveSheetWindow(for: root),
+            "Wrapped sheet should remain open after interception")
+    }
+
     func testProgrammaticDismissStillClosesWithInterception() {
         let ctx = testContext()
         @SwiftOpenUI.State var presented = true
