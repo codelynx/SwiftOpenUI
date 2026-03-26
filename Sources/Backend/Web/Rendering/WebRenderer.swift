@@ -2216,12 +2216,15 @@ extension ConfirmationDialogView: WebRenderable {
 // MARK: - Modal overlay helper
 
 /// Shared modal overlay used by ConfirmationDialog, .sheet(), and .alert().
+/// `onCloseIntercepted`: if non-nil, called instead of dismissing when the
+/// close button is clicked. Used for dismissal-confirmation interception.
 private func webCreateModalOverlay(
     title: String,
     presented: Binding<Bool>,
     message: String? = nil,
     buttons: [AlertButton] = [],
-    sheetContent: JSValue? = nil
+    sheetContent: JSValue? = nil,
+    onCloseIntercepted: (() -> Void)? = nil
 ) -> JSValue {
     let overlay = document.createElement("div")
     overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 9999;"
@@ -2249,7 +2252,12 @@ private func webCreateModalOverlay(
         closeBtn.textContent = "Close"
         closeBtn.style = "display: block; width: 100%; padding: 8px; margin-top: 12px; cursor: pointer; border: none; border-radius: 4px; font-size: 14px; background: #555; color: white;"
         let handler = webMakeClosure { _ in
-            presented.wrappedValue = false
+            if let intercept = onCloseIntercepted {
+                // Dismissal interception: show confirmation instead of closing
+                intercept()
+            } else {
+                presented.wrappedValue = false
+            }
             return .undefined
         }
         closeBtn.onclick = .object(handler)
@@ -2600,6 +2608,22 @@ extension NavigationSplitView: WebRenderable {
 
 // MARK: - Phase C modifiers
 
+/// Find dismissal-confirmation config in a view tree.
+private func webFindDismissalConfig<V: View>(_ view: V) -> DismissalConfirmationConfiguration? {
+    if let provider = view as? DismissalConfirmationProvider {
+        return provider.dismissalConfirmationConfiguration
+    }
+    if V.Body.self != Never.self {
+        return webFindDismissalConfigAny(view.body)
+    }
+    return nil
+}
+
+private func webFindDismissalConfigAny(_ view: any View) -> DismissalConfirmationConfiguration? {
+    func find<V: View>(_ v: V) -> DismissalConfirmationConfiguration? { webFindDismissalConfig(v) }
+    return find(view)
+}
+
 extension SheetModifierView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
@@ -2609,11 +2633,19 @@ extension SheetModifierView: WebRenderable {
         if isPresented.wrappedValue {
             // Register this sheet as active for transition detection
             host?.currentSheetState[sheetKey] = onDismiss
+
+            // Check for dismissal-confirmation interception in sheet content
+            let dismissalConfig = webFindDismissalConfig(sheetContent)
+            let interceptor: (() -> Void)? = dismissalConfig.map { config in
+                { config.isPresented.wrappedValue = true }
+            }
+
             let sheetEl = webRenderView(sheetContent)
             let overlay = webCreateModalOverlay(
                 title: "",
                 presented: isPresented,
-                sheetContent: sheetEl
+                sheetContent: sheetEl,
+                onCloseIntercepted: interceptor
             )
             let wrapper = document.createElement("div")
             _ = wrapper.appendChild(child)
@@ -2635,7 +2667,16 @@ extension ItemSheetModifierView: WebRenderable {
         if let currentItem = item.wrappedValue {
             // Register this item sheet as active for transition detection
             host?.currentSheetState[sheetKey] = onDismiss
-            let sheetEl = webRenderView(sheetContent(currentItem))
+
+            let sheetContentView = sheetContent(currentItem)
+
+            // Check for dismissal-confirmation interception in sheet content
+            let dismissalConfig = webFindDismissalConfig(sheetContentView)
+            let interceptor: (() -> Void)? = dismissalConfig.map { config in
+                { config.isPresented.wrappedValue = true }
+            }
+
+            let sheetEl = webRenderView(sheetContentView)
             let itemBinding = item
             let overlay = webCreateModalOverlay(
                 title: "",
@@ -2645,7 +2686,8 @@ extension ItemSheetModifierView: WebRenderable {
                         if !newValue { itemBinding.wrappedValue = nil }
                     }
                 ),
-                sheetContent: sheetEl
+                sheetContent: sheetEl,
+                onCloseIntercepted: interceptor
             )
             let wrapper = document.createElement("div")
             _ = wrapper.appendChild(child)
