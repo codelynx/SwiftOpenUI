@@ -3641,10 +3641,24 @@ private func win32PresentSheet<Sheet: View>(
 
     SetPropW(root, sheetPropName, HANDLE(bitPattern: Int(bitPattern: sheetHwnd)))
 
+    // Detect dismissal-confirmation config from sheet content before rendering.
+    // This is snapshotted once at sheet creation and not refreshed while the sheet
+    // remains open, matching the current Win32 sheet-rendering model (sheets are
+    // rendered once, not re-rendered on content changes).
+    let dismissalConfig = (sheet as? DismissalConfirmationProvider)?.dismissalConfirmationConfiguration
+    dismissInfo.dismissalConfig = dismissalConfig
+
     let sheetContext = RenderContext(parent: sheetHwnd, hInstance: hInstance)
     let previousEnv = getCurrentEnvironment()
     var env = previousEnv
-    env.dismiss = DismissAction { DestroyWindow(sheetHwnd) }
+    if let config = dismissalConfig {
+        // Override dismiss to intercept: show confirmation instead of closing
+        env.dismiss = DismissAction {
+            config.isPresented.wrappedValue = true
+        }
+    } else {
+        env.dismiss = DismissAction { DestroyWindow(sheetHwnd) }
+    }
     setCurrentEnvironment(env)
     if let sheetChild = winRenderView(sheet, in: sheetContext) {
         var rect = RECT()
@@ -3708,6 +3722,7 @@ private class SheetDismissInfo {
     var presentedItemID: AnyHashable?
     var dismissed = false
     var isReplacing = false
+    var dismissalConfig: DismissalConfirmationConfiguration?
     init(root: HWND, dismiss: @escaping () -> Void, onDismiss: (() -> Void)?) {
         self.root = root
         self.dismiss = dismiss
@@ -3734,6 +3749,11 @@ private let sheetDismissProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
             let info = Unmanaged<SheetDismissInfo>.fromOpaque(
                 UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
             ).takeUnretainedValue()
+            // Dismissal interception: keep sheet open and show confirmation dialog
+            if let config = info.dismissalConfig {
+                config.isPresented.wrappedValue = true
+                return 0
+            }
             info.dismissOnce()
         }
         DestroyWindow(hwnd)
