@@ -1,17 +1,17 @@
 # Presentation Modifiers
 
-Summary: 23 total, 3 implemented, 0 partial, 20 missing.
+Summary: 23 total, 2 implemented, 1 partial, 20 missing.
 
 ## Presentation Modifiers (~97)
 
-23 total, 3 implemented, 0 partial, 20 missing.
+23 total, 2 implemented, 1 partial, 20 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
-| `confirmationDialog` | Both | iOS, macOS 12, watchOS 8, tvOS 15, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ConfirmationDialogModifier.swift` | Batch C fallback on GTK/Win32/Web: titleVisibility == .hidden, message, and dismissalConfirmationDialog(_:shouldPresent:actions:) are supported; .automatic currently behaves like .visible. GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay. |
+| `confirmationDialog` | Both | iOS, macOS 12, watchOS 8, tvOS 15, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ConfirmationDialogModifier.swift` | Batch C fallback on GTK/Win32/Web: titleVisibility == .hidden, message, and dismissalConfirmationDialog(_:shouldPresent:actions:) are supported; .automatic currently behaves like .visible. dismissalConfirmationDialog currently lowers to the same binding-driven confirmation dialog path and does not intercept parent-dismiss semantics yet. GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay. |
 | `dialogSeverity` | Both | iOS 17 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `dialogSuppressionToggle` | Both | iOS 17 / macOS 14 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
-| `dismissalConfirmationDialog` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ConfirmationDialogModifier.swift` | New iOS 18 |
+| `dismissalConfirmationDialog` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/ConfirmationDialogModifier.swift` | Public surface exists, but current implementation lowers to the same binding-driven confirmationDialog path and does not intercept parent-dismiss semantics yet. \| New iOS 18 |
 | `fileDialogDefaultDirectory` | Both | iOS 17 / macOS 14 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
 | `fileDialogMessage` | Both | iOS 17 / macOS 14 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
 | `fileExporter` | Both | iOS 14 / macOS 11 / visionOS 1 | Current | Missing | `-` | Multiple overloads |

@@ -77,6 +77,18 @@ ADJACENT_MODIFIER_NAMES = {
 }
 
 
+MODIFIER_STATUS_OVERRIDES = {
+    "dismissalConfirmationDialog": {
+        "implementation_status": "Partial",
+        "notes": (
+            "Public surface exists, but current implementation lowers to the same "
+            "binding-driven confirmationDialog path and does not intercept "
+            "parent-dismiss semantics yet."
+        ),
+    },
+}
+
+
 @dataclass
 class Feature:
     name: str
@@ -540,6 +552,11 @@ def build_modifier_inventory(
             source_overloads=source_overloads,
         )
 
+        override = MODIFIER_STATUS_OVERRIDES.get(name)
+        if override:
+            feature.implementation_status = override["implementation_status"]
+            feature.notes = merge_notes(override["notes"], feature.notes)
+
         if name in ADJACENT_MODIFIER_NAMES:
             adjacent.append(feature)
             continue
@@ -639,6 +656,7 @@ Rules for this tracker:
 - View-adjacent and modifier-adjacent items that do not fit the direct `View` / `View`-modifier model are kept in `adjacent-apis.md`.
 - When curated and generated metadata disagree, the curated reference is treated as canonical for availability, status, and human notes.
 - This tracker is surface-first. Backend and behavioral parity still belong in `docs/architecture/swiftui-parity-matrix.md`.
+- Specific rows may still be forced to `Partial` when the public API exists but the defining semantics are explicitly acknowledged as fallback-only today.
 - Views are still tracked at type presence level today; view-specific surface limitations stay in row notes until the tracker grows a reliable view-family metric.
 
 Regenerate with:
