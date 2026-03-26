@@ -18,7 +18,6 @@ Rules for this tracker:
 - View-adjacent and modifier-adjacent items that do not fit the direct `View` / `View`-modifier model are kept in `adjacent-apis.md`.
 - When curated and generated metadata disagree, the curated reference is treated as canonical for availability, status, and human notes.
 - This tracker is surface-first. Backend and behavioral parity still belong in `docs/architecture/swiftui-parity-matrix.md`.
-- Specific rows may still be forced to `Partial` when the public API exists but the defining semantics are explicitly acknowledged as fallback-only today.
 - Views are still tracked at type presence level today; view-specific surface limitations stay in row notes until the tracker grows a reliable view-family metric.
 
 Regenerate with:
@@ -28,7 +27,7 @@ Regenerate with:
 ## Coverage
 
 - Views: 119 total, 45 implemented, 0 partial, 74 missing.
-- Modifiers: 444 total, 36 implemented, 7 partial, 401 missing.
+- Modifiers: 444 total, 37 implemented, 6 partial, 401 missing.
 - Adjacent APIs: 10 total, 3 implemented, 1 partial, 6 missing.
 
 ## Files
