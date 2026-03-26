@@ -1001,7 +1001,8 @@ extension ViewThatFits: WebRenderable {
         // first child that fits is shown; all others are removed. If none
         // fit, the last child is shown as fallback.
         //
-        // A ResizeObserver re-evaluates on container resize.
+        // Selection is one-shot at initial mount. Resize re-evaluation is
+        // not supported because removed children cannot be re-measured.
         //
         // Known limitation: lifecycle hooks (onAppear) fire for all candidates
         // during rendering, not just the chosen one. A side-effect-free
