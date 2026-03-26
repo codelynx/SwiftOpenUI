@@ -1359,15 +1359,135 @@ extension OnDisappearView: GTKRenderable {
 // MARK: - Sheet GTK extension
 
 /// Holds sheet configuration for deferred presentation.
+/// Extract dismissal-confirmation configuration from a view tree.
+private func gtkExtractDismissalConfig(from view: Any, depth: Int = 0) -> DismissalConfirmationConfiguration? {
+    guard depth < 20 else { return nil }
+    if let provider = view as? DismissalConfirmationProvider {
+        if let config = provider.dismissalConfirmationConfiguration {
+            return config
+        }
+    }
+    let mirror = Mirror(reflecting: view)
+    for child in mirror.children {
+        if let result = gtkExtractDismissalConfig(from: child.value, depth: depth + 1) {
+            return result
+        }
+    }
+    return nil
+}
+
+/// Present a confirmation dialog directly on top of a sheet window.
+private func gtkPresentConfirmationDialog(
+    config: DismissalConfirmationConfiguration,
+    transientFor sheetWin: UnsafeMutablePointer<GtkWindow>,
+    onActualDismiss: @escaping () -> Void
+) {
+    let dialog = gtk_window_new()!
+    let dialogWin = windowPointer(dialog)
+    gtk_window_set_modal(dialogWin, 1)
+    gtk_window_set_title(dialogWin, config.titleVisibility == .hidden ? "" : config.title)
+    gtk_window_set_default_size(dialogWin, 300, -1)
+    gtk_window_set_resizable(dialogWin, 0)
+    gtk_window_set_transient_for(dialogWin, sheetWin)
+
+    let vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8)!
+    gtk_widget_set_margin_top(vbox, 20)
+    gtk_widget_set_margin_bottom(vbox, 20)
+    gtk_widget_set_margin_start(vbox, 20)
+    gtk_widget_set_margin_end(vbox, 20)
+
+    if config.titleVisibility != .hidden {
+        let titleLabel = gtk_label_new(nil)!
+        let escaped = config.title
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+        gtk_swift_label_set_markup(titleLabel, "<b>\(escaped)</b>")
+        gtk_box_append(boxPointer(vbox), titleLabel)
+    }
+
+    if !config.message.isEmpty {
+        let msgLabel = gtk_label_new(config.message)!
+        gtk_label_set_wrap(OpaquePointer(msgLabel), 1)
+        gtk_box_append(boxPointer(vbox), msgLabel)
+    }
+
+    let sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)!
+    gtk_box_append(boxPointer(vbox), sep)
+
+    for alertButton in config.buttons {
+        let btn = gtk_button_new_with_label(alertButton.label)!
+        gtk_widget_set_hexpand(btn, 1)
+        if alertButton.role == .destructive {
+            gtk_widget_add_css_class(btn, "destructive-action")
+        }
+        // Non-cancel buttons confirm dismissal: run action, close confirmation, then close sheet
+        let shouldDismissSheet = alertButton.role != .cancel
+        let wrappedAction: () -> Void = {
+            alertButton.action()
+            if shouldDismissSheet {
+                onActualDismiss()
+            }
+        }
+        let actionBox = Unmanaged.passRetained(AlertActionBox(
+            action: wrappedAction, dialog: dialog
+        )).toOpaque()
+        g_signal_connect_data(
+            gpointer(btn),
+            "clicked",
+            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<AlertActionBox>.fromOpaque(userData!).takeUnretainedValue()
+                box.action()
+                gtk_window_destroy(windowPointer(box.dialog))
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            actionBox,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<AlertActionBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+        gtk_box_append(boxPointer(vbox), btn)
+    }
+
+    gtk_window_set_child(dialogWin, vbox)
+
+    // Close confirmation dialog resets shouldPresent
+    let binding = config.isPresented
+    let closeBox = Unmanaged.passRetained(ClosureBox {
+        binding.wrappedValue = false
+    }).toOpaque()
+    g_signal_connect_data(
+        gpointer(dialog),
+        "close-request",
+        unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
+            Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
+            return 0
+        } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
+        closeBox,
+        { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+            Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+        },
+        GConnectFlags(rawValue: 0)
+    )
+
+    gtk_window_present(dialogWin)
+}
+
 private class SheetInfo {
     let anchor: UnsafeMutablePointer<GtkWidget>
     let render: () -> OpaquePointer
     let onDismiss: () -> Void
+    /// Dismissal config from sheet content, used to present confirmation dialog on intercept.
+    let dismissalConfig: DismissalConfirmationConfiguration?
 
-    init(anchor: UnsafeMutablePointer<GtkWidget>, render: @escaping () -> OpaquePointer, onDismiss: @escaping () -> Void) {
+    init(anchor: UnsafeMutablePointer<GtkWidget>,
+         render: @escaping () -> OpaquePointer,
+         onDismiss: @escaping () -> Void,
+         dismissalConfig: DismissalConfirmationConfiguration? = nil) {
         self.anchor = anchor
         self.render = render
         self.onDismiss = onDismiss
+        self.dismissalConfig = dismissalConfig
     }
 }
 
@@ -1405,6 +1525,7 @@ extension SheetModifierView: GTKRenderable {
         let sheetView = sheetContent
         let binding = isPresented
         let userOnDismiss = onDismiss
+        let dismissalConfig = gtkExtractDismissalConfig(from: sheetView)
         let info = Unmanaged.passRetained(SheetInfo(
             anchor: anchor,
             render: { gtkRenderView(sheetView) },
@@ -1416,7 +1537,8 @@ extension SheetModifierView: GTKRenderable {
                 g_object_set_data(obj, "swift-sheet-window", nil)
                 binding.wrappedValue = false
                 userOnDismiss?()
-            }
+            },
+            dismissalConfig: dismissalConfig
         )).toOpaque()
 
         g_idle_add({ userData -> gboolean in
@@ -1440,7 +1562,15 @@ extension SheetModifierView: GTKRenderable {
             // Inject dismiss action into environment
             let previous = getCurrentEnvironment()
             var env = previous
-            env.dismiss = DismissAction { gtk_window_destroy(dialogWin) }
+            if let config = info.dismissalConfig {
+                // Dismiss action shows confirmation instead of destroying
+                env.dismiss = DismissAction {
+                    config.isPresented.wrappedValue = true
+                    gtkPresentConfirmationDialog(config: config, transientFor: dialogWin, onActualDismiss: info.onDismiss)
+                }
+            } else {
+                env.dismiss = DismissAction { gtk_window_destroy(dialogWin) }
+            }
             setCurrentEnvironment(env)
             let sheetWidget = widgetFromOpaque(info.render())
             setCurrentEnvironment(previous)
@@ -1449,20 +1579,42 @@ extension SheetModifierView: GTKRenderable {
             let anchorObj = UnsafeMutableRawPointer(info.anchor).assumingMemoryBound(to: GObject.self)
             g_object_set_data(anchorObj, "swift-sheet-window", gpointer(dialogWin))
 
-            let dismissBox = Unmanaged.passRetained(ClosureBox(info.onDismiss)).toOpaque()
-            g_signal_connect_data(
-                gpointer(dialog),
-                "close-request",
-                unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
-                    Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
-                    return 0
-                } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
-                dismissBox,
-                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
-                    Unmanaged<ClosureBox>.fromOpaque(userData!).release()
-                },
-                GConnectFlags(rawValue: 0)
-            )
+            if let config = info.dismissalConfig {
+                // User-triggered close: show confirmation dialog on top of the sheet
+                let closeHandler: () -> Void = {
+                    config.isPresented.wrappedValue = true
+                    gtkPresentConfirmationDialog(config: config, transientFor: dialogWin, onActualDismiss: info.onDismiss)
+                }
+                let interceptBox = Unmanaged.passRetained(ClosureBox(closeHandler)).toOpaque()
+                g_signal_connect_data(
+                    gpointer(dialog),
+                    "close-request",
+                    unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
+                        Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
+                        return 1 // suppress default close
+                    } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
+                    interceptBox,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+            } else {
+                let dismissBox = Unmanaged.passRetained(ClosureBox(info.onDismiss)).toOpaque()
+                g_signal_connect_data(
+                    gpointer(dialog),
+                    "close-request",
+                    unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
+                        Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
+                        return 0
+                    } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
+                    dismissBox,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+            }
 
             gtk_window_present(dialogWin)
             g_object_unref(gpointer(info.anchor))
@@ -1523,6 +1675,7 @@ extension ItemSheetModifierView: GTKRenderable {
         let sheetBuilder = sheetContent
         let itemBinding = item
         let userOnDismiss = onDismiss
+        let itemDismissalConfig = gtkExtractDismissalConfig(from: sheetBuilder(currentItem))
         let info = Unmanaged.passRetained(SheetInfo(
             anchor: anchor,
             render: { gtkRenderView(sheetBuilder(currentItem)) },
@@ -1535,7 +1688,8 @@ extension ItemSheetModifierView: GTKRenderable {
                 g_object_set_data(obj, "swift-sheet-item-id", nil)
                 itemBinding.wrappedValue = nil
                 userOnDismiss?()
-            }
+            },
+            dismissalConfig: itemDismissalConfig
         )).toOpaque()
 
         g_idle_add({ userData -> gboolean in
@@ -1558,7 +1712,14 @@ extension ItemSheetModifierView: GTKRenderable {
 
             let previous = getCurrentEnvironment()
             var env = previous
-            env.dismiss = DismissAction { gtk_window_destroy(dialogWin) }
+            if let config = info.dismissalConfig {
+                env.dismiss = DismissAction {
+                    config.isPresented.wrappedValue = true
+                    gtkPresentConfirmationDialog(config: config, transientFor: dialogWin, onActualDismiss: info.onDismiss)
+                }
+            } else {
+                env.dismiss = DismissAction { gtk_window_destroy(dialogWin) }
+            }
             setCurrentEnvironment(env)
             let sheetWidget = widgetFromOpaque(info.render())
             setCurrentEnvironment(previous)
@@ -1567,20 +1728,41 @@ extension ItemSheetModifierView: GTKRenderable {
             let anchorObj = UnsafeMutableRawPointer(info.anchor).assumingMemoryBound(to: GObject.self)
             g_object_set_data(anchorObj, "swift-sheet-window", gpointer(dialogWin))
 
-            let dismissBox = Unmanaged.passRetained(ClosureBox(info.onDismiss)).toOpaque()
-            g_signal_connect_data(
-                gpointer(dialog),
-                "close-request",
-                unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
-                    Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
-                    return 0
-                } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
-                dismissBox,
-                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
-                    Unmanaged<ClosureBox>.fromOpaque(userData!).release()
-                },
-                GConnectFlags(rawValue: 0)
-            )
+            if let config = info.dismissalConfig {
+                let closeHandler: () -> Void = {
+                    config.isPresented.wrappedValue = true
+                    gtkPresentConfirmationDialog(config: config, transientFor: dialogWin, onActualDismiss: info.onDismiss)
+                }
+                let interceptBox = Unmanaged.passRetained(ClosureBox(closeHandler)).toOpaque()
+                g_signal_connect_data(
+                    gpointer(dialog),
+                    "close-request",
+                    unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
+                        Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
+                        return 1
+                    } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
+                    interceptBox,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+            } else {
+                let dismissBox = Unmanaged.passRetained(ClosureBox(info.onDismiss)).toOpaque()
+                g_signal_connect_data(
+                    gpointer(dialog),
+                    "close-request",
+                    unsafeBitCast({ (_: gpointer?, userData: gpointer?) -> gboolean in
+                        Unmanaged<ClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure()
+                        return 0
+                    } as @convention(c) (gpointer?, gpointer?) -> gboolean, to: GCallback.self),
+                    dismissBox,
+                    { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                        Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+                    },
+                    GConnectFlags(rawValue: 0)
+                )
+            }
 
             gtk_window_present(dialogWin)
             g_object_unref(gpointer(info.anchor))

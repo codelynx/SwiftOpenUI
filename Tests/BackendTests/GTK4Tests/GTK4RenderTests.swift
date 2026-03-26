@@ -1413,6 +1413,27 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
     }
 
+    func testSheetWithDismissalInterceptionRendersContent() throws {
+        try requireGTK()
+
+        var presented = true
+        var shouldConfirm = false
+        // Sheet content carries dismissalConfirmationDialog
+        let sheetContent = Text("Edit").dismissalConfirmationDialog(
+            "Discard?",
+            shouldPresent: Binding(get: { shouldConfirm }, set: { shouldConfirm = $0 }),
+            actions: [AlertButton("Discard", role: .destructive)]
+        )
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Base").sheet(
+                isPresented: Binding(get: { presented }, set: { presented = $0 })
+            ) { sheetContent }
+        ))
+        // Base content renders normally; sheet is deferred
+        let label = try unwrapFirstDescendant(ofType: "GtkLabel", in: widget)
+        XCTAssertEqual(String(cString: gtk_label_get_text(OpaquePointer(label))), "Base")
+    }
+
     // MARK: - Toolbar Tests
 
     func testToolbarMultiItemExtractsAllItems() throws {
