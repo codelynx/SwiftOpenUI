@@ -1736,13 +1736,15 @@ extension Picker: WebRenderable {
                 let isActive = i == selected
                 let bg = isActive ? "#0a84ff" : "#444"
                 let color = isActive ? "white" : "#ccc"
-                var btnStyle = "padding: 4px 12px; font-size: 13px; cursor: pointer; border: 1px solid #555; background: \(bg); color: \(color);"
+                let cursor = disabled ? "default" : "pointer"
+                var btnStyle = "padding: 4px 12px; font-size: 13px; cursor: \(cursor); border: 1px solid #555; background: \(bg); color: \(color);"
                 if i == 0 { btnStyle += " border-radius: 4px 0 0 4px;" }
                 else if i == options.count - 1 { btnStyle += " border-radius: 0 4px 4px 0; border-left: none;" }
                 else { btnStyle += " border-radius: 0; border-left: none;" }
                 btn.style = .string(btnStyle)
+                if disabled { btn.disabled = .boolean(true) }
 
-                if let callback = onChanged {
+                if !disabled, let callback = onChanged {
                     let idx = i
                     let handler = webMakeClosure { _ in
                         callback(idx)
