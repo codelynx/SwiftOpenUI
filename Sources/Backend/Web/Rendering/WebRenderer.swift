@@ -2651,7 +2651,27 @@ extension SheetModifierView: WebRenderable {
                 { config.isPresented.wrappedValue = true }
             }
 
-            let sheetEl = webRenderView(sheetContent)
+            // Inject dismiss environment action for sheet content:
+            // - with interception: sets shouldPresent = true
+            // - without: dismisses the sheet normally
+            let presentedBinding = isPresented
+            let sheetEl: JSValue
+            if let config = dismissalConfig {
+                let previousEnv = getCurrentEnvironment()
+                var env = previousEnv
+                env.dismiss = DismissAction { config.isPresented.wrappedValue = true }
+                setCurrentEnvironment(env)
+                sheetEl = webRenderView(sheetContent)
+                setCurrentEnvironment(previousEnv)
+            } else {
+                let previousEnv = getCurrentEnvironment()
+                var env = previousEnv
+                env.dismiss = DismissAction { presentedBinding.wrappedValue = false }
+                setCurrentEnvironment(env)
+                sheetEl = webRenderView(sheetContent)
+                setCurrentEnvironment(previousEnv)
+            }
+
             let overlay = webCreateModalOverlay(
                 title: "",
                 presented: isPresented,
@@ -2687,8 +2707,25 @@ extension ItemSheetModifierView: WebRenderable {
                 { config.isPresented.wrappedValue = true }
             }
 
-            let sheetEl = webRenderView(sheetContentView)
+            // Inject dismiss environment action for sheet content
             let itemBinding = item
+            let sheetEl: JSValue
+            if let config = dismissalConfig {
+                let previousEnv = getCurrentEnvironment()
+                var env = previousEnv
+                env.dismiss = DismissAction { config.isPresented.wrappedValue = true }
+                setCurrentEnvironment(env)
+                sheetEl = webRenderView(sheetContentView)
+                setCurrentEnvironment(previousEnv)
+            } else {
+                let previousEnv = getCurrentEnvironment()
+                var env = previousEnv
+                env.dismiss = DismissAction { itemBinding.wrappedValue = nil }
+                setCurrentEnvironment(env)
+                sheetEl = webRenderView(sheetContentView)
+                setCurrentEnvironment(previousEnv)
+            }
+
             let overlay = webCreateModalOverlay(
                 title: "",
                 presented: Binding(
