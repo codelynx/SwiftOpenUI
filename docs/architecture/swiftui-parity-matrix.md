@@ -81,6 +81,7 @@ Last updated: 2026-03-25
 | .onTapGesture() | Y | Y | Y | Y | Y | Y | count parameter |
 | .onLongPressGesture() | Y | Y | Y | Y | Y | Y | minimumDuration |
 | .onDrag() | Y | Y | Y | Y | Y | Y | minimumDistance filtering |
+| .disabled() | Y | Y | Y | Y | ~ | - | Batch A on GTK/Win32/Web: inherited `isEnabled` environment; main interactive controls disabled. Web fallback: priority controls covered, but non-priority controls like Link/Menu remain enabled. |
 | .environmentObject() | Y | Y | Y | Y | Y | Y | |
 | .environment() | Y | Y | Y | Y | Y | Y | |
 | .navigationTitle() | Y | Y | Y | Y | Y | Y | |

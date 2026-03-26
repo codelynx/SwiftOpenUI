@@ -1,10 +1,10 @@
 # Input and Event Modifiers
 
-Summary: 55 total, 5 implemented, 1 partial, 49 missing.
+Summary: 55 total, 6 implemented, 1 partial, 48 missing.
 
 ## Input and Event Modifiers (~148)
 
-55 total, 5 implemented, 1 partial, 49 missing.
+55 total, 6 implemented, 1 partial, 48 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -16,7 +16,7 @@ Summary: 55 total, 5 implemented, 1 partial, 49 missing.
 | `defaultHoverEffect` | Both | iOS 18 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `defaultScrollAnchor` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | - |
 | `defersSystemGestures` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `disabled` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `disabled` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/DisabledModifier.swift` | - |
 | `draggable` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `dropDestination` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `focusable` | Both | iOS 17 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |

@@ -76,7 +76,7 @@ Summary: 89 total, 45 implemented, 0 partial, 44 missing.
 | `LazyVStack` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/LazyStacks.swift` | GTK: virtualized; Win32/Web: non-virtualized |
 | `ScrollViewReader` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Missing | `-` | - |
 | `Spacer` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Spacer.swift` | - |
-| `ViewThatFits` | Both | iOS, macOS 13, watchOS 9, tvOS 16, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/ViewThatFits.swift` | - |
+| `ViewThatFits` | Both | iOS, macOS 13, watchOS 9, tvOS 16, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/ViewThatFits.swift` | Batch A fallback on Web: initial-mount first-fit selection with fallback-to-last, but no resize reevaluation yet. GTK: GtkStack + tick-driven remeasurement; Win32: WM_SIZE remeasurement. |
 | `VStack` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Stacks.swift` | - |
 | `ZStack` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Stacks.swift` | - |
 
