@@ -152,6 +152,18 @@ extension EnvironmentValues {
     }
 }
 
+/// Environment key describing whether descendant controls are enabled.
+public struct IsEnabledKey: EnvironmentKey {
+    public static let defaultValue: Bool = true
+}
+
+extension EnvironmentValues {
+    public var isEnabled: Bool {
+        get { self[IsEnabledKey.self] }
+        set { self[IsEnabledKey.self] = newValue }
+    }
+}
+
 /// A callable action that dismisses the current sheet or dialog.
 public struct DismissAction {
     let handler: () -> Void

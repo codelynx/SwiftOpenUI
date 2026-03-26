@@ -300,4 +300,22 @@ final class ModifierTests: XCTestCase {
         let view = Text("hello").environment(\.colorScheme, .dark)
         XCTAssertNotNil(view as EnvironmentModifierView<Text, ColorScheme>)
     }
+
+    func testEnvironmentValuesIsEnabledDefaultsTrue() {
+        let env = EnvironmentValues()
+        XCTAssertTrue(env.isEnabled)
+    }
+
+    func testDisabledModifierStoresWrapperState() {
+        let view = Text("hello").disabled(true)
+        XCTAssertTrue(view.isDisabled)
+        XCTAssertEqual(view.content.content, "hello")
+    }
+
+    func testDisabledModifierCanNestWithoutErasingInnerWrapper() {
+        let view = Text("hello").disabled(true).disabled(false)
+        XCTAssertFalse(view.isDisabled)
+        XCTAssertTrue(view.content.isDisabled)
+        XCTAssertEqual(view.content.content.content, "hello")
+    }
 }
