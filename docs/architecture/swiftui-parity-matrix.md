@@ -55,6 +55,7 @@ Last updated: 2026-03-25
 | Picker | Y | Y | Y | Y | Y | - | GTK: dropdown/segmented; Win32: ComboBox; Web: select |
 | DatePicker | Y | Y | Y | Y | Y | - | GTK: GtkCalendar; Win32: SysDateTimePick32; Web: date input |
 | GeometryReader | Y | Y | Y | Y | Y | - | GTK: map+tick; Win32: parent rect; Web: ResizeObserver |
+| ViewThatFits | Y | Y | Y | Y | ~ | - | Batch A fallback on Web: initial-mount first-fit selection with fallback-to-last, but no resize reevaluation yet. GTK: GtkStack + tick-driven remeasurement; Win32: WM_SIZE remeasurement. |
 | Menu | Y | Y | Y | Y | Y | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu; Web: dropdown div |
 | ConfirmationDialog | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | Canvas | Y | Y | Y | ~ | Y | - | GTK: Cairo; Win32: D2D subset; Web: Canvas 2D API |

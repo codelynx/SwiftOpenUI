@@ -1,6 +1,6 @@
 # Views
 
-Summary: 89 total, 44 implemented, 0 partial, 45 missing.
+Summary: 89 total, 45 implemented, 0 partial, 44 missing.
 
 ## Text Views
 
@@ -60,7 +60,7 @@ Summary: 89 total, 44 implemented, 0 partial, 45 missing.
 
 ## Layout Containers
 
-15 total, 12 implemented, 0 partial, 3 missing.
+15 total, 13 implemented, 0 partial, 2 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -76,7 +76,7 @@ Summary: 89 total, 44 implemented, 0 partial, 45 missing.
 | `LazyVStack` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/LazyStacks.swift` | GTK: virtualized; Win32/Web: non-virtualized |
 | `ScrollViewReader` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Missing | `-` | - |
 | `Spacer` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Spacer.swift` | - |
-| `ViewThatFits` | Both | iOS, macOS 13, watchOS 9, tvOS 16, visionOS 1 | Current | Missing | `-` | - |
+| `ViewThatFits` | Both | iOS, macOS 13, watchOS 9, tvOS 16, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/ViewThatFits.swift` | - |
 | `VStack` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Stacks.swift` | - |
 | `ZStack` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Stacks.swift` | - |
 
