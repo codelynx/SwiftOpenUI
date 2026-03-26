@@ -2191,17 +2191,41 @@ private func webSearchFieldPlacementString(_ placement: SearchFieldPlacement) ->
     }
 }
 
+/// When a confirmation dialog is the dismissal-interception UI for a sheet,
+/// this holds the parent sheet's dismiss closure. Non-cancel buttons call it
+/// after running their action to complete the sheet teardown.
+private var _webInterceptedSheetDismiss: (() -> Void)? = nil
+
 extension ConfirmationDialogView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
 
         if isPresented.wrappedValue {
             let visibleTitle = titleVisibility == .hidden ? "" : title
+
+            // If this is a dismissal-interception dialog, wrap non-cancel
+            // buttons to also dismiss the parent sheet after their action.
+            let effectiveButtons: [AlertButton]
+            if participatesInDismissalInterception, let sheetDismiss = _webInterceptedSheetDismiss {
+                effectiveButtons = buttons.map { button in
+                    if button.role == .cancel {
+                        return button
+                    }
+                    let originalAction = button.action
+                    return AlertButton(button.label, role: button.role) {
+                        originalAction()
+                        sheetDismiss()
+                    }
+                }
+            } else {
+                effectiveButtons = buttons
+            }
+
             let overlay = webCreateModalOverlay(
                 title: visibleTitle,
                 presented: isPresented,
                 message: message.isEmpty ? nil : message,
-                buttons: buttons
+                buttons: effectiveButtons
             )
             let wrapper = document.createElement("div")
             _ = wrapper.appendChild(child)
@@ -2656,12 +2680,16 @@ extension SheetModifierView: WebRenderable {
             // - without: dismisses the sheet normally
             let presentedBinding = isPresented
             let sheetEl: JSValue
-            if let config = dismissalConfig {
+            if dismissalConfig != nil {
                 let previousEnv = getCurrentEnvironment()
                 var env = previousEnv
-                env.dismiss = DismissAction { config.isPresented.wrappedValue = true }
+                env.dismiss = DismissAction { dismissalConfig!.isPresented.wrappedValue = true }
                 setCurrentEnvironment(env)
+                // Set intercepted sheet dismiss so confirmation buttons can close the sheet
+                let previousInterceptedDismiss = _webInterceptedSheetDismiss
+                _webInterceptedSheetDismiss = { presentedBinding.wrappedValue = false }
                 sheetEl = webRenderView(sheetContent)
+                _webInterceptedSheetDismiss = previousInterceptedDismiss
                 setCurrentEnvironment(previousEnv)
             } else {
                 let previousEnv = getCurrentEnvironment()
@@ -2715,7 +2743,11 @@ extension ItemSheetModifierView: WebRenderable {
                 var env = previousEnv
                 env.dismiss = DismissAction { config.isPresented.wrappedValue = true }
                 setCurrentEnvironment(env)
+                // Set intercepted sheet dismiss so confirmation buttons can close the sheet
+                let previousInterceptedDismiss = _webInterceptedSheetDismiss
+                _webInterceptedSheetDismiss = { itemBinding.wrappedValue = nil }
                 sheetEl = webRenderView(sheetContentView)
+                _webInterceptedSheetDismiss = previousInterceptedDismiss
                 setCurrentEnvironment(previousEnv)
             } else {
                 let previousEnv = getCurrentEnvironment()
