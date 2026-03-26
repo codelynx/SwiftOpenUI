@@ -985,6 +985,60 @@ extension Optional: WebDescribable where Wrapped: View {
     }
 }
 
+// MARK: - ViewThatFits
+
+extension ViewThatFits: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        guard !children.isEmpty else {
+            return document.createElement("div")
+        }
+
+        // Container that will hold the chosen child
+        let container = document.createElement("div")
+        container.style = "overflow: hidden;"
+
+        // Render all children into off-screen measurement wrappers.
+        // Each wrapper is positioned absolutely so it doesn't affect layout,
+        // with visibility:hidden so it's measured but not painted.
+        var measurements: [(element: JSValue, wrapper: JSValue)] = []
+        for child in children {
+            let wrapper = document.createElement("div")
+            wrapper.style = "position: absolute; visibility: hidden; width: max-content; height: max-content;"
+            let el = webRenderAnyView(child)
+            _ = wrapper.appendChild(el)
+            _ = document.body.appendChild(wrapper)
+            measurements.append((element: el, wrapper: wrapper))
+        }
+
+        // Measure: pick the first child whose scrollWidth fits within the
+        // container's available width. Since the container isn't in the DOM
+        // yet, use the parent's width via window.innerWidth as a proxy.
+        // This is best-effort — real layout-driven measurement would require
+        // a ResizeObserver lifecycle that's beyond Batch A scope.
+        let availableWidth = JSObject.global.window.innerWidth.number ?? 9999
+
+        var chosenIndex = children.count - 1 // fallback to last
+        for i in 0..<measurements.count {
+            let measuredWidth = measurements[i].wrapper.scrollWidth.number ?? 0
+            if measuredWidth <= availableWidth {
+                chosenIndex = i
+                break
+            }
+        }
+
+        // Clean up measurement wrappers and adopt the chosen child
+        for (i, m) in measurements.enumerated() {
+            _ = m.wrapper.removeChild(m.element)
+            _ = document.body.removeChild(m.wrapper)
+            if i == chosenIndex {
+                _ = container.appendChild(m.element)
+            }
+        }
+
+        return container
+    }
+}
+
 // MARK: - Modifier views
 
 extension PaddedView: WebRenderable, WebDescribable {
