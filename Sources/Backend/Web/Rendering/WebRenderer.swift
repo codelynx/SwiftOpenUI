@@ -1362,9 +1362,9 @@ extension Slider: WebRenderable, WebDescribable {
         input.max = .string("\(range.upperBound)")
         input.step = .string("\(step)")
         let disabled = webIsDisabled()
-        if disabled { input.disabled = .boolean(true); input.style = "opacity: 0.4;" }
+        if disabled { input.disabled = .boolean(true) }
         input.value = .string("\(value.wrappedValue)")
-        input.style = "width: 100%;"
+        input.style = .string("width: 100%; opacity: \(disabled ? 0.4 : 1.0);")
 
         let binding = value
         let handler = webMakeClosure { _ in
