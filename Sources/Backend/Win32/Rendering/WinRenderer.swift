@@ -6622,6 +6622,54 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - fullScreenCover Win32 extension
+
+extension FullScreenCoverView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let anchor = winRenderView(content, in: context) else { return nil }
+
+        if isPresented.wrappedValue {
+            let root = findRootWindow(from: anchor)
+
+            // Get screen dimensions for fullscreen
+            let screenW = GetSystemMetrics(SM_CXSCREEN)
+            let screenH = GetSystemMetrics(SM_CYSCREEN)
+
+            let popup = CreateWindowExW(
+                0,
+                stackContainerClassName, nil,
+                DWORD(WS_POPUP | WS_VISIBLE),
+                0, 0, screenW, screenH,
+                root, nil, context.hInstance, nil
+            )
+
+            if let popup {
+                // Inject dismiss action
+                let binding = isPresented
+                let dismiss = onDismiss
+                var env = getCurrentEnvironment()
+                env.dismiss = DismissAction {
+                    binding.wrappedValue = false
+                    dismiss?()
+                }
+                let prevEnv = getCurrentEnvironment()
+                setCurrentEnvironment(env)
+                let childCtx = RenderContext(parent: popup, hInstance: context.hInstance)
+                if let child = winRenderView(coverContent, in: childCtx) {
+                    SetWindowPos(child, nil, 0, 0, screenW, screenH,
+                                 UINT(SWP_NOZORDER))
+                }
+                setCurrentEnvironment(prevEnv)
+
+                // Bring to front
+                SetForegroundWindow(popup)
+            }
+        }
+
+        return anchor
+    }
+}
+
 // MARK: - Aspect ratio Win32 extension
 
 extension AspectRatioView: WinRenderable {

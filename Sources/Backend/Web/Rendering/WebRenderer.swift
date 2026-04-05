@@ -589,6 +589,39 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - fullScreenCover Web extension
+
+extension FullScreenCoverView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("display: inline-block;")
+        _ = wrapper.appendChild(child)
+
+        if isPresented.wrappedValue {
+            let overlay = document.createElement("div")
+            overlay.style = .string("position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: white; z-index: 10001; display: flex; align-items: center; justify-content: center;")
+
+            let binding = isPresented
+            let dismiss = onDismiss
+            var env = getCurrentEnvironment()
+            env.dismiss = DismissAction {
+                binding.wrappedValue = false
+                dismiss?()
+            }
+            let prevEnv = getCurrentEnvironment()
+            setCurrentEnvironment(env)
+            let coverChild = webRenderView(coverContent)
+            setCurrentEnvironment(prevEnv)
+
+            _ = overlay.appendChild(coverChild)
+            _ = wrapper.appendChild(overlay)
+        }
+
+        return wrapper
+    }
+}
+
 // MARK: - Aspect ratio Web extension
 
 extension AspectRatioView: WebRenderable {

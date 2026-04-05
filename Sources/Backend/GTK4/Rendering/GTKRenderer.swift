@@ -1107,6 +1107,78 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - fullScreenCover GTK extension
+
+extension FullScreenCoverView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let anchor = widgetFromOpaque(gtkRenderView(content))
+
+        if isPresented.wrappedValue {
+            let gobject = gpointer(anchor)
+            guard g_object_get_data(gobject, "swift-fullscreen-active") == nil else {
+                return opaqueFromWidget(anchor)
+            }
+
+            // Create a fullscreen modal window
+            let window = gtk_window_new()!
+            gtk_window_set_modal(OpaquePointer(window), 1)
+
+            // Find root window to set as transient parent
+            var root = anchor
+            while let parent = gtk_widget_get_parent(root) { root = parent }
+            if let rootWindow = gtk_widget_get_root(root) {
+                gtk_window_set_transient_for(OpaquePointer(window), OpaquePointer(rootWindow))
+            }
+
+            // Inject dismiss action
+            let binding = isPresented
+            let dismiss = onDismiss
+            var env = getCurrentEnvironment()
+            env.dismiss = DismissAction {
+                binding.wrappedValue = false
+            }
+            let prevEnv = getCurrentEnvironment()
+            setCurrentEnvironment(env)
+            let coverWidget = widgetFromOpaque(gtkRenderView(coverContent))
+            setCurrentEnvironment(prevEnv)
+
+            gtk_window_set_child(OpaquePointer(window), coverWidget)
+            gtk_window_fullscreen(OpaquePointer(window))
+
+            g_object_set_data(gobject, "swift-fullscreen-active", gpointer(bitPattern: 1))
+
+            // Handle close
+            let closeBox = Unmanaged.passRetained(ClosureBox {
+                binding.wrappedValue = false
+                g_object_set_data(gobject, "swift-fullscreen-active", nil)
+                dismiss?()
+            }).toOpaque()
+            g_signal_connect_data(
+                gpointer(window), "close-request",
+                unsafeBitCast({ (_: OpaquePointer, ud: gpointer?) -> gboolean in
+                    guard let ud = ud else { return 0 }
+                    Unmanaged<ClosureBox>.fromOpaque(ud).takeUnretainedValue().action()
+                    return 0
+                } as @convention(c) (OpaquePointer, gpointer?) -> gboolean,
+                to: GCallback.self),
+                closeBox,
+                { (data: gpointer?, _: OpaquePointer?) in
+                    guard let data = data else { return }
+                    Unmanaged<ClosureBox>.fromOpaque(data).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+
+            g_idle_add({ _ in
+                gtk_widget_set_visible(window, 1)
+                return 0
+            }, gpointer(window))
+        }
+
+        return opaqueFromWidget(anchor)
+    }
+}
+
 // MARK: - Aspect ratio GTK extension
 
 extension AspectRatioView: GTKRenderable {
