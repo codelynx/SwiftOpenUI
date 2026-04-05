@@ -589,6 +589,15 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - onChange Web extension
+
+extension OnChangeView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        onChangeCheckAndFire(value: value, action: action)
+        return webRenderView(content)
+    }
+}
+
 // MARK: - Appearance modifier Web extensions
 
 extension HiddenView: WebRenderable {

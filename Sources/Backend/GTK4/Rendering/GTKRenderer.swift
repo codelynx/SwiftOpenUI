@@ -1107,6 +1107,15 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - onChange GTK extension
+
+extension OnChangeView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        onChangeCheckAndFire(value: value, action: action)
+        return widgetFromOpaque(gtkRenderView(content))
+    }
+}
+
 // MARK: - Appearance modifier GTK extensions
 
 extension HiddenView: GTKRenderable {

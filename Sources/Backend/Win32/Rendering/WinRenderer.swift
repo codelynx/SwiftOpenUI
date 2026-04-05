@@ -6622,6 +6622,15 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - onChange Win32 extension
+
+extension OnChangeView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        onChangeCheckAndFire(value: value, action: action)
+        return winRenderView(content, in: context)
+    }
+}
+
 // MARK: - Appearance modifier Win32 extensions
 
 extension HiddenView: WinRenderable {

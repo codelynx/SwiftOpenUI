@@ -1,6 +1,6 @@
 # State, Environment, and Deprecated Modifiers
 
-Summary: 34 total, 7 implemented, 1 partial, 26 missing.
+Summary: 34 total, 8 implemented, 1 partial, 25 missing.
 
 ## State and Environment Modifiers (~20)
 
@@ -46,6 +46,6 @@ Summary: 34 total, 7 implemented, 1 partial, 26 missing.
 | `navigationBarItems` | Both | - | Deprecated | Missing | `-` | iOS 14 |
 | `navigationBarTitle` | Both | - | Deprecated | Missing | `-` | iOS 14 |
 | `navigationViewStyle` | Both | - | Deprecated | Missing | `-` | iOS 16 |
-| `onChange` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | Replaces deprecated onChange(of:perform:) |
+| `onChange` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/OnChangeModifier.swift` | onChange(of:perform:) variant. Render-pass counter-keyed value tracking. |
 | `overlay` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/OverlayModifier.swift` | Modern API \| GTK: GtkOverlay; Win32: container; Web: absolute positioning |
 | `statusBar` | Both | - | Deprecated | Missing | `-` | iOS 16 |
