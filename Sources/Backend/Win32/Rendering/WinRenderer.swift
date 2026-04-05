@@ -6761,7 +6761,7 @@ extension FullScreenCoverView: WinRenderable {
             let popup = CreateWindowExW(
                 DWORD(WS_EX_TOPMOST),
                 stackContainerClassName, nil,
-                DWORD(WS_POPUP | WS_VISIBLE),
+                DWORD(WS_POPUP) | DWORD(WS_VISIBLE),
                 0, 0, screenW, screenH,
                 root, nil, context.hInstance, nil
             )
