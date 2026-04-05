@@ -1075,6 +1075,26 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - Appearance modifier GTK extensions
+
+extension HiddenView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_visible(widget, 0)
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension BlurView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        if radius > 0 {
+            applyCSSToWidget(widget, properties: "filter: blur(\(radius)px);")
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - Gesture GTK extensions
 
 /// Box for tap gesture that carries the required tap count.
