@@ -6627,8 +6627,15 @@ extension MultilineTextAlignmentView: WinRenderable {
 extension PositionView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let child = winRenderView(content, in: context) else { return nil }
-        // Move child to absolute position within parent
-        SetWindowPos(child, nil, Int32(x), Int32(y), 0, 0,
+        // .position(x:y:) places the center of the view at (x, y).
+        // Offset by half the child's size to convert center → top-left.
+        var childRect = RECT()
+        GetWindowRect(child, &childRect)
+        let childW = childRect.right - childRect.left
+        let childH = childRect.bottom - childRect.top
+        let left = Int32(x) - childW / 2
+        let top = Int32(y) - childH / 2
+        SetWindowPos(child, nil, left, top, 0, 0,
                      UINT(SWP_NOSIZE | SWP_NOZORDER))
         return child
     }
