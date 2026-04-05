@@ -6624,19 +6624,105 @@ extension MultilineTextAlignmentView: WinRenderable {
 
 // MARK: - fullScreenCover Win32 extension
 
+/// Property name stored on the root window to track the active fullscreen cover HWND.
+private let fullScreenCoverPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIFullScreenCover".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+private func win32ActiveFullScreenCover(for root: HWND) -> HWND? {
+    guard let existing = GetPropW(root, fullScreenCoverPropName) else { return nil }
+    return HWND(bitPattern: Int(bitPattern: existing))
+}
+
+private class FullScreenCoverDismissInfo {
+    let dismiss: () -> Void
+    var onDismiss: (() -> Void)?
+    let root: HWND
+    var dismissed = false
+    init(root: HWND, dismiss: @escaping () -> Void, onDismiss: (() -> Void)?) {
+        self.root = root
+        self.dismiss = dismiss
+        self.onDismiss = onDismiss
+    }
+    func dismissOnce() {
+        guard !dismissed else { return }
+        dismissed = true
+        dismiss()
+        onDismiss?()
+    }
+}
+
+private let fullScreenCoverInfoPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIFullScreenCoverInfo".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+private let fullScreenCoverProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_KEYDOWN):
+        if wParam == WPARAM(VK_ESCAPE), dwRefData != 0 {
+            let info = Unmanaged<FullScreenCoverDismissInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+            info.dismissOnce()
+            DestroyWindow(hwnd)
+            return 0
+        }
+    case UINT(WM_CLOSE):
+        if dwRefData != 0 {
+            let info = Unmanaged<FullScreenCoverDismissInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            ).takeUnretainedValue()
+            info.dismissOnce()
+        }
+        DestroyWindow(hwnd)
+        return 0
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0 {
+            let info = Unmanaged<FullScreenCoverDismissInfo>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            )
+            let val = info.takeUnretainedValue()
+            RemovePropW(val.root, fullScreenCoverPropName)
+            RemovePropW(hwnd, fullScreenCoverInfoPropName)
+            val.dismissOnce()
+            info.release()
+        }
+        RemoveWindowSubclass(hwnd, fullScreenCoverProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    default:
+        break
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
 extension FullScreenCoverView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let anchor = winRenderView(content, in: context) else { return nil }
 
+        let root = findRootWindow(from: anchor)
+        let existingCover = win32ActiveFullScreenCover(for: root)
+
         if isPresented.wrappedValue {
-            let root = findRootWindow(from: anchor)
+            // Duplicate prevention: skip if cover already open
+            if existingCover != nil { return anchor }
 
             // Get screen dimensions for fullscreen
             let screenW = GetSystemMetrics(SM_CXSCREEN)
             let screenH = GetSystemMetrics(SM_CYSCREEN)
 
+            // WS_EX_TOPMOST ensures cover appears above the taskbar
             let popup = CreateWindowExW(
-                0,
+                DWORD(WS_EX_TOPMOST),
                 stackContainerClassName, nil,
                 DWORD(WS_POPUP | WS_VISIBLE),
                 0, 0, screenW, screenH,
@@ -6644,13 +6730,31 @@ extension FullScreenCoverView: WinRenderable {
             )
 
             if let popup {
-                // Inject dismiss action
+                // Track the cover on the root window
+                SetPropW(root, fullScreenCoverPropName,
+                         HANDLE(bitPattern: Int(bitPattern: popup)))
+
+                // Set up dismiss info and subclass for Escape/close handling
                 let binding = isPresented
-                let dismiss = onDismiss
+                let dismissCb = onDismiss
+                let dismissInfo = FullScreenCoverDismissInfo(
+                    root: root,
+                    dismiss: { binding.wrappedValue = false },
+                    onDismiss: dismissCb
+                )
+                let infoPtr = Unmanaged.passRetained(dismissInfo).toOpaque()
+                SetPropW(popup, fullScreenCoverInfoPropName,
+                         HANDLE(bitPattern: Int(bitPattern: infoPtr)))
+                SetWindowSubclass(popup, fullScreenCoverProc, 0,
+                                  DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+                // Inject dismiss action into environment
                 var env = getCurrentEnvironment()
                 env.dismiss = DismissAction {
-                    binding.wrappedValue = false
-                    dismiss?()
+                    dismissInfo.dismissOnce()
+                    if IsWindow(popup) {
+                        DestroyWindow(popup)
+                    }
                 }
                 let prevEnv = getCurrentEnvironment()
                 setCurrentEnvironment(env)
@@ -6664,6 +6768,9 @@ extension FullScreenCoverView: WinRenderable {
                 // Bring to front
                 SetForegroundWindow(popup)
             }
+        } else if let existingCover {
+            // Programmatic dismiss: isPresented set to false while cover is open
+            DestroyWindow(existingCover)
         }
 
         return anchor
