@@ -883,7 +883,10 @@ extension ForegroundColorView: GTKRenderable, GTKDescribable {
     }
 
     public func gtkCreateWidget() -> OpaquePointer {
+        let prev = _gtkCurrentForegroundColor
+        gtkSetCurrentForegroundColor(color)
         let widget = widgetFromOpaque(gtkRenderView(content))
+        gtkSetCurrentForegroundColor(prev)
         applyCSSToWidget(widget, properties: "color: \(color.hex);")
         return opaqueFromWidget(widget)
     }
@@ -4434,6 +4437,125 @@ extension Canvas: GTKRenderable, GTKDescribable {
         )
 
         return opaqueFromWidget(area)
+    }
+}
+
+// MARK: - Foreground color propagation for Cairo rendering
+//
+// ForegroundColorView applies CSS color: to widgets, but GtkDrawingArea
+// Cairo callbacks can't read CSS properties. Track the current foreground
+// color in a render-time thread-local so bare shapes can read it.
+
+private var _gtkCurrentForegroundColor: Color?
+
+func gtkGetCurrentForegroundColor() -> Color {
+    _gtkCurrentForegroundColor ?? Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0)
+}
+
+func gtkSetCurrentForegroundColor(_ color: Color?) {
+    _gtkCurrentForegroundColor = color
+}
+
+// MARK: - Shape view rendering
+
+/// Closure box for shape draw callbacks. Holds the path generator and
+/// fill/stroke configuration so the Cairo callback can render the shape.
+private class ShapeDrawBox {
+    enum Mode {
+        case fill(r: Double, g: Double, b: Double, a: Double)
+        case stroke(r: Double, g: Double, b: Double, a: Double, style: StrokeStyle)
+    }
+    let pathGenerator: (CGRect) -> Path
+    let mode: Mode
+
+    init(pathGenerator: @escaping (CGRect) -> Path, mode: Mode) {
+        self.pathGenerator = pathGenerator
+        self.mode = mode
+    }
+}
+
+/// Create a GtkDrawingArea that renders a shape via Cairo.
+private func gtkCreateShapeWidget(box: ShapeDrawBox) -> OpaquePointer {
+    let area = gtk_drawing_area_new()!
+    gtk_widget_set_hexpand(area, 1)
+    gtk_widget_set_vexpand(area, 1)
+
+    let retained = Unmanaged.passRetained(box).toOpaque()
+
+    gtk_swift_drawing_area_set_draw_func(
+        area,
+        { (widget: UnsafeMutablePointer<GtkWidget>?,
+           cr: OpaquePointer?,
+           w: gint, h: gint,
+           userData: gpointer?) in
+            guard let cr = cr, let userData = userData else { return }
+            let box = Unmanaged<ShapeDrawBox>.fromOpaque(userData).takeUnretainedValue()
+            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let path = box.pathGenerator(rect)
+            let context = DrawingContext(cr: cr)
+
+            switch box.mode {
+            case .fill(let r, let g, let b, let a):
+                context.fill(path, with: .color(Color(red: r, green: g, blue: b, opacity: a)))
+            case .stroke(let r, let g, let b, let a, let style):
+                context.stroke(path, with: .color(Color(red: r, green: g, blue: b, opacity: a)), style: style)
+            }
+        },
+        retained,
+        { (userData: gpointer?) in
+            guard let userData = userData else { return }
+            Unmanaged<ShapeDrawBox>.fromOpaque(userData).release()
+        }
+    )
+
+    return opaqueFromWidget(area)
+}
+
+/// Render a bare shape (no .fill() or .stroke()) filled with the current
+/// foreground color (default black).
+private func gtkRenderBareShape<S: Shape>(_ shape: S) -> OpaquePointer {
+    let fg = gtkGetCurrentForegroundColor()
+    let box = ShapeDrawBox(
+        pathGenerator: { rect in shape.path(in: rect) },
+        mode: .fill(r: fg.red, g: fg.green, b: fg.blue, a: fg.alpha))
+    return gtkCreateShapeWidget(box: box)
+}
+
+extension Circle: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer { gtkRenderBareShape(self) }
+}
+
+extension Rectangle: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer { gtkRenderBareShape(self) }
+}
+
+extension RoundedRectangle: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer { gtkRenderBareShape(self) }
+}
+
+extension Capsule: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer { gtkRenderBareShape(self) }
+}
+
+extension Ellipse: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer { gtkRenderBareShape(self) }
+}
+
+extension FilledShape: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let box = ShapeDrawBox(
+            pathGenerator: { rect in self.shape.path(in: rect) },
+            mode: .fill(r: color.red, g: color.green, b: color.blue, a: color.alpha))
+        return gtkCreateShapeWidget(box: box)
+    }
+}
+
+extension StrokedShape: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let box = ShapeDrawBox(
+            pathGenerator: { rect in self.shape.path(in: rect) },
+            mode: .stroke(r: color.red, g: color.green, b: color.blue, a: color.alpha, style: style))
+        return gtkCreateShapeWidget(box: box)
     }
 }
 
