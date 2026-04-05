@@ -6622,6 +6622,19 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - onSubmit Win32 extension
+
+extension OnSubmitView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        var env = getCurrentEnvironment()
+        env.submitAction = SubmitAction(handler: action)
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return winRenderView(content, in: context)
+    }
+}
+
 // MARK: - Tag Win32 extension
 
 extension TagView: WinRenderable {

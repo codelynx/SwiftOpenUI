@@ -213,6 +213,18 @@ extension SwiftOpenUI.TextField: WebRenderable {
         }
         _ = input.addEventListener("input", handler)
 
+        // Wire onSubmit: fire on Enter key
+        if let submitAction = env.submitAction {
+            let keyHandler = webMakeClosure { args in
+                let e = args[0]
+                if e.key.string == "Enter" {
+                    submitAction()
+                }
+                return .undefined
+            }
+            _ = input.addEventListener("keydown", keyHandler)
+        }
+
         return input
     }
 }
@@ -586,6 +598,19 @@ extension ClippedView: WebRenderable {
         wrapper.style = .string("display: inline-block; overflow: hidden;")
         _ = wrapper.appendChild(child)
         return wrapper
+    }
+}
+
+// MARK: - onSubmit Web extension
+
+extension OnSubmitView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        var env = getCurrentEnvironment()
+        env.submitAction = SubmitAction(handler: action)
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return webRenderView(content)
     }
 }
 

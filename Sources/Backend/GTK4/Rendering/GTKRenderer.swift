@@ -191,6 +191,26 @@ extension TextField: GTKRenderable {
             break // default GTK entry styling
         }
 
+        // Wire onSubmit: GtkEntry fires "activate" on Enter key
+        if let submitAction = getCurrentEnvironment().submitAction {
+            let submitBox = Unmanaged.passRetained(ClosureBox {
+                submitAction()
+            }).toOpaque()
+            g_signal_connect_data(
+                gpointer(entry), "activate",
+                unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                    guard let userData else { return }
+                    Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().action()
+                } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                submitBox,
+                { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    guard let data else { return }
+                    Unmanaged<ClosureBox>.fromOpaque(data).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+        }
+
         gtkApplyEnabledState(to: entry)
         return opaqueFromWidget(entry)
     }
@@ -1200,6 +1220,19 @@ extension FullScreenCoverView: GTKRenderable {
         }
 
         return opaqueFromWidget(widget)
+    }
+}
+
+// MARK: - onSubmit GTK extension
+
+extension OnSubmitView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        var env = getCurrentEnvironment()
+        env.submitAction = SubmitAction(handler: action)
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return widgetFromOpaque(gtkRenderView(content))
     }
 }
 
