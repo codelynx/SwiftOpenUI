@@ -107,8 +107,10 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         _ = JSObject.global.requestAnimationFrame!(callback)
     }
 
+    private var suppressFocusRestoreOnce = false
+
     public func suppressNextFocusRestore() {
-        // No-op for web — browser handles focus
+        suppressFocusRestoreOnce = true
     }
 
     /// Build the body with observation tracking for @Observable support.
@@ -175,10 +177,12 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         }
         */
 
-        // Consume the one-shot pending animation before any early return,
-        // so it cannot leak into a later unrelated rebuild.
+        // Consume one-shot tokens before any early return,
+        // so they cannot leak into a later unrelated rebuild.
         let rebuildAnim = pendingAnimation ?? capturedAnimation
         pendingAnimation = nil
+        let suppressFocus = suppressFocusRestoreOnce
+        suppressFocusRestoreOnce = false
 
         // Phase 7: skip body evaluation if no storage was mutated since last render
         if let snapshot = lastInputSnapshot,
@@ -192,6 +196,9 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
                 oldSnapshots = webCollectAnimatableSnapshots(from: JSValue.object(oldChild))
             }
         }
+
+        // --- Focus: save input state before DOM teardown ---
+        let focusSnapshot = webSaveFocusState(in: container)
 
         // Release old state before new render pass to free memory
         clear()
@@ -223,6 +230,13 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
             setCurrentEnvironment(previousEnv)
 
             _ = container.appendChild(element)
+        }
+
+        // --- Focus: restore input state after new DOM is in place ---
+        // suppressFocus was consumed before Phase 7 early return (same
+        // lifecycle as pendingAnimation) so it cannot leak.
+        if let snapshot = focusSnapshot {
+            webRestoreFocusState(snapshot, in: container, suppressFocus: suppressFocus)
         }
 
         setCurrentAnimation(previousAnim)
@@ -406,6 +420,137 @@ private func webCollectAnimatableWrappersRecursive(
     for i in 0..<count {
         webCollectAnimatableWrappersRecursive(childrenVal[i], depth: depth + 1, into: &result)
     }
+}
+
+// MARK: - Focus state preservation
+
+/// Snapshot of the focused element's identity and selection state.
+struct WebFocusSnapshot {
+    let tag: String              // "input" or "textarea"
+    let inputType: String        // "text", "password", "range", etc.
+    let typeIndex: Int           // Nth element of this tag+type
+    let typeCount: Int           // Total count of this tag+type (bail guard)
+    let selectionStart: Int?     // Only for text-selectable types
+    let selectionEnd: Int?
+    let selectionDirection: String?
+}
+
+/// Input types that support selectionStart/selectionEnd/setSelectionRange.
+private let textSelectableTypes: Set<String> = ["text", "password", "search", "textarea"]
+
+/// Save the focused element's identity and selection state before DOM teardown.
+/// Returns nil if no element inside the container is focused.
+func webSaveFocusState(in container: JSValue) -> WebFocusSnapshot? {
+    guard let docObj = document.object else { return nil }
+    let activeElement = docObj.activeElement
+    guard let activeObj = activeElement.object else { return nil }
+
+    // Check the focused element is inside our container
+    guard container.contains.function != nil else { return nil }
+    let contains = container.contains(activeElement)
+    guard contains.boolean == true else { return nil }
+
+    // Read tag and type
+    let tag = (activeObj.tagName.string ?? "").lowercased()
+    guard tag == "input" || tag == "textarea" else { return nil }
+
+    let inputType: String
+    if tag == "textarea" {
+        inputType = "textarea"
+    } else {
+        inputType = (activeObj.type.string ?? "text").lowercased()
+    }
+
+    // Count elements of this tag+type and find the index of the active one
+    let allMatching = webCollectElementsByTagAndType(in: container, tag: tag, inputType: inputType)
+    var typeIndex = -1
+    for (i, el) in allMatching.enumerated() {
+        if activeElement == el {
+            typeIndex = i
+            break
+        }
+    }
+    guard typeIndex >= 0 else { return nil }
+
+    // Read selection if text-selectable
+    var selStart: Int? = nil
+    var selEnd: Int? = nil
+    var selDir: String? = nil
+    if textSelectableTypes.contains(inputType) {
+        selStart = activeObj.selectionStart.number.map { Int($0) }
+        selEnd = activeObj.selectionEnd.number.map { Int($0) }
+        selDir = activeObj.selectionDirection.string
+    }
+
+    return WebFocusSnapshot(
+        tag: tag,
+        inputType: inputType,
+        typeIndex: typeIndex,
+        typeCount: allMatching.count,
+        selectionStart: selStart,
+        selectionEnd: selEnd,
+        selectionDirection: selDir
+    )
+}
+
+/// Restore focus and selection state after DOM rebuild.
+/// Bails silently if the element cannot be matched confidently.
+///
+/// When `suppressFocus` is true, focus() is skipped but selection is still
+/// restored if the target is a text-selectable type. This matches Win32
+/// behavior where edit cursors survive even when focus restore is suppressed.
+///
+/// **Known limitation:** The count-based bail guard detects insertions and
+/// removals but does NOT detect same-type reorders. If two `input[type="text"]`
+/// peers swap positions while the count stays the same, the restore may
+/// target the wrong control. This is a structural identity limitation
+/// shared with the animation pairing scheme.
+func webRestoreFocusState(_ snapshot: WebFocusSnapshot, in container: JSValue, suppressFocus: Bool = false) {
+    let newMatching = webCollectElementsByTagAndType(
+        in: container, tag: snapshot.tag, inputType: snapshot.inputType)
+
+    // Bail guard: if count changed, structure shifted — can't match safely
+    guard newMatching.count == snapshot.typeCount else { return }
+    guard snapshot.typeIndex < newMatching.count else { return }
+
+    let target = newMatching[snapshot.typeIndex]
+
+    // Restore focus unless suppressed — silently skip if focus() is not available
+    if !suppressFocus, target.focus.function != nil {
+        _ = target.focus()
+    }
+
+    // Restore selection for text-selectable types even when focus is suppressed.
+    // On Web, setSelectionRange() works on the element regardless of focus state.
+    if textSelectableTypes.contains(snapshot.inputType),
+       let start = snapshot.selectionStart,
+       let end = snapshot.selectionEnd,
+       target.setSelectionRange.function != nil {
+        let dir = snapshot.selectionDirection ?? "none"
+        _ = target.setSelectionRange(start, end, dir)
+    }
+}
+
+/// Collect all elements matching a given tag and input type within a container.
+/// For textarea, inputType is "textarea". DFS order.
+private func webCollectElementsByTagAndType(
+    in container: JSValue, tag: String, inputType: String
+) -> [JSValue] {
+    // Use querySelectorAll for efficient DOM traversal
+    let selector: String
+    if tag == "textarea" {
+        selector = "textarea"
+    } else {
+        selector = "input[type=\"\(inputType)\"]"
+    }
+    let nodeList = container.querySelectorAll(selector)
+    guard let count = nodeList.length.number.map({ Int($0) }) else { return [] }
+
+    var result: [JSValue] = []
+    for i in 0..<count {
+        result.append(nodeList[i])
+    }
+    return result
 }
 
 // MARK: - Stateful view rendering
