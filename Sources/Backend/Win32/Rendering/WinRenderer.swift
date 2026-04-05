@@ -5977,6 +5977,117 @@ extension CornerRadiusView: WinRenderable {
     }
 }
 
+// MARK: - Clip modifiers
+
+extension ClippedView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        // Clip to bounding rect via Win32 region
+        var r = RECT()
+        GetWindowRect(hwnd, &r)
+        let w = r.right - r.left
+        let h = r.bottom - r.top
+        let rgn = CreateRectRgn(0, 0, w, h)
+        SetWindowRgn(hwnd, rgn, true)
+        return hwnd
+    }
+}
+
+extension ClipShapeView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        var r = RECT()
+        GetWindowRect(hwnd, &r)
+        let w = r.right - r.left
+        let h = r.bottom - r.top
+
+        let rgn: HRGN?
+
+        // Use optimized Win32 region APIs for known shape types
+        if shape is Circle {
+            // Inscribe circle in smaller dimension, centered
+            let side = min(w, h)
+            let ox = (w - side) / 2
+            let oy = (h - side) / 2
+            rgn = CreateEllipticRgn(ox, oy, ox + side, oy + side)
+        } else if shape is Ellipse {
+            rgn = CreateEllipticRgn(0, 0, w, h)
+        } else if let rr = shape as? RoundedRectangle {
+            let cr = Int32(rr.cornerRadius)
+            rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, cr * 2, cr * 2)
+        } else if shape is Capsule {
+            let cr = min(w, h)
+            rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, cr, cr)
+        } else if shape is SwiftOpenUI.Rectangle {
+            rgn = CreateRectRgn(0, 0, w, h)
+        } else {
+            // Generic shape: build path and create polygon region
+            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let path = shape.path(in: rect)
+            rgn = createRegionFromPath(path, width: w, height: h)
+        }
+
+        if let rgn = rgn {
+            SetWindowRgn(hwnd, rgn, true)
+        }
+
+        return hwnd
+    }
+}
+
+/// Build a Win32 region from a Path by sampling points along the path elements.
+private func createRegionFromPath(_ path: Path, width: Int32, height: Int32) -> HRGN? {
+    var points: [POINT] = []
+
+    for element in path.elements {
+        switch element {
+        case .moveTo(let pt):
+            points.append(POINT(x: Int32(pt.x), y: Int32(pt.y)))
+        case .lineTo(let pt):
+            points.append(POINT(x: Int32(pt.x), y: Int32(pt.y)))
+        case .curve(let to, _, _):
+            // Approximate curve endpoint (full bezier subdivision
+            // would be needed for pixel-perfect clipping)
+            points.append(POINT(x: Int32(to.x), y: Int32(to.y)))
+        case .arc(let center, let radius, let startAngle, let endAngle, let clockwise):
+            // Sample arc as line segments
+            let sweep: CGFloat
+            if clockwise {
+                sweep = -(((startAngle - endAngle).truncatingRemainder(dividingBy: 2 * .pi) + 2 * .pi)
+                    .truncatingRemainder(dividingBy: 2 * .pi))
+            } else {
+                sweep = ((endAngle - startAngle).truncatingRemainder(dividingBy: 2 * .pi) + 2 * .pi)
+                    .truncatingRemainder(dividingBy: 2 * .pi)
+            }
+            let segments = max(8, Int(abs(sweep) / (CGFloat.pi / 16)))
+            let step = sweep / CGFloat(segments)
+            for i in 0...segments {
+                let angle = startAngle + step * CGFloat(i)
+                let px = center.x + radius * cos(angle)
+                let py = center.y + radius * sin(angle)
+                points.append(POINT(x: Int32(px), y: Int32(py)))
+            }
+        case .ellipse(let center, let radiusX, let radiusY):
+            // Approximate ellipse as polygon
+            let segments = 32
+            for i in 0..<segments {
+                let angle = CGFloat(i) * 2 * .pi / CGFloat(segments)
+                let px = center.x + radiusX * cos(angle)
+                let py = center.y + radiusY * sin(angle)
+                points.append(POINT(x: Int32(px), y: Int32(py)))
+            }
+        case .closeSubpath:
+            break
+        }
+    }
+
+    guard points.count >= 3 else { return nil }
+    return points.withUnsafeMutableBufferPointer { buf in
+        CreatePolygonRgn(buf.baseAddress, Int32(buf.count), WINDING)
+    }
+}
+
 /// Property name for shadow info on container HWNDs.
 private let shadowInfoPropName: UnsafePointer<WCHAR> = {
     "SwiftUIShadowInfo".withCString(encodedAs: UTF16.self) { ptr in
