@@ -671,3 +671,4 @@ static inline void
 gtk_swift_popover_popup(GtkWidget *popover) {
     gtk_popover_popup(GTK_POPOVER(popover));
 }
+

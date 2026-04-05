@@ -1113,7 +1113,16 @@ extension PositionView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let child = widgetFromOpaque(gtkRenderView(content))
         let fixed = gtk_fixed_new()!
-        gtk_fixed_put(OpaquePointer(fixed), child, x, y)
+        // SwiftUI .position() centers the view at (x, y).
+        // gtk_fixed_put places the top-left corner. Measure the child
+        // and offset by half its natural size to center it.
+        var natW: gint = 0
+        var natH: gint = 0
+        gtk_widget_measure(child, GTK_ORIENTATION_HORIZONTAL, -1, nil, &natW, nil, nil)
+        gtk_widget_measure(child, GTK_ORIENTATION_VERTICAL, -1, nil, &natH, nil, nil)
+        let cx = x - Double(natW) / 2
+        let cy = y - Double(natH) / 2
+        gtk_swift_fixed_put(fixed, child, cx, cy)
         return opaqueFromWidget(fixed)
     }
 }
@@ -1122,19 +1131,29 @@ extension LayoutPriorityView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         // Priority value stored on the modifier — backends can read it
         // during stack layout. For now, pass through content unchanged.
-        widgetFromOpaque(gtkRenderView(content))
+        gtkRenderView(content)
     }
 }
 
 extension FixedSizeView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
-        // Prevent shrinking by disabling expand
+        // Lock the widget to its natural size so containers cannot shrink it.
+        // Measure horizontal first, then measure vertical with the resolved
+        // width so wrapping content gets the correct height.
+        var reqW: gint = -1
+        var reqH: gint = -1
         if horizontal {
-            gtk_widget_set_hexpand(widget, 0)
+            gtk_widget_measure(widget, GTK_ORIENTATION_HORIZONTAL, -1, nil, &reqW, nil, nil)
         }
         if vertical {
-            gtk_widget_set_vexpand(widget, 0)
+            // Measure height with the horizontal natural size (or -1 if not
+            // fixed horizontally) so wrapping text gets the right height.
+            let forWidth: gint = horizontal ? reqW : -1
+            gtk_widget_measure(widget, GTK_ORIENTATION_VERTICAL, forWidth, nil, &reqH, nil, nil)
+        }
+        if reqW >= 0 || reqH >= 0 {
+            gtk_widget_set_size_request(widget, reqW, reqH)
         }
         return opaqueFromWidget(widget)
     }
