@@ -402,7 +402,10 @@ class D2DSurfaceState {
 func createD2DSurface<V: View>(
     view: V, opacity: Float = 1.0, scale: Float = 1.0, context: RenderContext
 ) -> HWND? {
-    let animation = consumePendingAnimation()
+    // Prefer scoped animation from .animation() wrapper (survives the
+    // full subtree), then fall back to deferred withAnimation() token
+    // (single-consumer, cleared on first use).
+    let animation = getCurrentAnimation() ?? consumePendingAnimation()
     registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
 
     let measured = d2dMeasure(view)

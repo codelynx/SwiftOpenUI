@@ -81,6 +81,7 @@ private func winRenderStatefulView<V: View>(_ view: V, in context: RenderContext
     )
 
     host.captureEnvironment()
+    host.captureAnimation()
     installState(view, host: host)
 
     // Use the container as parent so the initial render matches rebuild behavior.
@@ -6236,10 +6237,14 @@ extension ScaleEffectView: WinRenderable {
 
 extension AnimatedView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // Stub: animation timing not yet implemented on Win32.
-        // withAnimation() state changes work (views rebuild), but
-        // transitions are instant rather than animated.
-        winRenderView(content, in: context)
+        // Scope the animation into currentAnimation TLS so that all
+        // D2D surfaces created within this subtree pick it up.
+        // This is the synchronous .animation() path — distinct from
+        // the deferred withAnimation() path that uses pendingAnimation.
+        let previous = getCurrentAnimation()
+        setCurrentAnimation(animation)
+        defer { setCurrentAnimation(previous) }
+        return winRenderView(content, in: context)
     }
 }
 
