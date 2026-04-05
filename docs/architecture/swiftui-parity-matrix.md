@@ -76,7 +76,7 @@ Last updated: 2026-03-25
 | .opacity() | Y | Y | Y | Y | Y | Y | |
 | .offset() | Y | Y | Y | Y | Y | Y | CSS transform on GTK4 |
 | .scaleEffect() | Y | Y | Y | ~ | Y | Y | Win32: D2D surface only |
-| .animation() | Y | Y | Y | ~ | Y | Y | Win32: D2D only; Android: JSON node |
+| .animation() | Y | Y | Y | ~ | Y | Y | Win32: D2D only; Web: CSS transition with two-phase rebuild; Android: JSON node |
 | .imageScale() | Y | Y | Y | ~ | - | - | Win32: no real image rendering |
 | .onTapGesture() | Y | Y | Y | Y | Y | Y | count parameter |
 | .onLongPressGesture() | Y | Y | Y | Y | Y | Y | minimumDuration |

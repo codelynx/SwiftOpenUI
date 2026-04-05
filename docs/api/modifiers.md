@@ -27,7 +27,7 @@ All modifier view structs live in `Sources/SwiftOpenUI/Modifiers/`. Each wraps c
 - **GTK4**: GtkGestureClick, GtkGestureLongPress, GtkGestureDrag event controllers.
 - **Win32**: Recursive subclassing on all HWNDs. TapGesture uses armed down→up tracking. LongPress via SetTimer. Drag with minimumDistance filtering and WM_MOUSEMOVE capture.
 - **macOS**: Uses real SwiftUI gesture modifiers.
-- **Web**: Core types compile; backend rendering not yet implemented.
+- **Web**: Pointer events. Tap via `click` (with multi-tap counter + 400ms timeout). LongPress via `setTimeout` + `pointerdown`/`pointerup`. Drag via `pointerdown`/`pointermove`/`pointerup` with document-level listeners and distance threshold.
 
 ## Image
 
@@ -54,7 +54,7 @@ All modifier view structs live in `Sources/SwiftOpenUI/Modifiers/`. Each wraps c
 - **GTK4**: CSS `transition` property. On rebuild, old values are set first, then new values are applied on the next frame via `g_idle_add` so GTK interpolates.
 - **Win32**: D2D surface rendering with `SetTimer` at 60fps for `OpacityView`/`ScaleEffectView` on D2D-renderable subtrees (Text, Color, Divider). Easing curves: linear, easeIn, easeOut, easeInOut, spring. `consumePendingAnimation()` captures animation across deferred PostMessage rebuilds.
 - **macOS**: Uses real SwiftUI animation.
-- **Web**: Core types compile; backend rendering not yet implemented.
+- **Web**: CSS `transition` property. On rebuild, old computed values are captured from `data-anim-role` marked wrappers, applied to new DOM nodes, then new values are set on the next `requestAnimationFrame` so the browser interpolates. Strict key-based pairing (role + depth) with uniqueness guard.
 
 ## Environment
 

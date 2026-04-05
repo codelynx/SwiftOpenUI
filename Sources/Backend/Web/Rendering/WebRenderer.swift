@@ -296,11 +296,23 @@ extension FocusedEqualsView: WebRenderable {
 
 // MARK: - Animation modifier views
 
+/// Map an Animation.Curve to a CSS timing function string.
+func webCSSTimingFunction(_ curve: Animation.Curve) -> String {
+    switch curve {
+    case .linear: return "linear"
+    case .easeIn: return "ease-in"
+    case .easeOut: return "ease-out"
+    case .easeInOut: return "ease-in-out"
+    case .spring: return "cubic-bezier(0.5, 1.8, 0.3, 0.8)"
+    }
+}
+
 extension OpacityView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let wrapper = document.createElement("div")
         wrapper.style = .string("display: inline-block; opacity: \(opacity);")
+        _ = wrapper.setAttribute("data-anim-role", "opacity")
         _ = wrapper.appendChild(child)
         return wrapper
     }
@@ -311,6 +323,7 @@ extension OffsetView: WebRenderable {
         let child = webRenderView(content)
         let wrapper = document.createElement("div")
         wrapper.style = .string("display: inline-block; transform: translate(\(x)px, \(y)px);")
+        _ = wrapper.setAttribute("data-anim-role", "offset")
         _ = wrapper.appendChild(child)
         return wrapper
     }
@@ -322,6 +335,7 @@ extension ScaleEffectView: WebRenderable {
         let wrapper = document.createElement("div")
         let scale = scaleX == scaleY ? "scale(\(scaleX))" : "scale(\(scaleX), \(scaleY))"
         wrapper.style = .string("display: inline-block; transform: \(scale); transform-origin: center;")
+        _ = wrapper.setAttribute("data-anim-role", "scale")
         _ = wrapper.appendChild(child)
         return wrapper
     }
@@ -329,16 +343,15 @@ extension ScaleEffectView: WebRenderable {
 
 extension AnimatedView: WebRenderable {
     public func webCreateElement() -> JSValue {
+        // Scope currentAnimation into TLS so descendant modifier renderers
+        // and the containing WebViewHost can see it.
+        let previous = getCurrentAnimation()
+        setCurrentAnimation(animation)
+        defer { setCurrentAnimation(previous) }
+
         let element = webRenderView(content)
-        if let anim = animation ?? getCurrentAnimation() {
-            let timing: String
-            switch anim.curve {
-            case .linear: timing = "linear"
-            case .easeIn: timing = "ease-in"
-            case .easeOut: timing = "ease-out"
-            case .easeInOut: timing = "ease-in-out"
-            case .spring: timing = "cubic-bezier(0.5, 1.8, 0.3, 0.8)"
-            }
+        if let anim = animation ?? previous {
+            let timing = webCSSTimingFunction(anim.curve)
             _ = element.style.setProperty("transition", "all \(anim.duration)s \(timing)")
         }
         return element
@@ -1543,6 +1556,7 @@ extension RotationView: WebRenderable {
         let child = webRenderView(content)
         let wrapper = document.createElement("div")
         wrapper.style = .string("display: inline-block; transform: rotate(\(angle)deg); transform-origin: center;")
+        _ = wrapper.setAttribute("data-anim-role", "rotation")
         _ = wrapper.appendChild(child)
         return wrapper
     }

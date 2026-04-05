@@ -41,13 +41,30 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
     private var rebuildDeferredDuringInteraction = false
     var capturedEnvironment: EnvironmentValues
 
+    /// Animation from wrapping .animation() modifier — persistent across rebuilds.
+    private var capturedAnimation: Animation?
+
+    /// Animation from withAnimation() — one-shot, consumed during next rebuild.
+    private var pendingAnimation: Animation?
+
     public init(buildBody: @escaping () -> JSValue) {
         self.buildBody = buildBody
         self.capturedEnvironment = getCurrentEnvironment()
         self.container = document.createElement("div")
     }
 
+    /// Capture the current animation context (from a wrapping .animation()).
+    public func captureAnimation() {
+        capturedAnimation = getCurrentAnimation()
+    }
+
     public func scheduleRebuild() {
+        // Capture animation token now — by the time the RAF callback fires,
+        // withAnimation() will have restored TLS to nil.
+        if let anim = getCurrentAnimation() {
+            pendingAnimation = anim
+        }
+
         // Defer rebuild while interactive (e.g. slider drag)
         if interactiveUpdateDepth > 0 {
             rebuildDeferredDuringInteraction = true
@@ -76,6 +93,10 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
               rebuildDeferredDuringInteraction,
               !scheduled else { return }
 
+        // Only capture animation when actually posting the deferred rebuild.
+        if let anim = getCurrentAnimation() {
+            pendingAnimation = anim
+        }
         rebuildDeferredDuringInteraction = false
         scheduled = true
 
@@ -154,10 +175,22 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         }
         */
 
+        // Consume the one-shot pending animation before any early return,
+        // so it cannot leak into a later unrelated rebuild.
+        let rebuildAnim = pendingAnimation ?? capturedAnimation
+        pendingAnimation = nil
+
         // Phase 7: skip body evaluation if no storage was mutated since last render
         if let snapshot = lastInputSnapshot,
            inputsUnchanged(snapshot: snapshot) {
             return
+        }
+
+        var oldSnapshots: [WebAnimatableSnapshot] = []
+        if rebuildAnim != nil {
+            if let oldChild = container.firstChild.object {
+                oldSnapshots = webCollectAnimatableSnapshots(from: JSValue.object(oldChild))
+            }
         }
 
         // Release old state before new render pass to free memory
@@ -171,6 +204,13 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         // Remove old children
         container.innerHTML = ""
 
+        // Restore animation context for this rebuild so subtree renderers
+        // (OpacityView, etc.) see the active animation in TLS.
+        let previousAnim = getCurrentAnimation()
+        if let rebuildAnim {
+            setCurrentAnimation(rebuildAnim)
+        }
+
         WebViewHost.withHost(self) {
             let previousEnv = getCurrentEnvironment()
             setCurrentEnvironment(capturedEnvironment)
@@ -183,6 +223,68 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
             setCurrentEnvironment(previousEnv)
 
             _ = container.appendChild(element)
+        }
+
+        setCurrentAnimation(previousAnim)
+
+        // --- Animation: two-phase CSS transition ---
+        if let anim = rebuildAnim, !oldSnapshots.isEmpty {
+            if let newChild = container.firstChild.object {
+                let newWrappers = webCollectAnimatableWrappers(from: JSValue.object(newChild))
+
+                // STRICT GUARD: only animate when key sequences match exactly
+                // AND all keys are unique. Keys are "role@depth" — if any two
+                // wrappers share the same key (same-role siblings at the same
+                // depth), we cannot reliably pair old↔new, so bail out.
+                let oldKeys = oldSnapshots.map { $0.key }
+                let newKeys = newWrappers.map { $0.key }
+                let keysMatch = oldKeys == newKeys
+                    && Set(oldKeys).count == oldKeys.count
+
+                if keysMatch {
+                    let timing = webCSSTimingFunction(anim.curve)
+                    let transitionValue = "all \(anim.duration)s \(timing)"
+
+                    // Phase 1: save new computed values, apply old values + transition.
+                    var savedNewValues: [(opacity: String, transform: String)] = []
+                    for (i, wrapper) in newWrappers.enumerated() {
+                        let el = wrapper.element
+                        let old = oldSnapshots[i]
+
+                        // Read the new (renderer-set) computed values before overwriting
+                        let computed = JSObject.global.getComputedStyle!(el)
+                        let newOpacity = computed.opacity.string ?? "1"
+                        let newTransform = computed.transform.string ?? "none"
+                        savedNewValues.append((opacity: newOpacity, transform: newTransform))
+
+                        // Apply old values
+                        if let opacity = old.opacity {
+                            _ = el.style.setProperty("opacity", opacity)
+                        }
+                        if let transform = old.transform {
+                            _ = el.style.setProperty("transform", transform)
+                        }
+                        _ = el.style.setProperty("transition", transitionValue)
+                    }
+
+                    // Phase 2: on next frame, apply saved new values explicitly.
+                    // CSS transition interpolates from old → new.
+                    let refs = newWrappers.map { $0.element }
+                    let saved = savedNewValues
+                    let callback = webMakeClosure { _ in
+                        for (i, el) in refs.enumerated() {
+                            let newVals = saved[i]
+                            if oldSnapshots[i].role == "opacity" {
+                                _ = el.style.setProperty("opacity", newVals.opacity)
+                            } else {
+                                _ = el.style.setProperty("transform", newVals.transform)
+                            }
+                        }
+                        return .undefined
+                    }
+                    _ = JSObject.global.requestAnimationFrame!(callback)
+                }
+            }
         }
 
         // Detect sheet transitions: fire onDismiss for sheets that were
@@ -231,6 +333,83 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
     }
 }
 
+// MARK: - Animation helpers
+
+/// Snapshot of an animatable wrapper's identity and computed style values.
+struct WebAnimatableSnapshot {
+    /// Composite key: "role@depth" (e.g. "opacity@3") for pairing old↔new.
+    let key: String
+    let role: String
+    /// Computed opacity string (e.g. "0.5") — only for role "opacity".
+    let opacity: String?
+    /// Computed transform string (e.g. "translate(10px, 20px)") — for offset/scale/rotation.
+    let transform: String?
+}
+
+/// Wrapper reference with its identity key, for post-rebuild pairing.
+struct WebAnimatableWrapper {
+    /// Composite key: "role@depth" — must match the snapshot key for pairing.
+    let key: String
+    let role: String
+    let element: JSValue
+}
+
+/// Collect animatable snapshots from the old DOM subtree before teardown.
+/// Only considers elements explicitly marked with `data-anim-role`.
+/// Uses DOM depth as an additional identity signal to distinguish
+/// duplicate roles at different tree positions.
+func webCollectAnimatableSnapshots(from root: JSValue) -> [WebAnimatableSnapshot] {
+    var result: [WebAnimatableSnapshot] = []
+    webCollectAnimatableSnapshotsRecursive(root, depth: 0, into: &result)
+    return result
+}
+
+private func webCollectAnimatableSnapshotsRecursive(
+    _ node: JSValue, depth: Int, into result: inout [WebAnimatableSnapshot]
+) {
+    if let role = node.getAttribute.function.flatMap({ _ in node.getAttribute("data-anim-role").string }) {
+        let computed = JSObject.global.getComputedStyle!(node)
+        let snapshot = WebAnimatableSnapshot(
+            key: "\(role)@\(depth)",
+            role: role,
+            opacity: role == "opacity" ? computed.opacity.string : nil,
+            transform: (role == "offset" || role == "scale" || role == "rotation")
+                ? computed.transform.string : nil
+        )
+        result.append(snapshot)
+    }
+    guard let obj = node.object else { return }
+    let childrenVal = obj.children
+    let count = Int(childrenVal.length.number ?? 0)
+    for i in 0..<count {
+        webCollectAnimatableSnapshotsRecursive(childrenVal[i], depth: depth + 1, into: &result)
+    }
+}
+
+/// Collect animatable wrapper references from the new DOM subtree after rebuild.
+/// Only considers elements explicitly marked with `data-anim-role`.
+func webCollectAnimatableWrappers(from root: JSValue) -> [WebAnimatableWrapper] {
+    var result: [WebAnimatableWrapper] = []
+    webCollectAnimatableWrappersRecursive(root, depth: 0, into: &result)
+    return result
+}
+
+private func webCollectAnimatableWrappersRecursive(
+    _ node: JSValue, depth: Int, into result: inout [WebAnimatableWrapper]
+) {
+    if let role = node.getAttribute.function.flatMap({ _ in node.getAttribute("data-anim-role").string }) {
+        result.append(WebAnimatableWrapper(key: "\(role)@\(depth)", role: role, element: node))
+    }
+    guard let obj = node.object else { return }
+    let childrenVal = obj.children
+    let count = Int(childrenVal.length.number ?? 0)
+    for i in 0..<count {
+        webCollectAnimatableWrappersRecursive(childrenVal[i], depth: depth + 1, into: &result)
+    }
+}
+
+// MARK: - Stateful view rendering
+
 /// Render a stateful composite view wrapped in a WebViewHost.
 public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
     let mutableView = view
@@ -245,6 +424,7 @@ public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
         webDescribeView(mutableView.body)
     }
     installState(mutableView, host: host)
+    host.captureAnimation()
 
     // Retain the host so it survives beyond this function.
     // Without this, the host is deallocated and scheduleRebuild
