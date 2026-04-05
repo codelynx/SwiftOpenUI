@@ -589,6 +589,46 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - Layout modifier Web extensions
+
+extension PositionView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("position: relative;")
+        child.style.object?.position = .string("absolute")
+        child.style.object?.left = .string("\(x)px")
+        child.style.object?.top = .string("\(y)px")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension LayoutPriorityView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        // Priority stored on modifier. CSS flex has order/flex-grow
+        // but integrating with stack layout is deferred.
+        webRenderView(content)
+    }
+}
+
+extension FixedSizeView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        var css = "display: inline-block;"
+        if horizontal {
+            css += " flex-shrink: 0; white-space: nowrap;"
+        }
+        if vertical {
+            css += " flex-shrink: 0;"
+        }
+        wrapper.style = .string(css)
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
 // MARK: - contextMenu Web extension
 
 extension ContextMenuView: WebRenderable {

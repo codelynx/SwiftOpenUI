@@ -6622,6 +6622,35 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - Layout modifier Win32 extensions
+
+extension PositionView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let child = winRenderView(content, in: context) else { return nil }
+        // Move child to absolute position within parent
+        SetWindowPos(child, nil, Int32(x), Int32(y), 0, 0,
+                     UINT(SWP_NOSIZE | SWP_NOZORDER))
+        return child
+    }
+}
+
+extension LayoutPriorityView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Priority stored on modifier — layout engine can read during
+        // stack space distribution. Pass through for now.
+        winRenderView(content, in: context)
+    }
+}
+
+extension FixedSizeView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Pass through — Win32 controls already render at their natural size
+        // unless explicitly resized. fixedSize prevents compression, which
+        // the current layout model doesn't implement yet.
+        winRenderView(content, in: context)
+    }
+}
+
 // MARK: - contextMenu Win32 extension
 
 private let contextMenuSubclassID: UINT_PTR = 70

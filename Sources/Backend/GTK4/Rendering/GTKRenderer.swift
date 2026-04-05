@@ -1107,6 +1107,39 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - Layout modifier GTK extensions
+
+extension PositionView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let child = widgetFromOpaque(gtkRenderView(content))
+        let fixed = gtk_fixed_new()!
+        gtk_fixed_put(OpaquePointer(fixed), child, x, y)
+        return opaqueFromWidget(fixed)
+    }
+}
+
+extension LayoutPriorityView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // Priority value stored on the modifier — backends can read it
+        // during stack layout. For now, pass through content unchanged.
+        widgetFromOpaque(gtkRenderView(content))
+    }
+}
+
+extension FixedSizeView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        // Prevent shrinking by disabling expand
+        if horizontal {
+            gtk_widget_set_hexpand(widget, 0)
+        }
+        if vertical {
+            gtk_widget_set_vexpand(widget, 0)
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - contextMenu GTK extension
 
 extension ContextMenuView: GTKRenderable {
