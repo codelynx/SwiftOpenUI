@@ -7,6 +7,7 @@ import CGTKBridge
 
 /// Leaf-first GTK4 descriptor kinds for the descriptor-first invalidation path.
 public enum GTK4DescriptorKind: Equatable {
+    case animated
     case background
     case border
     case button
@@ -14,8 +15,12 @@ public enum GTK4DescriptorKind: Equatable {
     case composite
     case disabled
     case divider
+    case offset
+    case opacity
+    case rotation
     case safeAreaInset
     case safeAreaPadding
+    case scale
     case searchable
     case font
     case text
@@ -32,6 +37,29 @@ public enum GTK4DescriptorKind: Equatable {
 
 public struct GTK4DisabledDescriptor: Equatable {
     public let isDisabled: Bool
+}
+
+public struct GTK4OpacityDescriptor: Equatable {
+    public let opacity: Double
+}
+
+public struct GTK4OffsetDescriptor: Equatable {
+    public let x: Double
+    public let y: Double
+}
+
+public struct GTK4ScaleDescriptor: Equatable {
+    public let scaleX: Double
+    public let scaleY: Double
+}
+
+public struct GTK4RotationDescriptor: Equatable {
+    public let angle: Double
+}
+
+public struct GTK4AnimatedDescriptor: Equatable {
+    public let curve: String
+    public let duration: Double
 }
 
 public struct GTK4TextDescriptor: Equatable {
@@ -169,6 +197,11 @@ public enum GTK4DescriptorProps: Equatable {
     case border(GTK4BorderDescriptor)
     case canvas(GTK4CanvasDescriptor)
     case font(GTK4FontDescriptor)
+    case animated(GTK4AnimatedDescriptor)
+    case offset(GTK4OffsetDescriptor)
+    case opacity(GTK4OpacityDescriptor)
+    case rotation(GTK4RotationDescriptor)
+    case scale(GTK4ScaleDescriptor)
     case text(GTK4TextDescriptor)
     case color(GTK4ColorDescriptor)
     case frame(GTK4FrameDescriptor)
@@ -304,6 +337,7 @@ public enum GTK4DescriptorPlanKind: Equatable {
 
 public enum GTK4DescriptorUpdateIntent: Equatable {
     case none
+    case animatedTiming
     case backgroundColor
     case borderStyle
     case canvasContent
@@ -312,10 +346,14 @@ public enum GTK4DescriptorUpdateIntent: Equatable {
     case frameLayout
     case foregroundColor
     case hStackLayout
+    case offsetTransform
+    case opacityValue
     case paddingLayout
     case disabledState
+    case rotationTransform
     case safeAreaInsetLayout
     case safeAreaPaddingLayout
+    case scaleTransform
     case searchableLayout
     case sliderConfiguration
     case sliderValue
@@ -622,9 +660,14 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
     case .text:          return .textContent
     case .vStack:        return .vStackLayout
     case .zStack:        return .zStackLayout
+    case .animated:      return .animatedTiming
     case .button:        return .none
     case .divider:       return .none
     case .font:          return .fontStyle
+    case .offset:        return .offsetTransform
+    case .opacity:       return .opacityValue
+    case .rotation:      return .rotationTransform
+    case .scale:         return .scaleTransform
     case .spacer:        return .none
     case .composite:     return .none
     case .disabled:      return .disabledState
@@ -758,8 +801,9 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
         return gtkSliderValueHook(action: action, performMutation: performMutation)
     case .paddingLayout:
         return gtkPaddingLayoutHook(action: action, performMutation: performMutation)
-    case .backgroundColor, .borderStyle, .fontStyle, .frameLayout, .foregroundColor,
-         .disabledState, .hStackLayout, .safeAreaInsetLayout, .safeAreaPaddingLayout, .searchableLayout, .sliderConfiguration,
+    case .animatedTiming, .backgroundColor, .borderStyle, .fontStyle, .frameLayout, .foregroundColor,
+         .disabledState, .hStackLayout, .offsetTransform, .opacityValue, .rotationTransform, .scaleTransform,
+         .safeAreaInsetLayout, .safeAreaPaddingLayout, .searchableLayout, .sliderConfiguration,
          .vStackLayout, .zStackLayout, .none:
         // Descriptive only — no real mutation for these intents yet
         return gtkUpdatedHookResult(action: action, intent: action.updateIntent,

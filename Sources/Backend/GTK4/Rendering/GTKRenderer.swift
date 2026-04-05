@@ -1183,6 +1183,7 @@ private let gtkSwiftOffsetXKey = "gtk-swift-offset-x"
 private let gtkSwiftOffsetYKey = "gtk-swift-offset-y"
 private let gtkSwiftScaleXKey = "gtk-swift-scale-x"
 private let gtkSwiftScaleYKey = "gtk-swift-scale-y"
+private let gtkSwiftRotationKey = "gtk-swift-rotation"
 
 /// Box for storing a Double in GObject data without losing 0.0 as nil.
 private final class WidgetDoubleBox {
@@ -1206,11 +1207,15 @@ func getWidgetDouble(_ widget: UnsafeMutablePointer<GtkWidget>, key: String) -> 
     return Unmanaged<WidgetDoubleBox>.fromOpaque(raw).takeUnretainedValue().value
 }
 
-/// Build a combined CSS transform string from offset and scale values.
-func buildTransformCSS(offsetX: Double, offsetY: Double, scaleX: Double, scaleY: Double) -> String {
+/// Build a combined CSS transform string from offset, scale, and rotation values.
+/// Order: translate → rotate → scale (matches CSS transform application order).
+func buildTransformCSS(offsetX: Double, offsetY: Double, scaleX: Double, scaleY: Double, rotation: Double = 0) -> String {
     var parts: [String] = []
     if offsetX != 0 || offsetY != 0 {
         parts.append("translate(\(Int(offsetX))px, \(Int(offsetY))px)")
+    }
+    if rotation != 0 {
+        parts.append("rotate(\(rotation)deg)")
     }
     if scaleX != 1 || scaleY != 1 {
         parts.append("scale(\(scaleX), \(scaleY))")
@@ -1219,7 +1224,14 @@ func buildTransformCSS(offsetX: Double, offsetY: Double, scaleX: Double, scaleY:
     return "transform: \(parts.joined(separator: " "));"
 }
 
-extension OpacityView: GTKRenderable {
+extension OpacityView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .opacity, typeName: "OpacityView",
+            props: .opacity(GTK4OpacityDescriptor(opacity: opacity)),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         gtk_widget_set_opacity(widget, opacity)
@@ -1227,7 +1239,14 @@ extension OpacityView: GTKRenderable {
     }
 }
 
-extension OffsetView: GTKRenderable {
+extension OffsetView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .offset, typeName: "OffsetView",
+            props: .offset(GTK4OffsetDescriptor(x: x, y: y)),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         setWidgetDouble(widget, key: gtkSwiftOffsetXKey, value: x)
@@ -1235,13 +1254,21 @@ extension OffsetView: GTKRenderable {
         if x != 0 || y != 0 {
             let scaleX = getWidgetDouble(widget, key: gtkSwiftScaleXKey) ?? 1
             let scaleY = getWidgetDouble(widget, key: gtkSwiftScaleYKey) ?? 1
-            applyCSSToWidget(widget, properties: buildTransformCSS(offsetX: x, offsetY: y, scaleX: scaleX, scaleY: scaleY))
+            let rotation = getWidgetDouble(widget, key: gtkSwiftRotationKey) ?? 0
+            applyCSSToWidget(widget, properties: buildTransformCSS(offsetX: x, offsetY: y, scaleX: scaleX, scaleY: scaleY, rotation: rotation))
         }
         return opaqueFromWidget(widget)
     }
 }
 
-extension ScaleEffectView: GTKRenderable {
+extension ScaleEffectView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .scale, typeName: "ScaleEffectView",
+            props: .scale(GTK4ScaleDescriptor(scaleX: scaleX, scaleY: scaleY)),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         setWidgetDouble(widget, key: gtkSwiftScaleXKey, value: scaleX)
@@ -1249,13 +1276,29 @@ extension ScaleEffectView: GTKRenderable {
         if scaleX != 1 || scaleY != 1 {
             let offsetX = getWidgetDouble(widget, key: gtkSwiftOffsetXKey) ?? 0
             let offsetY = getWidgetDouble(widget, key: gtkSwiftOffsetYKey) ?? 0
-            applyCSSToWidget(widget, properties: buildTransformCSS(offsetX: offsetX, offsetY: offsetY, scaleX: scaleX, scaleY: scaleY))
+            let rotation = getWidgetDouble(widget, key: gtkSwiftRotationKey) ?? 0
+            applyCSSToWidget(widget, properties: buildTransformCSS(offsetX: offsetX, offsetY: offsetY, scaleX: scaleX, scaleY: scaleY, rotation: rotation))
         }
         return opaqueFromWidget(widget)
     }
 }
 
-extension AnimatedView: GTKRenderable {
+extension AnimatedView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        let props: GTK4DescriptorProps
+        if let anim = animation {
+            props = .animated(GTK4AnimatedDescriptor(
+                curve: String(describing: anim.curve),
+                duration: anim.duration))
+        } else {
+            props = .none
+        }
+        return GTK4DescriptorNode(
+            kind: .animated, typeName: "AnimatedView",
+            props: props,
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
         if let animation = animation ?? getCurrentAnimation() {
@@ -2140,13 +2183,23 @@ extension ShadowView: GTKRenderable {
 
 // MARK: - Rotation GTK extension
 
-extension RotationView: GTKRenderable {
+extension RotationView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .rotation, typeName: "RotationView",
+            props: .rotation(GTK4RotationDescriptor(angle: angle)),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
-        let inner = widgetFromOpaque(gtkRenderView(content))
-        let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        gtk_box_append(boxPointer(wrapper), inner)
-        applyCSSToWidget(wrapper, properties: "transform: rotate(\(angle)deg);")
-        return opaqueFromWidget(wrapper)
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        setWidgetDouble(widget, key: gtkSwiftRotationKey, value: angle)
+        let offsetX = getWidgetDouble(widget, key: gtkSwiftOffsetXKey) ?? 0
+        let offsetY = getWidgetDouble(widget, key: gtkSwiftOffsetYKey) ?? 0
+        let scaleX = getWidgetDouble(widget, key: gtkSwiftScaleXKey) ?? 1
+        let scaleY = getWidgetDouble(widget, key: gtkSwiftScaleYKey) ?? 1
+        applyCSSToWidget(widget, properties: buildTransformCSS(offsetX: offsetX, offsetY: offsetY, scaleX: scaleX, scaleY: scaleY, rotation: angle))
+        return opaqueFromWidget(widget)
     }
 }
 
