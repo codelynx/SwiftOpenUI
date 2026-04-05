@@ -220,11 +220,14 @@ extension TextField: WinRenderable {
         let currentText = text.wrappedValue
         let measured = measureText(currentText.isEmpty ? title : currentText, hwnd: context.parent)
 
+        let tfStyle = getCurrentEnvironment().textFieldStyle
+        let borderStyle: Int32 = (tfStyle == .plain) ? 0 : WS_BORDER
+
         let hwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_EDIT(),
                 wstr,
-                DWORD(ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP),
+                DWORD(ES_AUTOHSCROLL | borderStyle | WS_TABSTOP),
                 0, 0, max(measured.width + 16, 150), measured.height + 8,
                 context.parent,
                 nil,
@@ -649,18 +652,22 @@ func winCurrentColorFill(nativeSlotID: Int) -> Win32ColorDescriptor? {
 
 extension Button: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let style = getCurrentEnvironment().buttonStyle
         if let textLabel = label as? Text {
-            // Simple text label — use native Win32 BUTTON control
-            return createNativeButton(title: textLabel.content, action: action, context: context)
+            return createNativeButton(title: textLabel.content, action: action,
+                                      style: style, context: context)
         } else {
-            // Custom label — render the label view inside a clickable container
+            // Custom-label buttons: style parameter is available but visual
+            // differences are limited — the container uses native HWND painting,
+            // not D2D. Full style support for custom labels requires D2D conversion.
             return createCustomLabelButton(label: label, action: action, context: context)
         }
     }
 }
 
 /// Create a flat D2D-rendered button with a text label.
-func createNativeButton(title: String, action: @escaping () -> Void, context: RenderContext) -> HWND? {
+func createNativeButton(title: String, action: @escaping () -> Void,
+                        style: ButtonStyleType = .automatic, context: RenderContext) -> HWND? {
     registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
 
     let measured = measureText(title, hwnd: context.parent)
@@ -676,7 +683,7 @@ func createNativeButton(title: String, action: @escaping () -> Void, context: Re
 
     guard let hwnd = hwnd else { return nil }
 
-    let state = FlatButtonState(hwnd: hwnd, title: title, action: action)
+    let state = FlatButtonState(hwnd: hwnd, title: title, action: action, buttonStyle: style)
     let ptr = Unmanaged.passRetained(state).toOpaque()
     SetWindowSubclass(hwnd, flatButtonProc, 48, DWORD_PTR(UInt(bitPattern: ptr)))
 
@@ -689,6 +696,7 @@ class FlatButtonState {
     let hwnd: HWND
     let title: String
     let action: () -> Void
+    let buttonStyle: ButtonStyleType
     var pressed: Bool = false
     var hovered: Bool = false
     var tracking: Bool = false
@@ -701,10 +709,12 @@ class FlatButtonState {
     /// Custom DirectWrite text format set by .font(), nil = default
     var customTextFormat: DWriteTextFormat?
 
-    init(hwnd: HWND, title: String, action: @escaping () -> Void) {
+    init(hwnd: HWND, title: String, action: @escaping () -> Void,
+         buttonStyle: ButtonStyleType = .automatic) {
         self.hwnd = hwnd
         self.title = title
         self.action = action
+        self.buttonStyle = buttonStyle
     }
 
     func ensureTarget(width: UInt32, height: UInt32) {
@@ -752,26 +762,48 @@ class FlatButtonState {
 
         let cornerRadius: Float = 5
 
-        // Button fill
-        if pressed {
-            d2d1_SolidColorBrush_SetColor(brush, 0.78, 0.78, 0.80, 1)
-        } else if hovered {
-            d2d1_SolidColorBrush_SetColor(brush, 0.88, 0.88, 0.90, 1)
-        } else {
-            d2d1_SolidColorBrush_SetColor(brush, 0.92, 0.92, 0.94, 1)
-        }
-        d2d1_RenderTarget_FillRoundedRectangle(rt, brush,
-            1, 1, w - 2, h - 2, cornerRadius, cornerRadius)
+        switch buttonStyle {
+        case .plain:
+            // No background or border — just the label
+            break
 
-        // Border
-        d2d1_SolidColorBrush_SetColor(brush, 0.75, 0.75, 0.78, 1)
-        d2d1_RenderTarget_DrawRoundedRectangle(rt, brush,
-            0.5, 0.5, w - 1, h - 1, cornerRadius, cornerRadius, 1)
+        case .borderedProminent:
+            // Filled accent background
+            if pressed {
+                d2d1_SolidColorBrush_SetColor(brush, 0.0, 0.35, 0.85, 1)
+            } else if hovered {
+                d2d1_SolidColorBrush_SetColor(brush, 0.0, 0.42, 0.95, 1)
+            } else {
+                d2d1_SolidColorBrush_SetColor(brush, 0.0, 0.48, 1.0, 1)
+            }
+            d2d1_RenderTarget_FillRoundedRectangle(rt, brush,
+                1, 1, w - 2, h - 2, cornerRadius, cornerRadius)
+
+        case .automatic, .bordered:
+            // Default bordered button
+            if pressed {
+                d2d1_SolidColorBrush_SetColor(brush, 0.78, 0.78, 0.80, 1)
+            } else if hovered {
+                d2d1_SolidColorBrush_SetColor(brush, 0.88, 0.88, 0.90, 1)
+            } else {
+                d2d1_SolidColorBrush_SetColor(brush, 0.92, 0.92, 0.94, 1)
+            }
+            d2d1_RenderTarget_FillRoundedRectangle(rt, brush,
+                1, 1, w - 2, h - 2, cornerRadius, cornerRadius)
+
+            // Border
+            d2d1_SolidColorBrush_SetColor(brush, 0.75, 0.75, 0.78, 1)
+            d2d1_RenderTarget_DrawRoundedRectangle(rt, brush,
+                0.5, 0.5, w - 1, h - 1, cornerRadius, cornerRadius, 1)
+        }
 
         // Text — centered, with optional custom color/font
-        let tr = textColorR ?? 0.1
-        let tg = textColorG ?? 0.1
-        let tb = textColorB ?? 0.1
+        let tr: Float, tg: Float, tb: Float
+        if buttonStyle == .borderedProminent {
+            tr = textColorR ?? 1.0; tg = textColorG ?? 1.0; tb = textColorB ?? 1.0
+        } else {
+            tr = textColorR ?? 0.1; tg = textColorG ?? 0.1; tb = textColorB ?? 0.1
+        }
         d2d1_SolidColorBrush_SetColor(brush, tr, tg, tb, 1)
         if let fmt = customTextFormat ?? D2DRenderer.shared.textFormat() {
             dwrite_TextFormat_SetTextAlignment(fmt, 2) // center
@@ -2515,11 +2547,15 @@ private func extractTextFromView<V: View>(_ view: V) -> String? {
 
 extension Toggle: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let toggleStyle = getCurrentEnvironment().toggleStyle
         let text = label.isEmpty ? "Toggle" : label
         let measured = measureText(text, hwnd: context.parent)
         let checkWidth = measured.width + 24  // space for checkbox
         let checkHeight = max(measured.height + 4, 20)
 
+        // Both .checkbox and .switch use BS_AUTOCHECKBOX on Win32 —
+        // no native switch control. .switch falls back to checkbox.
+        _ = toggleStyle  // consumed — both styles produce checkbox
         let hwnd = text.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_BUTTON(),
@@ -3363,10 +3399,13 @@ extension SecureField: WinRenderable {
         let currentText = text.wrappedValue
         let measured = measureText(currentText.isEmpty ? placeholder : currentText, hwnd: context.parent)
 
+        let tfStyle = getCurrentEnvironment().textFieldStyle
+        let borderStyle: Int32 = (tfStyle == .plain) ? 0 : WS_BORDER
+
         let hwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_EDIT(), wstr,
-                DWORD(ES_PASSWORD | ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP),
+                DWORD(ES_PASSWORD | ES_AUTOHSCROLL | borderStyle | WS_TABSTOP),
                 0, 0, max(measured.width + 16, 150), measured.height + 8,
                 context.parent, nil, context.hInstance
             )
@@ -3397,10 +3436,13 @@ extension TextEditor: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let currentText = text.wrappedValue
 
+        let tfStyle = getCurrentEnvironment().textFieldStyle
+        let borderStyle: Int32 = (tfStyle == .plain) ? 0 : WS_BORDER
+
         let hwnd = currentText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_EDIT(), wstr,
-                DWORD(ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL | WS_BORDER | WS_VSCROLL | WS_TABSTOP),
+                DWORD(ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL | borderStyle | WS_VSCROLL | WS_TABSTOP),
                 0, 0, 200, 100,
                 context.parent, nil, context.hInstance
             )
@@ -5974,6 +6016,41 @@ extension CornerRadiusView: WinRenderable {
             SetWindowRgn(hwnd, rgn, true)
         }
         return hwnd
+    }
+}
+
+// MARK: - Style modifier Win32 extensions
+
+extension ButtonStyleModifier: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let prev = getCurrentEnvironment()
+        var env = prev
+        env.buttonStyle = style
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return winRenderView(content, in: context)
+    }
+}
+
+extension ToggleStyleModifier: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let prev = getCurrentEnvironment()
+        var env = prev
+        env.toggleStyle = style
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return winRenderView(content, in: context)
+    }
+}
+
+extension TextFieldStyleModifier: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let prev = getCurrentEnvironment()
+        var env = prev
+        env.textFieldStyle = style
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return winRenderView(content, in: context)
     }
 }
 
