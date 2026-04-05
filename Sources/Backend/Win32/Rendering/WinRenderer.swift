@@ -6651,6 +6651,7 @@ private func winApplyFontStyle(to hwnd: HWND, weight: Int32? = nil, italic: Bool
     let newFont = CreateFontIndirectW(&lf)
     if let newFont {
         SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: newFont)), 1)
+        remeasureControlIfNeeded(hwnd: hwnd, hfont: newFont)
     }
 }
 
