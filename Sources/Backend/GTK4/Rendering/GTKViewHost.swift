@@ -241,6 +241,7 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         let previousEnv = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
         resetOnChangeTracking()
+        clearViewIDRegistry()
         beginDependencyTracking()
         let widget = buildBodyWithTracking()
         if let tracking = endDependencyTracking() {

@@ -6648,7 +6648,7 @@ extension ScrollViewReader: WinRenderable {
                 let name = String(decodingCString: cls, as: UTF16.self)
                 if name == "SwiftUIScrollView" {
                     // Convert target position to scroll container client coords
-                    var pt = POINT(x: targetRect.top, y: targetRect.top)
+                    var pt = POINT(x: targetRect.left, y: targetRect.top)
                     ScreenToClient(p, &pt)
                     // Scroll to the target's Y position
                     var si = SCROLLINFO()
