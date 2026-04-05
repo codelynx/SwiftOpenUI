@@ -95,18 +95,40 @@ All modifier view structs live in `Sources/SwiftOpenUI/Modifiers/`. Each wraps c
 | `.toggleStyle(_:)` | Sets toggle style: `.automatic`, `.checkbox`, `.switch`. |
 | `.textFieldStyle(_:)` | Sets text field style: `.automatic`, `.plain`, `.roundedBorder`. |
 
+## Text Decoration
+
+| Modifier | Description |
+|----------|-------------|
+| `.bold()` | Applies bold font weight. |
+| `.italic()` | Applies italic style. |
+| `.fontWeight(_:)` | Sets font weight (ultraLight through black). |
+| `.underline(_:)` | Applies underline decoration. |
+| `.strikethrough(_:)` | Applies strikethrough decoration. |
+| `.textCase(_:)` | Transforms text case: `.uppercase`, `.lowercase`, or `nil` to reset. |
+
+## Aspect Ratio
+
+| Modifier | Description |
+|----------|-------------|
+| `.aspectRatio(_:contentMode:)` | Constrains view to a specific aspect ratio with fit or fill mode. |
+| `.scaledToFit()` | Scales to fit within parent, preserving aspect ratio. |
+| `.scaledToFill()` | Scales to fill parent, preserving aspect ratio. |
+
 ## Interaction
 
 | Modifier | Description |
 |----------|-------------|
 | `.onChange(of:perform:)` | Fires action when a tracked value changes between renders. |
 | `.contextMenu(menuItems:)` | Attaches a context menu triggered by right-click. |
+| `.onSubmit(of:_:)` | Fires action when user presses Return in a text field. Environment-based. |
+| `.tag(_:)` | Tags a view with a Hashable value for selection-based controls. |
 
 ## Presentation
 
 | Modifier | Description |
 |----------|-------------|
 | `.popover(isPresented:content:)` | Presents a popover attached to the anchor view. |
+| `.fullScreenCover(isPresented:onDismiss:content:)` | Presents a full-screen modal cover. |
 
 ## Layout
 

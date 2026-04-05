@@ -40,6 +40,8 @@
 - ~~.bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase()~~ — done
 - ~~LinearGradient, RadialGradient~~ — done (Win32: solid first-stop approximation)
 - ~~.aspectRatio(), .scaledToFit(), .scaledToFill()~~ — done
+- ~~.tag()~~ — done (thread-local propagation for selection controls)
+- ~~.onSubmit()~~ — done (environment-based; TextField + SecureField wired on all platforms)
 
 ### Views & Modifiers — Remaining
 - .task() — needs Swift async runtime integration

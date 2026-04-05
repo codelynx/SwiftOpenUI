@@ -33,6 +33,8 @@ Last updated: 2026-03-25
 | List | Y | Y | Y | Y | Y | - | Content-based; no selection yet |
 | ScrollView | Y | Y | Y | Y | Y | - | Axis OptionSet; Web: CSS overflow |
 | ScrollViewReader | Y | Y | Y | Y | Y | - | ScrollViewProxy + .id() modifier; GTK: grab_focus; Win32: WM_VSCROLL; Web: scrollIntoView |
+| LinearGradient | Y | Y | Y | ~ | Y | - | GTK4: CSS linear-gradient; Web: CSS; Win32: solid first-stop (D2D deferred) |
+| RadialGradient | Y | Y | Y | ~ | Y | - | GTK4: CSS radial-gradient; Web: CSS (radii ignored); Win32: solid first-stop |
 | AnyView | Y | Y | Y | Y | Y | Y | |
 | EmptyView | Y | Y | Y | Y | Y | Y | |
 | NavigationStack | Y | Y | Y | Y | Y | Y | GtkStack / Win32 HWND stack / DOM stack |
@@ -125,6 +127,17 @@ Last updated: 2026-03-25
 | .layoutPriority() | Y | Y | Y | Y | Y | - | API surface only — layout engine integration deferred |
 | .fixedSize() | Y | Y | Y | Y | Y | - | GTK: size_request; Win32: pass-through; Web: flex-shrink 0 |
 | .id() | Y | Y | Y | Y | Y | - | Global ID registry for ScrollViewReader |
+| .tag() | Y | Y | Y | Y | Y | - | Thread-local tag propagation for selection controls |
+| .onSubmit() | Y | Y | Y | Y | Y | - | Environment-based SubmitAction; TextField + SecureField wired |
+| .bold() | Y | Y | Y | Y | Y | - | GTK4/Web: CSS; Win32: LOGFONTW |
+| .italic() | Y | Y | Y | Y | Y | - | GTK4/Web: CSS; Win32: LOGFONTW |
+| .fontWeight() | Y | Y | Y | Y | Y | - | GTK4/Web: CSS 100-900; Win32: LOGFONTW |
+| .underline() | Y | Y | Y | Y | Y | - | GTK4: Pango; Web: CSS; Win32: LOGFONTW |
+| .strikethrough() | Y | Y | Y | Y | Y | - | GTK4: Pango; Web: CSS; Win32: LOGFONTW |
+| .textCase() | Y | Y | Y | ~ | Y | - | GTK4: string transform; Web: CSS text-transform; Win32: pass-through |
+| .aspectRatio() | Y | Y | Y | Y | Y | - | GTK4/Web: CSS aspect-ratio + object-fit; Win32: SetWindowPos |
+| .scaledToFit() | Y | Y | Y | Y | Y | - | Convenience for aspectRatio(nil, .fit) |
+| .scaledToFill() | Y | Y | Y | Y | Y | - | Convenience for aspectRatio(nil, .fill) |
 | .pickerStyle() | Y | Y | Y | Y | Y | - | .automatic (select), .segmented (button row), .palette (alias) |
 | .navigationSplitViewColumnWidth() | Y | Y | Y | Y | Y | - | min/ideal/max; Web: pass-through (consumed by NavigationSplitView) |
 | .ignoresSafeArea() | Y | Y | Y | ~ | ~ | - | GTK: passthrough; Win32/Web: passthrough pending safe-area model |
