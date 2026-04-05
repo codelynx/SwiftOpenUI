@@ -6250,25 +6250,28 @@ extension AnimatedView: WinRenderable {
 
 // MARK: - Text formatting Win32 extensions
 
-/// Walk the HWND tree to find the first Static text control.
-/// Text modifiers wrap content, so the label may be nested inside
-/// font/color/padding wrapper containers.
-private func findStaticLabel(in hwnd: HWND) -> HWND? {
+/// Collect all Static text controls in the HWND subtree via DFS.
+/// Text modifiers apply to every label in the subtree, not just the first,
+/// so that container-level modifiers like VStack { ... }.lineLimit(1) work.
+private func findAllStaticLabels(in hwnd: HWND) -> [HWND] {
+    var result: [HWND] = []
+    collectStaticLabels(in: hwnd, into: &result)
+    return result
+}
+
+private func collectStaticLabels(in hwnd: HWND, into result: inout [HWND]) {
     if className(of: hwnd) == "Static" {
-        // Verify it's a text label (has SS_NOTIFY), not a spacer/divider
         let style = win32_GetWindowLongPtrW(hwnd, GWL_STYLE)
         if style & LONG_PTR(SS_NOTIFY) != 0 {
-            return hwnd
+            result.append(hwnd)
+            return // Static controls don't have Static children
         }
     }
     var child = GetWindow(hwnd, UINT(GW_CHILD))
     while let c = child {
-        if let found = findStaticLabel(in: c) {
-            return found
-        }
+        collectStaticLabels(in: c, into: &result)
         child = GetWindow(c, UINT(GW_HWNDNEXT))
     }
-    return nil
 }
 
 /// Get the window class name as a String.
@@ -6281,8 +6284,14 @@ private func className(of hwnd: HWND) -> String {
 extension LineLimitView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let hwnd = winRenderView(content, in: context)
-        guard let hwnd, let label = findStaticLabel(in: hwnd) else { return hwnd }
+        guard let hwnd else { return hwnd }
+        for label in findAllStaticLabels(in: hwnd) {
+            winApplyLineLimit(to: label, root: hwnd)
+        }
+        return hwnd
+    }
 
+    private func winApplyLineLimit(to label: HWND, root: HWND) {
         let style = win32_GetWindowLongPtrW(label, GWL_STYLE)
 
         if lineLimit == 1 {
@@ -6314,15 +6323,8 @@ extension LineLimitView: WinRenderable {
             let labelW = labelRect.right - labelRect.left
             SetWindowPos(label, nil, pt.x, pt.y, labelW, singleH, UINT(SWP_NOZORDER))
 
-            if hwnd != label {
-                var parentRect = RECT()
-                GetWindowRect(hwnd, &parentRect)
-                let parentW = parentRect.right - parentRect.left
-                SetWindowPos(hwnd, nil, 0, 0, parentW, singleH, UINT(SWP_NOZORDER | SWP_NOMOVE))
-            }
-
             InvalidateRect(label, nil, true)
-            return hwnd
+            return
         }
 
         // Enable word-wrapping: replace SS_LEFTNOWORDWRAP with SS_LEFT
@@ -6342,7 +6344,6 @@ extension LineLimitView: WinRenderable {
 
         let hdc = GetDC(label)
         defer { ReleaseDC(label, hdc) }
-        // Use the label's current font for measurement
         let hfont = HFONT(bitPattern: UInt(SendMessageW(label, UINT(WM_GETFONT), 0, 0)))
         let oldFont = hfont.map { SelectObject(hdc, $0) }
         defer { if let oldFont { SelectObject(hdc, oldFont) } }
@@ -6363,46 +6364,37 @@ extension LineLimitView: WinRenderable {
         }
 
         SetWindowPos(label, nil, pt.x, pt.y, labelW, wrappedH, UINT(SWP_NOZORDER))
-
-        // Resize parent container if it's a layout wrapper
-        if hwnd != label {
-            var parentRect = RECT()
-            GetWindowRect(hwnd, &parentRect)
-            let parentW = parentRect.right - parentRect.left
-            SetWindowPos(hwnd, nil, 0, 0, parentW, wrappedH, UINT(SWP_NOZORDER | SWP_NOMOVE))
-        }
-
-        return hwnd
     }
 }
 
 extension TruncationModeView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let hwnd = winRenderView(content, in: context)
-        guard let hwnd, let label = findStaticLabel(in: hwnd) else { return hwnd }
+        guard let hwnd else { return hwnd }
+        for label in findAllStaticLabels(in: hwnd) {
+            let style = win32_GetWindowLongPtrW(label, GWL_STYLE)
 
-        let style = win32_GetWindowLongPtrW(label, GWL_STYLE)
+            // Clear alignment (low nibble) and ellipsis bits (0x4000, 0x8000)
+            // so nested truncation modifiers compose correctly.
+            let cleared = style & ~LONG_PTR(0xF | 0x4000 | 0x8000)
 
-        // Clear alignment (low nibble) and ellipsis bits (0x4000, 0x8000)
-        // so nested truncation modifiers compose correctly.
-        let cleared = style & ~LONG_PTR(0xF | 0x4000 | 0x8000)
+            switch mode {
+            case .tail:
+                // SS_ENDELLIPSIS = 0x4000
+                win32_SetWindowLongPtrW(label, GWL_STYLE,
+                    cleared | LONG_PTR(SS_LEFTNOWORDWRAP) | LONG_PTR(0x4000) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+            case .middle:
+                // SS_PATHELLIPSIS = 0x8000
+                win32_SetWindowLongPtrW(label, GWL_STYLE,
+                    cleared | LONG_PTR(SS_LEFTNOWORDWRAP) | LONG_PTR(0x8000) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+            case .head:
+                // Win32 has no head-ellipsis — use end ellipsis as fallback
+                win32_SetWindowLongPtrW(label, GWL_STYLE,
+                    cleared | LONG_PTR(SS_LEFTNOWORDWRAP) | LONG_PTR(0x4000) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+            }
 
-        switch mode {
-        case .tail:
-            // SS_ENDELLIPSIS = 0x4000
-            win32_SetWindowLongPtrW(label, GWL_STYLE,
-                cleared | LONG_PTR(SS_LEFTNOWORDWRAP) | LONG_PTR(0x4000) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
-        case .middle:
-            // SS_PATHELLIPSIS = 0x8000
-            win32_SetWindowLongPtrW(label, GWL_STYLE,
-                cleared | LONG_PTR(SS_LEFTNOWORDWRAP) | LONG_PTR(0x8000) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
-        case .head:
-            // Win32 has no head-ellipsis — use end ellipsis as fallback
-            win32_SetWindowLongPtrW(label, GWL_STYLE,
-                cleared | LONG_PTR(SS_LEFTNOWORDWRAP) | LONG_PTR(0x4000) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+            InvalidateRect(label, nil, true)
         }
-
-        InvalidateRect(label, nil, true)
         return hwnd
     }
 }
@@ -6418,25 +6410,26 @@ extension LineSpacingView: WinRenderable {
 extension MultilineTextAlignmentView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let hwnd = winRenderView(content, in: context)
-        guard let hwnd, let label = findStaticLabel(in: hwnd) else { return hwnd }
+        guard let hwnd else { return hwnd }
+        for label in findAllStaticLabels(in: hwnd) {
+            let style = win32_GetWindowLongPtrW(label, GWL_STYLE)
+            // Clear SS_LEFT (0), SS_CENTER (1), SS_RIGHT (2), SS_LEFTNOWORDWRAP (0xC)
+            let cleared = style & ~LONG_PTR(0xF)
 
-        let style = win32_GetWindowLongPtrW(label, GWL_STYLE)
-        // Clear SS_LEFT (0), SS_CENTER (1), SS_RIGHT (2), SS_LEFTNOWORDWRAP (0xC)
-        let cleared = style & ~LONG_PTR(0xF)
+            switch alignment {
+            case .leading:
+                win32_SetWindowLongPtrW(label, GWL_STYLE,
+                    cleared | LONG_PTR(SS_LEFT) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+            case .center:
+                win32_SetWindowLongPtrW(label, GWL_STYLE,
+                    cleared | LONG_PTR(SS_CENTER) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+            case .trailing:
+                win32_SetWindowLongPtrW(label, GWL_STYLE,
+                    cleared | LONG_PTR(SS_RIGHT) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+            }
 
-        switch alignment {
-        case .leading:
-            win32_SetWindowLongPtrW(label, GWL_STYLE,
-                cleared | LONG_PTR(SS_LEFT) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
-        case .center:
-            win32_SetWindowLongPtrW(label, GWL_STYLE,
-                cleared | LONG_PTR(SS_CENTER) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
-        case .trailing:
-            win32_SetWindowLongPtrW(label, GWL_STYLE,
-                cleared | LONG_PTR(SS_RIGHT) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+            InvalidateRect(label, nil, true)
         }
-
-        InvalidateRect(label, nil, true)
         return hwnd
     }
 }
