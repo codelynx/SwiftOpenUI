@@ -1,6 +1,6 @@
 # State, Environment, and Deprecated Modifiers
 
-Summary: 34 total, 8 implemented, 1 partial, 25 missing.
+Summary: 34 total, 9 implemented, 1 partial, 24 missing.
 
 ## State and Environment Modifiers (~20)
 
@@ -17,7 +17,7 @@ Summary: 34 total, 8 implemented, 1 partial, 25 missing.
 | `modelContext` | Curated only | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
 | `onPreferenceChange` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `preference` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `tag` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `tag` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/TagModifier.swift` | Thread-local tag propagation for selection-based controls. Infrastructure — no control reads tag yet. |
 | `transformEnvironment` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `transformPreference` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 
