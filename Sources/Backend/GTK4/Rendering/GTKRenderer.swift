@@ -182,6 +182,15 @@ extension TextField: GTKRenderable {
             GConnectFlags(rawValue: 0)
         )
 
+        // Apply text field style from environment
+        let textFieldStyleType = getCurrentEnvironment().textFieldStyle
+        switch textFieldStyleType {
+        case .plain:
+            applyCSSToWidget(entry, properties: "border: none; outline: none; box-shadow: none;")
+        case .automatic, .roundedBorder:
+            break // default GTK entry styling
+        }
+
         gtkApplyEnabledState(to: entry)
         return opaqueFromWidget(entry)
     }
@@ -353,6 +362,29 @@ extension Button: GTKRenderable, GTKDescribable {
 
         gtk_widget_set_hexpand(button, 0)
         gtk_widget_set_halign(button, GTK_ALIGN_START)
+
+        // Apply button style from environment
+        let buttonStyleType = getCurrentEnvironment().buttonStyle
+        switch buttonStyleType {
+        case .plain:
+            applyCSSToWidget(button, properties: """
+                border: none; background: none; padding: 0;
+                min-height: 0; min-width: 0;
+                """)
+        case .borderedProminent:
+            applyCSSToWidget(button, properties: """
+                background: @accent_bg_color; color: white;
+                border-radius: 6px; padding: 6px 12px;
+                border: none;
+                """)
+        case .bordered:
+            applyCSSToWidget(button, properties: """
+                border: 1px solid @borders; border-radius: 6px;
+                padding: 6px 12px;
+                """)
+        case .automatic:
+            break // default GTK button styling
+        }
 
         let box = Unmanaged.passRetained(ClosureBox(action)).toOpaque()
         g_signal_connect_data(
@@ -1107,6 +1139,44 @@ extension BlurView: GTKRenderable {
             applyCSSToWidget(widget, properties: "filter: blur(\(radius)px);")
         }
         return opaqueFromWidget(widget)
+    }
+}
+
+// MARK: - Style modifier GTK extensions
+
+extension ButtonStyleModifier: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        var env = getCurrentEnvironment()
+        env.buttonStyle = style
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let widget = gtkRenderView(content)
+        setCurrentEnvironment(prev)
+        return widget
+    }
+}
+
+extension ToggleStyleModifier: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        var env = getCurrentEnvironment()
+        env.toggleStyle = style
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let widget = gtkRenderView(content)
+        setCurrentEnvironment(prev)
+        return widget
+    }
+}
+
+extension TextFieldStyleModifier: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        var env = getCurrentEnvironment()
+        env.textFieldStyle = style
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let widget = gtkRenderView(content)
+        setCurrentEnvironment(prev)
+        return widget
     }
 }
 
@@ -2441,6 +2511,16 @@ private func gtkAlignFromAlignment(_ alignment: Alignment) -> (GtkAlign, GtkAlig
 
 extension Toggle: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
+        let toggleStyleType = getCurrentEnvironment().toggleStyle
+
+        if toggleStyleType == .switch {
+            return gtkCreateSwitchWidget()
+        }
+        // .automatic and .checkbox use GtkCheckButton
+        return gtkCreateCheckButtonWidget()
+    }
+
+    private func gtkCreateCheckButtonWidget() -> OpaquePointer {
         let check = label.isEmpty
             ? gtk_check_button_new()!
             : gtk_check_button_new_with_label(label)!
@@ -2472,6 +2552,72 @@ extension Toggle: GTKRenderable {
 
         gtkApplyEnabledState(to: check)
         return opaqueFromWidget(check)
+    }
+
+    private func gtkCreateSwitchWidget() -> OpaquePointer {
+        let sw = gtk_swift_switch_new()!
+        gtk_swift_switch_set_active(sw, isOn.wrappedValue ? 1 : 0)
+
+        let binding = isOn
+        let box = Unmanaged.passRetained(BoolClosureBox { newValue in
+            if newValue != binding.wrappedValue {
+                binding.wrappedValue = newValue
+            }
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(sw),
+            "notify::active",
+            unsafeBitCast({ (widget: gpointer?, _: gpointer?, userData: gpointer?) in
+                let box = Unmanaged<BoolClosureBox>.fromOpaque(userData!).takeUnretainedValue()
+                let w = UnsafeMutableRawPointer(widget!).assumingMemoryBound(to: GtkWidget.self)
+                let active = gtk_swift_switch_get_active(w) != 0
+                box.closure(active)
+            } as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<BoolClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        if label.isEmpty {
+            gtkApplyEnabledState(to: sw)
+            return opaqueFromWidget(sw)
+        }
+
+        // Wrap switch + label in a horizontal box.
+        // Add a click gesture on the box so clicking the label toggles the switch.
+        let hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)!
+        let lbl = gtk_label_new(label)!
+        gtk_box_append(boxPointer(hbox), lbl)
+        gtk_box_append(boxPointer(hbox), sw)
+
+        // Add click gesture on the label (not the box) so clicking the label
+        // toggles the switch. Attaching to the box would double-toggle when
+        // the click lands directly on the GtkSwitch.
+        let gesture = gtk_gesture_click_new()!
+        let toggleBox = Unmanaged.passRetained(ClosureBox {
+            let active = gtk_swift_switch_get_active(sw) != 0
+            gtk_swift_switch_set_active(sw, active ? 0 : 1)
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(gesture),
+            "released",
+            unsafeBitCast({ (_: gpointer?, _: gint, _: Double, _: Double, userData: gpointer?) in
+                guard let userData = userData else { return }
+                Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gint, Double, Double, gpointer?) -> Void, to: GCallback.self),
+            toggleBox,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<ClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+        gtk_swift_add_gesture(lbl, gesture)
+
+        // Apply enabled state to the whole wrapper so label dims too
+        gtkApplyEnabledState(to: hbox)
+        return opaqueFromWidget(hbox)
     }
 }
 

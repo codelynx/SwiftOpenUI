@@ -634,3 +634,20 @@ gtk_swift_set_root_window_titlebar(GtkWidget *widget, GtkWidget *titlebar) {
         gtk_window_set_titlebar(GTK_WINDOW(root), titlebar);
     }
 }
+
+// --- GtkSwitch shims ---
+
+static inline GtkWidget *
+gtk_swift_switch_new(void) {
+    return gtk_switch_new();
+}
+
+static inline void
+gtk_swift_switch_set_active(GtkWidget *sw, gboolean active) {
+    gtk_switch_set_active(GTK_SWITCH(sw), active);
+}
+
+static inline gboolean
+gtk_swift_switch_get_active(GtkWidget *sw) {
+    return gtk_switch_get_active(GTK_SWITCH(sw));
+}
