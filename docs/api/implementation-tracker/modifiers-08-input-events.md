@@ -1,6 +1,6 @@
 # Input and Event Modifiers
 
-Summary: 55 total, 6 implemented, 1 partial, 48 missing.
+Summary: 55 total, 7 implemented, 1 partial, 47 missing.
 
 ## Input and Event Modifiers (~148)
 
@@ -46,7 +46,7 @@ Summary: 55 total, 6 implemented, 1 partial, 48 missing.
 | `onScrollPhaseChange` | Both | iOS 18 / macOS 15 / watchOS 11 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `onScrollTargetVisibilityChange` | Both | iOS 18 / macOS 15 / watchOS 11 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `onScrollVisibilityChange` | Both | iOS 18 / macOS 15 / watchOS 11 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
-| `onSubmit` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |
+| `onSubmit` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/OnSubmitModifier.swift` | Environment-based SubmitAction. GTK4: activate signal; Win32: VK_RETURN subclass; Web: keydown Enter. TextField + SecureField wired, TextEditor excluded. |
 | `onTapGesture` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 16 / visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/GestureModifier.swift` | Public surface exists, but only 1 overload(s) are present vs 2 in the curated reference families. \| count parameter |
 | `pasteDestination` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `pointerStyle` | Curated only | iOS 18 / macOS 15 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
