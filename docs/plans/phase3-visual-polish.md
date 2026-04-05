@@ -1,5 +1,7 @@
 # Phase 3 — Visual Polish & App Readiness
 
+**Status: Complete.**
+
 ## Goal
 
 Close the highest-impact view and modifier gaps so SwiftOpenUI can build real-looking apps, not just functional demos.

@@ -23,9 +23,22 @@
 
 ## Next
 
-### Views & Modifiers
-- ~~.clipShape()~~ — done (GTK: CSS clip, Win32: SetWindowRgn, Web: CSS clip-path)
+### Views & Modifiers — Completed (Phase 3 & 4)
+- ~~.clipShape()~~ — done
+- ~~.clipped()~~ — done
+- ~~.hidden(), .blur()~~ — done (blur: Win32 pass-through)
+- ~~lineLimit, truncationMode, lineSpacing, multilineTextAlignment~~ — done
+- ~~Circle, Rectangle, RoundedRectangle, Capsule, Ellipse~~ — done (Shape protocol + .fill()/.stroke())
+- ~~.buttonStyle(), .toggleStyle(), .textFieldStyle()~~ — done (environment-based enums)
+- ~~.onChange()~~ — done
+- ~~.contextMenu()~~ — done
+- ~~.popover()~~ — done
+- ~~.position(), .layoutPriority(), .fixedSize()~~ — done (layoutPriority API only, engine deferred)
+- ~~ScrollViewReader, .id(), ScrollViewProxy~~ — done
+
+### Views & Modifiers — Remaining
 - .task() — needs Swift async runtime integration
+- .fullScreenCover() — deferred (extends sheet infrastructure)
 - Canvas: stroke styles (line caps, joins, dash), bezier/quadratic curves, rotate/translate transforms
 
 ### State & Data

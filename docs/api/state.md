@@ -22,6 +22,16 @@ All state property wrappers live in `Sources/SwiftOpenUI/State/`. Storage is thr
 | `EnvironmentKey` protocol | Define custom keys with a `defaultValue`. |
 | `.environment(_:_:)` | Modifier to set a key's value for a subtree. |
 
+## Observation & Scroll
+
+| Type / Modifier | Description |
+|-----------------|-------------|
+| `.onChange(of:perform:)` | Fires action when a tracked `Equatable` value changes between renders. Counter-keyed global storage. |
+| `ScrollViewReader` | View that provides a `ScrollViewProxy` for programmatic scrolling. |
+| `ScrollViewProxy` | `scrollTo(_:anchor:)` scrolls to a view tagged with `.id()`. |
+| `UnitPoint` | Unit coordinate (0-1 range) for scroll anchor: `.top`, `.center`, `.bottom`, etc. |
+| `.id(_:)` | Tags a view with a `Hashable` identity for `ScrollViewProxy` lookup. |
+
 ## Platform Notes
 
 - **Thread-local storage**: `pthread_key_t` on Linux/macOS, `TlsAlloc` on Windows, simple global on Wasm (single-threaded).

@@ -63,3 +63,56 @@ All modifier view structs live in `Sources/SwiftOpenUI/Modifiers/`. Each wraps c
 | `.environmentObject(_:)` | Injects an `ObservableObject` into the environment. |
 | `.environment(_:_:)` | Sets a custom `EnvironmentKey` value. |
 | `ViewModifier` protocol | Custom reusable modifier via `func body(content:) -> some View`. |
+
+## Text Formatting
+
+| Modifier | Description |
+|----------|-------------|
+| `.lineLimit(_:)` | Limits the number of lines text can occupy. `nil` for unlimited. |
+| `.truncationMode(_:)` | Sets truncation mode: `.head`, `.tail`, `.middle`. |
+| `.lineSpacing(_:)` | Sets additional spacing between lines of text. |
+| `.multilineTextAlignment(_:)` | Sets text alignment: `.leading`, `.center`, `.trailing`. |
+
+## Clipping
+
+| Modifier | Description |
+|----------|-------------|
+| `.clipShape(_:)` | Clips the view to a shape (Circle, RoundedRectangle, etc.). |
+| `.clipped()` | Clips the view to its bounding rectangle. |
+
+## Appearance
+
+| Modifier | Description |
+|----------|-------------|
+| `.hidden()` | Hides the view while preserving layout space. |
+| `.blur(radius:opaque:)` | Applies a Gaussian blur. Win32: pass-through. |
+
+## Control Styles
+
+| Modifier | Description |
+|----------|-------------|
+| `.buttonStyle(_:)` | Sets button style: `.automatic`, `.plain`, `.bordered`, `.borderedProminent`. |
+| `.toggleStyle(_:)` | Sets toggle style: `.automatic`, `.checkbox`, `.switch`. |
+| `.textFieldStyle(_:)` | Sets text field style: `.automatic`, `.plain`, `.roundedBorder`. |
+
+## Interaction
+
+| Modifier | Description |
+|----------|-------------|
+| `.onChange(of:perform:)` | Fires action when a tracked value changes between renders. |
+| `.contextMenu(menuItems:)` | Attaches a context menu triggered by right-click. |
+
+## Presentation
+
+| Modifier | Description |
+|----------|-------------|
+| `.popover(isPresented:content:)` | Presents a popover attached to the anchor view. |
+
+## Layout
+
+| Modifier | Description |
+|----------|-------------|
+| `.position(x:y:)` | Places the center of the view at absolute coordinates. |
+| `.layoutPriority(_:)` | Sets layout priority for space distribution (API surface, engine deferred). |
+| `.fixedSize()` | Prevents the view from being compressed below its ideal size. |
+| `.id(_:)` | Assigns explicit identity for use with ScrollViewReader. |

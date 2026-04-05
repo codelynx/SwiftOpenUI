@@ -1,5 +1,7 @@
 # Phase 4 — Interaction & Presentation
 
+**Status: Substantially complete. Batch C (fullScreenCover) deferred.**
+
 ## Goal
 
 Add commonly needed interaction and presentation APIs to make SwiftOpenUI apps more interactive and complete.
@@ -106,6 +108,9 @@ ScrollViewReader { proxy in
 
 ## Execution Order
 
-A → B → C → D → E → F
-
-onChange first (pure state, no rendering). contextMenu next (interaction). fullScreenCover/popover (presentation, builds on sheet). Frame/layoutPriority (layout). ScrollViewReader last (needs ID infrastructure).
+- ~~A: onChange~~ — Done
+- ~~B: contextMenu~~ — Done
+- C: fullScreenCover — **Deferred**
+- ~~D: popover~~ — Done
+- ~~E: frame/layoutPriority/fixedSize/position~~ — Done
+- ~~F: ScrollViewReader + ID system~~ — Done
