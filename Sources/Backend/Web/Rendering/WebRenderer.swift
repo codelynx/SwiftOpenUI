@@ -619,16 +619,30 @@ extension PopoverView: WebRenderable {
             _ = overlay.appendChild(popChild)
             _ = wrapper.appendChild(overlay)
 
-            // Dismiss on outside click
+            // Dismiss on outside click — deferred to next frame so the
+            // presenting click doesn't immediately trigger dismissal.
+            // Store the handler reference on the overlay for cleanup.
+            let overlayRef = overlay
             let dismissHandler = webMakeClosure { args in
                 let e = args[0]
                 let inside = wrapper.contains(e.target)
                 if inside.boolean != true {
                     binding.wrappedValue = false
+                    // Remove listener to prevent leak on dismiss
+                    if let handler = overlayRef.object?["_dismissHandler"] {
+                        _ = JSObject.global.document.removeEventListener("click", handler)
+                    }
                 }
                 return .undefined
             }
-            _ = JSObject.global.document.addEventListener("click", dismissHandler)
+            // Store handler on overlay so it can be cleaned up
+            overlayRef.object?["_dismissHandler"] = .object(dismissHandler)
+            // Defer registration to avoid immediate dismiss from the presenting click
+            let deferredSetup = webMakeClosure { _ in
+                _ = JSObject.global.document.addEventListener("click", dismissHandler)
+                return .undefined
+            }
+            _ = JSObject.global.requestAnimationFrame!(deferredSetup)
         }
 
         return wrapper
