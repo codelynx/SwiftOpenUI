@@ -1,6 +1,6 @@
 # Views
 
-Summary: 89 total, 51 implemented, 0 partial, 38 missing.
+Summary: 89 total, 53 implemented, 0 partial, 36 missing.
 
 ## Text Views
 
@@ -129,9 +129,9 @@ Summary: 89 total, 51 implemented, 0 partial, 38 missing.
 | `Color` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Color.swift` | RGBA, hex, HSB constructors |
 | `ContainerRelativeShape` | Curated only | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Missing | `-` | - |
 | `EllipticalGradient` | Both | iOS, macOS 12, watchOS 8, tvOS 15, visionOS 1 | Current | Missing | `-` | - |
-| `LinearGradient` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Missing | `-` | - |
+| `LinearGradient` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Gradients.swift` | GTK4: CSS linear-gradient; Web: CSS linear-gradient; Win32: solid first-stop color (D2D gradient brush deferred) |
 | `MeshGradient` | Both | iOS, macOS 15, watchOS 11, tvOS 18, visionOS 2 | Current | Missing | `-` | - |
-| `RadialGradient` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Missing | `-` | - |
+| `RadialGradient` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Gradients.swift` | GTK4: CSS radial-gradient; Web: CSS radial-gradient (startRadius/endRadius ignored); Win32: solid first-stop color (D2D gradient brush deferred) |
 | `TimelineView` | Both | iOS, macOS 12, watchOS 8, tvOS 15, visionOS 1 | Current | Missing | `-` | - |
 
 ## Shapes
