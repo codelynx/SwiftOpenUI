@@ -429,6 +429,114 @@ extension MultilineTextAlignmentView: WebRenderable {
     }
 }
 
+// MARK: - Shape Web extensions
+
+private let svgNS = "http://www.w3.org/2000/svg"
+
+/// Create an SVG container that fills available space.
+private func webCreateSVGContainer() -> JSValue {
+    let svg = JSObject.global.document.createElementNS(svgNS, "svg")
+    _ = svg.setAttribute("width", "100%")
+    _ = svg.setAttribute("height", "100%")
+    svg.style = .string("display: block;")
+    return svg
+}
+
+/// Create an SVG shape element for a given shape, using viewBox for sizing.
+private func webCreateShapeSVG<S: Shape>(_ shape: S, fill: String, stroke: String? = nil, strokeWidth: Double? = nil) -> JSValue {
+    let svg = JSObject.global.document.createElementNS(svgNS, "svg")
+    _ = svg.setAttribute("width", "100%")
+    _ = svg.setAttribute("height", "100%")
+    _ = svg.setAttribute("viewBox", "0 0 100 100")
+    _ = svg.setAttribute("preserveAspectRatio", "none")
+    svg.style = .string("display: block;")
+
+    let el: JSValue
+    if shape is Circle {
+        el = JSObject.global.document.createElementNS(svgNS, "circle")
+        _ = el.setAttribute("cx", "50")
+        _ = el.setAttribute("cy", "50")
+        _ = el.setAttribute("r", "50")
+    } else if shape is Ellipse {
+        el = JSObject.global.document.createElementNS(svgNS, "ellipse")
+        _ = el.setAttribute("cx", "50")
+        _ = el.setAttribute("cy", "50")
+        _ = el.setAttribute("rx", "50")
+        _ = el.setAttribute("ry", "50")
+    } else if let rr = shape as? RoundedRectangle {
+        el = JSObject.global.document.createElementNS(svgNS, "rect")
+        _ = el.setAttribute("width", "100")
+        _ = el.setAttribute("height", "100")
+        // Scale corner radius relative to viewBox (0-100 range)
+        let rx = min(rr.cornerRadius, 50)
+        _ = el.setAttribute("rx", "\(rx)")
+    } else if shape is Capsule {
+        el = JSObject.global.document.createElementNS(svgNS, "rect")
+        _ = el.setAttribute("width", "100")
+        _ = el.setAttribute("height", "100")
+        _ = el.setAttribute("rx", "50")
+    } else {
+        // Rectangle or fallback
+        el = JSObject.global.document.createElementNS(svgNS, "rect")
+        _ = el.setAttribute("width", "100")
+        _ = el.setAttribute("height", "100")
+    }
+
+    _ = el.setAttribute("fill", fill)
+    if let stroke, let strokeWidth {
+        _ = el.setAttribute("stroke", stroke)
+        _ = el.setAttribute("stroke-width", "\(strokeWidth)")
+        _ = el.setAttribute("fill", "none")
+    }
+
+    _ = svg.appendChild(el)
+    return svg
+}
+
+extension Circle: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        webCreateShapeSVG(self, fill: "black")
+    }
+}
+
+extension SwiftOpenUI.Rectangle: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        webCreateShapeSVG(self, fill: "black")
+    }
+}
+
+extension RoundedRectangle: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        webCreateShapeSVG(self, fill: "black")
+    }
+}
+
+extension Capsule: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        webCreateShapeSVG(self, fill: "black")
+    }
+}
+
+extension Ellipse: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        webCreateShapeSVG(self, fill: "black")
+    }
+}
+
+extension FilledShape: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let css = color.cssColor
+        return webCreateShapeSVG(shape, fill: css)
+    }
+}
+
+extension StrokedShape: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let css = color.cssColor
+        return webCreateShapeSVG(shape, fill: "none", stroke: css, strokeWidth: style.lineWidth)
+    }
+}
+
 // MARK: - Navigation views
 
 /// Destination registry for type-based path navigation.
