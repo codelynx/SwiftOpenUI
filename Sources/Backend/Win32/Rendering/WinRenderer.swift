@@ -6622,6 +6622,44 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - Aspect ratio Win32 extension
+
+extension AspectRatioView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        guard let ratio else { return hwnd }
+
+        var rect = RECT()
+        GetWindowRect(hwnd, &rect)
+        let w = Double(rect.right - rect.left)
+        let h = Double(rect.bottom - rect.top)
+        guard w > 0 && h > 0 else { return hwnd }
+
+        let currentRatio = w / h
+        var newW = w
+        var newH = h
+
+        switch contentMode {
+        case .fit:
+            if currentRatio > ratio {
+                newW = h * ratio
+            } else {
+                newH = w / ratio
+            }
+        case .fill:
+            if currentRatio > ratio {
+                newH = w / ratio
+            } else {
+                newW = h * ratio
+            }
+        }
+
+        SetWindowPos(hwnd, nil, 0, 0, Int32(newW), Int32(newH),
+                     UINT(SWP_NOMOVE | SWP_NOZORDER))
+        return hwnd
+    }
+}
+
 // MARK: - Gradient Win32 extensions
 
 extension LinearGradient: WinRenderable {

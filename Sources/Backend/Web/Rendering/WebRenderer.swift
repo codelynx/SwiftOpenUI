@@ -589,6 +589,28 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - Aspect ratio Web extension
+
+extension AspectRatioView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        var css = "display: inline-block;"
+        if let ratio {
+            css += " aspect-ratio: \(ratio);"
+        }
+        switch contentMode {
+        case .fit:
+            css += " object-fit: contain; max-width: 100%; max-height: 100%;"
+        case .fill:
+            css += " object-fit: cover; overflow: hidden; width: 100%; height: 100%;"
+        }
+        wrapper.style = .string(css)
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
 // MARK: - Gradient Web extensions
 
 private func webGradientStopsCSS(_ stops: [Gradient.Stop]) -> String {

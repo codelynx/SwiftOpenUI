@@ -1107,6 +1107,28 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - Aspect ratio GTK extension
+
+extension AspectRatioView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        var css = ""
+        if let ratio {
+            css += "aspect-ratio: \(ratio);"
+        }
+        switch contentMode {
+        case .fit:
+            css += " object-fit: contain;"
+        case .fill:
+            css += " object-fit: cover; overflow: hidden;"
+        }
+        if !css.isEmpty {
+            applyCSSToWidget(widget, properties: css)
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - Gradient GTK extensions
 
 private func gtkGradientStopsCSS(_ stops: [Gradient.Stop]) -> String {
