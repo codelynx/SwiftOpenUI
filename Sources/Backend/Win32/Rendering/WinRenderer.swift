@@ -6248,6 +6248,199 @@ extension AnimatedView: WinRenderable {
     }
 }
 
+// MARK: - Text formatting Win32 extensions
+
+/// Walk the HWND tree to find the first Static text control.
+/// Text modifiers wrap content, so the label may be nested inside
+/// font/color/padding wrapper containers.
+private func findStaticLabel(in hwnd: HWND) -> HWND? {
+    if className(of: hwnd) == "Static" {
+        // Verify it's a text label (has SS_NOTIFY), not a spacer/divider
+        let style = win32_GetWindowLongPtrW(hwnd, GWL_STYLE)
+        if style & LONG_PTR(SS_NOTIFY) != 0 {
+            return hwnd
+        }
+    }
+    var child = GetWindow(hwnd, UINT(GW_CHILD))
+    while let c = child {
+        if let found = findStaticLabel(in: c) {
+            return found
+        }
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+    return nil
+}
+
+/// Get the window class name as a String.
+private func className(of hwnd: HWND) -> String {
+    var buffer: [WCHAR] = Array(repeating: 0, count: 256)
+    _ = GetClassNameW(hwnd, &buffer, Int32(buffer.count))
+    return String(decodingCString: buffer, as: UTF16.self)
+}
+
+extension LineLimitView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let hwnd = winRenderView(content, in: context)
+        guard let hwnd, let label = findStaticLabel(in: hwnd) else { return hwnd }
+
+        let style = win32_GetWindowLongPtrW(label, GWL_STYLE)
+
+        if lineLimit == 1 {
+            // Force single line — restore SS_LEFTNOWORDWRAP even if inner
+            // modifier enabled wrapping (last-modifier-wins composition).
+            let restored = (style & ~LONG_PTR(0xF)) | LONG_PTR(SS_LEFTNOWORDWRAP) |
+                           LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX)
+            win32_SetWindowLongPtrW(label, GWL_STYLE, restored)
+
+            // Shrink height back to single line in case inner modifier expanded it
+            let textLen = GetWindowTextLengthW(label) + 1
+            var textBuf: [WCHAR] = Array(repeating: 0, count: Int(textLen))
+            GetWindowTextW(label, &textBuf, textLen)
+
+            let hdc = GetDC(label)
+            defer { ReleaseDC(label, hdc) }
+            let hfont = HFONT(bitPattern: UInt(SendMessageW(label, UINT(WM_GETFONT), 0, 0)))
+            let oldFont = hfont.map { SelectObject(hdc, $0) }
+            defer { if let oldFont { SelectObject(hdc, oldFont) } }
+
+            var singleRect = RECT(left: 0, top: 0, right: 10000, bottom: 10000)
+            DrawTextW(hdc, textBuf, -1, &singleRect, UINT(DT_SINGLELINE | DT_CALCRECT | DT_NOPREFIX))
+            let singleH = singleRect.bottom
+
+            var labelRect = RECT()
+            GetWindowRect(label, &labelRect)
+            var pt = POINT(x: labelRect.left, y: labelRect.top)
+            ScreenToClient(GetParent(label), &pt)
+            let labelW = labelRect.right - labelRect.left
+            SetWindowPos(label, nil, pt.x, pt.y, labelW, singleH, UINT(SWP_NOZORDER))
+
+            if hwnd != label {
+                var parentRect = RECT()
+                GetWindowRect(hwnd, &parentRect)
+                let parentW = parentRect.right - parentRect.left
+                SetWindowPos(hwnd, nil, 0, 0, parentW, singleH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+            }
+
+            InvalidateRect(label, nil, true)
+            return hwnd
+        }
+
+        // Enable word-wrapping: replace SS_LEFTNOWORDWRAP with SS_LEFT
+        let newStyle = (style & ~LONG_PTR(SS_LEFTNOWORDWRAP)) | LONG_PTR(SS_LEFT)
+        win32_SetWindowLongPtrW(label, GWL_STYLE, newStyle)
+
+        // Measure wrapped height to resize the control
+        let textLen = GetWindowTextLengthW(label) + 1
+        var textBuf: [WCHAR] = Array(repeating: 0, count: Int(textLen))
+        GetWindowTextW(label, &textBuf, textLen)
+
+        var labelRect = RECT()
+        GetWindowRect(label, &labelRect)
+        var pt = POINT(x: labelRect.left, y: labelRect.top)
+        ScreenToClient(GetParent(label), &pt)
+        let labelW = labelRect.right - labelRect.left
+
+        let hdc = GetDC(label)
+        defer { ReleaseDC(label, hdc) }
+        // Use the label's current font for measurement
+        let hfont = HFONT(bitPattern: UInt(SendMessageW(label, UINT(WM_GETFONT), 0, 0)))
+        let oldFont = hfont.map { SelectObject(hdc, $0) }
+        defer { if let oldFont { SelectObject(hdc, oldFont) } }
+
+        var measureRect = RECT(left: 0, top: 0, right: labelW, bottom: 10000)
+        DrawTextW(hdc, textBuf, -1, &measureRect, UINT(DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX))
+
+        var wrappedH = measureRect.bottom
+
+        // If lineLimit is set, constrain to that many lines
+        if let limit = lineLimit, limit > 0 {
+            var singleLineRect = RECT(left: 0, top: 0, right: labelW, bottom: 10000)
+            DrawTextW(hdc, textBuf, -1, &singleLineRect, UINT(DT_SINGLELINE | DT_CALCRECT | DT_NOPREFIX))
+            let lineH = singleLineRect.bottom
+            if lineH > 0 {
+                wrappedH = min(wrappedH, lineH * Int32(limit))
+            }
+        }
+
+        SetWindowPos(label, nil, pt.x, pt.y, labelW, wrappedH, UINT(SWP_NOZORDER))
+
+        // Resize parent container if it's a layout wrapper
+        if hwnd != label {
+            var parentRect = RECT()
+            GetWindowRect(hwnd, &parentRect)
+            let parentW = parentRect.right - parentRect.left
+            SetWindowPos(hwnd, nil, 0, 0, parentW, wrappedH, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        }
+
+        return hwnd
+    }
+}
+
+extension TruncationModeView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let hwnd = winRenderView(content, in: context)
+        guard let hwnd, let label = findStaticLabel(in: hwnd) else { return hwnd }
+
+        let style = win32_GetWindowLongPtrW(label, GWL_STYLE)
+
+        // Clear alignment (low nibble) and ellipsis bits (0x4000, 0x8000)
+        // so nested truncation modifiers compose correctly.
+        let cleared = style & ~LONG_PTR(0xF | 0x4000 | 0x8000)
+
+        switch mode {
+        case .tail:
+            // SS_ENDELLIPSIS = 0x4000
+            win32_SetWindowLongPtrW(label, GWL_STYLE,
+                cleared | LONG_PTR(SS_LEFTNOWORDWRAP) | LONG_PTR(0x4000) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+        case .middle:
+            // SS_PATHELLIPSIS = 0x8000
+            win32_SetWindowLongPtrW(label, GWL_STYLE,
+                cleared | LONG_PTR(SS_LEFTNOWORDWRAP) | LONG_PTR(0x8000) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+        case .head:
+            // Win32 has no head-ellipsis — use end ellipsis as fallback
+            win32_SetWindowLongPtrW(label, GWL_STYLE,
+                cleared | LONG_PTR(SS_LEFTNOWORDWRAP) | LONG_PTR(0x4000) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+        }
+
+        InvalidateRect(label, nil, true)
+        return hwnd
+    }
+}
+
+extension LineSpacingView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Win32 Static controls don't support line spacing natively.
+        // Pass through unchanged — documented as a known limitation.
+        winRenderView(content, in: context)
+    }
+}
+
+extension MultilineTextAlignmentView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let hwnd = winRenderView(content, in: context)
+        guard let hwnd, let label = findStaticLabel(in: hwnd) else { return hwnd }
+
+        let style = win32_GetWindowLongPtrW(label, GWL_STYLE)
+        // Clear SS_LEFT (0), SS_CENTER (1), SS_RIGHT (2), SS_LEFTNOWORDWRAP (0xC)
+        let cleared = style & ~LONG_PTR(0xF)
+
+        switch alignment {
+        case .leading:
+            win32_SetWindowLongPtrW(label, GWL_STYLE,
+                cleared | LONG_PTR(SS_LEFT) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+        case .center:
+            win32_SetWindowLongPtrW(label, GWL_STYLE,
+                cleared | LONG_PTR(SS_CENTER) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+        case .trailing:
+            win32_SetWindowLongPtrW(label, GWL_STYLE,
+                cleared | LONG_PTR(SS_RIGHT) | LONG_PTR(SS_NOTIFY) | LONG_PTR(SS_NOPREFIX))
+        }
+
+        InvalidateRect(label, nil, true)
+        return hwnd
+    }
+}
+
 // MARK: - Gesture Win32 extensions
 //
 // Gestures use recursive subclassing: the same subclass proc is installed on
