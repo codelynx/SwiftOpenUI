@@ -2206,6 +2206,19 @@ extension SecureField: WebRenderable {
         }
         _ = input.addEventListener("input", handler)
 
+        // Wire onSubmit: fire on Enter key
+        let env = getCurrentEnvironment()
+        if let submitAction = env.submitAction {
+            let keyHandler = webMakeClosure { args in
+                let e = args[0]
+                if e.key.string == "Enter" {
+                    submitAction()
+                }
+                return .undefined
+            }
+            _ = input.addEventListener("keydown", keyHandler)
+        }
+
         return input
     }
 }
