@@ -286,6 +286,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
 
         // Phase 6+7: track which storages are read during body evaluation
+        resetOnChangeTracking()
         beginDependencyTracking()
         let newChild = buildBodyWithTracking(childContext)
         if let tracking = endDependencyTracking() {

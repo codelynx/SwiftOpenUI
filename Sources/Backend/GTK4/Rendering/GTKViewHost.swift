@@ -240,6 +240,7 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         // Restore environment for the rebuild pass
         let previousEnv = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
+        resetOnChangeTracking()
         beginDependencyTracking()
         let widget = buildBodyWithTracking()
         if let tracking = endDependencyTracking() {

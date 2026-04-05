@@ -221,6 +221,7 @@ public class WebViewHost: AnyViewHost, DependencyTrackingHost {
         WebViewHost.withHost(self) {
             let previousEnv = getCurrentEnvironment()
             setCurrentEnvironment(capturedEnvironment)
+            resetOnChangeTracking()
             beginDependencyTracking()
             let element = buildBodyWithTracking()
             if let tracking = endDependencyTracking() {
@@ -581,6 +582,7 @@ public func webRenderStatefulView<V: View>(_ view: V) -> JSValue {
     return WebViewHost.withHost(host) {
         let previousEnv = getCurrentEnvironment()
         host.capturedEnvironment = previousEnv
+        resetOnChangeTracking()
         beginDependencyTracking()
         let element = host.buildBodyWithTracking()
         if let tracking = endDependencyTracking() {

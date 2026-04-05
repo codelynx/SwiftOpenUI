@@ -1,8 +1,9 @@
 /// Fires an action when the observed value changes between renders.
 ///
 /// The action fires during rendering when the current value differs
-/// from the value at the previous render. Uses a keyed storage
-/// per ViewHost to persist the previous value across rebuilds.
+/// from the value at the previous render. Uses a global counter-keyed
+/// dictionary to persist previous values. The counter is reset at the
+/// start of each render pass by the ViewHost calling `resetOnChangeTracking()`.
 public struct OnChangeView<Content: View, V: Equatable>: View, PrimitiveView {
     public typealias Body = Never
     public let content: Content
