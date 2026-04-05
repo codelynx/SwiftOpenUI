@@ -672,3 +672,13 @@ gtk_swift_popover_popup(GtkWidget *popover) {
     gtk_popover_popup(GTK_POPOVER(popover));
 }
 
+static inline void
+gtk_swift_popover_set_child(GtkWidget *popover, GtkWidget *child) {
+    gtk_popover_set_child(GTK_POPOVER(popover), child);
+}
+
+static inline void
+gtk_swift_popover_popdown(GtkWidget *popover) {
+    gtk_popover_popdown(GTK_POPOVER(popover));
+}
+
