@@ -1,6 +1,6 @@
 # Presentation Modifiers
 
-Summary: 23 total, 3 implemented, 0 partial, 20 missing.
+Summary: 23 total, 4 implemented, 0 partial, 19 missing.
 
 ## Presentation Modifiers (~97)
 
@@ -21,7 +21,7 @@ Summary: 23 total, 3 implemented, 0 partial, 20 missing.
 | `inspector` | Both | iOS, macOS 14, visionOS 1 | Current | Missing | `-` | - |
 | `inspectorColumnWidth` | Both | iOS 17 / macOS 14 / visionOS 1 | Current | Missing | `-` | - |
 | `interactiveDismissDisabled` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |
-| `popover` | Both | iOS, macOS 10.15, visionOS 1 | Current | Missing | `-` | - |
+| `popover` | Both | iOS, macOS 10.15, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/PopoverModifier.swift` | GTK4: GtkPopover; Win32: popup window; Web: absolute overlay (dismiss listener partially leaks on non-click dismiss paths) |
 | `presentationBackground` | Both | iOS 16.4 / macOS 13.3 / watchOS 9.4 / tvOS 16.4 / visionOS 1 | Current | Missing | `-` | - |
 | `presentationBackgroundInteraction` | Both | iOS 16.4 / macOS 13.3 / watchOS 9.4 / tvOS 16.4 / visionOS 1 | Current | Missing | `-` | - |
 | `presentationCompactAdaptation` | Both | iOS 16.4 / macOS 13.3 / watchOS 9.4 / tvOS 16.4 / visionOS 1 | Current | Missing | `-` | - |
