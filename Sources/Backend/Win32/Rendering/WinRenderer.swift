@@ -6979,6 +6979,248 @@ private let canvasPaintProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
     }
 }
 
+// MARK: - Shape Win32 extensions
+
+/// State for a shape's D2D surface — stores the draw closure.
+private class ShapeDrawState {
+    let draw: (D2DRenderTarget, D2DBrush, Float, Float) -> Void
+    var renderTarget: D2DRenderTarget?
+    var brush: D2DBrush?
+
+    init(_ draw: @escaping (D2DRenderTarget, D2DBrush, Float, Float) -> Void) {
+        self.draw = draw
+    }
+
+    func ensureTarget(hwnd: HWND, width: UInt32, height: UInt32) {
+        if renderTarget == nil && width > 0 && height > 0 {
+            renderTarget = D2DRenderer.shared.createRenderTarget(for: hwnd, width: width, height: height)
+            if let rt = renderTarget {
+                brush = D2DRenderer.shared.createBrush(rt, r: 0, g: 0, b: 0)
+            }
+        }
+    }
+
+    func cleanup() {
+        if let b = brush { D2DRenderer.shared.releaseBrush(b); brush = nil }
+        if let rt = renderTarget { D2DRenderer.shared.releaseRenderTarget(rt); renderTarget = nil }
+    }
+
+    deinit { cleanup() }
+}
+
+private let shapeStatePropName: UnsafePointer<WCHAR> = {
+    "SwiftUIShapeState".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
+private let shapePaintProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_PAINT):
+        var ps = PAINTSTRUCT()
+        _ = BeginPaint(hwnd, &ps)
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let w = UInt32(rect.right)
+        let h = UInt32(rect.bottom)
+
+        let ptr = GetPropW(hwnd, shapeStatePropName)
+        if let ptr = ptr, let hwnd = hwnd, w > 0, h > 0 {
+            let state = Unmanaged<ShapeDrawState>.fromOpaque(ptr).takeUnretainedValue()
+            state.ensureTarget(hwnd: hwnd, width: w, height: h)
+
+            if let rt = state.renderTarget, let brush = state.brush {
+                d2d1_RenderTarget_BeginDraw(rt)
+                let bgColor = GetSysColor(COLOR_WINDOW)
+                d2d1_RenderTarget_Clear(rt,
+                    Float(win32_GetRValue(bgColor)) / 255.0,
+                    Float(win32_GetGValue(bgColor)) / 255.0,
+                    Float(win32_GetBValue(bgColor)) / 255.0, 1.0)
+
+                state.draw(rt, brush, Float(w), Float(h))
+
+                _ = d2d1_RenderTarget_EndDraw(rt)
+            }
+        }
+
+        EndPaint(hwnd, &ps)
+        return 0
+
+    case UINT(WM_SIZE):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let ptr = GetPropW(hwnd, shapeStatePropName)
+        if let ptr = ptr {
+            let state = Unmanaged<ShapeDrawState>.fromOpaque(ptr).takeUnretainedValue()
+            if let rt = state.renderTarget {
+                D2DRenderer.shared.resize(rt, width: UInt32(rect.right), height: UInt32(rect.bottom))
+            }
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_ERASEBKGND):
+        return 1
+
+    case UINT(WM_NCDESTROY):
+        let ptr = GetPropW(hwnd, shapeStatePropName)
+        if let ptr = ptr {
+            Unmanaged<ShapeDrawState>.fromOpaque(ptr).release()
+            RemovePropW(hwnd, shapeStatePropName)
+        }
+        RemoveWindowSubclass(hwnd, shapePaintProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+/// Create a D2D surface HWND for rendering a shape.
+private func createShapeSurface(
+    draw: @escaping (D2DRenderTarget, D2DBrush, Float, Float) -> Void,
+    context: RenderContext
+) -> HWND? {
+    registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
+
+    // Default size — shapes expand to fill, so .frame() or parent layout provides actual size
+    let hwnd = CreateWindowExW(
+        0, d2dSurfaceClassName, nil,
+        DWORD(WS_CHILD | WS_VISIBLE),
+        0, 0, 100, 100,
+        context.parent, nil, context.hInstance, nil
+    )
+
+    guard let hwnd = hwnd else { return nil }
+
+    let state = ShapeDrawState(draw)
+    let statePtr = Unmanaged.passRetained(state).toOpaque()
+    SetPropW(hwnd, shapeStatePropName, HANDLE(statePtr))
+    SetWindowSubclass(hwnd, shapePaintProc, 46, 0)
+
+    // Shapes expand to fill available space (like SwiftUI)
+    markExpandWidth(hwnd)
+    markExpandHeight(hwnd)
+
+    return hwnd
+}
+
+/// Fill a Path on a D2D render target using the drawing context infrastructure.
+private func d2dFillPath(_ path: Path, rt: D2DRenderTarget, brush: D2DBrush,
+                         r: Float, g: Float, b: Float, a: Float) {
+    d2d1_SolidColorBrush_SetColor(brush, r, g, b, a)
+    guard let factory = D2DRenderer.shared.d2dFactory else { return }
+
+    // Use DrawingContext's buildPathGeometry by creating a temporary context
+    let d2dCtx = D2DCanvasContext(renderTarget: rt, brush: brush)
+    let ctxPtr = Unmanaged.passRetained(d2dCtx).toOpaque()
+    let context = DrawingContext(cr: OpaquePointer(ctxPtr))
+    context.fill(path, with: .color(Color(red: Double(r), green: Double(g),
+                                          blue: Double(b), opacity: Double(a))))
+    Unmanaged<D2DCanvasContext>.fromOpaque(ctxPtr).release()
+}
+
+/// Stroke a Path on a D2D render target using the drawing context infrastructure.
+private func d2dStrokePath(_ path: Path, rt: D2DRenderTarget, brush: D2DBrush,
+                           r: Float, g: Float, b: Float, a: Float,
+                           style: StrokeStyle) {
+    d2d1_SolidColorBrush_SetColor(brush, r, g, b, a)
+    let d2dCtx = D2DCanvasContext(renderTarget: rt, brush: brush)
+    let ctxPtr = Unmanaged.passRetained(d2dCtx).toOpaque()
+    let context = DrawingContext(cr: OpaquePointer(ctxPtr))
+    context.stroke(path, with: .color(Color(red: Double(r), green: Double(g),
+                                            blue: Double(b), opacity: Double(a))),
+                   style: style)
+    Unmanaged<D2DCanvasContext>.fromOpaque(ctxPtr).release()
+}
+
+// Bare shapes — filled with foreground color (default black)
+
+extension Circle: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        createShapeSurface(draw: { rt, brush, w, h in
+            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let path = Circle().path(in: rect)
+            d2dFillPath(path, rt: rt, brush: brush, r: 0, g: 0, b: 0, a: 1)
+        }, context: context)
+    }
+}
+
+extension SwiftOpenUI.Rectangle: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        createShapeSurface(draw: { rt, brush, w, h in
+            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let path = SwiftOpenUI.Rectangle().path(in: rect)
+            d2dFillPath(path, rt: rt, brush: brush, r: 0, g: 0, b: 0, a: 1)
+        }, context: context)
+    }
+}
+
+extension RoundedRectangle: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let cr = cornerRadius
+        return createShapeSurface(draw: { rt, brush, w, h in
+            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let path = RoundedRectangle(cornerRadius: cr).path(in: rect)
+            d2dFillPath(path, rt: rt, brush: brush, r: 0, g: 0, b: 0, a: 1)
+        }, context: context)
+    }
+}
+
+extension Capsule: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let s = style
+        return createShapeSurface(draw: { rt, brush, w, h in
+            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let path = Capsule(style: s).path(in: rect)
+            d2dFillPath(path, rt: rt, brush: brush, r: 0, g: 0, b: 0, a: 1)
+        }, context: context)
+    }
+}
+
+extension Ellipse: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        createShapeSurface(draw: { rt, brush, w, h in
+            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let path = Ellipse().path(in: rect)
+            d2dFillPath(path, rt: rt, brush: brush, r: 0, g: 0, b: 0, a: 1)
+        }, context: context)
+    }
+}
+
+// Shape modifiers
+
+extension FilledShape: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let r = Float(color.red), g = Float(color.green)
+        let b = Float(color.blue), a = Float(color.alpha)
+        let shape = self.shape
+        return createShapeSurface(draw: { rt, brush, w, h in
+            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let path = shape.path(in: rect)
+            d2dFillPath(path, rt: rt, brush: brush, r: r, g: g, b: b, a: a)
+        }, context: context)
+    }
+}
+
+extension StrokedShape: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let r = Float(color.red), g = Float(color.green)
+        let b = Float(color.blue), a = Float(color.alpha)
+        let shape = self.shape
+        let strokeStyle = self.style
+        return createShapeSurface(draw: { rt, brush, w, h in
+            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let path = shape.path(in: rect)
+            d2dStrokePath(path, rt: rt, brush: brush, r: r, g: g, b: b, a: a,
+                          style: strokeStyle)
+        }, context: context)
+    }
+}
+
 extension Canvas: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
