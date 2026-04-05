@@ -651,3 +651,23 @@ static inline gboolean
 gtk_swift_switch_get_active(GtkWidget *sw) {
     return gtk_switch_get_active(GTK_SWITCH(sw));
 }
+
+// --- GtkGestureSingle shim ---
+
+static inline void
+gtk_swift_gesture_single_set_button(GtkGesture *gesture, guint button) {
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), button);
+}
+
+// --- GtkPopover shims ---
+
+static inline void
+gtk_swift_popover_set_pointing_to(GtkWidget *popover, int x, int y, int w, int h) {
+    GdkRectangle rect = { x, y, w, h };
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+}
+
+static inline void
+gtk_swift_popover_popup(GtkWidget *popover) {
+    gtk_popover_popup(GTK_POPOVER(popover));
+}
