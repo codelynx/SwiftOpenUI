@@ -6628,6 +6628,7 @@ private let contextMenuSubclassID: UINT_PTR = 70
 
 private class ContextMenuState {
     let elements: [MenuElement]
+    var pendingActions: [UINT: () -> Void]?
     init(_ elements: [MenuElement]) { self.elements = elements }
 }
 
@@ -6656,13 +6657,24 @@ private let contextMenuProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
 
         var pt = POINT()
         GetCursorPos(&pt)
-        let cmd = TrackPopupMenu(hmenu, UINT(TPM_RETURNCMD | TPM_NONOTIFY),
-                                 pt.x, pt.y, 0, hwnd, nil)
-        if cmd > 0, let action = actions[UINT(cmd)] {
-            action()
-        }
+        // TrackPopupMenu dispatches WM_COMMAND synchronously to hwnd
+        // when an item is selected. Store actions on state so WM_COMMAND
+        // handler can look them up.
+        state.pendingActions = actions
+        _ = TrackPopupMenu(hmenu, 0, pt.x, pt.y, 0, hwnd, nil)
+        state.pendingActions = nil
         DestroyMenu(hmenu)
         return 0
+
+    case UINT(WM_COMMAND):
+        let statePtr = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        let state = Unmanaged<ContextMenuState>.fromOpaque(statePtr).takeUnretainedValue()
+        let cmdIDSelected = UINT(win32_LOWORD(DWORD_PTR(wParam)))
+        if let actions = state.pendingActions, let action = actions[cmdIDSelected] {
+            action()
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_NCDESTROY):
         let statePtr = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
