@@ -24,4 +24,4 @@ Items mentioned in the curated reference that do not fit cleanly into the direct
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
-| `withAnimation` | Curated only | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/AnimationModifier.swift` | Top-level function \| Public surface exists, but only 1 overload(s) are present vs 2 in the curated reference families. \| Android: partial |
+| `withAnimation` | Curated only | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/AnimationModifier.swift` | Top-level function \| Public surface exists, but only 1 overload(s) are present vs 2 in the curated reference families. \| GTK4/Win32/Web: working; Android: partial |
