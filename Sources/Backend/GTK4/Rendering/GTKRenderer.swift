@@ -200,7 +200,7 @@ extension TextField: GTKRenderable {
                 gpointer(entry), "activate",
                 unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
                     guard let userData else { return }
-                    Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().action()
+                    Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
                 } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
                 submitBox,
                 { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
@@ -1232,7 +1232,7 @@ extension OnSubmitView: GTKRenderable {
         let prev = getCurrentEnvironment()
         setCurrentEnvironment(env)
         defer { setCurrentEnvironment(prev) }
-        return widgetFromOpaque(gtkRenderView(content))
+        return gtkRenderView(content)
     }
 }
 
@@ -2757,6 +2757,26 @@ extension SecureField: GTKRenderable {
             },
             GConnectFlags(rawValue: 0)
         )
+
+        // Wire onSubmit action from environment (same as TextField)
+        if let submitAction = getCurrentEnvironment().submitAction {
+            let submitBox = Unmanaged.passRetained(ClosureBox {
+                submitAction()
+            }).toOpaque()
+            g_signal_connect_data(
+                gpointer(entry), "activate",
+                unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                    guard let userData else { return }
+                    Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
+                } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                submitBox,
+                { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    guard let data else { return }
+                    Unmanaged<ClosureBox>.fromOpaque(data).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+        }
 
         gtkApplyEnabledState(to: entry)
         return opaqueFromWidget(entry)
