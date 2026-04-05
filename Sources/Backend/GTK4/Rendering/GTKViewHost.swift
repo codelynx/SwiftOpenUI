@@ -217,12 +217,14 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         var oldOffsetY: Double? = nil
         var oldScaleX: Double? = nil
         var oldScaleY: Double? = nil
+        var oldRotation: Double? = nil
         if animation != nil, let oldChild = gtk_widget_get_first_child(container) {
             oldOpacity = gtk_widget_get_opacity(oldChild)
             oldOffsetX = getWidgetDouble(oldChild, key: "gtk-swift-offset-x")
             oldOffsetY = getWidgetDouble(oldChild, key: "gtk-swift-offset-y")
             oldScaleX = getWidgetDouble(oldChild, key: "gtk-swift-scale-x")
             oldScaleY = getWidgetDouble(oldChild, key: "gtk-swift-scale-y")
+            oldRotation = getWidgetDouble(oldChild, key: "gtk-swift-rotation")
         }
 
         // Remove old children
@@ -270,10 +272,12 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
             let newOffsetY = getWidgetDouble(newChild, key: "gtk-swift-offset-y") ?? 0
             let newScaleX = getWidgetDouble(newChild, key: "gtk-swift-scale-x") ?? 1
             let newScaleY = getWidgetDouble(newChild, key: "gtk-swift-scale-y") ?? 1
+            let newRotation = getWidgetDouble(newChild, key: "gtk-swift-rotation") ?? 0
 
             let opacityChanged = oldOpacity != nil && oldOpacity != newOpacity
             let transformChanged = (oldOffsetX != nil && (oldOffsetX != newOffsetX || oldOffsetY != newOffsetY))
                 || (oldScaleX != nil && (oldScaleX != newScaleX || oldScaleY != newScaleY))
+                || (oldRotation != nil && oldRotation != newRotation)
 
             if opacityChanged || transformChanged {
                 let timing: String
@@ -296,7 +300,8 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
                     let oy = oldOffsetY ?? newOffsetY
                     let sx = oldScaleX ?? newScaleX
                     let sy = oldScaleY ?? newScaleY
-                    let oldTransform = buildTransformCSS(offsetX: ox, offsetY: oy, scaleX: sx, scaleY: sy)
+                    let r = oldRotation ?? newRotation
+                    let oldTransform = buildTransformCSS(offsetX: ox, offsetY: oy, scaleX: sx, scaleY: sy, rotation: r)
                     if !oldTransform.isEmpty {
                         applyCSSToWidget(newChild, properties: oldTransform)
                     }
@@ -307,7 +312,7 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
                     widget: newChild,
                     targetOpacity: opacityChanged ? newOpacity : nil,
                     targetTransform: transformChanged
-                        ? buildTransformCSS(offsetX: newOffsetX, offsetY: newOffsetY, scaleX: newScaleX, scaleY: newScaleY)
+                        ? buildTransformCSS(offsetX: newOffsetX, offsetY: newOffsetY, scaleX: newScaleX, scaleY: newScaleY, rotation: newRotation)
                         : nil
                 )
                 let retained = Unmanaged.passRetained(ctx).toOpaque()

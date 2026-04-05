@@ -62,7 +62,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 ```bash
 # macOS (uses real SwiftUI for examples)
 swift build
-swift test                   # 357 tests
+swift test                   # 397 tests
 
 # WebAssembly (requires open-source Swift toolchain, not Xcode's)
 source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
@@ -159,6 +159,7 @@ NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigatio
 | `docs/guides/web-setup.md` | Web/Wasm build, Vite, screenshots, DOM mapping |
 | `docs/guides/android-setup.md` | Android cross-compilation setup |
 | `docs/architecture/rendering-backends.md` | Backend architecture, ViewHost patterns |
+| `docs/architecture/gtk4-animation-pipeline.md` | GTK4 animation: CSS transitions, transform composition, descriptors |
 | `docs/architecture/android-backend-design.md` | Android backend design (batched JNI diffs) |
 | `docs/porting/platform-notes.md` | Platform quirks: macOS, Linux, Windows, Web, Android |
 | `docs/issues/observable-namespace-conflict.md` | ObservableObject/Published clash on macOS |
