@@ -6545,6 +6545,26 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - Appearance modifier Win32 extensions
+
+extension HiddenView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        ShowWindow(hwnd, SW_HIDE)
+        return hwnd
+    }
+}
+
+extension BlurView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Win32 has no native blur for HWND controls.
+        // D2D Gaussian blur effect exists but requires rendering through
+        // an effect graph, which is beyond Batch D scope.
+        // Pass through unchanged — documented as a known limitation.
+        winRenderView(content, in: context)
+    }
+}
+
 // MARK: - Gesture Win32 extensions
 //
 // Gestures use recursive subclassing: the same subclass proc is installed on

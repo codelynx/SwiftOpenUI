@@ -579,6 +579,31 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - Appearance modifier Web extensions
+
+extension HiddenView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("display: none;")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension BlurView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        if radius > 0 {
+            let wrapper = document.createElement("div")
+            wrapper.style = .string("display: inline-block; filter: blur(\(radius)px);")
+            _ = wrapper.appendChild(child)
+            return wrapper
+        }
+        return child
+    }
+}
+
 // MARK: - Navigation views
 
 /// Destination registry for type-based path navigation.
