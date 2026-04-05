@@ -208,8 +208,9 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         g_object_ref(gpointer(container))
         defer { g_object_unref(gpointer(container)) }
 
-        // Save focus state before teardown
-        let focusInfo = shouldRestoreFocus ? saveFocusInfo(in: container) : nil
+        // Always save focus state before teardown — cursor/selection must
+        // survive even when focus restore is suppressed (parity with Win32/Web).
+        let focusInfo = saveFocusInfo(in: container)
 
         // Capture old animatable state before teardown
         var oldOpacity: Double? = nil
@@ -330,9 +331,10 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
             }
         }
 
-        // Restore focus to the matching input after rebuild
+        // Restore focus/cursor to the matching input after rebuild.
+        // When suppressed, skip grab_focus but still restore cursor/selection.
         if let info = focusInfo {
-            restoreFocusInfo(info, in: newChild)
+            restoreFocusInfo(info, in: newChild, suppressFocus: !shouldRestoreFocus)
         }
 
         // Capture descriptor state for next rebuild's narrow mutation path
@@ -519,10 +521,12 @@ private func findFocusedEditable(in widget: UnsafeMutablePointer<GtkWidget>, ind
 }
 
 /// Find the nth focusable input in the new subtree and grab focus + set cursor/selection.
-private func restoreFocusInfo(_ info: FocusInfo, in widget: UnsafeMutablePointer<GtkWidget>) {
+private func restoreFocusInfo(_ info: FocusInfo, in widget: UnsafeMutablePointer<GtkWidget>, suppressFocus: Bool = false) {
     var index = 0
     if let target = findNthEditable(in: widget, targetIndex: info.editableIndex, index: &index) {
-        gtk_widget_grab_focus(target)
+        if !suppressFocus {
+            gtk_widget_grab_focus(target)
+        }
         if info.isScale {
             // Scale only needs focus, no cursor or selection to restore.
             return
