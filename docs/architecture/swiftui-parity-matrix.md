@@ -120,7 +120,7 @@ Last updated: 2026-03-25
 | .textFieldStyle() | Y | Y | Y | Y | Y | - | Environment-based: automatic, plain, roundedBorder |
 | .onChange() | Y | Y | Y | Y | Y | - | Render-pass counter-keyed value tracking |
 | .contextMenu() | Y | Y | Y | Y | Y | - | GTK: GtkPopoverMenu; Win32: TrackPopupMenu; Web: CSS overlay (submenus omitted) |
-| .popover() | Y | Y | Y | Y | Y | - | GTK: GtkPopover; Win32: popup window; Web: absolute overlay |
+| .popover() | Y | Y | Y | Y | Y | - | GTK: GtkPopover; Win32: popup window; Web: absolute overlay (dismiss listener leaks on non-click dismiss paths) |
 | .position() | Y | Y | Y | Y | Y | - | GTK: GtkFixed; Win32: SetWindowPos; Web: CSS absolute |
 | .layoutPriority() | Y | Y | Y | Y | Y | - | API surface only — layout engine integration deferred |
 | .fixedSize() | Y | Y | Y | Y | Y | - | GTK: size_request; Win32: pass-through; Web: flex-shrink 0 |
