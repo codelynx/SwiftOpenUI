@@ -6643,18 +6643,54 @@ private class FullScreenCoverDismissInfo {
     let dismiss: () -> Void
     var onDismiss: (() -> Void)?
     let root: HWND
+    let popupHwnd: UnsafeMutablePointer<HWND?>
+    var keyboardHook: HHOOK?
     var dismissed = false
     init(root: HWND, dismiss: @escaping () -> Void, onDismiss: (() -> Void)?) {
         self.root = root
         self.dismiss = dismiss
         self.onDismiss = onDismiss
+        self.popupHwnd = .allocate(capacity: 1)
+        self.popupHwnd.initialize(to: nil)
+    }
+    deinit {
+        popupHwnd.deallocate()
     }
     func dismissOnce() {
         guard !dismissed else { return }
         dismissed = true
+        removeKeyboardHook()
         dismiss()
         onDismiss?()
     }
+    func removeKeyboardHook() {
+        if let hook = keyboardHook {
+            UnhookWindowsHookEx(hook)
+            keyboardHook = nil
+        }
+    }
+}
+
+/// Thread-local keyboard hook: intercepts VK_ESCAPE from any focused child
+/// inside the fullscreen cover and posts WM_CLOSE to the popup window.
+private let fullScreenCoverKeyboardHookProc: HOOKPROC = { (nCode, wParam, lParam) in
+    if nCode >= 0, wParam == WPARAM(VK_ESCAPE) {
+        // lParam bit 31 = transition state (1 = key being released)
+        // Only act on key-down (bit 31 == 0)
+        if lParam & (1 << 31) == 0 {
+            let focus = GetFocus()
+            // Walk up from focused control to see if it's inside a fullscreen cover
+            var current = focus
+            while let hwnd = current {
+                if GetPropW(hwnd, fullScreenCoverInfoPropName) != nil {
+                    PostMessageW(hwnd, UINT(WM_CLOSE), 0, 0)
+                    return 1  // swallow the keystroke
+                }
+                current = GetParent(hwnd)
+            }
+        }
+    }
+    return CallNextHookEx(nil, nCode, wParam, lParam)
 }
 
 private let fullScreenCoverInfoPropName: UnsafePointer<WCHAR> = {
@@ -6668,15 +6704,6 @@ private let fullScreenCoverInfoPropName: UnsafePointer<WCHAR> = {
 
 private let fullScreenCoverProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
     switch uMsg {
-    case UINT(WM_KEYDOWN):
-        if wParam == WPARAM(VK_ESCAPE), dwRefData != 0 {
-            let info = Unmanaged<FullScreenCoverDismissInfo>.fromOpaque(
-                UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-            ).takeUnretainedValue()
-            info.dismissOnce()
-            DestroyWindow(hwnd)
-            return 0
-        }
     case UINT(WM_CLOSE):
         if dwRefData != 0 {
             let info = Unmanaged<FullScreenCoverDismissInfo>.fromOpaque(
@@ -6747,6 +6774,14 @@ extension FullScreenCoverView: WinRenderable {
                          HANDLE(bitPattern: Int(bitPattern: infoPtr)))
                 SetWindowSubclass(popup, fullScreenCoverProc, 0,
                                   DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+                // Install thread-local keyboard hook for Escape from any child
+                dismissInfo.popupHwnd.pointee = popup
+                let hook = SetWindowsHookExW(
+                    WH_KEYBOARD, fullScreenCoverKeyboardHookProc,
+                    nil, GetCurrentThreadId()
+                )
+                dismissInfo.keyboardHook = hook
 
                 // Inject dismiss action into environment
                 var env = getCurrentEnvironment()
