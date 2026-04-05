@@ -241,6 +241,11 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         let previousEnv = getCurrentEnvironment()
         setCurrentEnvironment(capturedEnvironment)
         resetOnChangeTracking()
+        // Note: clearViewIDRegistry() is NOT called here because the registry
+        // is global. Clearing it during one host's rebuild would wipe IDs from
+        // sibling hosts. Instead, registerViewID() overwrites stale entries
+        // during rebuild, and the scrollTo liveness check handles any remaining
+        // stale pointers.
         beginDependencyTracking()
         let widget = buildBodyWithTracking()
         if let tracking = endDependencyTracking() {
