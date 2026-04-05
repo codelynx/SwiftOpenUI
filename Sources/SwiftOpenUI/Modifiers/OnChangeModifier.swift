@@ -22,12 +22,14 @@ extension View {
 
 // MARK: - onChange value tracking
 
-/// Thread-local counter to generate unique keys for onChange instances
+/// Global counter to generate unique keys for onChange instances
 /// within a single render pass. Reset at the start of each rebuild.
+/// Not thread-safe — works for single-threaded rendering only.
 private var _onChangeCounter: Int = 0
 
-/// Thread-local storage for previous onChange values, keyed by render-pass counter.
+/// Global storage for previous onChange values, keyed by render-pass counter.
 /// Backends call `onChangeCheckAndFire` during rendering.
+/// Not per-host — shared across all hosts in the process.
 private var _onChangePreviousValues: [Int: Any] = [:]
 
 /// Reset the onChange counter at the start of a render pass.
