@@ -1113,64 +1113,53 @@ extension ContextMenuView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
 
-        // Build GMenu model from menu elements
-        let gmenu = gtk_swift_menu_new()!
-        for element in menuElements {
-            gtkAppendMenuElement(element, to: gmenu)
-        }
+        // Build GMenu model + action group reusing the existing Menu pattern
+        let actionGroup = g_simple_action_group_new()!
+        let menuModel = gtk_swift_menu_new()!
+        let actionBox = MenuActionBox()
+        var actionIndex = 0
+
+        gtkBuildMenuModel(elements: menuElements, menu: menuModel,
+                          actionGroup: actionGroup, actionBox: actionBox,
+                          actionIndex: &actionIndex)
 
         // Create popover menu from the model
-        let popover = gtk_swift_popover_menu_new_from_model(gmenu)!
-        gtk_widget_set_parent(widgetFromOpaque(popover), widget)
+        let popover = gtk_swift_popover_menu_new_from_model(menuModel)!
+        gtk_widget_set_parent(popover, widget)
 
-        // Store action callbacks so they survive
-        let actions = menuElements.compactMap { element -> (() -> Void)? in
-            if case .item(_, let action) = element { return action }
-            return nil
-        }
-        let actionBox = Unmanaged.passRetained(MenuActionBox(actions)).toOpaque()
-        g_object_set_data(gpointer(widget), "swift-context-actions", actionBox)
+        // Attach action group to the content widget so menu items can resolve actions
+        gtk_swift_widget_insert_action_group(widget, "menu", gpointer(actionGroup))
 
-        // Right-click gesture to show the popover
+        // Attach actionBox for lifetime management
+        let retained = Unmanaged.passRetained(actionBox).toOpaque()
+        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+        g_object_set_data_full(gobject, "gtk-swift-context-actions", retained,
+            { userData in Unmanaged<MenuActionBox>.fromOpaque(userData!).release() })
+
+        // Right-click gesture (button 3) to show the popover at click position
         let gesture = gtk_gesture_click_new()!
-        gtk_gesture_single_set_button(OpaquePointer(gesture), 3) // button 3 = right click
-        let popoverPtr = popover
-        let showBox = Unmanaged.passRetained(ClosureBox {
-            gtk_widget_set_visible(widgetFromOpaque(popoverPtr), 1)
+        gtk_swift_gesture_single_set_button(gesture, 3)
+        let popoverBox = Unmanaged.passRetained(DoubleDoubleClosureBox { x, y in
+            gtk_swift_popover_set_pointing_to(popover, Int32(x), Int32(y), 1, 1)
+            gtk_swift_popover_popup(popover)
         }).toOpaque()
         g_signal_connect_data(
             gpointer(gesture), "pressed",
-            unsafeBitCast({ (_: OpaquePointer, _: gint, _: Double, _: Double, ud: gpointer?) in
+            unsafeBitCast({ (_: gpointer?, _: gint, x: Double, y: Double, ud: gpointer?) in
                 guard let ud = ud else { return }
-                Unmanaged<ClosureBox>.fromOpaque(ud).takeUnretainedValue().action()
-            } as @convention(c) (OpaquePointer, gint, Double, Double, gpointer?) -> Void,
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(ud).takeUnretainedValue().closure(x, y)
+            } as @convention(c) (gpointer?, gint, Double, Double, gpointer?) -> Void,
             to: GCallback.self),
-            showBox,
-            { (data: gpointer?, _: OpaquePointer?) in
+            popoverBox,
+            { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
                 guard let data = data else { return }
-                Unmanaged<ClosureBox>.fromOpaque(data).release()
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(data).release()
             },
             GConnectFlags(rawValue: 0)
         )
-        gtk_swift_add_gesture(widget, OpaquePointer(gesture))
+        gtk_swift_add_gesture(widget, gesture)
 
         return opaqueFromWidget(widget)
-    }
-
-    private func gtkAppendMenuElement(_ element: MenuElement, to menu: OpaquePointer) {
-        switch element {
-        case .item(let label, _):
-            gtk_swift_menu_append(menu, label, nil)
-        case .divider:
-            // GMenu doesn't have explicit dividers — use a section break
-            break
-        case .submenu(let label, let children):
-            let sub = gtk_swift_menu_new()!
-            for child in children {
-                gtkAppendMenuElement(child, to: sub)
-            }
-            gtk_swift_menu_append_submenu(menu, label, sub)
-        }
     }
 }
 
@@ -1179,7 +1168,7 @@ extension ContextMenuView: GTKRenderable {
 extension OnChangeView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         onChangeCheckAndFire(value: value, action: action)
-        return widgetFromOpaque(gtkRenderView(content))
+        return gtkRenderView(content)
     }
 }
 
