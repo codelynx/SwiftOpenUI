@@ -1,10 +1,10 @@
 # Text and Symbol Modifiers
 
-Summary: 37 total, 2 implemented, 0 partial, 35 missing.
+Summary: 37 total, 6 implemented, 0 partial, 31 missing.
 
 ## Text and Symbol Modifiers (~50)
 
-37 total, 2 implemented, 0 partial, 35 missing.
+37 total, 6 implemented, 0 partial, 31 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -23,12 +23,12 @@ Summary: 37 total, 2 implemented, 0 partial, 35 missing.
 | `italic` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `kerning` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `keyboardType` | Both | iOS 13 / visionOS 1 | Current | Missing | `-` | iOS/visionOS-only |
-| `lineLimit` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `lineSpacing` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `lineLimit` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/TextModifiers.swift` | GTK4: GtkLabel wrap/lines; Win32: Static style + DrawTextW; Web: -webkit-line-clamp |
+| `lineSpacing` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/TextModifiers.swift` | GTK4/Web: CSS line-height; Win32: pass-through (known limitation) |
 | `minimumScaleFactor` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `monospaced` | Both | iOS 15.4 / macOS 12.3 / watchOS 8.5 / tvOS 15.4 / visionOS 1 | Current | Missing | `-` | - |
 | `monospacedDigit` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |
-| `multilineTextAlignment` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `multilineTextAlignment` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/TextModifiers.swift` | GTK4: justify + xalign; Win32: SS_LEFT/CENTER/RIGHT; Web: text-align |
 | `replaceDisabled` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `scrollDismissesKeyboard` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `strikethrough` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
@@ -42,6 +42,6 @@ Summary: 37 total, 2 implemented, 0 partial, 35 missing.
 | `textScale` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
 | `textSelection` | Both | iOS 15 / macOS 12 / visionOS 1 | Current | Missing | `-` | - |
 | `tracking` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
-| `truncationMode` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `truncationMode` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/TextModifiers.swift` | GTK4: Pango ellipsize; Win32: SS_ENDELLIPSIS/PATHELLIPSIS (head→tail fallback); Web: text-overflow ellipsis (middle→tail fallback) |
 | `typesettingLanguage` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
 | `underline` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |

@@ -91,6 +91,10 @@ Last updated: 2026-03-25
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
 | .cornerRadius() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: SetWindowRgn rounded region |
 | .shadow() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: layered shadow with alpha |
+| .lineLimit() | Y | Y | Y | Y | Y | - | GTK: GtkLabel wrap/lines; Win32: Static style + DrawTextW; Web: -webkit-line-clamp |
+| .truncationMode() | Y | Y | Y | ~ | Y | - | GTK: Pango ellipsize (all 3 modes); Win32: SS_ENDELLIPSIS/PATHELLIPSIS (head→tail fallback); Web: text-overflow (middle→tail fallback) |
+| .lineSpacing() | Y | Y | Y | ~ | Y | - | GTK/Web: CSS line-height; Win32: pass-through |
+| .multilineTextAlignment() | Y | Y | Y | Y | Y | - | GTK: justify + xalign; Win32: SS_LEFT/CENTER/RIGHT; Web: text-align |
 | .rotationEffect() | Y | Y | Y | Y | Y | - | GTK/Web: CSS transform; Win32: D2D SetTransform |
 | .overlay() | Y | Y | Y | Y | Y | - | GTK: GtkOverlay; Win32: container; Web: absolute positioning |
 | .sheet() | Y | Y | Y | Y | Y | - | Batch A: `isPresented`, `item`, and `onDismiss` families on GTK/Win32/Web. GTK: modal window; Win32: popup; Web: modal overlay. |
