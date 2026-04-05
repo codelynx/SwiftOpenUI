@@ -594,11 +594,10 @@ extension ClippedView: WebRenderable {
 extension PositionView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
-        // Use an inner absolute-positioned wrapper so we don't mutate
-        // the child's inline styles. Outer wrapper provides the
-        // positioning context and maintains layout space.
+        // SwiftUI .position() places the CENTER of the view at (x, y).
+        // Use CSS transform to offset by -50% of the child's own size.
         let inner = document.createElement("div")
-        inner.style = .string("position: absolute; left: \(x)px; top: \(y)px;")
+        inner.style = .string("position: absolute; left: \(x)px; top: \(y)px; transform: translate(-50%, -50%);")
         _ = inner.appendChild(child)
         let outer = document.createElement("div")
         outer.style = .string("position: relative; display: inline-block;")
