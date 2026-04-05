@@ -1,5 +1,7 @@
 # Input-State Preservation — Phase 2 Item 4
 
+**Status: Implemented (Win32, GTK4, Web). Android unverified.**
+
 ## Goal
 
 Cursor position, text selection, and focus survive full rebuilds on all platforms.
@@ -8,10 +10,12 @@ Cursor position, text selection, and focus survive full rebuilds on all platform
 
 | Platform | Focus | Cursor | Selection | Tests | Status |
 |----------|-------|--------|-----------|-------|--------|
-| Win32 | Save by class+index | EM_GETSEL/EM_SETSEL | All Edit controls | 5 tests | **Done** |
-| GTK4 | Save by DFS index | gtk_text_iter offsets | GtkTextView/Editable | 0 tests | **Done, needs tests** |
-| Web | Lost on rebuild | Lost on rebuild | Lost on rebuild | 0 tests | **Needs implementation** |
+| Win32 | Save by class+index | EM_GETSEL/EM_SETSEL | All Edit controls | 7 tests | **Done, validated** |
+| GTK4 | Save by DFS index | gtk_text_iter offsets | GtkTextView/Editable | 12 tests | **Done, aligned** |
+| Web | Save by tag+type+index | selectionStart/End | Text-selectable only | 15 tests | **Done, needs browser verification** |
 | Android | Delegated to Compose | Delegated to Compose | Delegated to Compose | 0 tests | **Unverified** |
+
+All three implemented backends share consistent suppress semantics: `suppressNextFocusRestore` skips focus but still restores cursor/selection.
 
 ---
 
@@ -94,23 +98,15 @@ After implementation, run the ParityFocus example in the browser:
 
 ---
 
-## GTK4 — Tests Only
+## GTK4 — Done
 
-Implementation is complete (`FocusInfo` save/restore in `GTKViewHost.swift`). Add explicit test coverage.
-
-### Files
-
-- `Tests/BackendTests/GTK4Tests/GTK4FocusTests.swift` — new test file
-  - `FocusInfo` struct construction
-  - DFS index calculation for focusable inputs
-  - `suppressNextFocusRestore` flag behavior
-  - Cursor position and selection fields
+Implementation complete with suppress semantics aligned to Win32/Web. 12 tests in `GTK4FocusTests.swift` covering focusable input classification, DFS ordering stability, cursor position read/write, and API accessibility. Suppress fix: always saves state, skips only `gtk_widget_grab_focus` when suppressed.
 
 ---
 
 ## Win32 — Done
 
-5 tests covering focus binding, cursor preservation, multi-field selection, and suppress-focus-with-edit-state. No work needed.
+7 tests covering focus binding, cursor preservation, multi-field selection, and suppress-focus-with-edit-state. No work needed.
 
 ---
 
@@ -133,8 +129,7 @@ IME composition survival (CJK input mid-composition) is not preserved on any pla
 
 ---
 
-## Execution Order
+## Remaining Work
 
-1. **Web implementation** (main gap)
-2. **GTK4 tests** (coverage)
-3. **Android manual verification** (when on Android device)
+1. **Web browser verification** (required — DOM-runtime behavior untested)
+2. **Android manual verification** (when on Android device)
