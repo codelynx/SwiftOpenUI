@@ -96,7 +96,7 @@ Last updated: 2026-03-25
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
 | .clipShape() | Y | Y | Y | Y | Y | - | GTK: CSS border-radius + overflow; Win32: SetWindowRgn; Web: CSS clip-path |
 | .clipped() | Y | Y | Y | Y | Y | - | GTK/Web: overflow hidden; Win32: CreateRectRgn |
-| .hidden() | Y | Y | Y | Y | Y | - | GTK: gtk_widget_set_visible; Win32: ShowWindow(SW_HIDE); Web: display:none |
+| .hidden() | Y | Y | Y | Y | Y | - | GTK: wrapper with opacity 0 + interaction disabled; Win32: ShowWindow(SW_HIDE); Web: visibility hidden + pointer-events none |
 | .blur() | Y | Y | Y | ~ | Y | - | GTK/Web: CSS filter blur; Win32: pass-through (known limitation) |
 | .cornerRadius() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: SetWindowRgn rounded region |
 | .shadow() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: layered shadow with alpha |

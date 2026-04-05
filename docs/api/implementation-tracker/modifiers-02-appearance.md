@@ -19,7 +19,7 @@ Summary: 36 total, 3 implemented, 1 partial, 32 missing.
 | `foregroundStyle` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Partial | `Sources/SwiftOpenUI/Modifiers/StyleModifiers.swift` | Replaces deprecated foregroundColor \| Public surface exists, but only 1 overload(s) are present vs 3 in the curated reference families. \| Color only (no gradients) |
 | `glassBackgroundEffect` | Curated only | visionOS 1 | Current | Missing | `-` | visionOS-only |
 | `headerProminence` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |
-| `hidden` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AppearanceModifiers.swift` | GTK: gtk_widget_set_visible; Win32: ShowWindow(SW_HIDE); Web: display:none |
+| `hidden` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AppearanceModifiers.swift` | GTK: wrapper with opacity 0 + interaction disabled (layout preserved); Win32: ShowWindow(SW_HIDE) (layout preservation observed but not explicitly guaranteed); Web: visibility hidden + pointer-events none (layout preserved) |
 | `invalidatableContent` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
 | `labelsHidden` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `listRowBackground` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
