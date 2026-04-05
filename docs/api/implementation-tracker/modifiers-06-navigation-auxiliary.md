@@ -1,6 +1,6 @@
 # Navigation and Auxiliary Modifiers
 
-Summary: 24 total, 3 implemented, 1 partial, 20 missing.
+Summary: 24 total, 4 implemented, 1 partial, 19 missing.
 
 ## Navigation and Auxiliary Modifiers (~48)
 
@@ -10,7 +10,7 @@ Summary: 24 total, 3 implemented, 1 partial, 20 missing.
 |---|---|---|---|---|---|---|
 | `badge` | Both | iOS 15 / macOS 12 / visionOS 1 | Current | Missing | `-` | - |
 | `badgeProminence` | Both | iOS 17 / macOS 14 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
-| `contextMenu` | Both | iOS 13 / macOS 10.15 / watchOS 6.2 / tvOS 14 / visionOS 1 | Current | Missing | `-` | - |
+| `contextMenu` | Both | iOS 13 / macOS 10.15 / watchOS 6.2 / tvOS 14 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ContextMenuModifier.swift` | GTK4: GtkPopoverMenu (right-click); Win32: TrackPopupMenu (WM_RBUTTONUP); Web: CSS overlay (contextmenu event, submenus omitted) |
 | `help` | Both | iOS 15.4 / macOS 11 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |
 | `navigationBarBackButtonHidden` | Both | iOS 13 / macOS 13 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `navigationBarTitleDisplayMode` | Both | iOS 14 / watchOS 8 / visionOS 1 | Current | Missing | `-` | - |

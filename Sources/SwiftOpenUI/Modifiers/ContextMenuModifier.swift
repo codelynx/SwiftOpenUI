@@ -1,5 +1,5 @@
-/// Attaches a context menu to the content, triggered by right-click
-/// or long-press depending on platform.
+/// Attaches a context menu to the content, triggered by right-click.
+/// GTK4: button-3 gesture. Win32: WM_RBUTTONUP. Web: contextmenu event.
 public struct ContextMenuView<Content: View>: View, PrimitiveView {
     public typealias Body = Never
     public let content: Content
