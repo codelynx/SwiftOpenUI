@@ -6622,6 +6622,82 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - contextMenu Win32 extension
+
+private let contextMenuSubclassID: UINT_PTR = 70
+
+private class ContextMenuState {
+    let elements: [MenuElement]
+    init(_ elements: [MenuElement]) { self.elements = elements }
+}
+
+extension ContextMenuView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+
+        let state = ContextMenuState(menuElements)
+        let statePtr = Unmanaged.passRetained(state).toOpaque()
+        SetWindowSubclass(hwnd, contextMenuProc, contextMenuSubclassID,
+                          DWORD_PTR(UInt(bitPattern: statePtr)))
+        return hwnd
+    }
+}
+
+private let contextMenuProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_RBUTTONUP):
+        let statePtr = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        let state = Unmanaged<ContextMenuState>.fromOpaque(statePtr).takeUnretainedValue()
+
+        let hmenu = CreatePopupMenu()!
+        var cmdID: UINT = 1
+        var actions: [UINT: () -> Void] = [:]
+        winBuildContextMenu(hmenu, elements: state.elements, cmdID: &cmdID, actions: &actions)
+
+        var pt = POINT()
+        GetCursorPos(&pt)
+        let cmd = TrackPopupMenu(hmenu, UINT(TPM_RETURNCMD | TPM_NONOTIFY),
+                                 pt.x, pt.y, 0, hwnd, nil)
+        if cmd > 0, let action = actions[UINT(cmd)] {
+            action()
+        }
+        DestroyMenu(hmenu)
+        return 0
+
+    case UINT(WM_NCDESTROY):
+        let statePtr = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        Unmanaged<ContextMenuState>.fromOpaque(statePtr).release()
+        RemoveWindowSubclass(hwnd, contextMenuProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+private func winBuildContextMenu(_ hmenu: HMENU, elements: [MenuElement],
+                                  cmdID: inout UINT, actions: inout [UINT: () -> Void]) {
+    for element in elements {
+        switch element {
+        case .item(let label, let action):
+            let id = cmdID
+            cmdID += 1
+            actions[id] = action
+            label.withCString(encodedAs: UTF16.self) { wstr in
+                AppendMenuW(hmenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+            }
+        case .divider:
+            AppendMenuW(hmenu, UINT(MF_SEPARATOR), 0, nil)
+        case .submenu(let label, let children):
+            let sub = CreatePopupMenu()!
+            winBuildContextMenu(sub, elements: children, cmdID: &cmdID, actions: &actions)
+            label.withCString(encodedAs: UTF16.self) { wstr in
+                AppendMenuW(hmenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: sub)), wstr)
+            }
+        }
+    }
+}
+
 // MARK: - onChange Win32 extension
 
 extension OnChangeView: WinRenderable {

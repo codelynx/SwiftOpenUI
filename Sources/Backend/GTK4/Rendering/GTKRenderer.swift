@@ -1107,6 +1107,73 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - contextMenu GTK extension
+
+extension ContextMenuView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+
+        // Build GMenu model from menu elements
+        let gmenu = gtk_swift_menu_new()!
+        for element in menuElements {
+            gtkAppendMenuElement(element, to: gmenu)
+        }
+
+        // Create popover menu from the model
+        let popover = gtk_swift_popover_menu_new_from_model(gmenu)!
+        gtk_widget_set_parent(widgetFromOpaque(popover), widget)
+
+        // Store action callbacks so they survive
+        let actions = menuElements.compactMap { element -> (() -> Void)? in
+            if case .item(_, let action) = element { return action }
+            return nil
+        }
+        let actionBox = Unmanaged.passRetained(MenuActionBox(actions)).toOpaque()
+        g_object_set_data(gpointer(widget), "swift-context-actions", actionBox)
+
+        // Right-click gesture to show the popover
+        let gesture = gtk_gesture_click_new()!
+        gtk_gesture_single_set_button(OpaquePointer(gesture), 3) // button 3 = right click
+        let popoverPtr = popover
+        let showBox = Unmanaged.passRetained(ClosureBox {
+            gtk_widget_set_visible(widgetFromOpaque(popoverPtr), 1)
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(gesture), "pressed",
+            unsafeBitCast({ (_: OpaquePointer, _: gint, _: Double, _: Double, ud: gpointer?) in
+                guard let ud = ud else { return }
+                Unmanaged<ClosureBox>.fromOpaque(ud).takeUnretainedValue().action()
+            } as @convention(c) (OpaquePointer, gint, Double, Double, gpointer?) -> Void,
+            to: GCallback.self),
+            showBox,
+            { (data: gpointer?, _: OpaquePointer?) in
+                guard let data = data else { return }
+                Unmanaged<ClosureBox>.fromOpaque(data).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+        gtk_swift_add_gesture(widget, OpaquePointer(gesture))
+
+        return opaqueFromWidget(widget)
+    }
+
+    private func gtkAppendMenuElement(_ element: MenuElement, to menu: OpaquePointer) {
+        switch element {
+        case .item(let label, _):
+            gtk_swift_menu_append(menu, label, nil)
+        case .divider:
+            // GMenu doesn't have explicit dividers — use a section break
+            break
+        case .submenu(let label, let children):
+            let sub = gtk_swift_menu_new()!
+            for child in children {
+                gtkAppendMenuElement(child, to: sub)
+            }
+            gtk_swift_menu_append_submenu(menu, label, sub)
+        }
+    }
+}
+
 // MARK: - onChange GTK extension
 
 extension OnChangeView: GTKRenderable {

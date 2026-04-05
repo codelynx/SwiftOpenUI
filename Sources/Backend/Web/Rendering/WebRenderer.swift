@@ -589,6 +589,79 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - contextMenu Web extension
+
+extension ContextMenuView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("display: inline-block; position: relative;")
+        _ = wrapper.appendChild(child)
+
+        // Build menu overlay (initially hidden)
+        let menu = document.createElement("div")
+        menu.style = .string("display: none; position: fixed; background: #2a2a2a; color: white; border-radius: 6px; padding: 4px 0; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10000; font-size: 14px;")
+
+        for element in menuElements {
+            switch element {
+            case .item(let label, let action):
+                let item = document.createElement("div")
+                item.textContent = .string(label)
+                item.style = .string("padding: 6px 16px; cursor: pointer;")
+                let actionClosure = webMakeClosure { _ in
+                    menu.style.object?.display = .string("none")
+                    action()
+                    return .undefined
+                }
+                item.onclick = .object(actionClosure)
+                // Hover effect
+                let overClosure = webMakeClosure { _ in
+                    item.style.object?.background = .string("#3a3a3a")
+                    return .undefined
+                }
+                let outClosure = webMakeClosure { _ in
+                    item.style.object?.background = .string("transparent")
+                    return .undefined
+                }
+                _ = item.addEventListener("mouseenter", overClosure)
+                _ = item.addEventListener("mouseleave", outClosure)
+                _ = menu.appendChild(item)
+            case .divider:
+                let hr = document.createElement("hr")
+                hr.style = .string("border: none; border-top: 1px solid #444; margin: 4px 0;")
+                _ = menu.appendChild(hr)
+            case .submenu(_, _):
+                // Submenus deferred for contextMenu — render label only
+                break
+            }
+        }
+
+        _ = wrapper.appendChild(menu)
+
+        // Show on right-click
+        let showHandler = webMakeClosure { args in
+            let e = args[0]
+            _ = e.preventDefault()
+            let x = e.clientX.number ?? 0
+            let y = e.clientY.number ?? 0
+            menu.style.object?.left = .string("\(Int(x))px")
+            menu.style.object?.top = .string("\(Int(y))px")
+            menu.style.object?.display = .string("block")
+            return .undefined
+        }
+        _ = wrapper.addEventListener("contextmenu", showHandler)
+
+        // Dismiss on outside click
+        let dismissHandler = webMakeClosure { _ in
+            menu.style.object?.display = .string("none")
+            return .undefined
+        }
+        _ = JSObject.global.document.addEventListener("click", dismissHandler)
+
+        return wrapper
+    }
+}
+
 // MARK: - onChange Web extension
 
 extension OnChangeView: WebRenderable {
