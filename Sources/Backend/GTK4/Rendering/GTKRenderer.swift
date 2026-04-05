@@ -1107,6 +1107,77 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - Text decoration GTK extensions
+
+extension BoldView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        applyCSSToWidget(widget, properties: "font-weight: bold;")
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension ItalicView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        applyCSSToWidget(widget, properties: "font-style: italic;")
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension FontWeightView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        let css: String
+        switch weight {
+        case .ultraLight: css = "font-weight: 100;"
+        case .thin:       css = "font-weight: 200;"
+        case .light:      css = "font-weight: 300;"
+        case .regular:    css = "font-weight: 400;"
+        case .medium:     css = "font-weight: 500;"
+        case .semibold:   css = "font-weight: 600;"
+        case .bold:       css = "font-weight: 700;"
+        case .heavy:      css = "font-weight: 800;"
+        case .black:      css = "font-weight: 900;"
+        }
+        applyCSSToWidget(widget, properties: css)
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension UnderlineView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        if isActive {
+            applyCSSToWidget(widget, properties: "text-decoration: underline;")
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension StrikethroughView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        if isActive {
+            applyCSSToWidget(widget, properties: "text-decoration: line-through;")
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension TextCaseView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        if let textCase {
+            switch textCase {
+            case .uppercase: applyCSSToWidget(widget, properties: "text-transform: uppercase;")
+            case .lowercase: applyCSSToWidget(widget, properties: "text-transform: lowercase;")
+            }
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - ScrollViewReader + ID GTK extensions
 
 extension IdView: GTKRenderable {

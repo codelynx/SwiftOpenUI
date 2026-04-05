@@ -589,6 +589,92 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - Text decoration Web extensions
+
+extension BoldView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("span")
+        wrapper.style = .string("font-weight: bold;")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension ItalicView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("span")
+        wrapper.style = .string("font-style: italic;")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension FontWeightView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("span")
+        let w: Int
+        switch weight {
+        case .ultraLight: w = 100
+        case .thin:       w = 200
+        case .light:      w = 300
+        case .regular:    w = 400
+        case .medium:     w = 500
+        case .semibold:   w = 600
+        case .bold:       w = 700
+        case .heavy:      w = 800
+        case .black:      w = 900
+        }
+        wrapper.style = .string("font-weight: \(w);")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension UnderlineView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        if isActive {
+            let wrapper = document.createElement("span")
+            wrapper.style = .string("text-decoration: underline;")
+            _ = wrapper.appendChild(child)
+            return wrapper
+        }
+        return child
+    }
+}
+
+extension StrikethroughView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        if isActive {
+            let wrapper = document.createElement("span")
+            wrapper.style = .string("text-decoration: line-through;")
+            _ = wrapper.appendChild(child)
+            return wrapper
+        }
+        return child
+    }
+}
+
+extension TextCaseView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        if let textCase {
+            let wrapper = document.createElement("span")
+            switch textCase {
+            case .uppercase: wrapper.style = .string("text-transform: uppercase;")
+            case .lowercase: wrapper.style = .string("text-transform: lowercase;")
+            }
+            _ = wrapper.appendChild(child)
+            return wrapper
+        }
+        return child
+    }
+}
+
 // MARK: - ScrollViewReader + ID Web extensions
 
 extension IdView: WebRenderable {

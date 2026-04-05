@@ -6622,6 +6622,99 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - Text decoration Win32 extensions
+
+/// Apply an HFONT with the given weight/italic to all descendants.
+private func winApplyFontStyle(to hwnd: HWND, weight: Int32 = FW_REGULAR, italic: Bool = false, underline: Bool = false, strikeout: Bool = false, hInstance: HINSTANCE) {
+    // Get current font to preserve size
+    let currentFont = HFONT(bitPattern: UInt(SendMessageW(hwnd, UINT(WM_GETFONT), 0, 0)))
+    var lf = LOGFONTW()
+    if let currentFont {
+        GetObjectW(currentFont, Int32(MemoryLayout<LOGFONTW>.size), &lf)
+    } else {
+        lf.lfHeight = -16 // default ~12pt
+        let name: [WCHAR] = Array("Segoe UI".utf16) + [0]
+        withUnsafeMutablePointer(to: &lf.lfFaceName) { ptr in
+            ptr.withMemoryRebound(to: WCHAR.self, capacity: 32) { dest in
+                for i in 0..<min(name.count, 32) { dest[i] = name[i] }
+            }
+        }
+    }
+    lf.lfWeight = weight
+    lf.lfItalic = italic ? 1 : 0
+    lf.lfUnderline = underline ? 1 : 0
+    lf.lfStrikeOut = strikeout ? 1 : 0
+    let newFont = CreateFontIndirectW(&lf)
+    if let newFont {
+        SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: newFont)), 1)
+    }
+}
+
+extension BoldView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        winApplyFontStyle(to: hwnd, weight: FW_BOLD, hInstance: context.hInstance)
+        return hwnd
+    }
+}
+
+extension ItalicView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        winApplyFontStyle(to: hwnd, italic: true, hInstance: context.hInstance)
+        return hwnd
+    }
+}
+
+extension FontWeightView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        let w: Int32
+        switch weight {
+        case .ultraLight: w = FW_ULTRALIGHT
+        case .thin:       w = FW_THIN
+        case .light:      w = FW_LIGHT
+        case .regular:    w = FW_REGULAR
+        case .medium:     w = FW_MEDIUM
+        case .semibold:   w = FW_SEMIBOLD
+        case .bold:       w = FW_BOLD
+        case .heavy:      w = FW_HEAVY
+        case .black:      w = FW_BLACK
+        }
+        winApplyFontStyle(to: hwnd, weight: w, hInstance: context.hInstance)
+        return hwnd
+    }
+}
+
+extension UnderlineView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        if isActive {
+            winApplyFontStyle(to: hwnd, underline: true, hInstance: context.hInstance)
+        }
+        return hwnd
+    }
+}
+
+extension StrikethroughView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        if isActive {
+            winApplyFontStyle(to: hwnd, strikeout: true, hInstance: context.hInstance)
+        }
+        return hwnd
+    }
+}
+
+extension TextCaseView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Win32 has no native text-transform — pass through.
+        // Text content would need to be transformed at the string level,
+        // which requires access to the text content (not available here).
+        winRenderView(content, in: context)
+    }
+}
+
 // MARK: - ScrollViewReader + ID Win32 extensions
 
 extension IdView: WinRenderable {
