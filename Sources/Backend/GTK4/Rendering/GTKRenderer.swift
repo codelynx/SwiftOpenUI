@@ -1079,9 +1079,24 @@ extension MultilineTextAlignmentView: GTKRenderable {
 
 extension HiddenView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let widget = widgetFromOpaque(gtkRenderView(content))
-        gtk_widget_set_visible(widget, 0)
-        return opaqueFromWidget(widget)
+        let inner = widgetFromOpaque(gtkRenderView(content))
+        // Wrap in a GtkBox so that the hidden opacity lives on a separate
+        // widget from any .opacity() modifier applied to the content.
+        // This prevents .hidden().opacity(0.5) from making the view visible.
+        let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtk_box_append(boxPointer(wrapper), inner)
+        // Preserve layout space (unlike gtk_widget_set_visible(0) which
+        // collapses layout). Opacity on the wrapper is independent of
+        // any opacity on the content widget.
+        gtk_widget_set_opacity(wrapper, 0)
+        // Block all interaction: pointer, keyboard focus, and sensitivity
+        gtk_widget_set_can_target(wrapper, 0)
+        gtk_widget_set_can_focus(wrapper, 0)
+        gtk_widget_set_sensitive(wrapper, 0)
+        // Propagate expand flags from content
+        gtk_widget_set_hexpand(wrapper, gtk_widget_get_hexpand(inner))
+        gtk_widget_set_vexpand(wrapper, gtk_widget_get_vexpand(inner))
+        return opaqueFromWidget(wrapper)
     }
 }
 
