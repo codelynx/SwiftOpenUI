@@ -589,6 +589,55 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - Gradient Web extensions
+
+private func webGradientStopsCSS(_ stops: [Gradient.Stop]) -> String {
+    stops.map { stop in
+        let c = stop.color
+        let r = Int(c.red * 255)
+        let g = Int(c.green * 255)
+        let b = Int(c.blue * 255)
+        let a = c.alpha
+        return "rgba(\(r), \(g), \(b), \(a)) \(Int(stop.location * 100))%"
+    }.joined(separator: ", ")
+}
+
+private func webUnitPointToDeg(start: UnitPoint, end: UnitPoint) -> String {
+    // Map common unit point pairs to CSS gradient directions
+    let dx = end.x - start.x
+    let dy = end.y - start.y
+    if dx == 0 && dy > 0 { return "180deg" }     // top to bottom
+    if dx == 0 && dy < 0 { return "0deg" }       // bottom to top
+    if dy == 0 && dx > 0 { return "90deg" }      // left to right
+    if dy == 0 && dx < 0 { return "270deg" }     // right to left
+    if dx > 0 && dy > 0 { return "135deg" }      // topLeading to bottomTrailing
+    if dx < 0 && dy > 0 { return "225deg" }      // topTrailing to bottomLeading
+    if dx > 0 && dy < 0 { return "45deg" }       // bottomLeading to topTrailing
+    if dx < 0 && dy < 0 { return "315deg" }      // bottomTrailing to topLeading
+    return "180deg" // fallback: top to bottom
+}
+
+extension LinearGradient: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let div = document.createElement("div")
+        let angle = webUnitPointToDeg(start: startPoint, end: endPoint)
+        let stops = webGradientStopsCSS(gradient.stops)
+        div.style = .string("width: 100%; height: 100%; min-height: 20px; background: linear-gradient(\(angle), \(stops));")
+        return div
+    }
+}
+
+extension RadialGradient: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let div = document.createElement("div")
+        let cx = Int(center.x * 100)
+        let cy = Int(center.y * 100)
+        let stops = webGradientStopsCSS(gradient.stops)
+        div.style = .string("width: 100%; height: 100%; min-height: 20px; background: radial-gradient(circle at \(cx)% \(cy)%, \(stops));")
+        return div
+    }
+}
+
 // MARK: - Text decoration Web extensions
 
 extension BoldView: WebRenderable {

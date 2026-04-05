@@ -6622,6 +6622,40 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - Gradient Win32 extensions
+
+extension LinearGradient: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Render as a D2D surface with gradient fill
+        let stops = gradient.stops
+        let sp = startPoint
+        let ep = endPoint
+        return createShapeSurface(draw: { rt, brush, w, h in
+            // For now, fill with the first color as a solid approximation.
+            // Full D2D linear gradient brush requires ID2D1LinearGradientBrush
+            // which needs gradient stop collection — deferred to platform worker.
+            guard let first = stops.first else { return }
+            let c = first.color
+            d2d1_SolidColorBrush_SetColor(brush, Float(c.red), Float(c.green), Float(c.blue), Float(c.alpha))
+            d2d1_RenderTarget_FillRect(rt, 0, 0, w, h, brush)
+        }, context: context)
+    }
+}
+
+extension RadialGradient: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Solid color approximation — same as LinearGradient.
+        // Full D2D radial gradient brush deferred to platform worker.
+        let stops = gradient.stops
+        return createShapeSurface(draw: { rt, brush, w, h in
+            guard let first = stops.first else { return }
+            let c = first.color
+            d2d1_SolidColorBrush_SetColor(brush, Float(c.red), Float(c.green), Float(c.blue), Float(c.alpha))
+            d2d1_RenderTarget_FillRect(rt, 0, 0, w, h, brush)
+        }, context: context)
+    }
+}
+
 // MARK: - Text decoration Win32 extensions
 
 /// Apply an HFONT with the given weight/italic to all descendants.

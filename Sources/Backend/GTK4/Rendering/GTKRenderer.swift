@@ -1107,6 +1107,47 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - Gradient GTK extensions
+
+private func gtkGradientStopsCSS(_ stops: [Gradient.Stop]) -> String {
+    stops.map { stop in
+        let c = stop.color
+        let r = Int(c.red * 255)
+        let g = Int(c.green * 255)
+        let b = Int(c.blue * 255)
+        let a = c.alpha
+        return "rgba(\(r), \(g), \(b), \(a)) \(Int(stop.location * 100))%"
+    }.joined(separator: ", ")
+}
+
+extension LinearGradient: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let div = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtk_widget_set_hexpand(div, 1)
+        gtk_widget_set_vexpand(div, 1)
+        let sx = Int(startPoint.x * 100)
+        let sy = Int(startPoint.y * 100)
+        let ex = Int(endPoint.x * 100)
+        let ey = Int(endPoint.y * 100)
+        let stops = gtkGradientStopsCSS(gradient.stops)
+        applyCSSToWidget(div, properties: "background: linear-gradient(from \(sx)% \(sy)% to \(ex)% \(ey)%, \(stops)); min-height: 20px;")
+        return opaqueFromWidget(div)
+    }
+}
+
+extension RadialGradient: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let div = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtk_widget_set_hexpand(div, 1)
+        gtk_widget_set_vexpand(div, 1)
+        let cx = Int(center.x * 100)
+        let cy = Int(center.y * 100)
+        let stops = gtkGradientStopsCSS(gradient.stops)
+        applyCSSToWidget(div, properties: "background: radial-gradient(circle at \(cx)% \(cy)%, \(stops)); min-height: 20px;")
+        return opaqueFromWidget(div)
+    }
+}
+
 // MARK: - Text decoration GTK extensions
 
 private let gtkSwiftOriginalLabelTextKey = "gtk-swift-original-label-text"
