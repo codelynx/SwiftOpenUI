@@ -6647,16 +6647,28 @@ extension ScrollViewReader: WinRenderable {
                 GetClassNameW(p, &cls, 64)
                 let name = String(decodingCString: cls, as: UTF16.self)
                 if name == "SwiftUIScrollView" {
-                    // Convert target position to scroll container client coords
+                    // Convert target screen position to scroll container client coords.
+                    // ScreenToClient gives viewport-relative Y, but the content child
+                    // is already offset by -scrollY. Add current scroll offset to get
+                    // the true content-relative position.
                     var pt = POINT(x: targetRect.left, y: targetRect.top)
                     ScreenToClient(p, &pt)
-                    // Scroll to the target's Y position
+
                     var si = SCROLLINFO()
                     si.cbSize = UINT(MemoryLayout<SCROLLINFO>.size)
                     si.fMask = UINT(SIF_POS)
-                    si.nPos = pt.y
-                    SetScrollInfo(p, INT(SB_VERT), &si, true)
-                    InvalidateRect(p, nil, true)
+                    GetScrollInfo(p, INT(SB_VERT), &si)
+                    let contentY = pt.y + si.nPos  // viewport-relative + current scroll = content-relative
+
+                    // Send WM_VSCROLL with SB_THUMBPOSITION to trigger the
+                    // scroll handler, which repositions content and updates
+                    // the scrollbar.
+                    // Note: anchor parameter is ignored — always scrolls target
+                    // to top of viewport. Anchor-based positioning deferred.
+                    let pos = max(contentY, 0)
+                    let wParam = WPARAM(win32_LOWORD(DWORD_PTR(SB_THUMBPOSITION)))
+                                 | (WPARAM(UInt16(truncatingIfNeeded: pos)) << 16)
+                    SendMessageW(p, UINT(WM_VSCROLL), wParam, 0)
                     break
                 }
                 parent = GetParent(p)
