@@ -35,7 +35,9 @@ public func lookupViewID<ID: Hashable>(_ id: ID) -> Any? {
     _idRegistry[AnyHashable(id)]
 }
 
-/// Clear the ID registry. Called at the start of each render pass.
+/// Clear the ID registry. Available for testing and explicit cleanup.
+/// NOT called during host rebuilds — the global registry relies on
+/// overwrite-on-re-render + platform liveness guards for stale entries.
 public func clearViewIDRegistry() {
     _idRegistry.removeAll()
 }

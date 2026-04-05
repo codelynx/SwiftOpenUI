@@ -1,6 +1,6 @@
 # Views
 
-Summary: 89 total, 50 implemented, 0 partial, 39 missing.
+Summary: 89 total, 51 implemented, 0 partial, 38 missing.
 
 ## Text Views
 
@@ -74,7 +74,7 @@ Summary: 89 total, 50 implemented, 0 partial, 39 missing.
 | `LazyHStack` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/LazyStacks.swift` | GTK: horizontal; Win32/Web: non-virtualized |
 | `LazyVGrid` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/LazyGrids.swift` | GTK: GtkGridView; Win32/Web: CSS grid, non-virtualized |
 | `LazyVStack` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/LazyStacks.swift` | GTK: virtualized; Win32/Web: non-virtualized |
-| `ScrollViewReader` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Missing | `-` | - |
+| `ScrollViewReader` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/ScrollViewReader.swift` | GTK: grab_focus auto-scroll; Win32: WM_VSCROLL; Web: scrollIntoView. Global ID registry with .id() modifier. |
 | `Spacer` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Spacer.swift` | - |
 | `ViewThatFits` | Both | iOS, macOS 13, watchOS 9, tvOS 16, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/ViewThatFits.swift` | Batch A fallback on Web: initial-mount first-fit selection with fallback-to-last, but no resize reevaluation yet. GTK: GtkStack + tick-driven remeasurement; Win32: WM_SIZE remeasurement. |
 | `VStack` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Stacks.swift` | - |
