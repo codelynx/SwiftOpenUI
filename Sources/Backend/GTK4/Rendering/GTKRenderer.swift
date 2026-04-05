@@ -2274,6 +2274,50 @@ extension CornerRadiusView: GTKRenderable {
     }
 }
 
+// MARK: - Clip Shape GTK extensions
+
+extension ClippedView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let inner = widgetFromOpaque(gtkRenderView(content))
+        let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtk_box_append(boxPointer(wrapper), inner)
+        gtk_widget_set_overflow(wrapper, GTK_OVERFLOW_HIDDEN)
+        gtk_widget_set_hexpand(wrapper, gtk_widget_get_hexpand(inner))
+        gtk_widget_set_vexpand(wrapper, gtk_widget_get_vexpand(inner))
+        return opaqueFromWidget(wrapper)
+    }
+}
+
+extension ClipShapeView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let inner = widgetFromOpaque(gtkRenderView(content))
+        let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtk_box_append(boxPointer(wrapper), inner)
+        gtk_widget_set_overflow(wrapper, GTK_OVERFLOW_HIDDEN)
+        gtk_widget_set_hexpand(wrapper, gtk_widget_get_hexpand(inner))
+        gtk_widget_set_vexpand(wrapper, gtk_widget_get_vexpand(inner))
+
+        // Map shape type to CSS border-radius for clipping.
+        let css: String
+        if shape is Circle || shape is Ellipse {
+            css = "border-radius: 50%;"
+        } else if let rr = shape as? RoundedRectangle {
+            css = "border-radius: \(Int(rr.cornerRadius))px;"
+        } else if shape is Capsule {
+            // Capsule = fully rounded ends (half the shorter dimension).
+            // Use a large fixed value; GTK clamps to half the box size.
+            css = "border-radius: 9999px;"
+        } else {
+            // Rectangle or unknown — rect clip only, no border-radius needed
+            css = ""
+        }
+        if !css.isEmpty {
+            applyCSSToWidget(wrapper, properties: css)
+        }
+        return opaqueFromWidget(wrapper)
+    }
+}
+
 // MARK: - Shadow GTK extension
 
 extension ShadowView: GTKRenderable {
