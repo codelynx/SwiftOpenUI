@@ -94,6 +94,8 @@ Last updated: 2026-03-25
 | .focused() | Y | Y | Y | Y | Y | Y | Web: DOM focus/blur + FocusState binding |
 | .modifier() | Y | Y | Y | Y | Y | Y | Custom ViewModifier |
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
+| .clipShape() | Y | Y | Y | Y | Y | - | GTK: CSS border-radius + overflow; Win32: SetWindowRgn; Web: CSS clip-path |
+| .clipped() | Y | Y | Y | Y | Y | - | GTK/Web: overflow hidden; Win32: CreateRectRgn |
 | .cornerRadius() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: SetWindowRgn rounded region |
 | .shadow() | Y | Y | Y | Y | Y | - | GTK/Web: CSS; Win32: layered shadow with alpha |
 | .lineLimit() | Y | Y | Y | Y | Y | - | GTK: GtkLabel wrap/lines; Win32: Static style + DrawTextW; Web: -webkit-line-clamp |

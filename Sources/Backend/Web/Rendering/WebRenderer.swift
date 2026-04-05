@@ -537,6 +537,48 @@ extension StrokedShape: WebRenderable {
     }
 }
 
+// MARK: - Clip modifier Web extensions
+
+/// Build a CSS clip-path value for a known shape type.
+func webClipPathCSS<S: Shape>(_ shape: S) -> String? {
+    if shape is Circle {
+        return "clip-path: circle(50%);"
+    } else if shape is Ellipse {
+        return "clip-path: ellipse(50% 50%);"
+    } else if let rr = shape as? RoundedRectangle {
+        return "clip-path: inset(0 round \(Int(rr.cornerRadius))px);"
+    } else if shape is Capsule {
+        return "clip-path: inset(0 round 9999px);"
+    } else if shape is SwiftOpenUI.Rectangle {
+        return nil // Rectangle clip is just overflow: hidden
+    }
+    return nil // Unknown shape — fall back to rectangular clip
+}
+
+extension ClipShapeView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        var css = "display: inline-block; overflow: hidden;"
+        if let clipCSS = webClipPathCSS(shape) {
+            css += " \(clipCSS)"
+        }
+        wrapper.style = .string(css)
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension ClippedView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("display: inline-block; overflow: hidden;")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
 // MARK: - Navigation views
 
 /// Destination registry for type-based path navigation.
