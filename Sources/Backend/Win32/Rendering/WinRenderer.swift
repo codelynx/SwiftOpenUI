@@ -254,6 +254,17 @@ extension TextField: WinRenderable {
             }
         }
 
+        // Wire up .onSubmit: intercept VK_RETURN and fire submitAction
+        if let submitAction = getCurrentEnvironment().submitAction {
+            handler.onMessage = { uMsg, wParam, _ in
+                if uMsg == UINT(WM_KEYDOWN), wParam == WPARAM(VK_RETURN) {
+                    submitAction()
+                    return 0
+                }
+                return nil
+            }
+        }
+
         // Retain the handler so it lives as long as the HWND.
         // SubclassHandler.init already passRetained itself for the C callback,
         // but ARC would release the local `handler` variable when this function
@@ -3424,6 +3435,18 @@ extension SecureField: WinRenderable {
         handler.onTextChanged = { (newValue: String) in
             if newValue != binding.wrappedValue { binding.wrappedValue = newValue }
         }
+
+        // Wire up .onSubmit: intercept VK_RETURN and fire submitAction
+        if let submitAction = getCurrentEnvironment().submitAction {
+            handler.onMessage = { uMsg, wParam, _ in
+                if uMsg == UINT(WM_KEYDOWN), wParam == WPARAM(VK_RETURN) {
+                    submitAction()
+                    return 0
+                }
+                return nil
+            }
+        }
+
         let state = TextFieldState(handler: handler)
         let statePtr = Unmanaged.passRetained(state).toOpaque()
         SetWindowSubclass(hwnd, textFieldCleanupProc, 41, DWORD_PTR(UInt(bitPattern: statePtr)))
