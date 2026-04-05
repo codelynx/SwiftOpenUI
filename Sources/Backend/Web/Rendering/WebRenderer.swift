@@ -358,6 +358,77 @@ extension AnimatedView: WebRenderable {
     }
 }
 
+// MARK: - Text formatting Web extensions
+
+extension LineLimitView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string(webLineLimitCSS(lineLimit))
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+func webLineLimitCSS(_ limit: Int?) -> String {
+    guard let limit else {
+        // nil = unlimited wrapping
+        return "display: inline-block; white-space: normal;"
+    }
+    if limit == 1 {
+        return "display: inline-block; white-space: nowrap; overflow: hidden;"
+    }
+    // Multi-line clamp
+    return "display: -webkit-box; -webkit-line-clamp: \(limit); -webkit-box-orient: vertical; overflow: hidden;"
+}
+
+extension TruncationModeView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        let css: String
+        switch mode {
+        case .tail:
+            css = "display: inline-block; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;"
+        case .head:
+            // CSS hack: rtl direction places ellipsis at start
+            css = "display: inline-block; direction: rtl; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;"
+        case .middle:
+            // No native CSS support — fall back to tail
+            css = "display: inline-block; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;"
+        }
+        wrapper.style = .string(css)
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension LineSpacingView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("display: inline-block; line-height: calc(1em + \(spacing)px);")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
+extension MultilineTextAlignmentView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        let align: String
+        switch alignment {
+        case .leading:  align = "left"
+        case .center:   align = "center"
+        case .trailing: align = "right"
+        }
+        wrapper.style = .string("text-align: \(align);")
+        _ = wrapper.appendChild(child)
+        return wrapper
+    }
+}
+
 // MARK: - Navigation views
 
 /// Destination registry for type-based path navigation.
