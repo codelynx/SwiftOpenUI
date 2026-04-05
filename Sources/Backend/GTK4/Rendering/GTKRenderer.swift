@@ -964,6 +964,114 @@ extension BorderView: GTKRenderable, GTKDescribable {
     }
 }
 
+// MARK: - Text Formatting GTK extensions
+
+/// Collect all GtkLabel descendants in a widget subtree via DFS.
+/// Text modifiers apply to every label in the subtree, not just the first,
+/// so that container-level modifiers like VStack { ... }.lineLimit(1) work.
+private func findAllGtkLabels(in widget: UnsafeMutablePointer<GtkWidget>) -> [UnsafeMutablePointer<GtkWidget>] {
+    var result: [UnsafeMutablePointer<GtkWidget>] = []
+    collectGtkLabels(in: widget, into: &result)
+    return result
+}
+
+private func collectGtkLabels(in widget: UnsafeMutablePointer<GtkWidget>, into result: inout [UnsafeMutablePointer<GtkWidget>]) {
+    guard gtk_swift_is_widget(widget) != 0 else { return }
+    let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
+    if typeName == "GtkLabel" {
+        result.append(widget)
+        return // GtkLabel has no label children
+    }
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        collectGtkLabels(in: c, into: &result)
+        child = gtk_widget_get_next_sibling(c)
+    }
+}
+
+extension LineLimitView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        for label in findAllGtkLabels(in: widget) {
+            let labelOp = OpaquePointer(label)
+            if let limit = lineLimit {
+                if limit == 1 {
+                    gtk_label_set_wrap(labelOp, 0)
+                    gtk_label_set_lines(labelOp, 1)
+                    // Default tail truncation for single-line, but don't
+                    // overwrite an explicit truncation mode already set.
+                    if gtk_label_get_ellipsize(labelOp) == PANGO_ELLIPSIZE_NONE {
+                        gtk_label_set_ellipsize(labelOp, PANGO_ELLIPSIZE_END)
+                    }
+                } else {
+                    gtk_label_set_wrap(labelOp, 1)
+                    gtk_label_set_wrap_mode(labelOp, PANGO_WRAP_WORD_CHAR)
+                    gtk_label_set_lines(labelOp, gint(limit))
+                    // Default tail truncation for multi-line overflow, but
+                    // don't overwrite an explicit truncation mode already set.
+                    if gtk_label_get_ellipsize(labelOp) == PANGO_ELLIPSIZE_NONE {
+                        gtk_label_set_ellipsize(labelOp, PANGO_ELLIPSIZE_END)
+                    }
+                }
+            } else {
+                // nil = unlimited wrapping — reset any prior line/ellipsis constraints
+                gtk_label_set_wrap(labelOp, 1)
+                gtk_label_set_wrap_mode(labelOp, PANGO_WRAP_WORD_CHAR)
+                gtk_label_set_lines(labelOp, -1)
+                gtk_label_set_ellipsize(labelOp, PANGO_ELLIPSIZE_NONE)
+            }
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension TruncationModeView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        for label in findAllGtkLabels(in: widget) {
+            let labelOp = OpaquePointer(label)
+            switch mode {
+            case .head:   gtk_label_set_ellipsize(labelOp, PANGO_ELLIPSIZE_START)
+            case .tail:   gtk_label_set_ellipsize(labelOp, PANGO_ELLIPSIZE_END)
+            case .middle: gtk_label_set_ellipsize(labelOp, PANGO_ELLIPSIZE_MIDDLE)
+            }
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension LineSpacingView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        let lineHeight = String(format: "%.1f", spacing)
+        for label in findAllGtkLabels(in: widget) {
+            applyCSSToWidget(label, properties: "line-height: calc(1em + \(lineHeight)px);")
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension MultilineTextAlignmentView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        for label in findAllGtkLabels(in: widget) {
+            let labelOp = OpaquePointer(label)
+            switch alignment {
+            case .leading:
+                gtk_label_set_justify(labelOp, GTK_JUSTIFY_LEFT)
+                gtk_swift_label_set_xalign(label, 0)
+            case .center:
+                gtk_label_set_justify(labelOp, GTK_JUSTIFY_CENTER)
+                gtk_swift_label_set_xalign(label, 0.5)
+            case .trailing:
+                gtk_label_set_justify(labelOp, GTK_JUSTIFY_RIGHT)
+                gtk_swift_label_set_xalign(label, 1.0)
+            }
+        }
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - Gesture GTK extensions
 
 /// Box for tap gesture that carries the required tap count.
