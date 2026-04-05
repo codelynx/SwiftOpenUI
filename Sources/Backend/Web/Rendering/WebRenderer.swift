@@ -589,6 +589,52 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - Popover Web extension
+
+extension PopoverView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let child = webRenderView(content)
+        let wrapper = document.createElement("div")
+        wrapper.style = .string("display: inline-block; position: relative;")
+        _ = wrapper.appendChild(child)
+
+        if isPresented.wrappedValue {
+            let overlay = document.createElement("div")
+            overlay.style = .string("""
+                position: absolute; top: 100%; left: 0; margin-top: 4px; \
+                background: white; border: 1px solid #ccc; border-radius: 8px; \
+                padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); \
+                z-index: 10000; min-width: 150px;
+                """)
+
+            // Inject dismiss action
+            let binding = isPresented
+            var env = getCurrentEnvironment()
+            env.dismiss = DismissAction { binding.wrappedValue = false }
+            let prevEnv = getCurrentEnvironment()
+            setCurrentEnvironment(env)
+            let popChild = webRenderView(popoverContent)
+            setCurrentEnvironment(prevEnv)
+
+            _ = overlay.appendChild(popChild)
+            _ = wrapper.appendChild(overlay)
+
+            // Dismiss on outside click
+            let dismissHandler = webMakeClosure { args in
+                let e = args[0]
+                let inside = wrapper.contains(e.target)
+                if inside.boolean != true {
+                    binding.wrappedValue = false
+                }
+                return .undefined
+            }
+            _ = JSObject.global.document.addEventListener("click", dismissHandler)
+        }
+
+        return wrapper
+    }
+}
+
 // MARK: - Layout modifier Web extensions
 
 extension PositionView: WebRenderable {

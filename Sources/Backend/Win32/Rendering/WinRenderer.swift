@@ -6622,6 +6622,84 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - Popover Win32 extension
+
+private let popoverSubclassID: UINT_PTR = 71
+
+private class PopoverState {
+    let binding: Binding<Bool>
+    var popoverWindow: HWND?
+    init(_ binding: Binding<Bool>) { self.binding = binding }
+}
+
+extension PopoverView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let anchor = winRenderView(content, in: context) else { return nil }
+
+        if isPresented.wrappedValue {
+            // Position popover below the anchor
+            var anchorRect = RECT()
+            GetWindowRect(anchor, &anchorRect)
+
+            let popupW: Int32 = 250
+            let popupH: Int32 = 200
+            let popupX = anchorRect.left
+            let popupY = anchorRect.bottom + 4
+
+            let popup = CreateWindowExW(
+                DWORD(WS_EX_TOOLWINDOW),
+                stackContainerClassName, nil,
+                DWORD(WS_POPUP | WS_VISIBLE | WS_BORDER),
+                popupX, popupY, popupW, popupH,
+                findRootWindow(from: anchor), nil, context.hInstance, nil
+            )
+
+            if let popup {
+                let childCtx = RenderContext(parent: popup, hInstance: context.hInstance)
+                if let child = winRenderView(popoverContent, in: childCtx) {
+                    SetWindowPos(child, nil, 4, 4,
+                                 popupW - 8, popupH - 8,
+                                 UINT(SWP_NOZORDER))
+                }
+
+                // Close popover on deactivation
+                let state = PopoverState(isPresented)
+                state.popoverWindow = popup
+                let statePtr = Unmanaged.passRetained(state).toOpaque()
+                SetWindowSubclass(popup, popoverDismissProc, popoverSubclassID,
+                                  DWORD_PTR(UInt(bitPattern: statePtr)))
+            }
+        }
+
+        return anchor
+    }
+}
+
+private let popoverDismissProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_ACTIVATE):
+        let activateState = Int32(LOWORD(wParam))
+        if activateState == WA_INACTIVE {
+            // Dismiss on deactivation (click outside)
+            let statePtr = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+            let state = Unmanaged<PopoverState>.fromOpaque(statePtr).takeUnretainedValue()
+            state.binding.wrappedValue = false
+            DestroyWindow(hwnd)
+            return 0
+        }
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        let statePtr = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        Unmanaged<PopoverState>.fromOpaque(statePtr).release()
+        RemoveWindowSubclass(hwnd, popoverDismissProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
 // MARK: - Layout modifier Win32 extensions
 
 extension PositionView: WinRenderable {

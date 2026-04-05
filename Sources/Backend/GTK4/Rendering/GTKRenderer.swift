@@ -1107,6 +1107,56 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - Popover GTK extension
+
+extension PopoverView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let anchor = widgetFromOpaque(gtkRenderView(content))
+
+        if isPresented.wrappedValue {
+            let gobject = gpointer(anchor)
+            // Prevent duplicate popover
+            guard g_object_get_data(gobject, "swift-popover-active") == nil else {
+                return opaqueFromWidget(anchor)
+            }
+
+            let popover = gtk_popover_new()!
+            let popChild = widgetFromOpaque(gtkRenderView(popoverContent))
+            gtk_popover_set_child(OpaquePointer(popover), popChild)
+            gtk_widget_set_parent(popover, anchor)
+
+            // Inject dismiss action into popover content environment
+            let binding = isPresented
+            g_object_set_data(gobject, "swift-popover-active",
+                              gpointer(bitPattern: 1))
+
+            // Dismiss on close
+            let dismissBox = Unmanaged.passRetained(ClosureBox {
+                binding.wrappedValue = false
+                g_object_set_data(gobject, "swift-popover-active", nil)
+            }).toOpaque()
+            g_signal_connect_data(
+                gpointer(popover), "closed",
+                unsafeBitCast({ (_: OpaquePointer, ud: gpointer?) in
+                    guard let ud = ud else { return }
+                    Unmanaged<ClosureBox>.fromOpaque(ud).takeUnretainedValue().action()
+                } as @convention(c) (OpaquePointer, gpointer?) -> Void,
+                to: GCallback.self),
+                dismissBox,
+                { (data: gpointer?, _: OpaquePointer?) in
+                    guard let data = data else { return }
+                    Unmanaged<ClosureBox>.fromOpaque(data).release()
+                },
+                GConnectFlags(rawValue: 0)
+            )
+
+            gtk_swift_popover_popup(OpaquePointer(popover))
+        }
+
+        return opaqueFromWidget(anchor)
+    }
+}
+
 // MARK: - Layout modifier GTK extensions
 
 extension PositionView: GTKRenderable {
