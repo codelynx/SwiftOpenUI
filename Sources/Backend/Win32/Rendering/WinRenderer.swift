@@ -6637,7 +6637,7 @@ extension LinearGradient: WinRenderable {
             guard let first = stops.first else { return }
             let c = first.color
             d2d1_SolidColorBrush_SetColor(brush, Float(c.red), Float(c.green), Float(c.blue), Float(c.alpha))
-            d2d1_RenderTarget_FillRect(rt, 0, 0, w, h, brush)
+            d2d1_RenderTarget_FillRectangle(rt, brush, 0, 0, w, h)
         }, context: context)
     }
 }
@@ -6651,7 +6651,7 @@ extension RadialGradient: WinRenderable {
             guard let first = stops.first else { return }
             let c = first.color
             d2d1_SolidColorBrush_SetColor(brush, Float(c.red), Float(c.green), Float(c.blue), Float(c.alpha))
-            d2d1_RenderTarget_FillRect(rt, 0, 0, w, h, brush)
+            d2d1_RenderTarget_FillRectangle(rt, brush, 0, 0, w, h)
         }, context: context)
     }
 }
