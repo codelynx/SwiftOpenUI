@@ -1,10 +1,10 @@
 # Graphics and Rendering Modifiers
 
-Summary: 38 total, 4 implemented, 0 partial, 34 missing.
+Summary: 38 total, 6 implemented, 0 partial, 32 missing.
 
 ## Graphics and Rendering Modifiers (~53)
 
-38 total, 4 implemented, 0 partial, 34 missing.
+38 total, 6 implemented, 0 partial, 32 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -12,8 +12,8 @@ Summary: 38 total, 4 implemented, 0 partial, 34 missing.
 | `blendMode` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `blur` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `brightness` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `clipped` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `clipShape` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `clipped` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ClipModifiers.swift` | GTK/Web: overflow hidden; Win32: CreateRectRgn |
+| `clipShape` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ClipModifiers.swift` | GTK: CSS border-radius + overflow; Win32: SetWindowRgn (path region fallback for custom shapes); Web: CSS clip-path. Custom shapes: GTK/Web rectangular fallback, Win32 sampled-path region. |
 | `colorEffect` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
 | `colorInvert` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `colorMultiply` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |

@@ -24,7 +24,7 @@
 ## Next
 
 ### Views & Modifiers
-- .clipShape() — needs D2D path geometry shim
+- ~~.clipShape()~~ — done (GTK: CSS clip, Win32: SetWindowRgn, Web: CSS clip-path)
 - .task() — needs Swift async runtime integration
 - Canvas: stroke styles (line caps, joins, dash), bezier/quadratic curves, rotate/translate transforms
 
