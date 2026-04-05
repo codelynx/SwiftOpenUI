@@ -585,7 +585,10 @@ extension HiddenView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
         let wrapper = document.createElement("div")
-        wrapper.style = .string("display: none;")
+        // visibility: hidden preserves layout space (like SwiftUI).
+        // display: none would collapse layout entirely.
+        // pointer-events: none blocks interaction on the invisible content.
+        wrapper.style = .string("visibility: hidden; pointer-events: none;")
         _ = wrapper.appendChild(child)
         return wrapper
     }
