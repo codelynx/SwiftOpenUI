@@ -600,7 +600,7 @@ extension FullScreenCoverView: WebRenderable {
 
         if isPresented.wrappedValue {
             let overlay = document.createElement("div")
-            overlay.style = .string("position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: white; z-index: 10001; display: flex; align-items: center; justify-content: center;")
+            overlay.style = .string("position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 10001; overflow: auto;")
 
             let binding = isPresented
             let dismiss = onDismiss
