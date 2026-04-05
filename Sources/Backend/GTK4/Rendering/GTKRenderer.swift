@@ -1111,23 +1111,33 @@ extension MultilineTextAlignmentView: GTKRenderable {
 
 extension FullScreenCoverView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let anchor = widgetFromOpaque(gtkRenderView(content))
+        let widget = widgetFromOpaque(gtkRenderView(content))
+
+        // Use the host container as a stable anchor that survives rebuilds,
+        // same pattern as SheetView. Falls back to the rendered widget if
+        // not inside a rebuilding host.
+        let anchor: UnsafeMutablePointer<GtkWidget>
+        if let host = GTKViewHost.getCurrentRebuilding() {
+            anchor = host.container
+        } else {
+            anchor = widget
+        }
+        let gobject = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
 
         if isPresented.wrappedValue {
-            let gobject = gpointer(anchor)
-            guard g_object_get_data(gobject, "swift-fullscreen-active") == nil else {
-                return opaqueFromWidget(anchor)
+            // Prevent duplicate fullscreen window
+            guard g_object_get_data(gobject, "swift-fullscreen-window") == nil else {
+                return opaqueFromWidget(widget)
             }
 
-            // Create a fullscreen modal window
             let window = gtk_window_new()!
-            gtk_window_set_modal(OpaquePointer(window), 1)
+            gtk_swift_window_set_modal(window, 1)
 
-            // Find root window to set as transient parent
-            var root = anchor
-            while let parent = gtk_widget_get_parent(root) { root = parent }
-            if let rootWindow = gtk_widget_get_root(root) {
-                gtk_window_set_transient_for(OpaquePointer(window), OpaquePointer(rootWindow))
+            // Set transient parent to the actual GtkWindow root
+            if let rootWidget = gtk_widget_get_root(anchor) {
+                let rootAsWidget = UnsafeMutableRawPointer(rootWidget)
+                    .assumingMemoryBound(to: GtkWidget.self)
+                gtk_swift_window_set_transient_for(window, rootAsWidget)
             }
 
             // Inject dismiss action
@@ -1142,40 +1152,54 @@ extension FullScreenCoverView: GTKRenderable {
             let coverWidget = widgetFromOpaque(gtkRenderView(coverContent))
             setCurrentEnvironment(prevEnv)
 
-            gtk_window_set_child(OpaquePointer(window), coverWidget)
-            gtk_window_fullscreen(OpaquePointer(window))
+            gtk_swift_window_set_child(window, coverWidget)
+            gtk_swift_window_fullscreen(window)
 
-            g_object_set_data(gobject, "swift-fullscreen-active", gpointer(bitPattern: 1))
+            // Store the window on the anchor for programmatic dismissal
+            g_object_set_data(gobject, "swift-fullscreen-window",
+                              UnsafeMutableRawPointer(window))
 
-            // Handle close
+            // Ref anchor for safe access in close callback
+            g_object_ref(gpointer(anchor))
+            let anchorWidget = anchor
+            // Handle close-request (Escape, window close button)
             let closeBox = Unmanaged.passRetained(ClosureBox {
                 binding.wrappedValue = false
-                g_object_set_data(gobject, "swift-fullscreen-active", nil)
+                if gtk_swift_is_widget(anchorWidget) != 0 {
+                    let obj = UnsafeMutableRawPointer(anchorWidget).assumingMemoryBound(to: GObject.self)
+                    g_object_set_data(obj, "swift-fullscreen-window", nil)
+                }
+                g_object_unref(gpointer(anchorWidget))
                 dismiss?()
             }).toOpaque()
             g_signal_connect_data(
                 gpointer(window), "close-request",
-                unsafeBitCast({ (_: OpaquePointer, ud: gpointer?) -> gboolean in
+                unsafeBitCast({ (_: gpointer?, ud: gpointer?) -> gboolean in
                     guard let ud = ud else { return 0 }
-                    Unmanaged<ClosureBox>.fromOpaque(ud).takeUnretainedValue().action()
+                    Unmanaged<ClosureBox>.fromOpaque(ud).takeUnretainedValue().closure()
                     return 0
-                } as @convention(c) (OpaquePointer, gpointer?) -> gboolean,
+                } as @convention(c) (gpointer?, gpointer?) -> gboolean,
                 to: GCallback.self),
                 closeBox,
-                { (data: gpointer?, _: OpaquePointer?) in
+                { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
                     guard let data = data else { return }
                     Unmanaged<ClosureBox>.fromOpaque(data).release()
                 },
                 GConnectFlags(rawValue: 0)
             )
 
-            g_idle_add({ _ in
-                gtk_widget_set_visible(window, 1)
-                return 0
-            }, gpointer(window))
+            gtk_widget_set_visible(window, 1)
+        } else {
+            // Programmatic dismissal: destroy the fullscreen window
+            if let raw = g_object_get_data(gobject, "swift-fullscreen-window") {
+                let window = raw.assumingMemoryBound(to: GtkWidget.self)
+                gtk_swift_window_destroy(window)
+                g_object_set_data(gobject, "swift-fullscreen-window", nil)
+                onDismiss?()
+            }
         }
 
-        return opaqueFromWidget(anchor)
+        return opaqueFromWidget(widget)
     }
 }
 

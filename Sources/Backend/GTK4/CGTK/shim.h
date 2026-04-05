@@ -693,6 +693,33 @@ gtk_swift_popover_popdown(GtkWidget *popover) {
     gtk_popover_popdown(GTK_POPOVER(popover));
 }
 
+// --- GtkWindow shims ---
+
+static inline void
+gtk_swift_window_set_modal(GtkWidget *window, gboolean modal) {
+    gtk_window_set_modal(GTK_WINDOW(window), modal);
+}
+
+static inline void
+gtk_swift_window_set_transient_for(GtkWidget *window, GtkWidget *parent) {
+    gtk_window_set_transient_for(GTK_WINDOW(window), GTK_WINDOW(parent));
+}
+
+static inline void
+gtk_swift_window_set_child(GtkWidget *window, GtkWidget *child) {
+    gtk_window_set_child(GTK_WINDOW(window), child);
+}
+
+static inline void
+gtk_swift_window_fullscreen(GtkWidget *window) {
+    gtk_window_fullscreen(GTK_WINDOW(window));
+}
+
+static inline void
+gtk_swift_window_destroy(GtkWidget *window) {
+    gtk_window_destroy(GTK_WINDOW(window));
+}
+
 // --- Pango attribute shims for GtkLabel ---
 
 static inline void
