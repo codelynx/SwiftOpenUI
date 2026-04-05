@@ -1203,6 +1203,16 @@ extension FullScreenCoverView: GTKRenderable {
     }
 }
 
+// MARK: - Tag GTK extension
+
+extension TagView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        setCurrentTagValue(tagValue)
+        defer { clearCurrentTagValue() }
+        return widgetFromOpaque(gtkRenderView(content))
+    }
+}
+
 // MARK: - Aspect ratio GTK extension
 
 extension AspectRatioView: GTKRenderable {

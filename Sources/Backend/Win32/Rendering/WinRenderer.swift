@@ -6622,6 +6622,16 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - Tag Win32 extension
+
+extension TagView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        setCurrentTagValue(tagValue)
+        defer { clearCurrentTagValue() }
+        return winRenderView(content, in: context)
+    }
+}
+
 // MARK: - fullScreenCover Win32 extension
 
 /// Property name stored on the root window to track the active fullscreen cover HWND.

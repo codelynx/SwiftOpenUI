@@ -589,6 +589,16 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - Tag Web extension
+
+extension TagView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        setCurrentTagValue(tagValue)
+        defer { clearCurrentTagValue() }
+        return webRenderView(content)
+    }
+}
+
 // MARK: - fullScreenCover Web extension
 
 extension FullScreenCoverView: WebRenderable {
