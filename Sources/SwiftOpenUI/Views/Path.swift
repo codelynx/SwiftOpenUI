@@ -46,6 +46,30 @@ public struct Path {
         elements.append(.closeSubpath)
     }
 
+    /// Add a rounded rectangle with the given corner radius.
+    public mutating func addRoundedRect(in rect: CGRect, cornerRadius: Double) {
+        let x = rect.origin.x
+        let y = rect.origin.y
+        let w = rect.size.width
+        let h = rect.size.height
+        let r = min(cornerRadius, min(w, h) / 2)
+
+        move(to: CGPoint(x: x + r, y: y))
+        addLine(to: CGPoint(x: x + w - r, y: y))
+        addArc(center: CGPoint(x: x + w - r, y: y + r), radius: r,
+               startAngle: -.pi / 2, endAngle: 0, clockwise: false)
+        addLine(to: CGPoint(x: x + w, y: y + h - r))
+        addArc(center: CGPoint(x: x + w - r, y: y + h - r), radius: r,
+               startAngle: 0, endAngle: .pi / 2, clockwise: false)
+        addLine(to: CGPoint(x: x + r, y: y + h))
+        addArc(center: CGPoint(x: x + r, y: y + h - r), radius: r,
+               startAngle: .pi / 2, endAngle: .pi, clockwise: false)
+        addLine(to: CGPoint(x: x, y: y + r))
+        addArc(center: CGPoint(x: x + r, y: y + r), radius: r,
+               startAngle: .pi, endAngle: -.pi / 2, clockwise: false)
+        closeSubpath()
+    }
+
     public mutating func addEllipse(in rect: CGRect) {
         let cx = rect.origin.x + rect.size.width / 2
         let cy = rect.origin.y + rect.size.height / 2
