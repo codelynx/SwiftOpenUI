@@ -594,13 +594,16 @@ extension ClippedView: WebRenderable {
 extension PositionView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
-        let wrapper = document.createElement("div")
-        wrapper.style = .string("position: relative;")
-        child.style.object?.position = .string("absolute")
-        child.style.object?.left = .string("\(x)px")
-        child.style.object?.top = .string("\(y)px")
-        _ = wrapper.appendChild(child)
-        return wrapper
+        // Use an inner absolute-positioned wrapper so we don't mutate
+        // the child's inline styles. Outer wrapper provides the
+        // positioning context and maintains layout space.
+        let inner = document.createElement("div")
+        inner.style = .string("position: absolute; left: \(x)px; top: \(y)px;")
+        _ = inner.appendChild(child)
+        let outer = document.createElement("div")
+        outer.style = .string("position: relative; display: inline-block;")
+        _ = outer.appendChild(inner)
+        return outer
     }
 }
 
