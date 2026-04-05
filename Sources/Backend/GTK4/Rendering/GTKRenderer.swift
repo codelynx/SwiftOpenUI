@@ -1209,7 +1209,7 @@ extension TagView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         setCurrentTagValue(tagValue)
         defer { clearCurrentTagValue() }
-        return widgetFromOpaque(gtkRenderView(content))
+        return gtkRenderView(content)
     }
 }
 
