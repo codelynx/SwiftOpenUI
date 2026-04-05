@@ -6625,14 +6625,17 @@ extension MultilineTextAlignmentView: WinRenderable {
 // MARK: - Text decoration Win32 extensions
 
 /// Apply an HFONT with the given weight/italic to all descendants.
-private func winApplyFontStyle(to hwnd: HWND, weight: Int32 = FW_REGULAR, italic: Bool = false, underline: Bool = false, strikeout: Bool = false, hInstance: HINSTANCE) {
-    // Get current font to preserve size
+/// Apply font style modifications to an HWND, preserving existing attributes.
+/// Pass nil for parameters that should keep their current value.
+private func winApplyFontStyle(to hwnd: HWND, weight: Int32? = nil, italic: Bool? = nil, underline: Bool? = nil, strikeout: Bool? = nil, hInstance: HINSTANCE) {
+    // Get current font to preserve all existing attributes
     let currentFont = HFONT(bitPattern: UInt(SendMessageW(hwnd, UINT(WM_GETFONT), 0, 0)))
     var lf = LOGFONTW()
     if let currentFont {
         GetObjectW(currentFont, Int32(MemoryLayout<LOGFONTW>.size), &lf)
     } else {
         lf.lfHeight = -16 // default ~12pt
+        lf.lfWeight = FW_REGULAR
         let name: [WCHAR] = Array("Segoe UI".utf16) + [0]
         withUnsafeMutablePointer(to: &lf.lfFaceName) { ptr in
             ptr.withMemoryRebound(to: WCHAR.self, capacity: 32) { dest in
@@ -6640,10 +6643,11 @@ private func winApplyFontStyle(to hwnd: HWND, weight: Int32 = FW_REGULAR, italic
             }
         }
     }
-    lf.lfWeight = weight
-    lf.lfItalic = italic ? 1 : 0
-    lf.lfUnderline = underline ? 1 : 0
-    lf.lfStrikeOut = strikeout ? 1 : 0
+    // Only override the attributes that were explicitly requested
+    if let weight { lf.lfWeight = weight }
+    if let italic { lf.lfItalic = italic ? 1 : 0 }
+    if let underline { lf.lfUnderline = underline ? 1 : 0 }
+    if let strikeout { lf.lfStrikeOut = strikeout ? 1 : 0 }
     let newFont = CreateFontIndirectW(&lf)
     if let newFont {
         SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: newFont)), 1)
