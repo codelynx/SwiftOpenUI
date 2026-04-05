@@ -33,6 +33,16 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
     /// Captured environment at initial render time, restored during rebuilds.
     private var capturedEnvironment: EnvironmentValues?
 
+    /// Animation captured at initial render time from a wrapping .animation()
+    /// modifier. Restored during every rebuild so D2D surfaces see the
+    /// animation context even though AnimatedView.winCreateWidget doesn't
+    /// re-run (it's outside the host).
+    private var capturedAnimation: Animation?
+
+    /// Animation captured at scheduleRebuild time from withAnimation().
+    /// Single-use: consumed during the next rebuild, then cleared.
+    private var pendingAnimation: Animation?
+
     private let lock = NSLock()
     private var scheduled = false
     private var isContainerAlive = true
@@ -100,6 +110,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
     /// Schedule a coalesced rebuild via PostMessage.
     public func scheduleRebuild() {
         lock.lock()
+        let currentAnim = getCurrentAnimation()
         guard isContainerAlive else {
             lock.unlock()
             return
@@ -108,6 +119,9 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
             rebuildDeferredDuringInteraction = true
             lock.unlock()
             return
+        }
+        if let currentAnim {
+            pendingAnimation = currentAnim
         }
         guard !scheduled else {
             lock.unlock()
@@ -201,6 +215,11 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
         capturedEnvironment = getCurrentEnvironment()
     }
 
+    /// Capture the current animation context (from a wrapping .animation()).
+    public func captureAnimation() {
+        capturedAnimation = getCurrentAnimation()
+    }
+
     /// Perform the rebuild.
     public func rebuild() {
         lock.lock()
@@ -231,6 +250,17 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
         if let captured = capturedEnvironment {
             setCurrentEnvironment(captured)
         }
+
+        // Restore animation context for this rebuild.
+        // Priority: withAnimation() pending token (one-shot from scheduleRebuild)
+        // then .animation() wrapper (persistent from initial render).
+        let previousAnim = getCurrentAnimation()
+        let rebuildAnim = pendingAnimation ?? capturedAnimation
+        pendingAnimation = nil
+        if let rebuildAnim {
+            setCurrentAnimation(rebuildAnim)
+        }
+        defer { setCurrentAnimation(previousAnim) }
 
         defer {
             restoreEditStates(inputState.editStates, in: container)

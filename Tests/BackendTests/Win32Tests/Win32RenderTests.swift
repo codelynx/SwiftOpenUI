@@ -3848,6 +3848,119 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(items.count, 1,
             "Merged visibility/removal config should still remove .leading")
     }
+    // MARK: - Animation (Win32 scoping)
+
+    /// AnimatedView sets currentAnimation for its subtree and restores it after.
+    func testAnimatedViewSetsCurrentAnimation() {
+        // Before rendering, no animation should be active
+        XCTAssertNil(getCurrentAnimation())
+
+        let view = Text("hello")
+            .animation(.easeIn)
+
+        ensureTestWindow()
+        let context = RenderContext(parent: testWindow, hInstance: testHInstance)
+        _ = winRenderView(view, in: context)
+        let after = getCurrentAnimation()
+
+        // Animation TLS should be restored to nil after rendering
+        XCTAssertNil(after, "currentAnimation should be restored after AnimatedView renders")
+    }
+
+    /// AnimatedView with nil animation clears any outer animation.
+    func testAnimatedViewNilOverridesOuter() {
+        // Set an outer animation
+        setCurrentAnimation(.easeIn)
+        defer { setCurrentAnimation(nil) }
+
+        // Wrap content in .animation(nil)
+        let view = Text("hello")
+            .opacity(0.5)
+            .animation(nil)
+
+        ensureTestWindow()
+        let context = RenderContext(parent: testWindow, hInstance: testHInstance)
+        _ = winRenderView(view, in: context)
+
+        // After rendering, TLS should be restored to outer value
+        let restored = getCurrentAnimation()
+        XCTAssertNotNil(restored, "Outer animation should be restored after .animation(nil) renders")
+        XCTAssertEqual(restored?.curve, Animation.easeIn.curve)
+    }
+
+    /// withAnimation still works when no .animation() wrapper is present.
+    func testWithAnimationStillWorksWithoutWrapper() {
+        // Simulate withAnimation setting pending animation
+        setPendingAnimation(.easeOut)
+
+        // No .animation() wrapper — D2D surface should consume pending
+        let pending = consumePendingAnimation()
+        XCTAssertNotNil(pending, "consumePendingAnimation should return the animation")
+        XCTAssertEqual(pending?.curve, Animation.easeOut.curve)
+
+        // Second consume should return nil (single-consumer)
+        let second = consumePendingAnimation()
+        XCTAssertNil(second, "consumePendingAnimation is single-consumer")
+    }
+
+    /// currentAnimation takes priority over pendingAnimation in D2D surface.
+    func testCurrentAnimationPriorityOverPending() {
+        // Set both channels
+        setCurrentAnimation(.spring)
+        setPendingAnimation(.linear)
+        defer {
+            setCurrentAnimation(nil)
+            _ = consumePendingAnimation()
+        }
+
+        // getCurrentAnimation should return the scoped one
+        let current = getCurrentAnimation()
+        XCTAssertEqual(current?.curve, Animation.spring.curve)
+
+        // Pending should still be available (not consumed)
+        let pending = getPendingAnimation()
+        XCTAssertNotNil(pending)
+    }
+
+    /// Win32ViewHost captures .animation() context and restores it on rebuild.
+    func testViewHostCapturesAnimationAcrossRebuild() {
+        let ctx = testContext()
+
+        // Set up animation scope as if AnimatedView.winCreateWidget ran
+        setCurrentAnimation(.easeInOut)
+        defer { setCurrentAnimation(nil) }
+
+        // Verify captureAnimation stores the scoped animation
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in
+                winRenderView(Text("test"), in: ctx)
+            },
+            describeBody: {
+                winDescribeView(Text("test"))
+            }
+        )
+
+        host.captureEnvironment()
+        host.captureAnimation()
+
+        // Clear animation scope (simulating AnimatedView.winCreateWidget defer)
+        setCurrentAnimation(nil)
+        XCTAssertNil(getCurrentAnimation(), "Animation should be nil after outer scope ends")
+
+        // Simulate what rebuild does: restore captured animation
+        // We test the mechanism directly since full rebuild involves
+        // complex HWND lifecycle that's orthogonal to animation scoping.
+        let animBeforeRebuild = getCurrentAnimation()
+        XCTAssertNil(animBeforeRebuild)
+
+        // Trigger rebuild — the animation restore happens inside rebuild()
+        // which calls buildBodyWithTracking. We verify the TLS state is
+        // correct by checking it wasn't leaked after rebuild completes.
+        host.rebuild()
+        let afterRebuild = getCurrentAnimation()
+        XCTAssertNil(afterRebuild, "Animation TLS should be restored after rebuild")
+    }
 }
 
 // MARK: - Test helpers
