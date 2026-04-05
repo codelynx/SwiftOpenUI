@@ -59,6 +59,11 @@ Last updated: 2026-03-25
 | Menu | Y | Y | Y | Y | Y | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu; Web: dropdown div |
 | ConfirmationDialog | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | Canvas | Y | Y | Y | ~ | Y | - | GTK: Cairo; Win32: D2D subset; Web: Canvas 2D API |
+| Circle | Y | Y | Y | Y | Y | - | Shape protocol + path(in:); GTK: Cairo; Win32: D2D; Web: SVG |
+| Rectangle | Y | Y | Y | Y | Y | - | |
+| RoundedRectangle | Y | Y | Y | Y | Y | - | cornerRadius + RoundedCornerStyle |
+| Capsule | Y | Y | Y | Y | Y | - | |
+| Ellipse | Y | Y | Y | Y | Y | - | |
 | Map | Y | - | - | - | - | - | No core type defined; needs external map library |
 
 ## Modifiers

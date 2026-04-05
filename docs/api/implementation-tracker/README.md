@@ -26,7 +26,7 @@ Regenerate with:
 
 ## Coverage
 
-- Views: 119 total, 46 implemented, 0 partial, 73 missing.
+- Views: 119 total, 51 implemented, 0 partial, 68 missing.
 - Modifiers: 444 total, 42 implemented, 6 partial, 396 missing.
 - Adjacent APIs: 10 total, 3 implemented, 1 partial, 6 missing.
 

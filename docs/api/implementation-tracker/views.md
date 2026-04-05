@@ -1,6 +1,6 @@
 # Views
 
-Summary: 89 total, 45 implemented, 0 partial, 44 missing.
+Summary: 89 total, 50 implemented, 0 partial, 39 missing.
 
 ## Text Views
 
@@ -136,16 +136,16 @@ Summary: 89 total, 45 implemented, 0 partial, 44 missing.
 
 ## Shapes
 
-6 total, 0 implemented, 0 partial, 6 missing.
+6 total, 5 implemented, 0 partial, 1 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
-| `Capsule` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Missing | `-` | - |
-| `Circle` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Missing | `-` | - |
-| `Ellipse` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Missing | `-` | - |
-| `Rectangle` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Missing | `-` | - |
-| `RoundedRectangle` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Missing | `-` | - |
-| `UnevenRoundedRectangle` | Curated only | iOS, macOS 14, watchOS 10, tvOS 17, visionOS 1 | Current | Missing | `-` | - |
+| `Capsule` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Shapes.swift` | GTK4: Cairo; Win32: D2D; Web: SVG |
+| `Circle` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Shapes.swift` | GTK4: Cairo; Win32: D2D; Web: SVG |
+| `Ellipse` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Shapes.swift` | GTK4: Cairo; Win32: D2D; Web: SVG |
+| `Rectangle` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Shapes.swift` | GTK4: Cairo; Win32: D2D; Web: SVG |
+| `RoundedRectangle` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Shapes.swift` | GTK4: Cairo; Win32: D2D; Web: SVG |
+| `UnevenRoundedRectangle` | Curated only | iOS, macOS 14, watchOS 10, tvOS 17, visionOS 1 | Current | Missing | `-` | iOS 17+ |
 
 ## Structural / Utility Views
 
