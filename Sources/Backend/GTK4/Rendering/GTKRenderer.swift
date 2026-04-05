@@ -1122,20 +1122,25 @@ extension ScrollViewReader: GTKRenderable {
         var proxy = ScrollViewProxy()
         proxy.scrollToAction = { anyID, anchor in
             guard let widget = lookupViewID(anyID) as? UnsafeMutablePointer<GtkWidget> else { return }
-            // Find the enclosing GtkScrolledWindow and scroll to the widget
+            // Verify the widget is still alive before operating on it
+            guard gtk_swift_is_widget(widget) != 0 else { return }
+            // Find the enclosing GtkScrolledWindow and scroll to the widget.
             var parent = gtk_widget_get_parent(widget)
             while let p = parent {
                 let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(p)))
                 if typeName == "GtkScrolledWindow" {
-                    // Scroll the widget into view using grab_focus as a proxy
-                    // for scroll-to — GTK4 auto-scrolls to focused widgets
+                    // Temporarily make the widget focusable so grab_focus
+                    // triggers GTK4 auto-scroll. Restore after.
+                    let wasFocusable = gtk_widget_get_focusable(widget)
+                    gtk_widget_set_focusable(widget, 1)
                     gtk_widget_grab_focus(widget)
+                    gtk_widget_set_focusable(widget, wasFocusable)
                     break
                 }
                 parent = gtk_widget_get_parent(p)
             }
         }
-        return widgetFromOpaque(gtkRenderView(content(proxy)))
+        return gtkRenderView(content(proxy))
     }
 }
 
