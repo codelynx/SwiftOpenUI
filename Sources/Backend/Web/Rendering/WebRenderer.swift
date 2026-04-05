@@ -589,6 +589,30 @@ extension ClippedView: WebRenderable {
     }
 }
 
+// MARK: - ScrollViewReader + ID Web extensions
+
+extension IdView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let element = webRenderView(content)
+        registerViewID(id, element: element)
+        return element
+    }
+}
+
+extension ScrollViewReader: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        var proxy = ScrollViewProxy()
+        proxy.scrollToAction = { anyID, anchor in
+            guard let element = lookupViewID(anyID) as? JSValue else { return }
+            // scrollIntoView is the simplest and most reliable Web API
+            if element.scrollIntoView.function != nil {
+                _ = element.scrollIntoView()
+            }
+        }
+        return webRenderView(content(proxy))
+    }
+}
+
 // MARK: - Popover Web extension
 
 extension PopoverView: WebRenderable {

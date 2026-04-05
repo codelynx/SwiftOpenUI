@@ -62,7 +62,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 ```bash
 # macOS (uses real SwiftUI for examples)
 swift build
-swift test                   # 547 tests
+swift test                   # 558 tests
 
 # WebAssembly (requires open-source Swift toolchain, not Xcode's)
 source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
@@ -115,7 +115,7 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 ## Current Views & Modifiers
 
 ### Views (Sources/SwiftOpenUI/Views/)
-Text, Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper, Picker, DatePicker, ProgressView, Label, Link, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView, TabView, Grid, GridRow, Form, Section, DisclosureGroup, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Menu, Canvas, GeometryReader, ViewThatFits, NavigationSplitView, ConfirmationDialog, Path (with StrokeStyle, Shading), Circle, Rectangle, RoundedRectangle, Capsule, Ellipse (Shape protocol with .fill()/.stroke())
+Text, Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper, Picker, DatePicker, ProgressView, Label, Link, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView, TabView, Grid, GridRow, Form, Section, DisclosureGroup, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Menu, Canvas, GeometryReader, ViewThatFits, NavigationSplitView, ConfirmationDialog, Path (with StrokeStyle, Shading), Circle, Rectangle, RoundedRectangle, Capsule, Ellipse (Shape protocol with .fill()/.stroke()), ScrollViewReader
 
 ### Navigation (Sources/SwiftOpenUI/Navigation/)
 NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigationTitle(), .navigationDestination(for:), NavigateAction (environment)

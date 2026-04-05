@@ -1107,6 +1107,38 @@ extension MultilineTextAlignmentView: GTKRenderable {
     }
 }
 
+// MARK: - ScrollViewReader + ID GTK extensions
+
+extension IdView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        registerViewID(id, element: widget)
+        return opaqueFromWidget(widget)
+    }
+}
+
+extension ScrollViewReader: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        var proxy = ScrollViewProxy()
+        proxy.scrollToAction = { anyID, anchor in
+            guard let widget = lookupViewID(anyID) as? UnsafeMutablePointer<GtkWidget> else { return }
+            // Find the enclosing GtkScrolledWindow and scroll to the widget
+            var parent = gtk_widget_get_parent(widget)
+            while let p = parent {
+                let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(p)))
+                if typeName == "GtkScrolledWindow" {
+                    // Scroll the widget into view using grab_focus as a proxy
+                    // for scroll-to — GTK4 auto-scrolls to focused widgets
+                    gtk_widget_grab_focus(widget)
+                    break
+                }
+                parent = gtk_widget_get_parent(p)
+            }
+        }
+        return widgetFromOpaque(gtkRenderView(content(proxy)))
+    }
+}
+
 // MARK: - Popover GTK extension
 
 extension PopoverView: GTKRenderable {

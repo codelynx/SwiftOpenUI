@@ -6622,6 +6622,50 @@ extension MultilineTextAlignmentView: WinRenderable {
     }
 }
 
+// MARK: - ScrollViewReader + ID Win32 extensions
+
+extension IdView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        guard let hwnd = winRenderView(content, in: context) else { return nil }
+        registerViewID(id, element: hwnd)
+        return hwnd
+    }
+}
+
+extension ScrollViewReader: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        var proxy = ScrollViewProxy()
+        proxy.scrollToAction = { anyID, anchor in
+            guard let target = lookupViewID(anyID) as? HWND else { return }
+            // Find the enclosing scroll container and scroll to make target visible
+            var targetRect = RECT()
+            GetWindowRect(target, &targetRect)
+
+            var parent = GetParent(target)
+            while let p = parent {
+                var cls: [WCHAR] = Array(repeating: 0, count: 64)
+                GetClassNameW(p, &cls, 64)
+                let name = String(decodingCString: cls, as: UTF16.self)
+                if name == "SwiftUIScrollView" {
+                    // Convert target position to scroll container client coords
+                    var pt = POINT(x: targetRect.top, y: targetRect.top)
+                    ScreenToClient(p, &pt)
+                    // Scroll to the target's Y position
+                    var si = SCROLLINFO()
+                    si.cbSize = UINT(MemoryLayout<SCROLLINFO>.size)
+                    si.fMask = UINT(SIF_POS)
+                    si.nPos = pt.y
+                    SetScrollInfo(p, INT(SB_VERT), &si, true)
+                    InvalidateRect(p, nil, true)
+                    break
+                }
+                parent = GetParent(p)
+            }
+        }
+        return winRenderView(content(proxy), in: context)
+    }
+}
+
 // MARK: - Popover Win32 extension
 
 private let popoverSubclassID: UINT_PTR = 71
