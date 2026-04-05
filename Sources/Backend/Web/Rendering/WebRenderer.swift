@@ -620,9 +620,13 @@ private func webUnitPointToDeg(start: UnitPoint, end: UnitPoint) -> String {
 extension LinearGradient: WebRenderable {
     public func webCreateElement() -> JSValue {
         let div = document.createElement("div")
-        let angle = webUnitPointToDeg(start: startPoint, end: endPoint)
         let stops = webGradientStopsCSS(gradient.stops)
-        div.style = .string("width: 100%; height: 100%; min-height: 20px; background: linear-gradient(\(angle), \(stops));")
+        if stops.isEmpty {
+            div.style = .string("width: 100%; height: 100%; min-height: 20px;")
+        } else {
+            let angle = webUnitPointToDeg(start: startPoint, end: endPoint)
+            div.style = .string("width: 100%; height: 100%; min-height: 20px; background: linear-gradient(\(angle), \(stops));")
+        }
         return div
     }
 }
@@ -630,10 +634,14 @@ extension LinearGradient: WebRenderable {
 extension RadialGradient: WebRenderable {
     public func webCreateElement() -> JSValue {
         let div = document.createElement("div")
-        let cx = Int(center.x * 100)
-        let cy = Int(center.y * 100)
         let stops = webGradientStopsCSS(gradient.stops)
-        div.style = .string("width: 100%; height: 100%; min-height: 20px; background: radial-gradient(circle at \(cx)% \(cy)%, \(stops));")
+        if stops.isEmpty {
+            div.style = .string("width: 100%; height: 100%; min-height: 20px;")
+        } else {
+            let cx = Int(center.x * 100)
+            let cy = Int(center.y * 100)
+            div.style = .string("width: 100%; height: 100%; min-height: 20px; background: radial-gradient(circle at \(cx)% \(cy)%, \(stops));")
+        }
         return div
     }
 }
