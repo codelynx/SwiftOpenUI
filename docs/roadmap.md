@@ -36,9 +36,13 @@
 - ~~.position(), .layoutPriority(), .fixedSize()~~ — done (layoutPriority API only, engine deferred)
 - ~~ScrollViewReader, .id(), ScrollViewProxy~~ — done
 
+- ~~.fullScreenCover()~~ — done (GTK: fullscreen modal; Win32: WS_POPUP + WS_EX_TOPMOST; Web: fixed overlay)
+- ~~.bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase()~~ — done
+- ~~LinearGradient, RadialGradient~~ — done (Win32: solid first-stop approximation)
+- ~~.aspectRatio(), .scaledToFit(), .scaledToFill()~~ — done
+
 ### Views & Modifiers — Remaining
 - .task() — needs Swift async runtime integration
-- .fullScreenCover() — deferred (extends sheet infrastructure)
 - Canvas: stroke styles (line caps, joins, dash), bezier/quadratic curves, rotate/translate transforms
 
 ### State & Data

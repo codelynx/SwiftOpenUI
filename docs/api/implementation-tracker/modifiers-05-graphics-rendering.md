@@ -1,6 +1,6 @@
 # Graphics and Rendering Modifiers
 
-Summary: 38 total, 7 implemented, 0 partial, 31 missing.
+Summary: 38 total, 10 implemented, 0 partial, 28 missing.
 
 ## Graphics and Rendering Modifiers (~53)
 
@@ -8,7 +8,7 @@ Summary: 38 total, 7 implemented, 0 partial, 31 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
-| `aspectRatio` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `aspectRatio` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AspectRatioModifier.swift` | GTK4/Web: CSS aspect-ratio + object-fit; Win32: SetWindowPos resize |
 | `blendMode` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `blur` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AppearanceModifiers.swift` | GTK/Web: CSS filter blur; Win32: pass-through (known limitation) |
 | `brightness` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
@@ -37,8 +37,8 @@ Summary: 38 total, 7 implemented, 0 partial, 31 missing.
 | `rotation3DEffect` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `rotationEffect` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/RotationModifier.swift` | GTK/Web: CSS transform; Win32: D2D SetTransform |
 | `saturation` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `scaledToFill` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `scaledToFit` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `scaledToFill` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AspectRatioModifier.swift` | Convenience for .aspectRatio(nil, contentMode: .fill) |
+| `scaledToFit` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AspectRatioModifier.swift` | Convenience for .aspectRatio(nil, contentMode: .fit) |
 | `scaleEffect` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AnimationModifier.swift` | Win32: D2D surface only |
 | `shadow` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ShadowModifier.swift` | GTK/Web: CSS; Win32: layered shadow with alpha |
 | `transaction` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |

@@ -1,6 +1,6 @@
 # Presentation Modifiers
 
-Summary: 23 total, 4 implemented, 0 partial, 19 missing.
+Summary: 23 total, 5 implemented, 0 partial, 18 missing.
 
 ## Presentation Modifiers (~97)
 
@@ -17,7 +17,7 @@ Summary: 23 total, 4 implemented, 0 partial, 19 missing.
 | `fileExporter` | Both | iOS 14 / macOS 11 / visionOS 1 | Current | Missing | `-` | Multiple overloads |
 | `fileImporter` | Both | iOS 14 / macOS 11 / visionOS 1 | Current | Missing | `-` | - |
 | `fileMover` | Both | iOS 14 / macOS 11 / visionOS 1 | Current | Missing | `-` | - |
-| `fullScreenCover` | Both | iOS, watchOS 7, tvOS 14, visionOS 1 | Current | Missing | `-` | - |
+| `fullScreenCover` | Both | iOS, watchOS 7, tvOS 14, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/FullScreenCoverModifier.swift` | GTK4: fullscreen modal window; Win32: WS_POPUP + WS_EX_TOPMOST + Escape hook; Web: fixed overlay |
 | `inspector` | Both | iOS, macOS 14, visionOS 1 | Current | Missing | `-` | - |
 | `inspectorColumnWidth` | Both | iOS 17 / macOS 14 / visionOS 1 | Current | Missing | `-` | - |
 | `interactiveDismissDisabled` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |
