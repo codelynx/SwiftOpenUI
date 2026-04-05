@@ -43,6 +43,17 @@ gtk_swift_label_set_text(GtkWidget *label, const char *text) {
     gtk_label_set_text(GTK_LABEL(label), text);
 }
 
+/// Set label text preserving use-markup and use-underline state.
+static inline void
+gtk_swift_label_set_label(GtkWidget *label, const char *text) {
+    gtk_label_set_label(GTK_LABEL(label), text);
+}
+
+static inline gboolean
+gtk_swift_label_get_use_markup(GtkWidget *label) {
+    return gtk_label_get_use_markup(GTK_LABEL(label));
+}
+
 // --- Widget type shims ---
 
 static inline gboolean
@@ -682,3 +693,23 @@ gtk_swift_popover_popdown(GtkWidget *popover) {
     gtk_popover_popdown(GTK_POPOVER(popover));
 }
 
+// --- Pango attribute shims for GtkLabel ---
+
+static inline void
+gtk_swift_label_set_underline(GtkWidget *label, gboolean underline) {
+    PangoAttrList *attrs = gtk_label_get_attributes(GTK_LABEL(label));
+    PangoAttrList *newAttrs = attrs ? pango_attr_list_copy(attrs) : pango_attr_list_new();
+    pango_attr_list_change(newAttrs,
+        pango_attr_underline_new(underline ? PANGO_UNDERLINE_SINGLE : PANGO_UNDERLINE_NONE));
+    gtk_label_set_attributes(GTK_LABEL(label), newAttrs);
+    pango_attr_list_unref(newAttrs);
+}
+
+static inline void
+gtk_swift_label_set_strikethrough(GtkWidget *label, gboolean strikethrough) {
+    PangoAttrList *attrs = gtk_label_get_attributes(GTK_LABEL(label));
+    PangoAttrList *newAttrs = attrs ? pango_attr_list_copy(attrs) : pango_attr_list_new();
+    pango_attr_list_change(newAttrs, pango_attr_strikethrough_new(strikethrough));
+    gtk_label_set_attributes(GTK_LABEL(label), newAttrs);
+    pango_attr_list_unref(newAttrs);
+}

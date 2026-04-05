@@ -1109,6 +1109,29 @@ extension MultilineTextAlignmentView: GTKRenderable {
 
 // MARK: - Text decoration GTK extensions
 
+private let gtkSwiftOriginalLabelTextKey = "gtk-swift-original-label-text"
+
+private final class WidgetStringBox {
+    let value: String
+    init(_ value: String) { self.value = value }
+}
+
+private func storeOriginalLabelTextIfNeeded(_ label: UnsafeMutablePointer<GtkWidget>) {
+    let gobject = UnsafeMutableRawPointer(label).assumingMemoryBound(to: GObject.self)
+    guard g_object_get_data(gobject, gtkSwiftOriginalLabelTextKey) == nil else { return }
+    let current = String(cString: gtk_label_get_text(OpaquePointer(label)))
+    let retained = Unmanaged.passRetained(WidgetStringBox(current)).toOpaque()
+    g_object_set_data_full(gobject, gtkSwiftOriginalLabelTextKey, retained) { userData in
+        Unmanaged<WidgetStringBox>.fromOpaque(userData!).release()
+    }
+}
+
+private func originalLabelText(_ label: UnsafeMutablePointer<GtkWidget>) -> String? {
+    let gobject = UnsafeMutableRawPointer(label).assumingMemoryBound(to: GObject.self)
+    guard let raw = g_object_get_data(gobject, gtkSwiftOriginalLabelTextKey) else { return nil }
+    return Unmanaged<WidgetStringBox>.fromOpaque(raw).takeUnretainedValue().value
+}
+
 extension BoldView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
@@ -1148,8 +1171,9 @@ extension FontWeightView: GTKRenderable {
 extension UnderlineView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
-        if isActive {
-            applyCSSToWidget(widget, properties: "text-decoration: underline;")
+        // GTK4 CSS does not support text-decoration. Use Pango attributes.
+        for label in findAllGtkLabels(in: widget) {
+            gtk_swift_label_set_underline(label, isActive ? 1 : 0)
         }
         return opaqueFromWidget(widget)
     }
@@ -1158,8 +1182,9 @@ extension UnderlineView: GTKRenderable {
 extension StrikethroughView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
-        if isActive {
-            applyCSSToWidget(widget, properties: "text-decoration: line-through;")
+        // GTK4 CSS does not support text-decoration. Use Pango attributes.
+        for label in findAllGtkLabels(in: widget) {
+            gtk_swift_label_set_strikethrough(label, isActive ? 1 : 0)
         }
         return opaqueFromWidget(widget)
     }
@@ -1168,10 +1193,21 @@ extension StrikethroughView: GTKRenderable {
 extension TextCaseView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
-        if let textCase {
+        // GTK4 CSS does not support text-transform. Transform label text directly.
+        // Skip markup labels — transforming markup source would break entities
+        // like &amp; → &AMP; and potentially corrupt tag syntax.
+        for label in findAllGtkLabels(in: widget) {
+            guard gtk_swift_label_get_use_markup(label) == 0 else { continue }
+            storeOriginalLabelTextIfNeeded(label)
+            let base = originalLabelText(label)
+                ?? String(cString: gtk_label_get_text(OpaquePointer(label)))
             switch textCase {
-            case .uppercase: applyCSSToWidget(widget, properties: "text-transform: uppercase;")
-            case .lowercase: applyCSSToWidget(widget, properties: "text-transform: lowercase;")
+            case .uppercase?:
+                gtk_swift_label_set_text(label, base.uppercased())
+            case .lowercase?:
+                gtk_swift_label_set_text(label, base.lowercased())
+            case nil:
+                gtk_swift_label_set_text(label, base)
             }
         }
         return opaqueFromWidget(widget)
