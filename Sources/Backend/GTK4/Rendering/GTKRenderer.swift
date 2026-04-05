@@ -1112,45 +1112,64 @@ extension MultilineTextAlignmentView: GTKRenderable {
 extension PopoverView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let anchor = widgetFromOpaque(gtkRenderView(content))
+        let gobject = UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GObject.self)
 
         if isPresented.wrappedValue {
-            let gobject = gpointer(anchor)
             // Prevent duplicate popover
-            guard g_object_get_data(gobject, "swift-popover-active") == nil else {
+            guard g_object_get_data(gobject, "swift-popover-widget") == nil else {
                 return opaqueFromWidget(anchor)
             }
 
             let popover = gtk_popover_new()!
             let popChild = widgetFromOpaque(gtkRenderView(popoverContent))
-            gtk_popover_set_child(OpaquePointer(popover), popChild)
+            gtk_swift_popover_set_child(popover, popChild)
             gtk_widget_set_parent(popover, anchor)
 
-            // Inject dismiss action into popover content environment
-            let binding = isPresented
-            g_object_set_data(gobject, "swift-popover-active",
-                              gpointer(bitPattern: 1))
+            // Store the popover widget on the anchor so a rebuild with
+            // isPresented=false can find and dismiss it programmatically.
+            g_object_set_data(gobject, "swift-popover-widget",
+                              UnsafeMutableRawPointer(popover))
 
-            // Dismiss on close
+            let binding = isPresented
+            // Ref the anchor so the closed callback can safely write back
+            // even if the anchor widget is destroyed before the popover closes.
+            g_object_ref(gpointer(anchor))
+            let anchorWidget = anchor
+            // Dismiss on close — update binding and clear stored popover
             let dismissBox = Unmanaged.passRetained(ClosureBox {
                 binding.wrappedValue = false
-                g_object_set_data(gobject, "swift-popover-active", nil)
+                // Check liveness before writing GObject data — the anchor
+                // may have been finalized if this fires during teardown.
+                if gtk_swift_is_widget(anchorWidget) != 0 {
+                    let obj = UnsafeMutableRawPointer(anchorWidget).assumingMemoryBound(to: GObject.self)
+                    g_object_set_data(obj, "swift-popover-widget", nil)
+                }
+                g_object_unref(gpointer(anchorWidget))
             }).toOpaque()
             g_signal_connect_data(
                 gpointer(popover), "closed",
-                unsafeBitCast({ (_: OpaquePointer, ud: gpointer?) in
+                unsafeBitCast({ (_: gpointer?, ud: gpointer?) in
                     guard let ud = ud else { return }
-                    Unmanaged<ClosureBox>.fromOpaque(ud).takeUnretainedValue().action()
-                } as @convention(c) (OpaquePointer, gpointer?) -> Void,
+                    Unmanaged<ClosureBox>.fromOpaque(ud).takeUnretainedValue().closure()
+                } as @convention(c) (gpointer?, gpointer?) -> Void,
                 to: GCallback.self),
                 dismissBox,
-                { (data: gpointer?, _: OpaquePointer?) in
+                { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
                     guard let data = data else { return }
                     Unmanaged<ClosureBox>.fromOpaque(data).release()
                 },
                 GConnectFlags(rawValue: 0)
             )
 
-            gtk_swift_popover_popup(OpaquePointer(popover))
+            gtk_swift_popover_popup(popover)
+        } else {
+            // Programmatic dismissal: if a popover was previously shown,
+            // close it when the binding becomes false.
+            if let raw = g_object_get_data(gobject, "swift-popover-widget") {
+                let popover = raw.assumingMemoryBound(to: GtkWidget.self)
+                gtk_swift_popover_popdown(popover)
+                g_object_set_data(gobject, "swift-popover-widget", nil)
+            }
         }
 
         return opaqueFromWidget(anchor)
