@@ -1,14 +1,14 @@
 # Style Modifiers
 
-Summary: 20 total, 1 implemented, 0 partial, 19 missing.
+Summary: 20 total, 4 implemented, 0 partial, 16 missing.
 
 ## Style Modifiers (~21)
 
-20 total, 1 implemented, 0 partial, 19 missing.
+20 total, 4 implemented, 0 partial, 16 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
-| `buttonStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `buttonStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ControlStyleModifiers.swift` | Environment-based enum: automatic, plain, bordered, borderedProminent |
 | `controlGroupStyle` | Both | iOS 15 / macOS 12 / tvOS 17 / visionOS 1 | Current | Missing | `-` | - |
 | `datePickerStyle` | Both | iOS 13 / macOS 10.15 / watchOS 10 / visionOS 1 | Current | Missing | `-` | - |
 | `disclosureGroupStyle` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
@@ -26,5 +26,5 @@ Summary: 20 total, 1 implemented, 0 partial, 19 missing.
 | `tableStyle` | Both | iOS 16 / macOS 12 / visionOS 1 | Current | Missing | `-` | - |
 | `tabViewStyle` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Missing | `-` | - |
 | `textEditorStyle` | Both | iOS 17 / macOS 14 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
-| `textFieldStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `toggleStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `textFieldStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ControlStyleModifiers.swift` | Environment-based enum: automatic, plain, roundedBorder |
+| `toggleStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ControlStyleModifiers.swift` | Environment-based enum: automatic, checkbox, switch. GTK: GtkSwitch for .switch |

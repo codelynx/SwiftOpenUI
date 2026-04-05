@@ -188,7 +188,17 @@ extension SwiftOpenUI.TextField: WebRenderable {
         input.value = .string(text.wrappedValue)
         input.placeholder = .string(title)
         let disabled = webIsDisabled()
-        input.style = .string("padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box; opacity: \(disabled ? 0.4 : 1.0);")
+        let env = getCurrentEnvironment()
+        let fieldCSS: String
+        switch env.textFieldStyle {
+        case .plain:
+            fieldCSS = "padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box; border: none; outline: none; opacity: \(disabled ? 0.4 : 1.0);"
+        case .roundedBorder:
+            fieldCSS = "padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; opacity: \(disabled ? 0.4 : 1.0);"
+        case .automatic:
+            fieldCSS = "padding: 6px 8px; font-size: 16px; width: 100%; box-sizing: border-box; opacity: \(disabled ? 0.4 : 1.0);"
+        }
+        input.style = .string(fieldCSS)
         if disabled { input.disabled = .boolean(true) }
 
         // Wire text changes back through Binding<String>
@@ -604,6 +614,41 @@ extension BlurView: WebRenderable {
             return wrapper
         }
         return child
+    }
+}
+
+// MARK: - Style modifier Web extensions
+
+extension ButtonStyleModifier: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        var env = getCurrentEnvironment()
+        env.buttonStyle = style
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return webRenderView(content)
+    }
+}
+
+extension ToggleStyleModifier: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        var env = getCurrentEnvironment()
+        env.toggleStyle = style
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return webRenderView(content)
+    }
+}
+
+extension TextFieldStyleModifier: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        var env = getCurrentEnvironment()
+        env.textFieldStyle = style
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return webRenderView(content)
     }
 }
 
@@ -1046,7 +1091,19 @@ extension SwiftOpenUI.Button: WebRenderable {
         let button = document.createElement("button")
         let disabled = webIsDisabled()
         let cursorStyle = disabled ? "default" : "pointer"
-        button.style = .string("padding: 6px 12px; cursor: \(cursorStyle); border: none; background: none; color: inherit; font: inherit; display: flex; align-items: center; justify-content: center; opacity: \(disabled ? 0.4 : 1.0);")
+        let env = getCurrentEnvironment()
+        let styleCSS: String
+        switch env.buttonStyle {
+        case .plain:
+            styleCSS = "padding: 0; cursor: \(cursorStyle); border: none; background: none; color: inherit; font: inherit; display: flex; align-items: center; justify-content: center; opacity: \(disabled ? 0.4 : 1.0);"
+        case .bordered:
+            styleCSS = "padding: 6px 12px; cursor: \(cursorStyle); border: 1px solid currentColor; background: none; color: inherit; font: inherit; border-radius: 4px; display: flex; align-items: center; justify-content: center; opacity: \(disabled ? 0.4 : 1.0);"
+        case .borderedProminent:
+            styleCSS = "padding: 8px 16px; cursor: \(cursorStyle); border: none; background: #007AFF; color: white; font: inherit; border-radius: 6px; display: flex; align-items: center; justify-content: center; opacity: \(disabled ? 0.4 : 1.0);"
+        case .automatic:
+            styleCSS = "padding: 6px 12px; cursor: \(cursorStyle); border: none; background: none; color: inherit; font: inherit; display: flex; align-items: center; justify-content: center; opacity: \(disabled ? 0.4 : 1.0);"
+        }
+        button.style = .string(styleCSS)
         if disabled { button.disabled = .boolean(true) }
 
         // Render label content
@@ -1594,11 +1651,17 @@ extension EnvironmentModifierView: WebRenderable {
 extension Toggle: WebRenderable {
     public func webCreateElement() -> JSValue {
         let disabled = webIsDisabled()
+        let env = getCurrentEnvironment()
         let container = document.createElement("label")
         container.style = .string("display: flex; align-items: center; gap: 8px; cursor: \(disabled ? "default" : "pointer"); opacity: \(disabled ? 0.4 : 1.0);")
 
         let input = document.createElement("input")
         input.type = "checkbox"
+        // Apply switch style via CSS appearance
+        if env.toggleStyle == .switch {
+            input.style = .string("appearance: none; -webkit-appearance: none; width: 40px; height: 22px; background: #ccc; border-radius: 11px; position: relative; cursor: pointer; transition: background 0.2s;")
+            // TODO: add ::before pseudo-element for the knob via CSS class
+        }
         input.checked = .boolean(isOn.wrappedValue)
         if disabled { input.disabled = .boolean(true) }
 
