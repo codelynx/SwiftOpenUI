@@ -6628,15 +6628,31 @@ private let popoverSubclassID: UINT_PTR = 71
 
 private class PopoverState {
     let binding: Binding<Bool>
+    let anchor: HWND?
     var popoverWindow: HWND?
-    init(_ binding: Binding<Bool>) { self.binding = binding }
+    init(_ binding: Binding<Bool>, anchor: HWND? = nil) {
+        self.binding = binding
+        self.anchor = anchor
+    }
 }
+
+private let popoverPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIPopover".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
 
 extension PopoverView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let anchor = winRenderView(content, in: context) else { return nil }
 
         if isPresented.wrappedValue {
+            // Guard against duplicate popups on rebuild
+            if GetPropW(anchor, popoverPropName) != nil { return anchor }
+
             // Position popover below the anchor
             var anchorRect = RECT()
             GetWindowRect(anchor, &anchorRect)
@@ -6649,7 +6665,7 @@ extension PopoverView: WinRenderable {
             let popup = CreateWindowExW(
                 DWORD(WS_EX_TOOLWINDOW),
                 stackContainerClassName, nil,
-                DWORD(WS_POPUP | WS_VISIBLE | WS_BORDER),
+                DWORD(WS_POPUP) | DWORD(WS_VISIBLE) | DWORD(WS_BORDER),
                 popupX, popupY, popupW, popupH,
                 findRootWindow(from: anchor), nil, context.hInstance, nil
             )
@@ -6662,12 +6678,23 @@ extension PopoverView: WinRenderable {
                                  UINT(SWP_NOZORDER))
                 }
 
+                // Store popup HWND on anchor for programmatic dismiss
+                SetPropW(anchor, popoverPropName, popup)
+
                 // Close popover on deactivation
-                let state = PopoverState(isPresented)
+                let state = PopoverState(isPresented, anchor: anchor)
                 state.popoverWindow = popup
                 let statePtr = Unmanaged.passRetained(state).toOpaque()
                 SetWindowSubclass(popup, popoverDismissProc, popoverSubclassID,
                                   DWORD_PTR(UInt(bitPattern: statePtr)))
+            }
+        } else {
+            // Programmatic dismiss: isPresented became false.
+            // Destroy the popup if one exists on this anchor.
+            if let existingPopup = GetPropW(anchor, popoverPropName) {
+                let popupHwnd = unsafeBitCast(existingPopup, to: HWND.self)
+                RemovePropW(anchor, popoverPropName)
+                DestroyWindow(popupHwnd)
             }
         }
 
@@ -6678,11 +6705,15 @@ extension PopoverView: WinRenderable {
 private let popoverDismissProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
     switch uMsg {
     case UINT(WM_ACTIVATE):
-        let activateState = Int32(LOWORD(wParam))
+        let activateState = Int32(win32_LOWORD(DWORD_PTR(wParam)))
         if activateState == WA_INACTIVE {
             // Dismiss on deactivation (click outside)
             let statePtr = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
             let state = Unmanaged<PopoverState>.fromOpaque(statePtr).takeUnretainedValue()
+            // Clear duplicate guard on anchor
+            if let anchor = state.anchor {
+                RemovePropW(anchor, popoverPropName)
+            }
             state.binding.wrappedValue = false
             DestroyWindow(hwnd)
             return 0
