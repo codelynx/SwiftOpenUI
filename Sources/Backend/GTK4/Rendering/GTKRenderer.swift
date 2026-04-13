@@ -828,6 +828,30 @@ extension FrameView: GTKRenderable, GTKDescribable {
 
     public func gtkCreateWidget() -> OpaquePointer {
         let child = widgetFromOpaque(gtkRenderView(content))
+        let childExpH = gtk_widget_get_hexpand(child) != 0
+        let childExpV = gtk_widget_get_vexpand(child) != 0
+
+        // Detect when the frame constrains one axis but the child wants to
+        // expand on the unconstrained axis.  GtkFixed positions children at
+        // fixed coordinates computed at creation time, so it can't propagate
+        // the parent's allocation to the child.  Use a plain GtkBox wrapper
+        // in these cases so GTK's expand/fill system handles the flexible axis.
+        let heightFree = height == nil && minHeight == nil && maxHeight == nil
+        let widthFree  = width == nil && minWidth == nil && (maxWidth == nil || maxWidth == .infinity)
+
+        if !widthFree && heightFree && childExpV {
+            // Width-constrained, height-flexible, child expands vertically.
+            // Example: Color.blue.frame(width: 120) inside an HStack.
+            return gtkFrameFlexibleAxis(child: child, childExpH: childExpH,
+                                        constrainedWidth: true)
+        }
+        if widthFree && !heightFree && childExpH {
+            // Height-constrained, width-flexible, child expands horizontally.
+            return gtkFrameFlexibleAxis(child: child, childExpH: childExpH,
+                                        constrainedWidth: false)
+        }
+
+        // General case: use GtkFixed for alignment positioning.
         let wrapper = gtk_swift_fixed_new()!
         let naturalSize = gtkMeasureWidgetNaturalSize(child)
         let layout = computeFrameLayout(
@@ -839,8 +863,8 @@ extension FrameView: GTKRenderable, GTKDescribable {
             maxWidth: maxWidth,
             maxHeight: maxHeight,
             alignment: alignment,
-            expandsToFillWidth: gtk_widget_get_hexpand(child) != 0,
-            expandsToFillHeight: gtk_widget_get_vexpand(child) != 0
+            expandsToFillWidth: childExpH,
+            expandsToFillHeight: childExpV
         )
         let clampsChild =
             layout.childPlacement.size.width < naturalSize.width
@@ -851,8 +875,6 @@ extension FrameView: GTKRenderable, GTKDescribable {
 
         // Expanding children should fill the slot; non-expanding ones
         // are positioned by GtkFixed placement math.
-        let childExpH = gtk_widget_get_hexpand(child) != 0
-        let childExpV = gtk_widget_get_vexpand(child) != 0
         gtk_widget_set_halign(child, childExpH ? GTK_ALIGN_FILL : GTK_ALIGN_START)
         gtk_widget_set_valign(child, childExpV ? GTK_ALIGN_FILL : GTK_ALIGN_START)
         gtk_widget_set_halign(slot, GTK_ALIGN_START)
@@ -913,6 +935,54 @@ extension FrameView: GTKRenderable, GTKDescribable {
             layout.childPlacement.origin.x,
             layout.childPlacement.origin.y
         )
+        return opaqueFromWidget(wrapper)
+    }
+
+    /// Build a frame wrapper using GtkBox instead of GtkFixed, for frames
+    /// that constrain one axis while the child expands on the other.
+    /// GtkFixed can't propagate allocation to children, so we let GTK's
+    /// expand/fill system handle the flexible axis naturally.
+    private func gtkFrameFlexibleAxis(
+        child: UnsafeMutablePointer<GtkWidget>,
+        childExpH: Bool,
+        constrainedWidth: Bool
+    ) -> OpaquePointer {
+        let naturalSize = gtkMeasureWidgetNaturalSize(child)
+        let layout = computeFrameLayout(
+            childNaturalSize: naturalSize,
+            width: width,
+            height: height,
+            minWidth: minWidth,
+            minHeight: minHeight,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            alignment: alignment,
+            expandsToFillWidth: childExpH,
+            expandsToFillHeight: gtk_widget_get_vexpand(child) != 0
+        )
+
+        // Use GtkBox as wrapper — child fills the flexible axis via expand.
+        let orientation = constrainedWidth ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL
+        let wrapper = gtk_box_new(orientation, 0)!
+
+        if constrainedWidth {
+            // Width constrained, height flexible
+            gtk_widget_set_size_request(wrapper, gint(layout.containerSize.width), -1)
+            let hexp: gint = (maxWidth != nil && maxWidth == .infinity) ? 1 : 0
+            gtk_widget_set_hexpand(wrapper, hexp)
+            gtk_widget_set_vexpand(wrapper, 1)
+        } else {
+            // Height constrained, width flexible
+            gtk_widget_set_size_request(wrapper, -1, gint(layout.containerSize.height))
+            let vexp: gint = (maxHeight != nil && maxHeight == .infinity) ? 1 : 0
+            gtk_widget_set_hexpand(wrapper, 1)
+            gtk_widget_set_vexpand(wrapper, vexp)
+        }
+
+        gtk_widget_set_halign(child, GTK_ALIGN_FILL)
+        gtk_widget_set_valign(child, GTK_ALIGN_FILL)
+        gtk_box_append(boxPointer(wrapper), child)
+
         return opaqueFromWidget(wrapper)
     }
 }

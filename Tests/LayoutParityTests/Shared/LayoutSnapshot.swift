@@ -201,6 +201,10 @@ public struct LayoutLeaf: CustomStringConvertible {
     }
 }
 
+/// Known visible content view types that should always be extracted as leaves,
+/// even if they have a zero dimension (e.g., Color with constrained width but no height).
+private let visibleContentTypes: Set<String> = ["Color", "CALayer"]
+
 /// Extract leaf nodes from a layout tree.
 /// Leaves are nodes with no children (actual rendered content).
 /// Skips zero-size nodes and spacer placeholders.
@@ -209,10 +213,12 @@ public func extractLeaves(from node: LayoutNode, skipSpacers: Bool = true) -> [L
     if skipSpacers && node.viewType == "Spacer" { return [] }
 
     if node.children.isEmpty {
-        // Skip zero-size nodes
+        // Skip completely invisible nodes (both dimensions zero)
         if node.width <= 0 && node.height <= 0 { return [] }
-        // Skip nodes with zero in either dimension (invisible)
-        if skipSpacers && (node.width == 0 || node.height == 0) { return [] }
+        // Skip nodes with zero in either dimension, unless they are known
+        // visible content (e.g., Color fills that didn't get height allocated)
+        let isVisibleContent = visibleContentTypes.contains(node.viewType)
+        if skipSpacers && !isVisibleContent && (node.width == 0 || node.height == 0) { return [] }
         return [LayoutLeaf(
             tag: node.tag, x: node.x, y: node.y,
             width: node.width, height: node.height

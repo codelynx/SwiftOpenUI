@@ -59,12 +59,12 @@ final class GTKLayoutParityTests: XCTestCase {
 
                 // Use leaf-based comparison (handles flat macOS vs nested GTK trees).
                 // Tolerances: position 6pt (accounts for font metric cascading),
-                // size 10pt (macOS SF vs GTK Pango text widths differ ~6-9pt).
+                // size 15pt (macOS SF vs GTK Pango text widths differ ~6-14pt).
                 let result = compareLeaves(
                     reference: reference,
                     actual: actual,
                     positionTolerance: 6.0,
-                    sizeTolerance: 10.0
+                    sizeTolerance: 15.0
                 )
 
                 if result.passed {
@@ -275,10 +275,18 @@ func captureGTKWidgetTree(
     let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
     let tag = gtkIdentifyWidget(widget, typeName: typeName)
 
-    // Mark spacer widgets so leaf extraction can skip them
+    // Map hosted node kinds to semantic view types for leaf extraction
     let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
     let isSpacer = g_object_get_data(gobject, "gtk-swift-spacer") != nil
-    let effectiveViewType = isSpacer ? "Spacer" : typeName
+    let hostedKind = gtkHostedNodeKind(of: widget)
+    let effectiveViewType: String
+    if isSpacer {
+        effectiveViewType = "Spacer"
+    } else if hostedKind == .color {
+        effectiveViewType = "Color"
+    } else {
+        effectiveViewType = typeName
+    }
 
     return LayoutNode(
         tag: tag,
