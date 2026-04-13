@@ -58,12 +58,14 @@ final class GTKLayoutParityTests: XCTestCase {
                 )
 
                 // Use leaf-based comparison (handles flat macOS vs nested GTK trees).
-                // Tolerances: position 6pt (accounts for font metric cascading),
-                // size 15pt (macOS SF vs GTK Pango text widths differ ~6-14pt).
+                // Tolerances: 15pt for both position and size. Font metrics
+                // differ ~6-14pt between macOS SF and GTK Pango, and alignment-
+                // driven position offsets track the size difference (e.g.,
+                // bottom-trailing text shifts x by its width delta).
                 let result = compareLeaves(
                     reference: reference,
                     actual: actual,
-                    positionTolerance: 6.0,
+                    positionTolerance: 15.0,
                     sizeTolerance: 15.0
                 )
 
