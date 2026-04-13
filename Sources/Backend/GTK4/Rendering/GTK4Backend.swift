@@ -177,10 +177,11 @@ extension Window: GTKWindowRenderable {
             self.gtkCreateWindow(app: app)
         }
 
-        // Suppressed windows are not shown at launch — they are opened
-        // programmatically via the openWindow environment action.
+        // For non-suppressed windows, use the registry's open(id:) to
+        // create or refocus. This prevents duplicates when the GtkApplication
+        // "activate" signal fires more than once (e.g., app re-activation).
         if launchBehavior != .suppressed {
-            gtkCreateWindow(app: app)
+            GTK4WindowRegistry.shared.open(id: id)
         }
     }
 
