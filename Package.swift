@@ -21,6 +21,13 @@ var targets: [Target] = [
         dependencies: ["SwiftOpenUI"],
         path: "Tests/SwiftOpenUITests"
     ),
+
+    // Layout parity — shared snapshot model (platform-independent)
+    .target(
+        name: "LayoutParityShared",
+        dependencies: [],
+        path: "Tests/LayoutParityTests/Shared"
+    ),
 ]
 
 // Example runner dependencies:
@@ -51,6 +58,12 @@ targets += [
         name: "GTK4RenderTests",
         dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK", "CGTKBridge"],
         path: "Tests/BackendTests/GTK4Tests"
+    ),
+    // Layout parity — GTK comparison against macOS reference
+    .testTarget(
+        name: "GTKLayoutParityTests",
+        dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK", "CGTKBridge", "LayoutParityShared"],
+        path: "Tests/LayoutParityTests/GTKComparison"
     ),
 ]
 exampleDeps.append("BackendGTK4")
@@ -104,6 +117,12 @@ targets += [
         name: "AndroidRenderTests",
         dependencies: ["SwiftOpenUI", "BackendAndroid"],
         path: "Tests/BackendTests/AndroidTests"
+    ),
+    // Layout parity — macOS reference capture (uses real SwiftUI)
+    .testTarget(
+        name: "MacOSLayoutReferenceTests",
+        dependencies: ["SwiftOpenUI", "LayoutParityShared"],
+        path: "Tests/LayoutParityTests/MacOSReference"
     ),
 ]
 #endif
