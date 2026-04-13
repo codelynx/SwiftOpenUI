@@ -123,14 +123,14 @@ swift run ParityAppStructure      # App, Scene, WindowGroup, @ViewBuilder
 ### Views (44 of 45)
 Text, Button, TextField, Toggle, Slider, Image, Color, Spacer, Divider, VStack, HStack, ZStack, Group, ForEach, List, ScrollView, ScrollViewReader, AnyView, EmptyView, NavigationStack, NavigationLink, NavigationSplitView, SecureField, TextEditor, ProgressView, Stepper, Label, Link, TabView, Grid, GridRow, DisclosureGroup, OutlineGroup, Form, Section, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Picker, DatePicker, GeometryReader, ViewThatFits, Menu, ConfirmationDialog, Canvas, Path, Circle, Rectangle, RoundedRectangle, Capsule, Ellipse, LinearGradient, RadialGradient
 
-### Modifiers (38 of 40)
-.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .disabled(), .environmentObject(), .environment(), .navigationTitle(), .navigationDestination(), .focused(), .modifier(), withAnimation(), .clipShape(), .clipped(), .hidden(), .blur(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .buttonStyle(), .toggleStyle(), .textFieldStyle(), .onChange(), .contextMenu(), .position(), .layoutPriority(), .fixedSize(), .popover(), .id(), .tag(), .onSubmit(), .bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase(), .aspectRatio(), .scaledToFit(), .scaledToFill(), .fullScreenCover(), .pickerStyle(), .navigationSplitViewColumnWidth(), .ignoresSafeArea(), .safeAreaInset(), .lineLimit(), .truncationMode(), .lineSpacing(), .multilineTextAlignment()
+### Modifiers (40 of 42)
+.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .disabled(), .environmentObject(), .environment(), .navigationTitle(), .navigationDestination(), .focused(), .modifier(), withAnimation(), .clipShape(), .clipped(), .hidden(), .blur(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .buttonStyle(), .toggleStyle(), .textFieldStyle(), .onChange(), .contextMenu(), .position(), .layoutPriority(), .fixedSize(), .popover(), .id(), .tag(), .onSubmit(), .bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase(), .aspectRatio(), .scaledToFit(), .scaledToFill(), .fullScreenCover(), .pickerStyle(), .navigationSplitViewColumnWidth(), .ignoresSafeArea(), .safeAreaInset(), .lineLimit(), .truncationMode(), .lineSpacing(), .multilineTextAlignment(), .keyboardShortcut(), .focusedValue()
 
 ### Scenes & App Structure
-WindowGroup, Window (GTK/Win32), OpenWindowAction, @SceneBuilder, @ViewBuilder
+WindowGroup, Window (GTK/Win32), OpenWindowAction, Commands (CommandGroup, CommandMenuItem — native menu bar on GTK/Win32), @SceneBuilder, @ViewBuilder
 
 ### State Management
-@State, @Binding, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @Environment, @FocusState, @Observable, ObservableObject
+@State, @Binding, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @Environment, @FocusState, @FocusedValue (active-window scoped), @Observable, ObservableObject
 
 ## Architecture
 

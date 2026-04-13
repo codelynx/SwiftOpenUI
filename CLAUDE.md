@@ -123,16 +123,16 @@ swift package create-bundle HelloWorld --allow-writing-to-package-directory
 Text, Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper, Picker, DatePicker, ProgressView, Label, Link, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView, TabView, Grid, GridRow, Form, Section, DisclosureGroup, OutlineGroup, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Menu, Canvas, GeometryReader, ViewThatFits, NavigationSplitView, ConfirmationDialog, Path (with StrokeStyle, Shading), Circle, Rectangle, RoundedRectangle, Capsule, Ellipse (Shape protocol with .fill()/.stroke()), ScrollViewReader, LinearGradient, RadialGradient
 
 ### Scenes (Sources/SwiftOpenUI/App/)
-WindowGroup, Window (GTK/Win32: functional with OpenWindowAction; Web: core type only)
+WindowGroup, Window (GTK/Win32: functional with OpenWindowAction; Web: core type only), Commands (CommandGroup, CommandMenuItem — GTK/Win32: native menu bar with observation-driven enable/disable; Web: not yet)
 
 ### Navigation (Sources/SwiftOpenUI/Navigation/)
 NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigationTitle(), .navigationDestination(for:), NavigateAction (environment)
 
 ### Modifiers (Sources/SwiftOpenUI/Modifiers/)
-.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .disabled(), .environmentObject(), .environment(), withAnimation(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .pickerStyle(), .navigationSplitViewColumnWidth(), .ignoresSafeArea(), .safeAreaInset(), .lineLimit(), .truncationMode(), .lineSpacing(), .multilineTextAlignment(), .clipShape(), .clipped(), .hidden(), .blur(), .buttonStyle(), .toggleStyle(), .textFieldStyle(), .onChange(), .contextMenu(), .position(), .layoutPriority(), .fixedSize(), .popover(), .id(), .bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase(), .aspectRatio(), .scaledToFit(), .scaledToFill(), .fullScreenCover(), .tag(), .onSubmit(), custom ViewModifier
+.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .disabled(), .environmentObject(), .environment(), withAnimation(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .pickerStyle(), .navigationSplitViewColumnWidth(), .ignoresSafeArea(), .safeAreaInset(), .lineLimit(), .truncationMode(), .lineSpacing(), .multilineTextAlignment(), .clipShape(), .clipped(), .hidden(), .blur(), .buttonStyle(), .toggleStyle(), .textFieldStyle(), .onChange(), .contextMenu(), .position(), .layoutPriority(), .fixedSize(), .popover(), .id(), .bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase(), .aspectRatio(), .scaledToFit(), .scaledToFill(), .fullScreenCover(), .tag(), .onSubmit(), .keyboardShortcut(), .focusedValue(), custom ViewModifier
 
 ### State (Sources/SwiftOpenUI/State/)
-@State, @Binding, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @FocusState
+@State, @Binding, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @FocusState, @FocusedValue (active-window scoped; true focus-chain semantics deferred)
 
 ## Adding a New View
 

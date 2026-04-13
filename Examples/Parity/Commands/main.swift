@@ -21,14 +21,19 @@ import BackendWeb
 
 // MARK: - Observable state
 
-#if canImport(Observation)
-import Observation
-#endif
+// MARK: - Observable state
 
-@Observable class CounterState {
-	var count: Int = 0
-	var isBusy: Bool = false
+#if os(macOS)
+class CounterState: ObservableObject {
+	@Published var count: Int = 0
+	@Published var isBusy: Bool = false
 }
+#else
+class CounterState: SwiftOpenUI.ObservableObject {
+	@SwiftOpenUI.Published var count: Int = 0
+	@SwiftOpenUI.Published var isBusy: Bool = false
+}
+#endif
 
 // MARK: - FocusedValueKey
 
@@ -74,9 +79,9 @@ struct CounterCommands: Commands {
 
 struct MainContentView: View {
 	#if os(macOS)
-	@State private var counter = CounterState()
+	@StateObject private var counter = CounterState()
 	#else
-	@SwiftOpenUI.State private var counter = CounterState()
+	@SwiftOpenUI.StateObject private var counter = CounterState()
 	#endif
 
 	var body: some View {
