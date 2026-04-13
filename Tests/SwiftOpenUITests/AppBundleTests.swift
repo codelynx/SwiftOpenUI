@@ -292,11 +292,13 @@ final class AppBundleTests: XCTestCase {
 
         XCTAssertNotNil(bundle)
         XCTAssertTrue(bundle!.isDevelopment)
-        XCTAssertEqual(bundle!.bundlePath, tmpDir)
+        // Normalize paths through URL to avoid separator mismatches on Windows
+        let expectedRoot = URL(fileURLWithPath: tmpDir).path
+        XCTAssertEqual(bundle!.bundlePath, expectedRoot)
         XCTAssertEqual(bundle!.executablePath, execPath)
         XCTAssertEqual(bundle!.info.executableName, "TestApp")
         XCTAssertEqual(bundle!.info.bundleIdentifier, "dev.swiftopenui.testapp")
-        XCTAssertEqual(bundle!.resourcesPath, tmpDir + "/Resources")
+        XCTAssertEqual(bundle!.resourcesPath, expectedRoot + "/Resources")
 
         // Resource lookup works
         let found = bundle!.path(forResource: "hello", ofType: "txt")
