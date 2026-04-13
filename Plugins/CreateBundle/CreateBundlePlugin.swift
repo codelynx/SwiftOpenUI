@@ -68,17 +68,19 @@ struct CreateBundlePlugin: CommandPlugin {
             throw CreateBundleError.buildFailed("Build failed for \(product)")
         }
 
-        // Find the built executable — match by product name or product.exe (Windows)
+        // Find the built executable — match by product name or product.exe (Windows).
+        // Use URL-based filename extraction because SPM Path.lastComponent may not
+        // handle Windows backslash separators correctly on all platforms.
         guard let artifact = buildResult.builtArtifacts.first(where: {
             guard $0.kind == .executable else { return false }
-            let name = $0.path.lastComponent
+            let name = URL(fileURLWithPath: $0.path.string).lastPathComponent
             return name == product || name == "\(product).exe"
         }) else {
             throw CreateBundleError.buildFailed("Could not find built executable for \(product)")
         }
 
         let executablePath = artifact.path
-        let executableFilename = artifact.path.lastComponent
+        let executableFilename = URL(fileURLWithPath: artifact.path.string).lastPathComponent
 
         // Create bundle structure
         let packageDir = URL(fileURLWithPath: context.package.directory.string)
