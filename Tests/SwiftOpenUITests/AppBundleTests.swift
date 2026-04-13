@@ -72,9 +72,13 @@ final class AppBundleTests: XCTestCase {
         let tmpDir = NSTemporaryDirectory() + "AppBundleTest_\(ProcessInfo.processInfo.globallyUniqueString)"
         let fm = FileManager.default
 
-        // Create a fake bundle structure
+        // Create a fake bundle structure (platform-appropriate)
         let bundleRoot = tmpDir + "/TestApp.app"
+        #if canImport(Darwin)
+        let resourcesDir = bundleRoot + "/Contents/Resources/sounds"
+        #else
         let resourcesDir = bundleRoot + "/Resources/sounds"
+        #endif
         try fm.createDirectory(atPath: resourcesDir, withIntermediateDirectories: true)
         fm.createFile(atPath: resourcesDir + "/click.wav", contents: Data([0x00]))
         fm.createFile(atPath: bundleRoot + "/Info.json", contents: Data())
@@ -108,7 +112,11 @@ final class AppBundleTests: XCTestCase {
         let fm = FileManager.default
 
         let bundleRoot = tmpDir + "/TestApp.app"
+        #if canImport(Darwin)
+        let resourcesDir = bundleRoot + "/Contents/Resources"
+        #else
         let resourcesDir = bundleRoot + "/Resources"
+        #endif
         try fm.createDirectory(atPath: resourcesDir, withIntermediateDirectories: true)
         fm.createFile(atPath: resourcesDir + "/LICENSE", contents: Data())
 
@@ -263,11 +271,95 @@ final class AppBundleTests: XCTestCase {
         #endif
     }
 
-    // MARK: - Main bundle (smoke test)
+    // MARK: - Development mode discovery
 
-    func testMainBundleIsNilOutsideBundle() {
-        // When running via `swift test`, there's no .app bundle structure,
-        // so AppBundle.main should be nil.
-        XCTAssertNil(AppBundle.main)
+    func testDevDiscoveryFindsPackageRootWithResources() throws {
+        let tmpDir = NSTemporaryDirectory() + "AppBundleDev_\(ProcessInfo.processInfo.globallyUniqueString)"
+        let fm = FileManager.default
+
+        // Package root with Package.swift + Resources/
+        let nestedDir = tmpDir + "/.build/debug"
+        try fm.createDirectory(atPath: nestedDir, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: tmpDir + "/Resources", withIntermediateDirectories: true)
+        fm.createFile(atPath: tmpDir + "/Package.swift", contents: Data())
+        fm.createFile(atPath: tmpDir + "/Resources/hello.txt", contents: "Hello".data(using: .utf8))
+
+        let execPath = nestedDir + "/TestApp"
+        let bundle = _findDevelopmentBundle(
+            from: URL(fileURLWithPath: nestedDir),
+            executablePath: execPath
+        )
+
+        XCTAssertNotNil(bundle)
+        XCTAssertTrue(bundle!.isDevelopment)
+        XCTAssertEqual(bundle!.bundlePath, tmpDir)
+        XCTAssertEqual(bundle!.executablePath, execPath)
+        XCTAssertEqual(bundle!.info.executableName, "TestApp")
+        XCTAssertEqual(bundle!.info.bundleIdentifier, "dev.swiftopenui.testapp")
+        XCTAssertEqual(bundle!.resourcesPath, tmpDir + "/Resources")
+
+        // Resource lookup works
+        let found = bundle!.path(forResource: "hello", ofType: "txt")
+        XCTAssertNotNil(found)
+        XCTAssertTrue(found!.hasSuffix("/Resources/hello.txt"))
+
+        try fm.removeItem(atPath: tmpDir)
+    }
+
+    func testDevDiscoveryReturnsNilWithoutResources() throws {
+        let tmpDir = NSTemporaryDirectory() + "AppBundleDevNoRes_\(ProcessInfo.processInfo.globallyUniqueString)"
+        let fm = FileManager.default
+
+        // Package.swift exists but no Resources/ directory
+        let nestedDir = tmpDir + "/.build/debug"
+        try fm.createDirectory(atPath: nestedDir, withIntermediateDirectories: true)
+        fm.createFile(atPath: tmpDir + "/Package.swift", contents: Data())
+
+        let bundle = _findDevelopmentBundle(
+            from: URL(fileURLWithPath: nestedDir),
+            executablePath: nestedDir + "/TestApp"
+        )
+
+        XCTAssertNil(bundle)
+
+        try fm.removeItem(atPath: tmpDir)
+    }
+
+    func testDevDiscoveryReturnsNilWithoutPackageSwift() throws {
+        let tmpDir = NSTemporaryDirectory() + "AppBundleDevNoPkg_\(ProcessInfo.processInfo.globallyUniqueString)"
+        let fm = FileManager.default
+
+        // Resources/ exists but no Package.swift
+        let nestedDir = tmpDir + "/.build/debug"
+        try fm.createDirectory(atPath: nestedDir, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: tmpDir + "/Resources", withIntermediateDirectories: true)
+
+        let bundle = _findDevelopmentBundle(
+            from: URL(fileURLWithPath: nestedDir),
+            executablePath: nestedDir + "/TestApp"
+        )
+
+        XCTAssertNil(bundle)
+
+        try fm.removeItem(atPath: tmpDir)
+    }
+
+    func testNonDevelopmentBundleResourcesPath() {
+        let bundle = AppBundle(
+            bundlePath: "/opt/MyApp.app",
+            executablePath: "/opt/MyApp.app/bin/x86_64/MyApp",
+            info: BundleInfo(
+                bundleIdentifier: "com.test.app",
+                executableName: "MyApp"
+            ),
+            isDevelopment: false
+        )
+
+        XCTAssertFalse(bundle.isDevelopment)
+        #if canImport(Darwin)
+        XCTAssertEqual(bundle.resourcesPath, "/opt/MyApp.app/Contents/Resources")
+        #else
+        XCTAssertEqual(bundle.resourcesPath, "/opt/MyApp.app/Resources")
+        #endif
     }
 }
