@@ -164,6 +164,32 @@ extension EnvironmentValues {
     }
 }
 
+/// A callable action that opens a window by its identifier.
+public struct OpenWindowAction {
+    let handler: (String) -> Void
+
+    public init(handler: @escaping (String) -> Void = { _ in }) {
+        self.handler = handler
+    }
+
+    /// Open the window with the given identifier.
+    public func callAsFunction(id: String) {
+        handler(id)
+    }
+}
+
+/// Environment key for the open-window action.
+public struct OpenWindowKey: EnvironmentKey {
+    public static let defaultValue: OpenWindowAction = OpenWindowAction()
+}
+
+extension EnvironmentValues {
+    public var openWindow: OpenWindowAction {
+        get { self[OpenWindowKey.self] }
+        set { self[OpenWindowKey.self] = newValue }
+    }
+}
+
 /// A callable action that dismisses the current sheet or dialog.
 public struct DismissAction {
     let handler: () -> Void

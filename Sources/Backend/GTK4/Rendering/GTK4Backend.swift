@@ -122,6 +122,14 @@ public struct GTK4Backend: RenderBackend {
         let appPtr = OpaquePointer(gtkApp)
 
         let factory: (OpaquePointer) -> Void = { appPtr in
+            // Inject openWindow action into the environment so views
+            // can programmatically open Window scenes by id.
+            var env = getCurrentEnvironment()
+            env.openWindow = OpenWindowAction { id in
+                GTK4WindowRegistry.shared.open(id: id)
+            }
+            setCurrentEnvironment(env)
+
             let instance = A()
             gtkRenderScene(instance.body, app: appPtr)
         }
@@ -160,8 +168,76 @@ public struct GTK4Backend: RenderBackend {
     }
 }
 
-/// Recursively render a Scene. Terminal scenes (WindowGroup) render directly;
-/// composite scenes recurse through their body.
+/// GTK4 rendering for Window scenes (single-instance, identified windows).
+extension Window: GTKWindowRenderable {
+    func gtkRender(app: OpaquePointer) {
+        // Suppressed windows are not shown at launch — they are opened
+        // programmatically via the openWindow environment action.
+        if launchBehavior == .suppressed {
+            // Register a factory so openWindow(id:) can create it later.
+            GTK4WindowRegistry.shared.register(id: id) { [self] in
+                self.gtkCreateWindow(app: app)
+            }
+            return
+        }
+        gtkCreateWindow(app: app)
+    }
+
+    func gtkCreateWindow(app: OpaquePointer) {
+        let window = gtk_application_window_new(gtkApplicationPointer(app))!
+        let winPtr = windowPointer(window)
+        gtk_window_set_title(winPtr, title)
+
+        let contentWidget = widgetFromOpaque(gtkRenderView(content))
+
+        if let w = defaultWindowWidth, let h = defaultWindowHeight {
+            gtk_window_set_default_size(winPtr, gint(w), gint(h))
+        }
+
+        let minReqW = minWindowWidth.map { Int32($0) } ?? -1
+        let minReqH = minWindowHeight.map { Int32($0) } ?? -1
+        if minReqW >= 0 || minReqH >= 0 {
+            gtk_widget_set_size_request(contentWidget, minReqW, minReqH)
+        }
+
+        if gtk_widget_get_hexpand(contentWidget) == 0 {
+            gtk_widget_set_halign(contentWidget, GTK_ALIGN_CENTER)
+            gtk_widget_set_hexpand(contentWidget, 1)
+        }
+        if gtk_widget_get_vexpand(contentWidget) == 0 {
+            gtk_widget_set_valign(contentWidget, GTK_ALIGN_CENTER)
+            gtk_widget_set_vexpand(contentWidget, 1)
+        }
+
+        gtk_window_set_child(winPtr, contentWidget)
+        gtk_window_present(winPtr)
+    }
+}
+
+/// GTK4 rendering for TupleScene — renders both child scenes.
+extension TupleScene: GTKWindowRenderable {
+    func gtkRender(app: OpaquePointer) {
+        gtkRenderScene(scene0, app: app)
+        gtkRenderScene(scene1, app: app)
+    }
+}
+
+/// Registry for on-demand window factories (used by suppressed Window scenes).
+class GTK4WindowRegistry {
+    static let shared = GTK4WindowRegistry()
+    private var factories: [String: () -> Void] = [:]
+
+    func register(id: String, factory: @escaping () -> Void) {
+        factories[id] = factory
+    }
+
+    func open(id: String) {
+        factories[id]?()
+    }
+}
+
+/// Recursively render a Scene. Terminal scenes (WindowGroup, Window) render
+/// directly; composite scenes recurse through their body.
 private func gtkRenderScene<S: Scene>(_ scene: S, app: OpaquePointer) {
     if let renderable = scene as? GTKWindowRenderable {
         renderable.gtkRender(app: app)

@@ -66,10 +66,29 @@ public struct WindowGroup<Content: View>: Scene {
     public var body: Never { fatalError("WindowGroup is a primitive scene") }
 }
 
+/// A composite scene that holds two child scenes.
+public struct TupleScene<S0: Scene, S1: Scene>: Scene {
+    public typealias Body = Never
+
+    public let scene0: S0
+    public let scene1: S1
+
+    public init(_ s0: S0, _ s1: S1) {
+        self.scene0 = s0
+        self.scene1 = s1
+    }
+
+    public var body: Never { fatalError("TupleScene is a primitive scene") }
+}
+
 /// Result builder for composing scenes.
 @resultBuilder
 public struct SceneBuilder {
     public static func buildBlock<Content: Scene>(_ content: Content) -> Content {
         content
+    }
+
+    public static func buildBlock<S0: Scene, S1: Scene>(_ s0: S0, _ s1: S1) -> TupleScene<S0, S1> {
+        TupleScene(s0, s1)
     }
 }

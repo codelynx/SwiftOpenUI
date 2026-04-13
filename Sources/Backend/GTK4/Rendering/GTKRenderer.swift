@@ -3866,7 +3866,16 @@ private class ExpandedClosureBox {
 
 extension DisclosureGroup: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let expander = gtk_swift_expander_new(title)!
+        let expander: UnsafeMutablePointer<GtkWidget>
+        if let labelView = labelView {
+            // Custom label view — create expander without title and set
+            // a custom label widget instead.
+            expander = gtk_swift_expander_new("")!
+            let labelWidget = widgetFromOpaque(gtkRenderView(labelView))
+            gtk_swift_expander_set_label_widget(expander, labelWidget)
+        } else {
+            expander = gtk_swift_expander_new(title)!
+        }
         gtk_swift_expander_set_expanded(expander, isExpanded ? 1 : 0)
 
         let childWidget = widgetFromOpaque(gtkRenderView(content))

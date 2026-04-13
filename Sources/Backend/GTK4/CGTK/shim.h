@@ -250,6 +250,11 @@ gtk_swift_expander_get_expanded(GtkWidget *expander) {
     return gtk_expander_get_expanded(GTK_EXPANDER(expander));
 }
 
+static inline void
+gtk_swift_expander_set_label_widget(GtkWidget *expander, GtkWidget *label) {
+    gtk_expander_set_label_widget(GTK_EXPANDER(expander), label);
+}
+
 // --- Label markup ---
 
 static inline void
@@ -739,4 +744,172 @@ gtk_swift_label_set_strikethrough(GtkWidget *label, gboolean strikethrough) {
     pango_attr_list_change(newAttrs, pango_attr_strikethrough_new(strikethrough));
     gtk_label_set_attributes(GTK_LABEL(label), newAttrs);
     pango_attr_list_unref(newAttrs);
+}
+
+// --- GtkAlertDialog shims (GTK 4.10+) ---
+
+static inline gpointer
+gtk_swift_alert_dialog_new(const char *message) {
+    return (gpointer)gtk_alert_dialog_new("%s", message);
+}
+
+static inline void
+gtk_swift_alert_dialog_set_detail(gpointer dialog, const char *detail) {
+    gtk_alert_dialog_set_detail(GTK_ALERT_DIALOG(dialog), detail);
+}
+
+static inline void
+gtk_swift_alert_dialog_set_buttons(gpointer dialog,
+                                    const char * const *labels) {
+    gtk_alert_dialog_set_buttons(GTK_ALERT_DIALOG(dialog), labels);
+}
+
+static inline void
+gtk_swift_alert_dialog_set_cancel_button(gpointer dialog, int button) {
+    gtk_alert_dialog_set_cancel_button(GTK_ALERT_DIALOG(dialog), button);
+}
+
+static inline void
+gtk_swift_alert_dialog_set_default_button(gpointer dialog, int button) {
+    gtk_alert_dialog_set_default_button(GTK_ALERT_DIALOG(dialog), button);
+}
+
+static inline void
+gtk_swift_alert_dialog_choose(gpointer dialog,
+                               GtkWindow *parent,
+                               GCancellable *cancellable,
+                               GAsyncReadyCallback callback,
+                               gpointer user_data) {
+    gtk_alert_dialog_choose(GTK_ALERT_DIALOG(dialog), parent,
+                            cancellable, callback, user_data);
+}
+
+static inline int
+gtk_swift_alert_dialog_choose_finish(gpointer dialog,
+                                      GAsyncResult *result,
+                                      GError **error) {
+    return gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(dialog),
+                                          result, error);
+}
+
+// --- GtkFileDialog shims (GTK 4.10+) ---
+
+static inline gpointer
+gtk_swift_file_dialog_new(void) {
+    return (gpointer)gtk_file_dialog_new();
+}
+
+static inline void
+gtk_swift_file_dialog_set_title(gpointer dialog, const char *title) {
+    gtk_file_dialog_set_title(GTK_FILE_DIALOG(dialog), title);
+}
+
+static inline void
+gtk_swift_file_dialog_set_initial_name(gpointer dialog, const char *name) {
+    gtk_file_dialog_set_initial_name(GTK_FILE_DIALOG(dialog), name);
+}
+
+static inline void
+gtk_swift_file_dialog_set_initial_folder(gpointer dialog, gpointer folder) {
+    gtk_file_dialog_set_initial_folder(GTK_FILE_DIALOG(dialog), G_FILE(folder));
+}
+
+static inline void
+gtk_swift_file_dialog_set_filters(gpointer dialog, gpointer filters) {
+    gtk_file_dialog_set_filters(GTK_FILE_DIALOG(dialog), G_LIST_MODEL(filters));
+}
+
+static inline void
+gtk_swift_file_dialog_select_folder(gpointer dialog,
+                                     GtkWindow *parent,
+                                     GCancellable *cancellable,
+                                     GAsyncReadyCallback callback,
+                                     gpointer user_data) {
+    gtk_file_dialog_select_folder(GTK_FILE_DIALOG(dialog), parent,
+                                  cancellable, callback, user_data);
+}
+
+static inline gpointer
+gtk_swift_file_dialog_select_folder_finish(gpointer dialog,
+                                            GAsyncResult *result,
+                                            GError **error) {
+    return (gpointer)gtk_file_dialog_select_folder_finish(
+        GTK_FILE_DIALOG(dialog), result, error);
+}
+
+static inline void
+gtk_swift_file_dialog_open(gpointer dialog,
+                            GtkWindow *parent,
+                            GCancellable *cancellable,
+                            GAsyncReadyCallback callback,
+                            gpointer user_data) {
+    gtk_file_dialog_open(GTK_FILE_DIALOG(dialog), parent,
+                         cancellable, callback, user_data);
+}
+
+static inline gpointer
+gtk_swift_file_dialog_open_finish(gpointer dialog,
+                                   GAsyncResult *result,
+                                   GError **error) {
+    return (gpointer)gtk_file_dialog_open_finish(
+        GTK_FILE_DIALOG(dialog), result, error);
+}
+
+static inline void
+gtk_swift_file_dialog_save(gpointer dialog,
+                            GtkWindow *parent,
+                            GCancellable *cancellable,
+                            GAsyncReadyCallback callback,
+                            gpointer user_data) {
+    gtk_file_dialog_save(GTK_FILE_DIALOG(dialog), parent,
+                         cancellable, callback, user_data);
+}
+
+static inline gpointer
+gtk_swift_file_dialog_save_finish(gpointer dialog,
+                                   GAsyncResult *result,
+                                   GError **error) {
+    return (gpointer)gtk_file_dialog_save_finish(
+        GTK_FILE_DIALOG(dialog), result, error);
+}
+
+// --- GtkFileFilter shims ---
+
+static inline gpointer
+gtk_swift_file_filter_new(void) {
+    return (gpointer)gtk_file_filter_new();
+}
+
+static inline void
+gtk_swift_file_filter_set_name(gpointer filter, const char *name) {
+    gtk_file_filter_set_name(GTK_FILE_FILTER(filter), name);
+}
+
+static inline void
+gtk_swift_file_filter_add_suffix(gpointer filter, const char *suffix) {
+    gtk_file_filter_add_suffix(GTK_FILE_FILTER(filter), suffix);
+}
+
+// --- GListStore shims (for file filter lists) ---
+
+static inline gpointer
+gtk_swift_list_store_new_for_file_filters(void) {
+    return (gpointer)g_list_store_new(GTK_TYPE_FILE_FILTER);
+}
+
+static inline void
+gtk_swift_list_store_append_object(gpointer store, gpointer object) {
+    g_list_store_append(G_LIST_STORE(store), object);
+}
+
+// --- GFile shims ---
+
+static inline const char *
+gtk_swift_gfile_get_path(gpointer file) {
+    return g_file_get_path(G_FILE(file));
+}
+
+static inline gpointer
+gtk_swift_gfile_new_for_path(const char *path) {
+    return (gpointer)g_file_new_for_path(path);
 }

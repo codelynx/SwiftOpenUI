@@ -274,6 +274,11 @@ let package = Package(
         var p: [Product] = [
             .library(name: "SwiftOpenUI", targets: ["SwiftOpenUI"]),
         ]
+        #if os(Linux)
+        p.append(.library(name: "CGTK", targets: ["CGTK"]))
+        p.append(.library(name: "CGTKBridge", targets: ["CGTKBridge"]))
+        p.append(.library(name: "BackendGTK4", targets: ["BackendGTK4"]))
+        #endif
         #if os(macOS)
         p.append(.library(name: "BackendAndroid", type: .dynamic, targets: ["BackendAndroid"]))
         #endif
