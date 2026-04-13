@@ -14,7 +14,19 @@ SwiftOpenUI targets all three desktop platforms. Each platform produces its own 
 
 ## Bundle Structure
 
-Each bundle targets exactly one OS. A macOS `.app` is not expected to run on Linux, and vice versa. The on-disk layout is **platform-specific** behind a **normalized API** — macOS uses its native `.app/Contents/` convention, while Linux and Windows share a common layout with platform-appropriate library directory names (`lib/` on Linux, `Frameworks/` on Windows). Multi-architecture support means bundling x86-64 and ARM64 binaries for the *same* OS, not cross-OS packaging.
+Each bundle targets exactly one OS. A macOS `.app` is not expected to run on Linux, and vice versa. The on-disk layout is **platform-specific** behind a **normalized API** — macOS uses its native `.app/Contents/` convention. Linux uses a common layout with `lib/` for shared libraries. Windows colocates DLLs directly beside each executable (no separate library directory). Multi-architecture support means bundling x86-64 and ARM64 binaries for the *same* OS, not cross-OS packaging.
+
+### Architecture Naming Convention
+
+Directory names under `bin/` and values in `Info.json.architectures` use the **platform-native** architecture identifier:
+
+| Platform | 64-bit x86 | 64-bit ARM | Source |
+|----------|-----------|-----------|--------|
+| Linux | `x86_64` | `aarch64` | `uname -m` output |
+| Windows | `x86_64` | `arm64` | Microsoft convention |
+| macOS | n/a (universal binary) | n/a | handled by `lipo` |
+
+The launcher and packaging tool use these exact strings for directory lookup. There is no cross-platform normalization — `aarch64` and `arm64` are distinct identifiers for distinct platforms. A Linux bundle uses `bin/aarch64/`, a Windows bundle uses `bin\arm64\`. `Info.json.architectures` lists the platform-native names.
 
 ### Canonical Layout (Linux / Windows)
 
@@ -31,7 +43,7 @@ MyApp.app/
 │   ├── icons/
 │   ├── assets/
 │   └── <locale>.lproj/       ← localized resources
-└── lib/  (Linux) or Frameworks/  (Windows)
+└── lib/  (Linux only; Windows colocates DLLs with executables)
     └── <shared libraries>
 ```
 
@@ -93,22 +105,22 @@ MyApp.app\
 │   └── arm64\
 │       ├── MyApp.exe
 │       └── SwiftOpenUI.dll
-├── Resources\
-└── Frameworks\                ← canonical DLL source (used by packaging tool)
-    └── SwiftOpenUI.dll
+└── Resources\
 ```
 
 **Launcher strategy (multi-arch only)**: A single x86-64 launcher `.exe` at the bundle root. It detects architecture via `IsWow64Process2()` / `GetNativeSystemInfo()` and spawns the native binary from `bin\<arch>\`. The x86-64 launcher runs on ARM64 via Windows' built-in x86 emulation (Prism), which is present on all Windows 11 ARM64. Windows 10 ARM64 IoT (no emulation) is not a supported target.
 
 **`executableName` semantics**: `Info.json.executableName` always names the top-level entry point (`MyApp`). In a multi-arch bundle this is the launcher; in a single-arch bundle this is the real binary itself — the two cases are structurally different but `executableName` consistently identifies the file a user or OS would launch. `AppBundle.executablePath` returns the path of the currently running binary (i.e., the real `bin\<arch>\MyApp.exe` in multi-arch, or the root `MyApp.exe` in single-arch), resolved at runtime via `GetModuleFileNameW()`.
 
-**DLL loading contract**: The packaging tool **colocates required DLLs with each real executable** in `bin\<arch>\`. This is the only reliable mechanism — Windows resolves import-time DLL dependencies from the directory containing the loading `.exe`, and APIs like `SetDllDirectoryW()` only affect the calling process, not a spawned child's image-load search. The top-level `Frameworks\` directory serves as a **canonical source** for the packaging tool (one copy of each DLL, copied into each `bin\<arch>\` at package time) and for runtime `LoadLibrary()` / plugin loading where the application explicitly sets the search path within its own process.
+**DLL loading contract**: The packaging tool **colocates required DLLs with each real executable** in `bin\<arch>\`. This is the only reliable mechanism — Windows resolves import-time DLL dependencies from the directory containing the loading `.exe`, and APIs like `SetDllDirectoryW()` only affect the calling process, not a spawned child's image-load search. There is no separate `Frameworks\` directory in multi-arch bundles — DLLs exist only beside each executable. This avoids the risk of loading two different physical copies of the same DLL into one process (e.g., an import-time load from `bin\<arch>\` and a runtime `LoadLibrary()` from a separate directory), which can cause ABI/state-split issues on Windows.
 
-**Single-arch shortcut** — skip `bin\` and make the top-level `.exe` the real binary with DLLs alongside it. No launcher needed. The `Frameworks\` directory still exists and holds the same DLLs (the packaging tool creates it as the canonical store). `librariesPath` points there. The root-level DLL copies are what the OS loader uses at image-load time; `Frameworks\` is for runtime `LoadLibrary()` and consistency with multi-arch bundles.
+**Single-arch shortcut** — skip `bin\` and make the top-level `.exe` the real binary with DLLs alongside it. No launcher needed, no separate library directory.
 
 ## Info.json / BundleInfo Mapping
 
 `Info.json` is the portable metadata file for Linux and Windows bundles. macOS uses its native `Info.plist`. The `BundleInfo` struct exposes a **SwiftOpenUI-specific** set of fields, with a defined mapping from each source format.
+
+Linux example (uses `aarch64`):
 
 ```json
 {
@@ -118,6 +130,20 @@ MyApp.app\
   "executableName": "MyApp",
   "minimumSwiftOpenUIVersion": "0.1.0",
   "architectures": ["x86_64", "aarch64"],
+  "icon": "Resources/icons/app.png"
+}
+```
+
+Windows example (uses `arm64`):
+
+```json
+{
+  "bundleIdentifier": "com.example.myapp",
+  "bundleName": "MyApp",
+  "bundleVersion": "1.0.0",
+  "executableName": "MyApp",
+  "minimumSwiftOpenUIVersion": "0.1.0",
+  "architectures": ["x86_64", "arm64"],
   "icon": "Resources/icons/app.ico"
 }
 ```
@@ -127,8 +153,8 @@ MyApp.app\
 ```swift
 public struct BundleInfo: Codable {
     public var bundleIdentifier: String
-    public var bundleName: String
-    public var bundleVersion: String
+    public var bundleName: String?
+    public var bundleVersion: String?
     public var executableName: String
     public var minimumSwiftOpenUIVersion: String?
     public var architectures: [String]?
@@ -136,17 +162,19 @@ public struct BundleInfo: Codable {
 }
 ```
 
+Only `bundleIdentifier` and `executableName` are required on all platforms. The remaining fields are optional to accommodate valid macOS bundles that omit `CFBundleName` or `CFBundleShortVersionString`. On Linux/Windows, `Info.json` is expected to populate all fields, but the struct does not enforce this at the type level.
+
 ### Key Mapping from Info.plist (macOS)
 
-| BundleInfo field | Info.json key | Info.plist key |
-|-----------------|---------------|----------------|
+| BundleInfo field | Info.json key | Info.plist key (with fallback chain) |
+|-----------------|---------------|--------------------------------------|
 | `bundleIdentifier` | `bundleIdentifier` | `CFBundleIdentifier` |
-| `bundleName` | `bundleName` | `CFBundleName` |
-| `bundleVersion` | `bundleVersion` | `CFBundleShortVersionString` |
+| `bundleName` | `bundleName` | `CFBundleDisplayName` → `CFBundleName` |
+| `bundleVersion` | `bundleVersion` | `CFBundleShortVersionString` → `CFBundleVersion` |
 | `executableName` | `executableName` | `CFBundleExecutable` |
 | `icon` | `icon` | `CFBundleIconFile` |
 
-On macOS, `BundleInfo` is populated by reading the native `Info.plist` keys and mapping them to the SwiftOpenUI schema. Fields not present in `Info.plist` (`architectures`, `minimumSwiftOpenUIVersion`) are nil by default. `architectures` may be eagerly derived from the binary via `lipo -archs` if needed, but this is an implementation choice — the API treats it as optional on all platforms. On Linux/Windows, `architectures` is populated from `Info.json` and is expected to be present, but the struct does not enforce this at the type level. No lossy translation — the mapping is explicit and one-directional (plist → BundleInfo).
+On macOS, `BundleInfo` is populated by reading the native `Info.plist` keys and mapping them to the SwiftOpenUI schema. The mapping uses a fallback chain: `bundleName` tries `CFBundleDisplayName` first, then `CFBundleName`; `bundleVersion` tries `CFBundleShortVersionString` first, then `CFBundleVersion`. If neither key exists, the field is nil. Fields not present in `Info.plist` (`architectures`, `minimumSwiftOpenUIVersion`) are nil by default. `architectures` may be eagerly derived from the binary via `lipo -archs` if needed, but this is an implementation choice — the API treats it as optional on all platforms. No lossy translation — the mapping is explicit and one-directional (plist → BundleInfo).
 
 ## AppBundle API
 
@@ -166,17 +194,10 @@ public struct AppBundle {
     /// Path to the Resources/ directory.
     public var resourcesPath: String { get }
 
-    /// Path to the bundle's canonical shared libraries directory.
-    /// This is where the packaging tool stores the authoritative copy of
-    /// each shared library. On Linux and macOS this is also the directory
-    /// the OS loader uses at process startup. On Windows multi-arch bundles,
-    /// the OS loader uses colocated DLL copies beside each executable in
-    /// `bin\<arch>\`; `librariesPath` still points at the canonical store.
-    /// Use this for runtime plugin/`LoadLibrary` lookups, not for
-    /// discovering which DLLs the OS loaded at image-load time.
+    /// Path to the directory containing shared libraries for the running process.
     /// - macOS: Contents/Frameworks/
     /// - Linux: lib/
-    /// - Windows: Frameworks\
+    /// - Windows: directory containing the running .exe (DLLs colocated)
     public var librariesPath: String { get }
 
     /// Parsed bundle metadata.
@@ -205,7 +226,7 @@ let iconPath = AppBundle.main.path(forResource: "app-icon", ofType: "png")
 let sfx = AppBundle.main.path(forResource: "click", ofType: "wav", in: "sounds")
 // → <bundle>/Resources/sounds/click.wav
 
-// Localized resource (searches <locale>.lproj/ directories)
+// Localized resource (explicit locale subdirectory)
 let greeting = AppBundle.main.path(forResource: "welcome", ofType: "strings", in: "en.lproj")
 // → <bundle>/Resources/en.lproj/welcome.strings
 
@@ -215,9 +236,9 @@ if let data = AppBundle.main.data(forResource: "config", ofType: "json") {
     let config = try JSONDecoder().decode(AppConfig.self, from: data)
 }
 
-// Bundle metadata
-let version = AppBundle.main.info.bundleVersion   // "1.0.0"
-let name = AppBundle.main.info.bundleName         // "MyApp"
+// Bundle metadata (optional fields — nil on macOS if plist keys are absent)
+let version = AppBundle.main.info.bundleVersion   // Optional("1.0.0")
+let name = AppBundle.main.info.bundleName         // Optional("MyApp")
 ```
 
 ### macOS Interop
@@ -244,9 +265,9 @@ The `librariesPath` property returns the platform-correct directory name:
 |----------|------------------|------------------------|
 | macOS | `Contents/Frameworks/` | `<bundle>/Contents/Frameworks/` |
 | Linux | `lib/` | `<bundle>/lib/` |
-| Windows | `Frameworks\` | `<bundle>\Frameworks\` |
+| Windows | DLLs beside executable | directory containing the running `.exe` |
 
-This is intentional: each platform uses its conventional name. The API normalizes access so application code never needs to know which name is used. Note that on Windows multi-arch bundles, the OS loader resolves import-time DLLs from the executable-local `bin\<arch>\` directory, not from `Frameworks\`. `librariesPath` points at the bundle's canonical library store, which is the right place for runtime `LoadLibrary()` calls and plugin discovery, but not necessarily the directory the OS used at process startup.
+On macOS and Linux, `librariesPath` points at a dedicated library directory. On Windows, DLLs are colocated with the executable (no separate library directory), so `librariesPath` returns the directory containing the running `.exe` — either the bundle root (single-arch) or `bin\<arch>\` (multi-arch). This ensures `librariesPath` always points where the process's libraries actually are, with no dual-directory ambiguity.
 
 ## Runtime Loader Contract
 
@@ -262,7 +283,7 @@ The bundle format must guarantee that shared libraries are found at process star
 
 1. **DLLs are colocated with each real executable**: The packaging tool copies required DLLs into each `bin\<arch>\` directory. Windows resolves import-time dependencies from the directory containing the loading `.exe`, so this is the only mechanism that works reliably at image-load time.
 2. **Single-arch bundles**: DLLs sit alongside the root `.exe` (standard Windows convention).
-3. **`Frameworks\` is a canonical source, not a search path**: It holds one copy of each DLL for the packaging tool to distribute. Applications that use `LoadLibrary()` at runtime (e.g., plugin loading) can explicitly add `Frameworks\` via `AddDllDirectory()` within their own process.
+3. **No separate library directory**: Unlike Linux (`lib/`) and macOS (`Frameworks/`), Windows bundles do not have a dedicated shared library directory. All DLLs live beside the executable that loads them, eliminating the risk of dual-loading two physical copies of the same DLL.
 
 ### macOS
 
@@ -277,7 +298,7 @@ No special handling needed — `@rpath` and `@executable_path` in Mach-O binarie
 - [ ] macOS: wrap `Foundation.Bundle.main`
 - [ ] Linux: `/proc/self/exe` + directory walk
 - [ ] Windows: `GetModuleFileNameW()` + directory walk
-- [ ] `librariesPath` normalization per platform
+- [ ] `librariesPath` per platform (dedicated dir on macOS/Linux, exe-local on Windows)
 - [ ] Unit tests for path resolution and `BundleInfo` parsing
 
 ### Phase 2: Packaging Tool
@@ -308,7 +329,7 @@ No special handling needed — `@rpath` and `@executable_path` in Mach-O binarie
 
 - **macOS stays native**: Don't reinvent `.app/Contents/` — wrap it. Developers who ship macOS-only can ignore this entirely.
 - **Info.json over Info.plist**: JSON is simpler to parse without Foundation. macOS uses its native plist; `BundleInfo` maps explicitly.
-- **Platform-specific library directories**: `lib/` on Linux, `Frameworks/` on Windows/macOS. Follows each platform's convention rather than forcing a single name. The API normalizes this.
+- **Platform-specific library placement**: `lib/` on Linux, `Contents/Frameworks/` on macOS, colocated with executable on Windows. Each follows its platform's convention. `librariesPath` normalizes access.
 - **Launcher is optional**: Single-arch apps can skip the launcher and `bin/` directory. The top-level executable IS the app.
 - **Loader contract differs by platform**: Linux uses rpath (primary) + `LD_LIBRARY_PATH` (launcher backup). Windows colocates DLLs with each real executable — no inherited search path tricks. macOS uses native Mach-O loader.
 - **No custom file format**: The bundle is a plain directory. No archive, no signature envelope. Tools like code signing can be layered on later.
