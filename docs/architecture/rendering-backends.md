@@ -70,6 +70,27 @@ Each ViewHost coalesces state changes into a single rebuild per frame:
 | Win32 | `PostMessage` + custom message ID |
 | Web | `requestAnimationFrame` |
 
+## Window Scene Lifecycle
+
+The `Window` scene type provides single-instance windows opened via `OpenWindowAction` (an environment key). Each backend manages window lifecycle differently:
+
+| Platform | Window Management |
+|----------|-------------------|
+| GTK4 | `GTK4WindowRegistry` — tracks live `GtkWindow*` pointers per scene ID. `open(id:)` refocuses existing windows or creates via factory. `destroy` signal clears pointers to prevent use-after-free. All Window scenes register factories at render time. |
+| Win32 | `Win32WindowRegistry` — tracks `HWND` per scene ID. `open(id:)` calls `SetForegroundWindow` on existing handle or invokes factory. `WM_DESTROY` clears handle. Separate `windowSceneWndProc` with message forwarding (WM_HSCROLL, WM_VSCROLL, WM_NOTIFY). `hasMainWindow` flag for app termination when no windows remain. |
+| Web | Not yet implemented. |
+
+## App Bundle Resource Discovery
+
+`AppBundle` provides platform-independent resource lookup for packaged apps:
+
+| Mode | Discovery | Resources path |
+|------|-----------|---------------|
+| Production (.app bundle) | macOS: `Foundation.Bundle`; Linux: `/proc/self/exe` + `Info.json` walk-up; Windows: `GetModuleFileNameW` + `Info.json` walk-up | macOS: `Contents/Resources/`; Linux/Windows: `Resources/` |
+| Development (`swift run`) | Walk up from executable, find `Package.swift` + `Resources/` | `<packageRoot>/Resources/` |
+
+The `create-bundle` SPM plugin (`swift package create-bundle <product>`) automates packaging into `.build/bundles/<Product>.app` with platform-appropriate layout and generated metadata.
+
 ## macOS
 
 On macOS, examples use real SwiftUI directly (`import SwiftUI` + `App.main()`). No SwiftOpenUI backend is needed — the framework compiles for testing but rendering uses Apple's native implementation.

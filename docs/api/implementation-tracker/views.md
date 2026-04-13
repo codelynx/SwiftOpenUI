@@ -1,6 +1,6 @@
 # Views
 
-Summary: 89 total, 53 implemented, 0 partial, 36 missing.
+Summary: 89 total, 54 implemented, 0 partial, 35 missing.
 
 ## Text Views
 
@@ -95,7 +95,7 @@ Summary: 89 total, 53 implemented, 0 partial, 36 missing.
 
 ## Grouping & Disclosure
 
-5 total, 2 implemented, 0 partial, 3 missing.
+5 total, 3 implemented, 0 partial, 2 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -103,7 +103,7 @@ Summary: 89 total, 53 implemented, 0 partial, 36 missing.
 | `Group` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Group.swift` | - |
 | `GroupBox` | Both | iOS, macOS 10.15, visionOS 1 | Current | Missing | `-` | - |
 | `LabeledContent` | Both | iOS, macOS 13, watchOS 9, tvOS 16, visionOS 1 | Current | Missing | `-` | - |
-| `OutlineGroup` | Both | iOS, macOS 11, visionOS 1 | Current | Missing | `-` | - |
+| `OutlineGroup` | Both | iOS, macOS 11, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/OutlineGroup.swift` | Hierarchical list view; GTK: recursive GtkExpander tree |
 
 ## Navigation
 

@@ -20,7 +20,13 @@ swift build
 swift test
 swift run HelloWorld
 swift run ColorMixer
+
+# Package as a .app bundle
+swift package create-bundle HelloWorld --allow-writing-to-package-directory
+# Output: .build/bundles/HelloWorld.app
 ```
+
+See [App Bundle Packaging](app-bundle-packaging.md) for full bundle structure and platform details.
 
 ### Xcode Project
 

@@ -2,7 +2,7 @@
 
 Comparison of SwiftUI features and their SwiftOpenUI implementation status across backends.
 
-Last updated: 2026-03-25
+Last updated: 2026-04-13
 
 ## Legend
 
@@ -48,7 +48,8 @@ Last updated: 2026-03-25
 | TabView | Y | Y | Y | Y | Y | - | GTK: Stack+Switcher; Win32: button bar; Web: tab bar+panels |
 | Grid | Y | Y | Y | Y | Y | - | GTK: GtkGrid; Win32: VStack of HStacks; Web: CSS grid |
 | GridRow | Y | Y | Y | Y | Y | - | MultiChildView, .gridCellColumns() span |
-| DisclosureGroup | Y | Y | Y | Y | Y | - | GTK: GtkExpander; Win32: toggle+show/hide; Web: details/summary |
+| DisclosureGroup | Y | Y | Y | Y | Y | - | GTK: GtkExpander; Win32: toggle+show/hide; Web: details/summary. Custom label support. |
+| OutlineGroup | Y | Y | Y | - | - | - | Hierarchical list view. GTK: recursive GtkExpander tree. |
 | Form | Y | Y | Y | Y | Y | - | GTK: styled GtkBox; Win32: VStack+padding; Web: styled div |
 | Section | Y | Y | Y | Y | Y | - | GTK: Pango header; Win32: header+divider; Web: h3+content |
 | LazyVStack | Y | Y | Y | Y | Y | - | GTK: virtualized; Win32/Web: non-virtualized |
@@ -160,6 +161,7 @@ Last updated: 2026-03-25
 | @FocusState | Y | Y | Bool and enum variants |
 | @Observable | Y | Y | Swift Observation framework, withObservationTracking |
 | ObservableObject | Y | Y | Protocol marker |
+| OpenWindowAction (env) | Y | ~ | Environment key for opening Window scenes by ID. GTK/Win32: functional. Web: resolves to no-op default. |
 | @AppStorage | Y | - | |
 | @SceneStorage | Y | - | |
 | @FetchRequest | Y | - | Core Data specific |
@@ -186,7 +188,8 @@ Last updated: 2026-03-25
 | App protocol | Y | Y | |
 | Scene protocol | Y | Y | |
 | WindowGroup | Y | Y | Title + content |
-| @SceneBuilder | Y | Y | Single scene only |
+| Window | Y | ~ | Core type + GTK/Win32 rendering. GTK: window registry; Win32: HWND registry + WndProc. Web: not yet rendered. |
+| @SceneBuilder | Y | Y | Two-scene overload (TupleScene) |
 | @ViewBuilder | Y | Y | Up to 12 children |
 | .defaultWindowSize() | Y | ~ | GTK4 + Win32 implemented; maps to native initial size |
 | .windowSizeConstraints() | Y | ~ | Win32 min/max; GTK4 min only in first pass |
@@ -216,9 +219,9 @@ Last updated: 2026-03-25
 
 | Category | SwiftUI Total | Core Implemented | GTK4 | Win32 | Coverage |
 |----------|--------------|-----------------|------|-------|----------|
-| Views | 44 | 43 | 43 | 43 | ~98% |
+| Views | 45 | 44 | 44 | 43 | ~98% |
 | Modifiers | 40 | 38 | 38 | 38 | ~95% |
-| State & Data | 13 | 10 | 10 | 10 | ~77% |
+| State & Data | 14 | 11 | 11 | 11 | ~79% |
 | Navigation | 8 | 7 | 7 | 7 | 88% |
-| App structure | 9 | 5 | 5 | 5 | ~56% |
+| App structure | 10 | 6 | 7 | 5 | ~60% |
 | Layout system | 9 | 7 | 7 | 7 | ~78% |

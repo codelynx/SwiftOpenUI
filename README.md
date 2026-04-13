@@ -25,10 +25,10 @@ A MacPaint-class drawing app with pencil, eraser, line, rectangle, and ellipse t
 | Platform | Backend | Status | Views | Modifiers |
 |----------|---------|--------|-------|-----------|
 | macOS | SwiftUI (native) | Reference | All | All |
-| Linux | GTK4 | Stable | 43/44 | 36/38 |
-| Windows | Win32 + D2D | Stable | 43/44 | 36/38 |
-| Web | Wasm + DOM | Near-parity | 42/44 | 36/38 |
-| Android | Compose | Suspended | 14/44 | 22/38 |
+| Linux | GTK4 | Stable | 44/45 | 38/40 |
+| Windows | Win32 + D2D | Stable | 43/45 | 38/40 |
+| Web | Wasm + DOM | Near-parity | 42/45 | 36/40 |
+| Android | Compose | Suspended | 14/45 | 22/40 |
 
 ## Feature Parity
 
@@ -71,6 +71,21 @@ swift run ColorMixer
 
 For detailed per-platform setup (prerequisites, toolchains, Vite, GTK4 packages, Visual Studio), see the **[Getting Started Guide](docs/guides/getting-started.md)**.
 
+## App Packaging
+
+Package any executable as a `.app` bundle using the built-in SPM plugin:
+
+```bash
+swift package create-bundle HelloWorld --allow-writing-to-package-directory
+# Output: .build/bundles/HelloWorld.app
+```
+
+Creates a platform-appropriate bundle (macOS: `Contents/MacOS/` + `Info.plist`; Linux: `Info.json` + `lib/`; Windows: `Info.json` + `.exe`). Resources from `Resources/` at the package root are copied automatically.
+
+During development (`swift run`), `AppBundle.main` discovers resources from `Resources/` at the package root without needing a packaged bundle.
+
+See the **[App Bundle Packaging Guide](docs/guides/app-bundle-packaging.md)** for details.
+
 ## Examples
 
 ### Showcase
@@ -105,11 +120,14 @@ swift run ParityAppStructure      # App, Scene, WindowGroup, @ViewBuilder
 
 ## What's Implemented
 
-### Views (43 of 44)
-Text, Button, TextField, Toggle, Slider, Image, Color, Spacer, Divider, VStack, HStack, ZStack, Group, ForEach, List, ScrollView, AnyView, EmptyView, NavigationStack, NavigationLink, SecureField, TextEditor, ProgressView, Stepper, Label, Link, TabView, Grid, GridRow, DisclosureGroup, Form, Section, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Picker, DatePicker, GeometryReader, Menu, ConfirmationDialog, Canvas, NavigationSplitView, Path
+### Views (44 of 45)
+Text, Button, TextField, Toggle, Slider, Image, Color, Spacer, Divider, VStack, HStack, ZStack, Group, ForEach, List, ScrollView, ScrollViewReader, AnyView, EmptyView, NavigationStack, NavigationLink, NavigationSplitView, SecureField, TextEditor, ProgressView, Stepper, Label, Link, TabView, Grid, GridRow, DisclosureGroup, OutlineGroup, Form, Section, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Picker, DatePicker, GeometryReader, ViewThatFits, Menu, ConfirmationDialog, Canvas, Path, Circle, Rectangle, RoundedRectangle, Capsule, Ellipse, LinearGradient, RadialGradient
 
-### Modifiers (36 of 38)
-.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .environmentObject(), .environment(), .navigationTitle(), .navigationDestination(), .focused(), .modifier(), withAnimation(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .searchable(), .toolbar(), .gridCellColumns(), .pickerStyle(), .navigationSplitViewColumnWidth(), .onDisappear()
+### Modifiers (38 of 40)
+.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .disabled(), .environmentObject(), .environment(), .navigationTitle(), .navigationDestination(), .focused(), .modifier(), withAnimation(), .clipShape(), .clipped(), .hidden(), .blur(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .buttonStyle(), .toggleStyle(), .textFieldStyle(), .onChange(), .contextMenu(), .position(), .layoutPriority(), .fixedSize(), .popover(), .id(), .tag(), .onSubmit(), .bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase(), .aspectRatio(), .scaledToFit(), .scaledToFill(), .fullScreenCover(), .pickerStyle(), .navigationSplitViewColumnWidth(), .ignoresSafeArea(), .safeAreaInset(), .lineLimit(), .truncationMode(), .lineSpacing(), .multilineTextAlignment()
+
+### Scenes & App Structure
+WindowGroup, Window (GTK/Win32), OpenWindowAction, @SceneBuilder, @ViewBuilder
 
 ### State Management
 @State, @Binding, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @Environment, @FocusState, @Observable, ObservableObject
@@ -160,6 +178,8 @@ open Examples.xcodeproj
 | [Running Examples](docs/guides/running-examples.md) | Build and run on all platforms |
 | [Adding a Backend](docs/guides/adding-a-backend.md) | How to implement a new backend |
 | [Web Setup](docs/guides/web-setup.md) | Wasm build, Vite, DOM mapping |
+| [App Bundle Format](docs/architecture/app-bundle-format.md) | Cross-platform .app bundle spec |
+| [App Bundle Packaging](docs/guides/app-bundle-packaging.md) | Packaging guide + SPM plugin |
 | [Platform Notes](docs/porting/platform-notes.md) | Platform quirks and workarounds |
 | [Web Parity Plan](docs/plans/web-parity-plan.md) | Web backend gap analysis |
 

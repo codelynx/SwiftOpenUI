@@ -21,6 +21,7 @@ All state property wrappers live in `Sources/SwiftOpenUI/State/`. Storage is thr
 | `EnvironmentValues` | Key-value bag threaded through the view tree. |
 | `EnvironmentKey` protocol | Define custom keys with a `defaultValue`. |
 | `.environment(_:_:)` | Modifier to set a key's value for a subtree. |
+| `OpenWindowAction` | Environment key for opening `Window` scenes by ID. GTK/Win32: functional via window registry. Web: resolves to no-op default. Usage: `@Environment(\.openWindow) var openWindow; openWindow(id: "settings")`. |
 
 ## Observation & Scroll
 

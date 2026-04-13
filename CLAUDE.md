@@ -62,7 +62,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 ```bash
 # macOS (uses real SwiftUI for examples)
 swift build
-swift test                   # 606 tests
+swift test                   # ~628 macOS / ~636 Linux
 
 # WebAssembly (requires open-source Swift toolchain, not Xcode's)
 source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
@@ -79,6 +79,10 @@ swift run ParityViewsBasic
 swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld
 npx serve .build/plugins/PackageToJS/outputs/Package
 
+# Package an app as a .app bundle
+swift package create-bundle HelloWorld --allow-writing-to-package-directory
+# Output: .build/bundles/HelloWorld.app
+
 # Full setup from scratch (macOS only)
 ./configure
 ```
@@ -92,7 +96,8 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 - **Namespace conflicts**: On macOS, `ObservableObject` and `Published` clash with Combine. Tests qualify as `SwiftOpenUI.ObservableObject` and `@SwiftOpenUI.Published`. See `docs/issues/observable-namespace-conflict.md`.
 - **State management** (@State, @Binding, @ObservedObject, @Published, @StateObject, @EnvironmentObject, @FocusState, @Observable) is fully platform-independent with thread-safe storage.
 - **Environment TLS**: pthread on Linux/macOS, TlsAlloc on Windows, simple global on Wasm (single-threaded).
-- **Scene rendering is recursive**: `renderScene` walks `Scene.body` until it hits a terminal `WindowGroup`.
+- **Scene rendering is recursive**: `renderScene` walks `Scene.body` until it hits a terminal `WindowGroup` or `Window`.
+- **App bundle dev mode**: When running via `swift run`, `AppBundle.main` walks up from the executable looking for `Package.swift` + `Resources/`. Place resources in `Resources/` at the package root for development-time resource lookup without a `.app` bundle.
 
 ## Architecture Layers
 
@@ -115,7 +120,10 @@ npx serve .build/plugins/PackageToJS/outputs/Package
 ## Current Views & Modifiers
 
 ### Views (Sources/SwiftOpenUI/Views/)
-Text, Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper, Picker, DatePicker, ProgressView, Label, Link, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView, TabView, Grid, GridRow, Form, Section, DisclosureGroup, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Menu, Canvas, GeometryReader, ViewThatFits, NavigationSplitView, ConfirmationDialog, Path (with StrokeStyle, Shading), Circle, Rectangle, RoundedRectangle, Capsule, Ellipse (Shape protocol with .fill()/.stroke()), ScrollViewReader, LinearGradient, RadialGradient
+Text, Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper, Picker, DatePicker, ProgressView, Label, Link, ScrollView, List, Image, VStack, HStack, ZStack, Spacer, Divider, Color, Group, ForEach, AnyView, EmptyView, TabView, Grid, GridRow, Form, Section, DisclosureGroup, OutlineGroup, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Menu, Canvas, GeometryReader, ViewThatFits, NavigationSplitView, ConfirmationDialog, Path (with StrokeStyle, Shading), Circle, Rectangle, RoundedRectangle, Capsule, Ellipse (Shape protocol with .fill()/.stroke()), ScrollViewReader, LinearGradient, RadialGradient
+
+### Scenes (Sources/SwiftOpenUI/App/)
+WindowGroup, Window (GTK/Win32: functional with OpenWindowAction; Web: core type only)
 
 ### Navigation (Sources/SwiftOpenUI/Navigation/)
 NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigationTitle(), .navigationDestination(for:), NavigateAction (environment)
@@ -166,6 +174,8 @@ NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigatio
 | `docs/issues/observable-namespace-conflict.md` | ObservableObject/Published clash on macOS |
 | `docs/plans/simplepaint-example.md` | SimplePaint example design and scope |
 | `docs/proposals/unified-canvas-api.md` | Unified Canvas API proposal (Path, Shading, StrokeStyle) |
+| `docs/architecture/app-bundle-format.md` | Cross-platform .app bundle format spec |
+| `docs/guides/app-bundle-packaging.md` | App bundle packaging guide + SPM plugin usage |
 
 ## Reference Projects
 
