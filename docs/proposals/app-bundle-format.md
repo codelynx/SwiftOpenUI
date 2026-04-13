@@ -84,24 +84,27 @@ exec "$BUNDLE_DIR/bin/$ARCH/MyApp" "$@"
 
 ```
 MyApp.app\
-├── MyApp.exe                  ← launcher shim (see below for arch strategy)
+├── MyApp.exe                  ← launcher shim (x86-64, arch detection)
 ├── Info.json
 ├── bin\
-│   ├── x86_64\MyApp.exe
-│   └── arm64\MyApp.exe
+│   ├── x86_64\
+│   │   ├── MyApp.exe
+│   │   └── SwiftOpenUI.dll    ← DLLs colocated with each arch binary
+│   └── arm64\
+│       ├── MyApp.exe
+│       └── SwiftOpenUI.dll
 ├── Resources\
-└── Frameworks\
+└── Frameworks\                ← canonical DLL source (used by packaging tool)
     └── SwiftOpenUI.dll
 ```
 
-**Launcher architecture strategy**: The top-level launcher must be launchable on all target architectures. Two options:
+**Launcher strategy (multi-arch only)**: A single x86-64 launcher `.exe` at the bundle root. It detects architecture via `IsWow64Process2()` / `GetNativeSystemInfo()` and spawns the native binary from `bin\<arch>\`. The x86-64 launcher runs on ARM64 via Windows' built-in x86 emulation (Prism), which is present on all Windows 11 ARM64. Windows 10 ARM64 IoT (no emulation) is not a supported target.
 
-1. **Dual launcher (recommended for multi-arch)**: Ship both `MyApp.exe` (x86-64) and `MyApp_arm64.exe` (ARM64) at the bundle root. A `.lnk` shortcut or installer picks the right one, or the user double-clicks the one matching their system. The x86-64 launcher also works on ARM64 via Windows' built-in x86 emulation (Prism), so a single x86-64 launcher is acceptable when x86 emulation is guaranteed (Windows 11 ARM64).
-2. **Single x86-64 launcher with emulation requirement**: Ship only an x86-64 launcher. Document that Windows ARM64 systems require x86 emulation support (present on all Windows 11 ARM64, but absent on Windows 10 ARM64 IoT). The launcher detects architecture via `IsWow64Process2()` / `GetNativeSystemInfo()` and spawns the native `bin\arm64\MyApp.exe` for full performance.
+**`executableName` semantics**: `Info.json.executableName` always names the top-level entry point (`MyApp`). In a multi-arch bundle this is the launcher; in a single-arch bundle this is the real binary itself — the two cases are structurally different but `executableName` consistently identifies the file a user or OS would launch. `AppBundle.executablePath` returns the path of the currently running binary (i.e., the real `bin\<arch>\MyApp.exe` in multi-arch, or the root `MyApp.exe` in single-arch), resolved at runtime via `GetModuleFileNameW()`.
 
-**DLL loading contract**: The launcher calls `SetDllDirectoryW()` or `AddDllDirectory()` to add the bundle's `Frameworks\` directory to the DLL search path before spawning the real executable. For single-arch bundles (no launcher), DLLs are colocated with the executable in `bin\<arch>\` or the packaging tool places copies there.
+**DLL loading contract**: The packaging tool **colocates required DLLs with each real executable** in `bin\<arch>\`. This is the only reliable mechanism — Windows resolves import-time DLL dependencies from the directory containing the loading `.exe`, and APIs like `SetDllDirectoryW()` only affect the calling process, not a spawned child's image-load search. The top-level `Frameworks\` directory serves as a **canonical source** for the packaging tool (one copy of each DLL, copied into each `bin\<arch>\` at package time) and for runtime `LoadLibrary()` / plugin loading where the application explicitly sets the search path within its own process.
 
-**Single-arch shortcut** — same as Linux; skip `bin\` and make the top-level `.exe` the real binary with DLLs alongside it.
+**Single-arch shortcut** — skip `bin\` and make the top-level `.exe` the real binary with DLLs alongside it. No launcher needed. The `Frameworks\` directory still exists and holds the same DLLs (the packaging tool creates it as the canonical store). `librariesPath` points there. The root-level DLL copies are what the OS loader uses at image-load time; `Frameworks\` is for runtime `LoadLibrary()` and consistency with multi-arch bundles.
 
 ## Info.json / BundleInfo Mapping
 
@@ -128,7 +131,7 @@ public struct BundleInfo: Codable {
     public var bundleVersion: String
     public var executableName: String
     public var minimumSwiftOpenUIVersion: String?
-    public var architectures: [String]
+    public var architectures: [String]?
     public var icon: String?
 }
 ```
@@ -143,7 +146,7 @@ public struct BundleInfo: Codable {
 | `executableName` | `executableName` | `CFBundleExecutable` |
 | `icon` | `icon` | `CFBundleIconFile` |
 
-On macOS, `BundleInfo` is populated by reading the native `Info.plist` keys and mapping them to the SwiftOpenUI schema. Fields not present in `Info.plist` (like `architectures`, `minimumSwiftOpenUIVersion`) are left nil or derived from the binary (e.g., `lipo -archs`). No lossy translation — the mapping is explicit and one-directional (plist → BundleInfo).
+On macOS, `BundleInfo` is populated by reading the native `Info.plist` keys and mapping them to the SwiftOpenUI schema. Fields not present in `Info.plist` (`architectures`, `minimumSwiftOpenUIVersion`) are nil by default. `architectures` may be eagerly derived from the binary via `lipo -archs` if needed, but this is an implementation choice — the API treats it as optional on all platforms. On Linux/Windows, `architectures` is populated from `Info.json` and is expected to be present, but the struct does not enforce this at the type level. No lossy translation — the mapping is explicit and one-directional (plist → BundleInfo).
 
 ## AppBundle API
 
@@ -163,8 +166,14 @@ public struct AppBundle {
     /// Path to the Resources/ directory.
     public var resourcesPath: String { get }
 
-    /// Path to the shared libraries directory.
-    /// Returns the platform-appropriate path:
+    /// Path to the bundle's canonical shared libraries directory.
+    /// This is where the packaging tool stores the authoritative copy of
+    /// each shared library. On Linux and macOS this is also the directory
+    /// the OS loader uses at process startup. On Windows multi-arch bundles,
+    /// the OS loader uses colocated DLL copies beside each executable in
+    /// `bin\<arch>\`; `librariesPath` still points at the canonical store.
+    /// Use this for runtime plugin/`LoadLibrary` lookups, not for
+    /// discovering which DLLs the OS loaded at image-load time.
     /// - macOS: Contents/Frameworks/
     /// - Linux: lib/
     /// - Windows: Frameworks\
@@ -184,6 +193,36 @@ public struct AppBundle {
                      in subdirectory: String? = nil) -> Data?
 }
 ```
+
+### Resource Access Examples
+
+```swift
+// Image by name and extension
+let iconPath = AppBundle.main.path(forResource: "app-icon", ofType: "png")
+// → <bundle>/Resources/app-icon.png
+
+// Asset in a subdirectory
+let sfx = AppBundle.main.path(forResource: "click", ofType: "wav", in: "sounds")
+// → <bundle>/Resources/sounds/click.wav
+
+// Localized resource (searches <locale>.lproj/ directories)
+let greeting = AppBundle.main.path(forResource: "welcome", ofType: "strings", in: "en.lproj")
+// → <bundle>/Resources/en.lproj/welcome.strings
+
+
+// Load data directly
+if let data = AppBundle.main.data(forResource: "config", ofType: "json") {
+    let config = try JSONDecoder().decode(AppConfig.self, from: data)
+}
+
+// Bundle metadata
+let version = AppBundle.main.info.bundleVersion   // "1.0.0"
+let name = AppBundle.main.info.bundleName         // "MyApp"
+```
+
+### macOS Interop
+
+On macOS, `AppBundle.main` wraps `Foundation.Bundle.main`. The resource lookup methods delegate to Foundation's implementation, which supports asset catalogs, localization fallback chains, and all native behaviors. The API surface is intentionally a subset — apps that need full `Foundation.Bundle` features can access it directly on macOS.
 
 ### Finding the Bundle Root
 
@@ -207,11 +246,11 @@ The `librariesPath` property returns the platform-correct directory name:
 | Linux | `lib/` | `<bundle>/lib/` |
 | Windows | `Frameworks\` | `<bundle>\Frameworks\` |
 
-This is intentional: each platform uses its conventional name. The API normalizes access so application code never needs to know which name is used.
+This is intentional: each platform uses its conventional name. The API normalizes access so application code never needs to know which name is used. Note that on Windows multi-arch bundles, the OS loader resolves import-time DLLs from the executable-local `bin\<arch>\` directory, not from `Frameworks\`. `librariesPath` points at the bundle's canonical library store, which is the right place for runtime `LoadLibrary()` calls and plugin discovery, but not necessarily the directory the OS used at process startup.
 
 ## Runtime Loader Contract
 
-The bundle format must guarantee that shared libraries are found at process startup. This is the launcher's responsibility.
+The bundle format must guarantee that shared libraries are found at process startup. The mechanism differs by platform — the launcher, the packaging tool, or the OS itself may be responsible.
 
 ### Linux
 
@@ -221,9 +260,9 @@ The bundle format must guarantee that shared libraries are found at process star
 
 ### Windows
 
-1. **Launcher calls `SetDllDirectoryW()`**: Adds `<bundle>\Frameworks\` to the search path before spawning the real binary.
-2. **Single-arch bundles**: DLLs are colocated with the executable (standard Windows convention — DLLs next to `.exe` are found automatically).
-3. **Multi-arch bundles**: The launcher handles DLL path setup. Alternatively, the packaging tool places DLL copies in each `bin\<arch>\` directory (trades disk space for simplicity).
+1. **DLLs are colocated with each real executable**: The packaging tool copies required DLLs into each `bin\<arch>\` directory. Windows resolves import-time dependencies from the directory containing the loading `.exe`, so this is the only mechanism that works reliably at image-load time.
+2. **Single-arch bundles**: DLLs sit alongside the root `.exe` (standard Windows convention).
+3. **`Frameworks\` is a canonical source, not a search path**: It holds one copy of each DLL for the packaging tool to distribute. Applications that use `LoadLibrary()` at runtime (e.g., plugin loading) can explicitly add `Frameworks\` via `AddDllDirectory()` within their own process.
 
 ### macOS
 
@@ -252,12 +291,12 @@ No special handling needed — `@rpath` and `@executable_path` in Mach-O binarie
 - [ ] `--architectures` flag for multi-arch bundles
 - [ ] Platform launcher generation (shell script for Linux, shim .exe for Windows)
 - [ ] rpath embedding for Linux binaries (`patchelf --set-rpath`)
-- [ ] DLL colocation or `Frameworks\` setup for Windows
+- [ ] DLL colocation into each `bin\<arch>\` for Windows multi-arch bundles
 
 ### Phase 3: Universal Binary Support
 - [ ] Linux launcher shim (static ELF, replaces shell script)
-- [ ] Windows launcher shim (tiny .exe, arch detection + exec, `SetDllDirectoryW`)
-- [ ] Dual-launcher option for Windows ARM64 (x86-64 + ARM64 launchers)
+- [ ] Windows launcher shim (tiny x86-64 .exe, arch detection + `CreateProcessW`)
+- [ ] Windows ARM64 support via x86 emulation (Prism) for the launcher
 - [ ] Multi-arch build orchestration (`swift build` for each target, combine into bundle)
 
 ### Phase 4: Desktop Integration
@@ -271,7 +310,7 @@ No special handling needed — `@rpath` and `@executable_path` in Mach-O binarie
 - **Info.json over Info.plist**: JSON is simpler to parse without Foundation. macOS uses its native plist; `BundleInfo` maps explicitly.
 - **Platform-specific library directories**: `lib/` on Linux, `Frameworks/` on Windows/macOS. Follows each platform's convention rather than forcing a single name. The API normalizes this.
 - **Launcher is optional**: Single-arch apps can skip the launcher and `bin/` directory. The top-level executable IS the app.
-- **Loader contract is the launcher's job**: The launcher sets up library search paths. Binaries also embed rpath/DLL-dir as a fallback for direct execution.
+- **Loader contract differs by platform**: Linux uses rpath (primary) + `LD_LIBRARY_PATH` (launcher backup). Windows colocates DLLs with each real executable — no inherited search path tricks. macOS uses native Mach-O loader.
 - **No custom file format**: The bundle is a plain directory. No archive, no signature envelope. Tools like code signing can be layered on later.
 - **Not a replacement for system packages**: This doesn't replace `.deb`, `.msi`, or Flatpak for system-level distribution. It's an app-level container for portable deployment.
 
@@ -281,4 +320,4 @@ No special handling needed — `@rpath` and `@executable_path` in Mach-O binarie
 2. **Code signing**: macOS has codesign. Should we define a signing format for Linux/Windows bundles?
 3. **Auto-update**: Should the bundle format include provisions for delta updates?
 4. **Compression**: Should we support a `.app.zip` or `.app.tar.gz` distribution format with a standard layout inside?
-5. **Windows 10 ARM64**: Do we require x86 emulation for the launcher, or mandate dual launchers for full ARM64 support?
+5. ~~**Windows 10 ARM64**~~: Resolved — single x86-64 launcher requires Prism (Windows 11 ARM64). Windows 10 ARM64 IoT is not a supported target.
