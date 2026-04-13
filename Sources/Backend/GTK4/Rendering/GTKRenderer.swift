@@ -100,6 +100,9 @@ extension Text: GTKRenderable, GTKDescribable {
         let label = gtk_label_new(content)!
         gtk_swift_label_set_xalign(label, 0)
         gtk_swift_label_set_yalign(label, 0.5)
+        // SwiftUI Text wraps to intrinsic size — prevent GTK expansion.
+        gtk_widget_set_hexpand(label, 0)
+        gtk_widget_set_vexpand(label, 0)
         gtkMarkHostedNodeKind(label, kind: .text)
         return opaqueFromWidget(label)
     }

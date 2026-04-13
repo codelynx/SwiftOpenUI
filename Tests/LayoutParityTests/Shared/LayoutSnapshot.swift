@@ -205,10 +205,13 @@ public struct LayoutLeaf: CustomStringConvertible {
 /// Leaves are nodes with no children (actual rendered content).
 /// Skips zero-size nodes and spacer placeholders.
 public func extractLeaves(from node: LayoutNode, skipSpacers: Bool = true) -> [LayoutLeaf] {
+    // Skip spacer nodes entirely (including their children)
+    if skipSpacers && node.viewType == "Spacer" { return [] }
+
     if node.children.isEmpty {
         // Skip zero-size nodes
         if node.width <= 0 && node.height <= 0 { return [] }
-        // Skip spacer nodes (GTK renders spacers as empty 0-width labels)
+        // Skip nodes with zero in either dimension (invisible)
         if skipSpacers && (node.width == 0 || node.height == 0) { return [] }
         return [LayoutLeaf(
             tag: node.tag, x: node.x, y: node.y,
