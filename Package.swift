@@ -267,6 +267,18 @@ let deps: [Package.Dependency] = [
 let deps: [Package.Dependency] = []
 #endif
 
+// App bundle packaging plugin
+targets.append(
+    .plugin(
+        name: "CreateBundle",
+        capability: .command(
+            intent: .custom(verb: "create-bundle", description: "Package an executable as a .app bundle"),
+            permissions: [.writeToPackageDirectory(reason: "Creates .build/bundles/<Product>.app")]
+        ),
+        path: "Plugins/CreateBundle"
+    )
+)
+
 let package = Package(
     name: "SwiftOpenUI",
     platforms: [.macOS(.v14)],
