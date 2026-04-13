@@ -171,16 +171,17 @@ public struct GTK4Backend: RenderBackend {
 /// GTK4 rendering for Window scenes (single-instance, identified windows).
 extension Window: GTKWindowRenderable {
     func gtkRender(app: OpaquePointer) {
+        // Register a factory for all Window scenes so openWindow(id:) works
+        // regardless of launch behavior.
+        GTK4WindowRegistry.shared.register(id: id) { [self] in
+            self.gtkCreateWindow(app: app)
+        }
+
         // Suppressed windows are not shown at launch — they are opened
         // programmatically via the openWindow environment action.
-        if launchBehavior == .suppressed {
-            // Register a factory so openWindow(id:) can create it later.
-            GTK4WindowRegistry.shared.register(id: id) { [self] in
-                self.gtkCreateWindow(app: app)
-            }
-            return
+        if launchBehavior != .suppressed {
+            gtkCreateWindow(app: app)
         }
-        gtkCreateWindow(app: app)
     }
 
     func gtkCreateWindow(app: OpaquePointer) {
@@ -211,6 +212,30 @@ extension Window: GTKWindowRenderable {
 
         gtk_window_set_child(winPtr, contentWidget)
         gtk_window_present(winPtr)
+
+        // Track the live window so repeated openWindow(id:) refocuses
+        // instead of creating duplicates. Hook the destroy signal to
+        // clear the pointer when the window is closed, preventing
+        // use-after-free on subsequent open(id:) calls.
+        let windowId = id
+        GTK4WindowRegistry.shared.setLiveWindow(id: windowId, window: winPtr)
+
+        let box = ClosureBox {
+            GTK4WindowRegistry.shared.clearLiveWindow(id: windowId)
+        }
+        let ud = Unmanaged.passRetained(box).toOpaque()
+        g_signal_connect_data(
+            gpointer(winPtr), "destroy",
+            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                guard let userData else { return }
+                Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            ud,
+            { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                if let data { Unmanaged<ClosureBox>.fromOpaque(data).release() }
+            },
+            GConnectFlags(rawValue: 0)
+        )
     }
 }
 
@@ -222,16 +247,36 @@ extension TupleScene: GTKWindowRenderable {
     }
 }
 
-/// Registry for on-demand window factories (used by suppressed Window scenes).
+/// Registry for single-instance Window scenes. Tracks factories and live
+/// window pointers to enforce the one-window-per-id contract.
 class GTK4WindowRegistry {
     static let shared = GTK4WindowRegistry()
     private var factories: [String: () -> Void] = [:]
+    private var liveWindows: [String: UnsafeMutablePointer<GtkWindow>] = [:]
 
     func register(id: String, factory: @escaping () -> Void) {
         factories[id] = factory
     }
 
+    /// Record a live GTK window for the given id.
+    func setLiveWindow(id: String, window: UnsafeMutablePointer<GtkWindow>) {
+        liveWindows[id] = window
+    }
+
+    /// Clear the live window pointer (called from the destroy signal handler).
+    func clearLiveWindow(id: String) {
+        liveWindows.removeValue(forKey: id)
+    }
+
+    /// Open or refocus the window with the given id.
+    /// If a live window exists, it is presented (refocused).
+    /// Otherwise, the factory creates a new one.
     func open(id: String) {
+        if let existing = liveWindows[id] {
+            gtk_window_present(existing)
+            return
+        }
+        // Window was closed or never created — invoke the factory.
         factories[id]?()
     }
 }
