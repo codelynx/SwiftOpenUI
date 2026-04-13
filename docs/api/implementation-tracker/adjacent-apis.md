@@ -4,7 +4,7 @@ Items mentioned in the curated reference that do not fit cleanly into the direct
 
 ## View-Adjacent
 
-9 total, 3 implemented, 1 partial, 5 missing.
+9 total, 4 implemented, 0 partial, 5 missing.
 
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
@@ -15,7 +15,7 @@ Items mentioned in the curated reference that do not fit cleanly into the direct
 | `Path` | Curated only | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Path.swift` | - |
 | `Settings` | Curated only | macOS | Current | Missing | `-` | - |
 | `Volume` | Curated only | visionOS | Current | Missing | `-` | - |
-| `Window` | Curated only | macOS | Current | Partial | `Sources/SwiftOpenUI/App/Window.swift` | Core type + GTK/Win32 rendering. GTK: window registry; Win32: HWND registry + WndProc. Web: not yet rendered. |
+| `Window` | Curated only | macOS | Current | Implemented | `Sources/SwiftOpenUI/App/Window.swift` | GTK4 + Win32 backends render identified single-instance windows and wire `OpenWindowAction` |
 | `WindowGroup` | Curated only | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/App/App.swift` | - |
 
 ## Modifier-Adjacent

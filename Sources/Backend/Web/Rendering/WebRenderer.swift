@@ -614,6 +614,24 @@ extension OnSubmitView: WebRenderable {
     }
 }
 
+extension KeyboardShortcutView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let prev = getCurrentEnvironment()
+        var env = prev
+        env.keyboardShortcut = shortcut
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return webRenderView(content)
+    }
+}
+
+extension FocusedValueView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        // Active-window focused values not yet implemented for Web backend.
+        return webRenderView(content)
+    }
+}
+
 // MARK: - Tag Web extension
 
 extension TagView: WebRenderable {

@@ -187,8 +187,8 @@ Last updated: 2026-04-13
 |---------|---------|-------------|-------|
 | App protocol | Y | Y | |
 | Scene protocol | Y | Y | |
+| Window | Y | Y | Single-instance identified scene; GTK4 + Win32 support `openWindow(id:)` |
 | WindowGroup | Y | Y | Title + content |
-| Window | Y | ~ | Core type + GTK/Win32 rendering. GTK: window registry; Win32: HWND registry + WndProc. Web: not yet rendered. |
 | @SceneBuilder | Y | Y | Two-scene overload (TupleScene) |
 | @ViewBuilder | Y | Y | Up to 12 children |
 | .defaultWindowSize() | Y | ~ | GTK4 + Win32 implemented; maps to native initial size |
@@ -223,5 +223,5 @@ Last updated: 2026-04-13
 | Modifiers | 40 | 38 | 38 | 38 | ~95% |
 | State & Data | 14 | 11 | 11 | 11 | ~79% |
 | Navigation | 8 | 7 | 7 | 7 | 88% |
-| App structure | 10 | 6 | 7 | 5 | ~60% |
+| App structure | 10 | 6 | 6 | 6 | 60% |
 | Layout system | 9 | 7 | 7 | 7 | ~78% |

@@ -2,6 +2,9 @@ import CGTK
 import CGTKBridge
 import SwiftOpenUI
 import Foundation
+#if canImport(Observation)
+import Observation
+#endif
 
 /// Recursively search a widget tree for a navigation-provided window titlebar.
 private func findTitlebar(in widget: UnsafeMutablePointer<GtkWidget>) -> UnsafeMutablePointer<GtkWidget>? {
@@ -48,6 +51,11 @@ extension WindowGroup: GTKWindowRenderable {
         let window = gtk_application_window_new(gtkApplicationPointer(app))!
         let winPtr = windowPointer(window)
         gtk_window_set_title(winPtr, title)
+
+        // Set window ID in environment for keyboard shortcut scoping
+        var wgEnv = getCurrentEnvironment()
+        wgEnv.windowID = Int(bitPattern: winPtr)
+        setCurrentEnvironment(wgEnv)
 
         let contentWidget = widgetFromOpaque(gtkRenderView(content))
         if let titlebarWidget = findTitlebar(in: contentWidget) {
@@ -109,7 +117,366 @@ extension WindowGroup: GTKWindowRenderable {
         }
 
         gtk_window_set_child(winPtr, contentWidget)
+        gtkSetupMenuBarIfNeeded(winPtr: winPtr, contentWidget: contentWidget, windowID: Int(bitPattern: winPtr))
+        gtkAttachKeyboardShortcutController(to: winPtr)
+        gtkAttachWindowActivationHandler(to: winPtr)
         gtk_window_present(winPtr)
+    }
+}
+
+// MARK: - Keyboard shortcut controller
+
+/// Attaches a GtkEventControllerKey to a window to dispatch keyboard shortcuts.
+/// The window pointer is passed as user_data so the handler can scope dispatch.
+func gtkAttachKeyboardShortcutController(to window: UnsafeMutablePointer<GtkWidget>) {
+    let controller = gtk_event_controller_key_new()!
+    let windowUD = gpointer(window)
+
+    g_signal_connect_data(
+        gpointer(controller),
+        "key-pressed",
+        unsafeBitCast(gtkKeyPressedHandler as @convention(c) (OpaquePointer?, guint, guint, guint, gpointer?) -> gboolean, to: GCallback.self),
+        windowUD, nil,
+        GConnectFlags(rawValue: 0)
+    )
+
+    gtk_widget_add_controller(window, OpaquePointer(controller))
+}
+
+/// Handler for GtkEventControllerKey "key-pressed" signal.
+/// Signature: (controller, keyval, keycode, state, user_data) -> gboolean
+/// user_data carries the window pointer for dispatch scoping.
+private let gtkKeyPressedHandler: @convention(c) (OpaquePointer?, guint, guint, guint, gpointer?) -> gboolean = { _, keyval, _, state, userData in
+    var modifiers: EventModifiers = []
+    // GDK_CONTROL_MASK = 1 << 2 = 4
+    if state & 4 != 0 { modifiers.insert(.command) }
+    // GDK_SHIFT_MASK = 1 << 0 = 1
+    if state & 1 != 0 { modifiers.insert(.shift) }
+    // GDK_ALT_MASK = 1 << 3 = 8
+    if state & 8 != 0 { modifiers.insert(.option) }
+    // GDK_LOCK_MASK = 1 << 1 = 2
+    if state & 2 != 0 { modifiers.insert(.capsLock) }
+
+    guard let key = gtkKeyEquivalentFromKeyval(keyval) else {
+        return 0
+    }
+
+    let windowID = Int(bitPattern: userData)
+    let shortcut = KeyboardShortcut(key, modifiers: modifiers)
+    return KeyboardShortcutRegistry.shared.dispatch(shortcut, windowID: windowID) ? 1 : 0
+}
+
+/// Maps a GDK keyval to a KeyEquivalent.
+private func gtkKeyEquivalentFromKeyval(_ keyval: guint) -> KeyEquivalent? {
+    switch keyval {
+    case 0xff0d: return .return       // GDK_KEY_Return
+    case 0xff8d: return .return       // GDK_KEY_KP_Enter
+    case 0xff1b: return .escape       // GDK_KEY_Escape
+    case 0xffff: return .delete       // GDK_KEY_Delete
+    case 0xff08: return .delete       // GDK_KEY_BackSpace
+    case 0xff09: return .tab          // GDK_KEY_Tab
+    case 0xff52: return .upArrow      // GDK_KEY_Up
+    case 0xff54: return .downArrow    // GDK_KEY_Down
+    case 0xff51: return .leftArrow    // GDK_KEY_Left
+    case 0xff53: return .rightArrow   // GDK_KEY_Right
+    case 0x0020: return .space        // GDK_KEY_space
+    default:
+        // For ASCII printable characters, GDK keyvals match Unicode codepoints
+        // a-z: 0x61-0x7a, A-Z: 0x41-0x5a (normalize to lowercase)
+        let lower: guint
+        if keyval >= 0x41 && keyval <= 0x5a {
+            lower = keyval + 0x20
+        } else {
+            lower = keyval
+        }
+        if lower >= 0x20 && lower <= 0x7e {
+            return KeyEquivalent(Character(Unicode.Scalar(lower)!))
+        }
+        return nil
+    }
+}
+
+// MARK: - Window activation tracking
+
+/// Connects to "notify::is-active" to track window activation for @FocusedValue.
+func gtkAttachWindowActivationHandler(to window: UnsafeMutablePointer<GtkWidget>) {
+    let windowUD = gpointer(window)
+    g_signal_connect_data(
+        gpointer(window),
+        "notify::is-active",
+        unsafeBitCast(gtkWindowActivationHandler as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
+        windowUD, nil,
+        GConnectFlags(rawValue: 0)
+    )
+}
+
+/// Handler for GtkWindow "notify::is-active" signal.
+/// Signature: (object, pspec, user_data) per GObject notify pattern.
+private let gtkWindowActivationHandler: @convention(c) (gpointer?, gpointer?, gpointer?) -> Void = { widget, _, userData in
+    guard let widget else { return }
+    let widgetPtr = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GtkWidget.self)
+    if gtk_swift_window_is_active(widgetPtr) != 0 {
+        FocusedValuesStore.shared.setActiveWindow(Int(bitPattern: userData))
+    }
+}
+
+// MARK: - GTK4 menu bar host
+
+/// Manages a GtkPopoverMenuBar on a GTK4 window.
+/// Handles command dispatch via GAction, keyboard shortcut registration,
+/// and observation-based re-evaluation of Commands.
+///
+/// Note: GtkPopoverMenuBar renders as a horizontal bar with dropdown menus
+/// inside the window. This differs from Win32's native HMENU (integrated
+/// into the window frame) but provides equivalent functionality.
+final class GTK4MenuBarHost {
+    let winPtr: UnsafeMutablePointer<GtkWidget>
+    let factory: AnyCommandsFactory
+    let windowID: Int
+    private var menuBar: UnsafeMutablePointer<GtkWidget>?
+    private var actionGroup: OpaquePointer?
+    private var actions: [String: OpaquePointer] = [:]  // actionName → GSimpleAction
+    private var actionClosures: [String: ClosureBox] = []  // kept alive for signal handlers
+    private var shortcutRegIDs: [ShortcutRegistrationID] = []
+    private var focusedValuesObserverID: FocusedValuesObserverID?
+    private var containerBox: UnsafeMutablePointer<GtkWidget>?
+
+    init(winPtr: UnsafeMutablePointer<GtkWidget>, factory: @escaping AnyCommandsFactory, windowID: Int) {
+        self.winPtr = winPtr
+        self.factory = factory
+        self.windowID = windowID
+    }
+
+    /// Build the initial menu bar and start observation.
+    func setup(contentWidget: UnsafeMutablePointer<GtkWidget>) {
+        // Create a vertical box: menu bar on top, content below
+        let vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        containerBox = vbox
+
+        // Move content into the box
+        g_object_ref(gpointer(contentWidget))
+        gtk_window_set_child(windowPointer(winPtr), nil)
+        gtk_box_append(UnsafeMutableRawPointer(vbox).assumingMemoryBound(to: GtkBox.self), contentWidget)
+        gtk_widget_set_vexpand(contentWidget, 1)
+        g_object_unref(gpointer(contentWidget))
+
+        // Set the box as window child
+        gtk_window_set_child(windowPointer(winPtr), vbox)
+
+        // Register for focused-value changes
+        focusedValuesObserverID = FocusedValuesStore.shared.addObserver(windowID: nil) { [weak self] in
+            self?.scheduleReevaluation()
+        }
+
+        evaluateWithTracking()
+    }
+
+    /// Schedule a re-evaluation on the main thread via GLib idle.
+    private func scheduleReevaluation() {
+        let box = Unmanaged.passRetained(ClosureBox { [weak self] in
+            self?.evaluateWithTracking()
+        }).toOpaque()
+        g_idle_add({ (userData: gpointer?) -> gboolean in
+            guard let userData else { return 0 }
+            let box = Unmanaged<ClosureBox>.fromOpaque(userData).takeRetainedValue()
+            box.closure()
+            return 0  // G_SOURCE_REMOVE
+        }, box)
+    }
+
+    /// Evaluate Commands with observation tracking and re-arm on change.
+    func evaluateWithTracking() {
+        #if canImport(Observation)
+        if #available(macOS 14.0, iOS 17.0, *) {
+            withObservationTracking {
+                let groups = self.factory()
+                self.updateMenu(groups)
+            } onChange: { [weak self] in
+                self?.scheduleReevaluation()
+            }
+            return
+        }
+        #endif
+        let groups = factory()
+        updateMenu(groups)
+    }
+
+    /// Update the native menu bar from evaluated command groups.
+    private func updateMenu(_ groups: [CommandGroupPlacement: [CommandMenuItem]]) {
+        let allItems = groups.sorted(by: { $0.key.hashValue < $1.key.hashValue })
+            .flatMap { $0.value }
+
+        if menuBar == nil {
+            buildMenu(allItems)
+        } else {
+            // Check structural match
+            let existingLabels = Array(actions.keys.sorted())
+            let newLabels = allItems.map { "cmd_\($0.label.lowercased().replacingOccurrences(of: " ", with: "_"))" }
+            if existingLabels == newLabels.sorted() && allItems.count == actions.count {
+                updateInPlace(allItems)
+            } else {
+                teardown()
+                buildMenu(allItems)
+            }
+        }
+    }
+
+    /// Build GMenu + GtkPopoverMenuBar from scratch.
+    private func buildMenu(_ items: [CommandMenuItem]) {
+        let group = g_simple_action_group_new()!
+        actionGroup = group
+
+        let menuModel = gtk_swift_menu_new()!
+
+        for item in items {
+            let actionName = "cmd_\(item.label.lowercased().replacingOccurrences(of: " ", with: "_"))"
+            let action = g_simple_action_new(actionName, nil)!
+
+            // Set enabled state
+            gtk_swift_action_set_enabled(gpointer(action), item.isDisabled ? 0 : 1)
+
+            // Connect activate signal
+            let closureBox = ClosureBox(item.action)
+            actionClosures[actionName] = closureBox
+            let ud = Unmanaged.passUnretained(closureBox).toOpaque()
+            g_signal_connect_data(
+                gpointer(action), "activate",
+                unsafeBitCast({ (_: gpointer?, _: gpointer?, userData: gpointer?) in
+                    guard let userData else { return }
+                    Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
+                } as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
+                ud, nil,
+                GConnectFlags(rawValue: 0)
+            )
+
+            gtk_swift_action_map_add_action(gpointer(group), gpointer(action))
+            actions[actionName] = action
+
+            // Build label with shortcut hint
+            var label = item.label
+            if let shortcut = item.shortcut {
+                label += "  (\(shortcutHintText(shortcut)))"
+            }
+            gtk_swift_menu_append(menuModel, label, "menu.\(actionName)")
+
+            // Register keyboard shortcut
+            if let shortcut = item.shortcut, !item.isDisabled {
+                let regID = KeyboardShortcutRegistry.shared.register(
+                    shortcut, windowID: windowID, action: item.action
+                )
+                shortcutRegIDs.append(regID)
+            }
+        }
+
+        // Create the popover menu bar
+        let bar = gtk_swift_popover_menu_bar_new_from_model(menuModel)!
+        menuBar = bar
+
+        // Insert action group on the bar
+        gtk_swift_widget_insert_action_group(bar, "menu", gpointer(group))
+
+        // Prepend menu bar to the container box
+        if let box = containerBox {
+            let boxPtr = UnsafeMutableRawPointer(box).assumingMemoryBound(to: GtkBox.self)
+            gtk_box_prepend(boxPtr, bar)
+        }
+    }
+
+    /// Update enabled state and action closures in place.
+    private func updateInPlace(_ items: [CommandMenuItem]) {
+        // Unregister old shortcuts
+        for regID in shortcutRegIDs {
+            KeyboardShortcutRegistry.shared.unregister(id: regID)
+        }
+        shortcutRegIDs.removeAll()
+
+        for item in items {
+            let actionName = "cmd_\(item.label.lowercased().replacingOccurrences(of: " ", with: "_"))"
+
+            // Update enabled state
+            if let action = actions[actionName] {
+                gtk_swift_action_set_enabled(gpointer(action), item.isDisabled ? 0 : 1)
+            }
+
+            // Update action closure
+            actionClosures[actionName] = ClosureBox(item.action)
+
+            // Re-register shortcut with new closure
+            if let shortcut = item.shortcut, !item.isDisabled {
+                let regID = KeyboardShortcutRegistry.shared.register(
+                    shortcut, windowID: windowID, action: item.action
+                )
+                shortcutRegIDs.append(regID)
+            }
+        }
+    }
+
+    /// Clean up all resources.
+    private func teardown() {
+        // Unregister shortcuts
+        for regID in shortcutRegIDs {
+            KeyboardShortcutRegistry.shared.unregister(id: regID)
+        }
+        shortcutRegIDs.removeAll()
+
+        // Remove menu bar widget
+        if let bar = menuBar, let box = containerBox {
+            let boxPtr = UnsafeMutableRawPointer(box).assumingMemoryBound(to: GtkBox.self)
+            gtk_box_remove(boxPtr, bar)
+        }
+        menuBar = nil
+
+        // Clear actions
+        actions.removeAll()
+        actionClosures.removeAll()
+        actionGroup = nil
+    }
+
+    /// Full cleanup on window destruction.
+    func destroy() {
+        teardown()
+        if let observerID = focusedValuesObserverID {
+            FocusedValuesStore.shared.removeObserver(id: observerID)
+        }
+    }
+
+    /// Format shortcut for display in menu label.
+    private func shortcutHintText(_ shortcut: KeyboardShortcut) -> String {
+        var parts: [String] = []
+        if shortcut.modifiers.contains(.command) { parts.append("Ctrl") }
+        if shortcut.modifiers.contains(.shift) { parts.append("Shift") }
+        if shortcut.modifiers.contains(.option) { parts.append("Alt") }
+        let keyText: String
+        switch shortcut.key {
+        case .return: keyText = "Enter"
+        case .escape: keyText = "Esc"
+        case .delete: keyText = "Del"
+        case .tab: keyText = "Tab"
+        case .space: keyText = "Space"
+        default: keyText = String(shortcut.key.character).uppercased()
+        }
+        parts.append(keyText)
+        return parts.joined(separator: "+")
+    }
+}
+
+/// Attach a menu bar host to a window if Commands are declared.
+func gtkSetupMenuBarIfNeeded(
+    winPtr: UnsafeMutablePointer<GtkWidget>,
+    contentWidget: UnsafeMutablePointer<GtkWidget>,
+    windowID: Int
+) {
+    guard let commandsFactory = globalCommandsFactory else { return }
+    let host = GTK4MenuBarHost(winPtr: winPtr, factory: commandsFactory, windowID: windowID)
+    host.setup(contentWidget: contentWidget)
+
+    // Store the host on the window for lifecycle management
+    let retained = Unmanaged.passRetained(host).toOpaque()
+    let gobject = UnsafeMutableRawPointer(winPtr).assumingMemoryBound(to: GObject.self)
+    g_object_set_data_full(gobject, "gtk-swift-menu-bar-host", retained) { userData in
+        guard let userData else { return }
+        let host = Unmanaged<GTK4MenuBarHost>.fromOpaque(userData).takeRetainedValue()
+        host.destroy()
     }
 }
 
@@ -190,6 +557,11 @@ extension Window: GTKWindowRenderable {
         let winPtr = windowPointer(window)
         gtk_window_set_title(winPtr, title)
 
+        // Set window ID in environment for keyboard shortcut scoping
+        var wsEnv = getCurrentEnvironment()
+        wsEnv.windowID = Int(bitPattern: winPtr)
+        setCurrentEnvironment(wsEnv)
+
         let contentWidget = widgetFromOpaque(gtkRenderView(content))
 
         if let w = defaultWindowWidth, let h = defaultWindowHeight {
@@ -212,6 +584,9 @@ extension Window: GTKWindowRenderable {
         }
 
         gtk_window_set_child(winPtr, contentWidget)
+        gtkSetupMenuBarIfNeeded(winPtr: winPtr, contentWidget: contentWidget, windowID: Int(bitPattern: winPtr))
+        gtkAttachKeyboardShortcutController(to: winPtr)
+        gtkAttachWindowActivationHandler(to: winPtr)
         gtk_window_present(winPtr)
 
         // Track the live window so repeated openWindow(id:) refocuses

@@ -423,8 +423,78 @@ extension Button: GTKRenderable, GTKDescribable {
             },
             GConnectFlags(rawValue: 0)
         )
+        // Register keyboard shortcut if present in environment
+        if let ks = getCurrentEnvironment().keyboardShortcut {
+            let windowID = getCurrentEnvironment().windowID
+            let actionClosure = action
+            let regID = KeyboardShortcutRegistry.shared.register(ks, windowID: windowID, action: actionClosure)
+
+            // Unregister by registration ID when the button widget is destroyed
+            let destroyBox = Unmanaged.passRetained(ClosureBox {
+                KeyboardShortcutRegistry.shared.unregister(id: regID)
+            }).toOpaque()
+            g_signal_connect_data(
+                gpointer(button), "destroy",
+                unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                    guard let userData else { return }
+                    Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
+                } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+                destroyBox,
+                { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    if let data { Unmanaged<ClosureBox>.fromOpaque(data).release() }
+                },
+                GConnectFlags(rawValue: 0)
+            )
+        }
+
         gtkApplyEnabledState(to: button)
         return opaqueFromWidget(button)
+    }
+}
+
+// MARK: - keyboardShortcut GTK extension
+
+extension KeyboardShortcutView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let prev = getCurrentEnvironment()
+        var env = prev
+        env.keyboardShortcut = shortcut
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return gtkRenderView(content)
+    }
+}
+
+// MARK: - focusedValue GTK extension
+
+extension FocusedValueView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let windowID = getCurrentEnvironment().windowID
+        let providerID = FocusedValuesStore.shared.register(
+            windowID: windowID, key: keyType, value: value
+        )
+
+        let widget = gtkRenderView(content)
+
+        // Unregister provider when the widget is destroyed
+        let destroyBox = Unmanaged.passRetained(ClosureBox {
+            FocusedValuesStore.shared.unregister(id: providerID)
+        }).toOpaque()
+        let widgetPtr = widgetFromOpaque(widget)
+        g_signal_connect_data(
+            gpointer(widgetPtr), "destroy",
+            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                guard let userData else { return }
+                Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            destroyBox,
+            { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                if let data { Unmanaged<ClosureBox>.fromOpaque(data).release() }
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        return widget
     }
 }
 

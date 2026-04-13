@@ -664,16 +664,84 @@ func winCurrentColorFill(nativeSlotID: Int) -> Win32ColorDescriptor? {
 extension Button: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let style = getCurrentEnvironment().buttonStyle
+        let hwnd: HWND?
         if let textLabel = label as? Text {
-            return createNativeButton(title: textLabel.content, action: action,
+            hwnd = createNativeButton(title: textLabel.content, action: action,
                                       style: style, context: context)
         } else {
             // Custom-label buttons: style parameter is available but visual
             // differences are limited — the container uses native HWND painting,
             // not D2D. Full style support for custom labels requires D2D conversion.
-            return createCustomLabelButton(label: label, action: action, context: context)
+            hwnd = createCustomLabelButton(label: label, action: action, context: context)
         }
+
+        // Register keyboard shortcut if present in environment
+        if let hwnd = hwnd, let ks = getCurrentEnvironment().keyboardShortcut {
+            let windowID = getCurrentEnvironment().windowID
+            let actionClosure = action
+            let regID = KeyboardShortcutRegistry.shared.register(ks, windowID: windowID, action: actionClosure)
+
+            let cleanup = Win32ShortcutCleanup(registrationID: regID)
+            let ptr = Unmanaged.passRetained(cleanup).toOpaque()
+            SetWindowSubclass(hwnd, win32ShortcutCleanupProc, 98, DWORD_PTR(UInt(bitPattern: ptr)))
+        }
+
+        return hwnd
     }
+}
+
+private class Win32ShortcutCleanup {
+    let registrationID: ShortcutRegistrationID
+    init(registrationID: ShortcutRegistrationID) { self.registrationID = registrationID }
+}
+
+private let win32ShortcutCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    if uMsg == UINT(WM_NCDESTROY) {
+        let cleanup = Unmanaged<Win32ShortcutCleanup>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).takeRetainedValue()
+        KeyboardShortcutRegistry.shared.unregister(id: cleanup.registrationID)
+        RemoveWindowSubclass(hwnd, win32ShortcutCleanupProc, uIdSubclass)
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
+// MARK: - focusedValue Win32 extension
+
+extension FocusedValueView: WinRenderable {
+	public func winCreateWidget(in context: RenderContext) -> HWND? {
+		let windowID = getCurrentEnvironment().windowID
+		let providerID = FocusedValuesStore.shared.register(
+			windowID: windowID, key: keyType, value: value
+		)
+
+		let hwnd = winRenderView(content, in: context)
+
+		// Unregister provider when the widget is destroyed
+		if let hwnd = hwnd {
+			let cleanup = Win32FocusedValueCleanup(providerID: providerID)
+			let ptr = Unmanaged.passRetained(cleanup).toOpaque()
+			SetWindowSubclass(hwnd, win32FocusedValueCleanupProc, 97, DWORD_PTR(UInt(bitPattern: ptr)))
+		}
+
+		return hwnd
+	}
+}
+
+private class Win32FocusedValueCleanup {
+	let providerID: FocusedValueProviderID
+	init(providerID: FocusedValueProviderID) { self.providerID = providerID }
+}
+
+private let win32FocusedValueCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+	if uMsg == UINT(WM_NCDESTROY) {
+		let cleanup = Unmanaged<Win32FocusedValueCleanup>.fromOpaque(
+			UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+		).takeRetainedValue()
+		FocusedValuesStore.shared.unregister(id: cleanup.providerID)
+		RemoveWindowSubclass(hwnd, win32FocusedValueCleanupProc, uIdSubclass)
+	}
+	return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 }
 
 /// Create a flat D2D-rendered button with a text label.
@@ -6652,6 +6720,19 @@ extension OnSubmitView: WinRenderable {
         var env = getCurrentEnvironment()
         env.submitAction = SubmitAction(handler: action)
         let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(prev) }
+        return winRenderView(content, in: context)
+    }
+}
+
+// MARK: - keyboardShortcut Win32 extension
+
+extension KeyboardShortcutView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let prev = getCurrentEnvironment()
+        var env = prev
+        env.keyboardShortcut = shortcut
         setCurrentEnvironment(env)
         defer { setCurrentEnvironment(prev) }
         return winRenderView(content, in: context)

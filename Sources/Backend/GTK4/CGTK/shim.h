@@ -913,3 +913,22 @@ static inline gpointer
 gtk_swift_gfile_new_for_path(const char *path) {
     return (gpointer)g_file_new_for_path(path);
 }
+
+// --- Window activation shim ---
+
+static inline gboolean
+gtk_swift_window_is_active(GtkWidget *window) {
+    return gtk_window_is_active(GTK_WINDOW(window));
+}
+
+// --- Menu bar shims ---
+
+static inline GtkWidget *
+gtk_swift_popover_menu_bar_new_from_model(gpointer menu_model) {
+    return gtk_popover_menu_bar_new_from_model(G_MENU_MODEL(menu_model));
+}
+
+static inline void
+gtk_swift_action_set_enabled(gpointer action, gboolean enabled) {
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(action), enabled);
+}

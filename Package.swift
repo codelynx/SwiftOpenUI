@@ -257,6 +257,18 @@ targets += [
         path: "Examples/Parity/AppStructure",
         linkerSettings: exampleLinkerSettings
     ),
+    .executableTarget(
+        name: "ParityKeyboardShortcut",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/KeyboardShortcut",
+        linkerSettings: exampleLinkerSettings
+    ),
+    .executableTarget(
+        name: "ParityCommands",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/Commands",
+        linkerSettings: exampleLinkerSettings
+    ),
 ]
 
 #if os(macOS)
