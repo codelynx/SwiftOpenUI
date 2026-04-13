@@ -184,8 +184,9 @@ Platform-independent API for resource discovery at runtime. Lives in `Sources/Sw
 
 ```swift
 public struct AppBundle {
-    /// The main application bundle.
-    public static var main: AppBundle { get }
+    /// The main application bundle, discovered once at first access.
+    /// Returns `nil` if no bundle structure is found (e.g., running via `swift run`).
+    public private(set) static var main: AppBundle? { get }
 
     /// Root directory of the bundle (e.g., /path/to/MyApp.app/).
     public var bundlePath: String { get }
@@ -220,32 +221,36 @@ public struct AppBundle {
 ### Resource Access Examples
 
 ```swift
+guard let bundle = AppBundle.main else {
+    // Not running from a .app bundle (e.g., swift run, swift test)
+    return
+}
+
 // Image by name and extension
-let iconPath = AppBundle.main.path(forResource: "app-icon", ofType: "png")
+let iconPath = bundle.path(forResource: "app-icon", ofType: "png")
 // → <bundle>/Resources/app-icon.png
 
 // Asset in a subdirectory
-let sfx = AppBundle.main.path(forResource: "click", ofType: "wav", in: "sounds")
+let sfx = bundle.path(forResource: "click", ofType: "wav", in: "sounds")
 // → <bundle>/Resources/sounds/click.wav
 
 // Localized resource (explicit locale subdirectory)
-let greeting = AppBundle.main.path(forResource: "welcome", ofType: "strings", in: "en.lproj")
+let greeting = bundle.path(forResource: "welcome", ofType: "strings", in: "en.lproj")
 // → <bundle>/Resources/en.lproj/welcome.strings
 
-
 // Load data directly
-if let data = AppBundle.main.data(forResource: "config", ofType: "json") {
+if let data = bundle.data(forResource: "config", ofType: "json") {
     let config = try JSONDecoder().decode(AppConfig.self, from: data)
 }
 
 // Bundle metadata (optional fields — nil on macOS if plist keys are absent)
-let version = AppBundle.main.info.bundleVersion   // Optional("1.0.0")
-let name = AppBundle.main.info.bundleName         // Optional("MyApp")
+let version = bundle.info.bundleVersion   // Optional("1.0.0")
+let name = bundle.info.bundleName         // Optional("MyApp")
 ```
 
 ### macOS Interop
 
-On macOS, `AppBundle.main` wraps `Foundation.Bundle.main`. The resource lookup methods delegate to Foundation's implementation, which supports asset catalogs, localization fallback chains, and all native behaviors. The API surface is intentionally a subset — apps that need full `Foundation.Bundle` features can access it directly on macOS.
+On macOS, `AppBundle.main` wraps `Foundation.Bundle.main`. The resource lookup methods delegate to Foundation's implementation for native localization fallback chains. Asset-catalog entries are not supported through this API — use `NSImage(named:)` or `UIImage(named:)` directly for compiled asset catalogs. The API surface is intentionally a subset — apps that need full `Foundation.Bundle` features can access it directly on macOS.
 
 ### Finding the Bundle Root
 

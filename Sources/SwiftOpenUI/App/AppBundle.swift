@@ -216,6 +216,13 @@ func _findBundleRoot(from startDir: URL, maxLevels: Int = 5) -> (bundlePath: Str
 private func _discoverMacOSBundle() -> AppBundle? {
     let bundle = Bundle.main
     let bundlePath = bundle.bundlePath
+
+    // Only recognize actual .app bundles, not test runners or CLI tools
+    // that happen to have a plist.
+    guard bundlePath.hasSuffix(".app") else {
+        return nil
+    }
+
     guard let execPath = bundle.executablePath else {
         return nil
     }
