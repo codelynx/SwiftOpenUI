@@ -1,0 +1,94 @@
+{
+  "capturedAt" : "2026-04-13T04:47:49Z",
+  "platform" : "macOS-SwiftUI",
+  "root" : {
+    "children" : [
+      {
+        "children" : [
+
+        ],
+        "height" : 44,
+        "tag" : "CALayer",
+        "viewType" : "CALayer",
+        "width" : 44,
+        "x" : 16,
+        "y" : 0
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 26.5,
+        "x" : 72,
+        "y" : 4
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 47,
+        "x" : 72,
+        "y" : 24
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 1,
+        "tag" : "CALayer",
+        "viewType" : "CALayer",
+        "width" : 400,
+        "x" : 0,
+        "y" : 60
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 44,
+        "tag" : "CALayer",
+        "viewType" : "CALayer",
+        "width" : 44,
+        "x" : 16,
+        "y" : 77
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 38,
+        "x" : 72,
+        "y" : 81
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 69.5,
+        "x" : 72,
+        "y" : 101
+      }
+    ],
+    "height" : 121,
+    "tag" : "_TtGC7SwiftUI13NSHostingViewVS_7AnyView_",
+    "viewType" : "NSViewBackingLayer",
+    "width" : 400,
+    "x" : 0,
+    "y" : 0
+  },
+  "rootHeight" : 600,
+  "rootWidth" : 400,
+  "scenario" : "complex-nested"
+}

@@ -1,0 +1,28 @@
+{
+  "capturedAt" : "2026-04-13T04:47:48Z",
+  "platform" : "macOS-SwiftUI",
+  "root" : {
+    "children" : [
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 46,
+        "x" : 77,
+        "y" : 42
+      }
+    ],
+    "height" : 100,
+    "tag" : "_TtGC7SwiftUI13NSHostingViewVS_7AnyView_",
+    "viewType" : "NSViewBackingLayer",
+    "width" : 200,
+    "x" : 0,
+    "y" : 0
+  },
+  "rootHeight" : 600,
+  "rootWidth" : 400,
+  "scenario" : "frame-fixed"
+}

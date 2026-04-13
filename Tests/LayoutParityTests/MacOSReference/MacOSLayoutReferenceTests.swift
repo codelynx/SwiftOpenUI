@@ -134,15 +134,37 @@ func captureSwiftUILayout(
     let rootFrame = NSRect(x: 0, y: 0, width: width, height: height)
     hostingView.frame = rootFrame
 
+    // NSHostingView needs a window to build its internal view hierarchy.
+    // Create an off-screen window so SwiftUI actually lays out subviews.
+    let window = NSWindow(
+        contentRect: rootFrame,
+        styleMask: [.borderless],
+        backing: .buffered,
+        defer: false
+    )
+    window.contentView = hostingView
+
     // Force layout
     hostingView.layout()
     hostingView.layoutSubtreeIfNeeded()
 
-    // Walk the view tree
-    let rootNode = captureNSViewTree(
-        view: hostingView,
-        rootView: hostingView,
-        depth: 0
+    // Give SwiftUI a run-loop tick to finish building the view tree
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+    hostingView.layoutSubtreeIfNeeded()
+
+    // SwiftUI renders via CALayer, not NSView subviews.
+    // Walk the layer tree to capture actual layout positions.
+    hostingView.wantsLayer = true
+    hostingView.layout()
+
+    guard let rootLayer = hostingView.layer else {
+        throw NSError(domain: "LayoutCapture", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "No layer on hosting view"])
+    }
+
+    let rootNode = captureLayerTree(
+        layer: rootLayer,
+        rootLayer: rootLayer
     )
 
     let formatter = ISO8601DateFormatter()
@@ -156,37 +178,32 @@ func captureSwiftUILayout(
     )
 }
 
-/// Recursively walk the NSView tree, converting to LayoutNode.
+/// Recursively walk the CALayer tree, converting to LayoutNode.
 ///
-/// SwiftUI's NSHostingView creates a deep internal view hierarchy.
-/// We apply heuristics to identify "meaningful" views (those that
-/// correspond to SwiftUI views the user wrote) vs internal containers.
-func captureNSViewTree(
-    view: NSView,
-    rootView: NSView,
-    depth: Int
+/// SwiftUI renders via Core Animation layers, not NSView subviews.
+/// The root NSHostingView has 0 subviews; all content is in sublayers.
+/// Container views (VStack, HStack) don't produce intermediate layers —
+/// the tree is typically flat: root layer -> drawing layers for each leaf.
+func captureLayerTree(
+    layer: CALayer,
+    rootLayer: CALayer
 ) -> LayoutNode {
-    // Convert to root-relative coordinates (flip Y since AppKit is bottom-up)
-    let frameInRoot: NSRect
-    if view === rootView {
-        frameInRoot = NSRect(x: 0, y: 0, width: view.bounds.width, height: view.bounds.height)
-    } else if let superview = view.superview {
-        let converted = superview.convert(view.frame, to: rootView)
-        // Flip Y: AppKit origin is bottom-left, we want top-left
-        let flippedY = rootView.bounds.height - converted.maxY
-        frameInRoot = NSRect(x: converted.origin.x, y: flippedY,
-                           width: converted.width, height: converted.height)
+    // Convert to root-relative coordinates
+    // CALayer frames are in parent coordinates; convert to root.
+    let frameInRoot: CGRect
+    if layer === rootLayer {
+        frameInRoot = CGRect(x: 0, y: 0, width: layer.bounds.width, height: layer.bounds.height)
     } else {
-        frameInRoot = view.frame
+        frameInRoot = layer.convert(layer.bounds, to: rootLayer)
     }
 
-    let children = view.subviews.map { child in
-        captureNSViewTree(view: child, rootView: rootView, depth: depth + 1)
+    let children = (layer.sublayers ?? []).map { child in
+        captureLayerTree(layer: child, rootLayer: rootLayer)
     }
 
     return LayoutNode(
-        tag: identifyView(view),
-        viewType: classBaseName(view),
+        tag: identifyLayer(layer),
+        viewType: layerTypeName(layer),
         x: Double(frameInRoot.origin.x),
         y: Double(frameInRoot.origin.y),
         width: Double(frameInRoot.size.width),
@@ -195,30 +212,18 @@ func captureNSViewTree(
     )
 }
 
-/// Try to identify a view with a human-readable tag.
-private func identifyView(_ view: NSView) -> String {
-    // 1. Accessibility identifier (best — we can set these explicitly)
-    if let identifier = view.accessibilityIdentifier(), !identifier.isEmpty {
-        return identifier
+/// Identify a layer with a human-readable tag.
+private func identifyLayer(_ layer: CALayer) -> String {
+    // Layer name (set by SwiftUI internals, sometimes contains type info)
+    if let name = layer.name, !name.isEmpty {
+        return name
     }
-
-    // 2. Check for text content (NSTextField used by SwiftUI Text)
-    if let textField = view as? NSTextField {
-        let text = textField.stringValue
-        if !text.isEmpty {
-            return "text:\(text.prefix(40))"
-        }
-    }
-
-    // 3. Class name with depth hint
-    return classBaseName(view)
+    return layerTypeName(layer)
 }
 
-/// Extract the unqualified class name.
-private func classBaseName(_ obj: AnyObject) -> String {
-    let full = String(describing: type(of: obj))
-    // SwiftUI internal classes look like _NSHostingView, NSHostingView,
-    // _TtC7SwiftUI... — extract just the last component
+/// Extract the unqualified class name of a layer.
+private func layerTypeName(_ layer: CALayer) -> String {
+    let full = String(describing: type(of: layer))
     if let lastDot = full.lastIndex(of: ".") {
         return String(full[full.index(after: lastDot)...])
     }
