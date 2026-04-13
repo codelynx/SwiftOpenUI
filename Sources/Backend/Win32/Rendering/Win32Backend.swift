@@ -287,6 +287,14 @@ public struct Win32Backend: RenderBackend {
         // Initialize common controls (for modern visual styles)
         win32_InitCommonControlsEx(DWORD(ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES))
 
+        // Inject openWindow action into the environment so views
+        // can programmatically open Window scenes by id.
+        var env = getCurrentEnvironment()
+        env.openWindow = OpenWindowAction { id in
+            Win32WindowRegistry.shared.open(id: id, hInstance: hInstance)
+        }
+        setCurrentEnvironment(env)
+
         let instance = A()
         let scene = instance.body
         win32RenderScene(scene, hInstance: hInstance)
@@ -322,5 +330,219 @@ private func win32RenderScene<S: Scene>(_ scene: S, hInstance: HINSTANCE) {
     }
     if S.Body.self != Never.self {
         win32RenderScene(scene.body, hInstance: hInstance)
+    }
+}
+
+// MARK: - Window scene (single-instance, identified windows)
+
+extension Window: Win32WindowRenderable {
+    func win32Render(hInstance: HINSTANCE) {
+        // Register a factory so openWindow(id:) can create or refocus later.
+        Win32WindowRegistry.shared.register(id: id) { [self] in
+            self.win32CreateWindow(hInstance: hInstance)
+        }
+
+        if launchBehavior != .suppressed {
+            Win32WindowRegistry.shared.open(id: id, hInstance: hInstance)
+        }
+    }
+
+    func win32CreateWindow(hInstance: HINSTANCE) {
+        // Use a per-id window class name to avoid collisions with the main window.
+        let className = "SwiftOpenUIWindow_\(id)"
+        let classNameWide: [WCHAR] = Array(className.utf16) + [0]
+
+        var wc = WNDCLASSEXW()
+        wc.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
+        wc.style = UINT(CS_HREDRAW | CS_VREDRAW)
+        wc.lpfnWndProc = windowSceneWndProc
+        wc.hInstance = hInstance
+        wc.hCursor = LoadCursorW(nil, win32_IDC_ARROW())
+        wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW)
+        classNameWide.withUnsafeBufferPointer { ptr in
+            wc.lpszClassName = ptr.baseAddress!
+            RegisterClassExW(&wc)
+        }
+
+        let style = DWORD(WS_OVERLAPPEDWINDOW)
+        let clientW = defaultWindowWidth.map { Int32($0) } ?? 400
+        let clientH = defaultWindowHeight.map { Int32($0) } ?? 300
+        let windowSize = adjustedWindowSize(
+            clientWidth: clientW, clientHeight: clientH, style: style)
+
+        let titleWide: [WCHAR] = Array(title.utf16) + [0]
+        let hwnd = titleWide.withUnsafeBufferPointer { titlePtr in
+            classNameWide.withUnsafeBufferPointer { classPtr in
+                CreateWindowExW(
+                    0,
+                    classPtr.baseAddress!,
+                    titlePtr.baseAddress!,
+                    style,
+                    Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT),
+                    windowSize.0, windowSize.1,
+                    nil, nil, hInstance, nil
+                )
+            }
+        }!
+
+        // Render the content view tree
+        let context = RenderContext(parent: hwnd, hInstance: hInstance)
+        if let contentHwnd = winRenderView(content, in: context) {
+            var clientRect = RECT()
+            GetClientRect(hwnd, &clientRect)
+            SetWindowPos(
+                contentHwnd, nil,
+                0, 0,
+                clientRect.right - clientRect.left,
+                clientRect.bottom - clientRect.top,
+                UINT(SWP_NOZORDER)
+            )
+
+            let state = MainWindowState(
+                contentHwnd: contentHwnd,
+                style: style,
+                minClientWidth: minWindowWidth.map { Int32($0) },
+                minClientHeight: minWindowHeight.map { Int32($0) },
+                maxClientWidth: nil,
+                maxClientHeight: nil
+            )
+            let retained = Unmanaged.passRetained(state).toOpaque()
+            win32_SetWindowLongPtrW(hwnd, GWLP_USERDATA, LONG_PTR(Int(bitPattern: retained)))
+        }
+
+        // Store the window id in a property so WM_DESTROY can clear it
+        let windowId = id
+        Win32WindowRegistry.shared.setLiveWindow(id: windowId, hwnd: hwnd)
+
+        ShowWindow(hwnd, SW_SHOWDEFAULT)
+        UpdateWindow(hwnd)
+    }
+}
+
+/// WndProc for Window scene windows (not the main WindowGroup window).
+/// On WM_DESTROY, clears the registry entry but does NOT PostQuitMessage —
+/// only the main window's destruction should quit the app.
+private let windowSceneWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
+    switch uMsg {
+    case UINT(WM_SIZE):
+        let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
+        if userData != 0 {
+            let state = Unmanaged<MainWindowState>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: Int(userData))!
+            ).takeUnretainedValue()
+            var clientRect = RECT()
+            GetClientRect(hwnd, &clientRect)
+            SetWindowPos(state.contentHwnd, nil, 0, 0,
+                        clientRect.right - clientRect.left,
+                        clientRect.bottom - clientRect.top,
+                        UINT(SWP_NOZORDER))
+        }
+        return 0
+
+    case UINT(WM_GETMINMAXINFO):
+        let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
+        if userData != 0, let info = UnsafeMutablePointer<MINMAXINFO>(bitPattern: Int(lParam)) {
+            let state = Unmanaged<MainWindowState>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: Int(userData))!
+            ).takeUnretainedValue()
+            if let minW = state.minClientWidth, let minH = state.minClientHeight {
+                let adjusted = adjustedWindowSize(
+                    clientWidth: minW, clientHeight: minH, style: state.style)
+                info.pointee.ptMinTrackSize.x = LONG(adjusted.0)
+                info.pointee.ptMinTrackSize.y = LONG(adjusted.1)
+            }
+        }
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        SetBkMode(hdc, TRANSPARENT)
+        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+
+    case UINT(WM_COMMAND):
+        if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
+            SendMessageW(childHwnd, uMsg, wParam, lParam)
+        }
+        if dispatchCommand(wParam: wParam) {
+            return 0
+        }
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
+    case WM_SWIFTUI_REBUILD:
+        let ptr = UnsafeMutableRawPointer(bitPattern: Int(lParam))!
+        let host = Unmanaged<Win32ViewHost>.fromOpaque(ptr).takeRetainedValue()
+        host.rebuild()
+        return 0
+
+    case WM_SWIFTUI_INVOKE:
+        dispatchInvoke(lParam: lParam)
+        return 0
+
+    case UINT(WM_DESTROY):
+        // Release MainWindowState
+        let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
+        if userData != 0 {
+            _ = Unmanaged<MainWindowState>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: Int(userData))!
+            ).takeRetainedValue()
+            win32_SetWindowLongPtrW(hwnd!, GWLP_USERDATA, 0)
+        }
+        // Clear registry — do NOT PostQuitMessage (only main window does that)
+        Win32WindowRegistry.shared.clearLiveWindow(for: hwnd!)
+        return 0
+
+    default:
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+// MARK: - TupleScene support
+
+extension TupleScene: Win32WindowRenderable {
+    func win32Render(hInstance: HINSTANCE) {
+        win32RenderScene(scene0, hInstance: hInstance)
+        win32RenderScene(scene1, hInstance: hInstance)
+    }
+}
+
+// MARK: - Win32 Window Registry
+
+/// Registry for single-instance Window scenes. Tracks factories and live
+/// HWND handles to enforce the one-window-per-id contract.
+class Win32WindowRegistry {
+    static let shared = Win32WindowRegistry()
+
+    private var factories: [String: () -> Void] = [:]
+    private var liveWindows: [String: HWND] = [:]
+
+    func register(id: String, factory: @escaping () -> Void) {
+        factories[id] = factory
+    }
+
+    func setLiveWindow(id: String, hwnd: HWND) {
+        liveWindows[id] = hwnd
+    }
+
+    func clearLiveWindow(id: String) {
+        liveWindows.removeValue(forKey: id)
+    }
+
+    /// Clear the live window entry matching the given HWND (called from WM_DESTROY).
+    func clearLiveWindow(for hwnd: HWND) {
+        for (id, h) in liveWindows where h == hwnd {
+            liveWindows.removeValue(forKey: id)
+            return
+        }
+    }
+
+    /// Open or refocus the window with the given id.
+    func open(id: String, hInstance: HINSTANCE) {
+        if let existing = liveWindows[id] {
+            // Refocus existing window
+            ShowWindow(existing, SW_RESTORE)
+            SetForegroundWindow(existing)
+            return
+        }
+        factories[id]?()
     }
 }
