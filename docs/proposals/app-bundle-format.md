@@ -1,20 +1,20 @@
 # App Bundle Format
 
-Unified `.app` bundle format for SwiftOpenUI applications across macOS, Linux, and Windows.
+Per-platform `.app` bundle format for SwiftOpenUI applications. Each bundle targets a single OS (macOS, Linux, or Windows) and may contain multiple CPU architectures for that OS.
 
 ## Motivation
 
 macOS `.app` bundles are self-contained, drag-to-install, and cleanly structured. Linux and Windows lack an equivalent convention, leading to scattered files, platform-specific installers, and no standard way to locate resources at runtime.
 
-SwiftOpenUI targets all three desktop platforms. A consistent bundle format would give developers:
-- One mental model for app packaging across platforms
-- A platform-independent `AppBundle` API for resource discovery
-- Optional universal binary support (multiple architectures in one bundle)
+SwiftOpenUI targets all three desktop platforms. Each platform produces its own bundle, but they share a common convention so developers get:
+- One mental model for app packaging (same API and convention, per OS)
+- A platform-independent `AppBundle` API for resource discovery (same code, any OS)
+- Optional multi-architecture support within a single-OS bundle (e.g., x86-64 + ARM64 Linux)
 - Clean xcopy/drag deployment without installers
 
 ## Bundle Structure
 
-The on-disk layout is intentionally **platform-specific** behind a **normalized API**. macOS uses its native `.app/Contents/` convention. Linux and Windows share a common layout with one difference: the shared library directory name follows each platform's convention (`lib/` on Linux, `Frameworks/` on Windows), matching what developers and toolchains expect on each OS.
+Each bundle targets exactly one OS. A macOS `.app` is not expected to run on Linux, and vice versa. The on-disk layout is **platform-specific** behind a **normalized API** — macOS uses its native `.app/Contents/` convention, while Linux and Windows share a common layout with platform-appropriate library directory names (`lib/` on Linux, `Frameworks/` on Windows). Multi-architecture support means bundling x86-64 and ARM64 binaries for the *same* OS, not cross-OS packaging.
 
 ### Canonical Layout (Linux / Windows)
 
@@ -293,7 +293,7 @@ No special handling needed — `@rpath` and `@executable_path` in Mach-O binarie
 - [ ] rpath embedding for Linux binaries (`patchelf --set-rpath`)
 - [ ] DLL colocation into each `bin\<arch>\` for Windows multi-arch bundles
 
-### Phase 3: Universal Binary Support
+### Phase 3: Multi-Architecture Support
 - [ ] Linux launcher shim (static ELF, replaces shell script)
 - [ ] Windows launcher shim (tiny x86-64 .exe, arch detection + `CreateProcessW`)
 - [ ] Windows ARM64 support via x86 emulation (Prism) for the launcher
