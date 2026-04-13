@@ -28,7 +28,9 @@ Directory names under `bin/` and values in `Info.json.architectures` use the **p
 
 The launcher and packaging tool use these exact strings for directory lookup. There is no cross-platform normalization — `aarch64` and `arm64` are distinct identifiers for distinct platforms. A Linux bundle uses `bin/aarch64/`, a Windows bundle uses `bin\arm64\`. `Info.json.architectures` lists the platform-native names.
 
-### Canonical Layout (Linux / Windows)
+### Shared Structure (Linux and Windows)
+
+Both Linux and Windows bundles share this common skeleton:
 
 ```
 MyApp.app/
@@ -39,13 +41,13 @@ MyApp.app/
 │   │   └── <executable>       ← x86-64 binary
 │   └── <alt-arch>/
 │       └── <executable>       ← ARM64 / aarch64 binary
-├── Resources/
-│   ├── icons/
-│   ├── assets/
-│   └── <locale>.lproj/       ← localized resources
-└── lib/  (Linux only; Windows colocates DLLs with executables)
-    └── <shared libraries>
+└── Resources/
+    ├── icons/
+    ├── assets/
+    └── <locale>.lproj/       ← localized resources
 ```
+
+Linux adds `lib/` for shared libraries. Windows colocates DLLs beside each executable in `bin/<arch>/`. See per-platform details below.
 
 ### Per-Platform Details
 
