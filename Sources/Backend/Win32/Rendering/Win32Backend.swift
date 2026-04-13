@@ -172,6 +172,7 @@ extension WindowGroup: Win32WindowRenderable {
             win32_SetWindowLongPtrW(hwnd, GWLP_USERDATA, LONG_PTR(Int(bitPattern: retained)))
         }
 
+        Win32WindowRegistry.shared.hasMainWindow = true
         ShowWindow(hwnd, SW_SHOWDEFAULT)
         UpdateWindow(hwnd)
     }
@@ -258,6 +259,7 @@ private let mainWindowProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
             _ = Unmanaged<MainWindowState>.fromOpaque(UnsafeMutableRawPointer(bitPattern: Int(userData))!).takeRetainedValue()
             win32_SetWindowLongPtrW(hwnd!, GWLP_USERDATA, 0)
         }
+        Win32WindowRegistry.shared.hasMainWindow = false
         PostQuitMessage(0)
         return 0
 
@@ -468,6 +470,20 @@ private let windowSceneWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         }
         return DefWindowProcW(hwnd, uMsg, wParam, lParam)
 
+    case UINT(WM_HSCROLL), UINT(WM_VSCROLL):
+        if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
+            return SendMessageW(childHwnd, uMsg, wParam, lParam)
+        }
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NOTIFY):
+        let nmhdr = UnsafePointer<NMHDR>(bitPattern: Int(lParam))
+        if let nmhdr = nmhdr, let controlParent = GetParent(nmhdr.pointee.hwndFrom),
+           controlParent != hwnd {
+            return SendMessageW(controlParent, uMsg, wParam, lParam)
+        }
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
     case WM_SWIFTUI_REBUILD:
         let ptr = UnsafeMutableRawPointer(bitPattern: Int(lParam))!
         let host = Unmanaged<Win32ViewHost>.fromOpaque(ptr).takeRetainedValue()
@@ -487,8 +503,13 @@ private let windowSceneWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
             ).takeRetainedValue()
             win32_SetWindowLongPtrW(hwnd!, GWLP_USERDATA, 0)
         }
-        // Clear registry — do NOT PostQuitMessage (only main window does that)
+        // Clear registry entry for this window
         Win32WindowRegistry.shared.clearLiveWindow(for: hwnd!)
+        // If no windows remain (no live Window scenes and no main WindowGroup),
+        // quit the application so the process doesn't spin headless.
+        if Win32WindowRegistry.shared.hasNoLiveWindows {
+            PostQuitMessage(0)
+        }
         return 0
 
     default:
@@ -533,6 +554,16 @@ class Win32WindowRegistry {
             liveWindows.removeValue(forKey: id)
             return
         }
+    }
+
+    /// Track whether a WindowGroup main window is alive.
+    var hasMainWindow: Bool = false
+
+    /// True when no windows remain at all — no Window scenes and no main
+    /// WindowGroup. Used to decide whether closing the last Window should
+    /// quit the app.
+    var hasNoLiveWindows: Bool {
+        liveWindows.isEmpty && !hasMainWindow
     }
 
     /// Open or refocus the window with the given id.
