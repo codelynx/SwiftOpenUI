@@ -110,7 +110,10 @@ struct CreateBundlePlugin: CommandPlugin {
         )
         #endif
 
-        // Copy Resources/ if it exists at package root
+        // Copy Resources/ contents if the directory exists at package root.
+        // The destination Resources/ directory is already created by the
+        // platform-specific helpers, so we copy contents into it rather
+        // than copying the directory itself (which would fail).
         let packageResources = packageDir.appendingPathComponent("Resources")
         if fm.fileExists(atPath: packageResources.path) {
             #if os(macOS)
@@ -118,8 +121,15 @@ struct CreateBundlePlugin: CommandPlugin {
             #else
             let destResources = bundleDir.appendingPathComponent("Resources")
             #endif
-            try fm.copyItem(at: packageResources, to: destResources)
-            print("  Copied Resources/")
+            let contents = try fm.contentsOfDirectory(atPath: packageResources.path)
+            for item in contents {
+                let src = packageResources.appendingPathComponent(item)
+                let dst = destResources.appendingPathComponent(item)
+                try fm.copyItem(at: src, to: dst)
+            }
+            if !contents.isEmpty {
+                print("  Copied Resources/ (\(contents.count) items)")
+            }
         }
 
         print("")
@@ -235,12 +245,26 @@ struct CreateBundlePlugin: CommandPlugin {
     }
 
     private func generateInfoJson(product: String) -> String {
-        """
+        #if os(Windows)
+        #if arch(arm64)
+        let arch = "arm64"
+        #else
+        let arch = "x86_64"
+        #endif
+        #else
+        #if arch(arm64)
+        let arch = "aarch64"
+        #else
+        let arch = "x86_64"
+        #endif
+        #endif
+        return """
         {
           "bundleIdentifier": "com.swiftopenui.\(product.lowercased())",
           "bundleName": "\(product)",
           "bundleVersion": "1.0.0",
-          "executableName": "\(product)"
+          "executableName": "\(product)",
+          "architectures": ["\(arch)"]
         }
         """
     }
@@ -259,6 +283,8 @@ struct CreateBundlePlugin: CommandPlugin {
           swift package create-bundle --product HelloWorld -c debug
 
         NOTES:
+          Architecture in Info.json is derived from the build host. For
+          cross-compiled binaries, edit Info.json manually.
           On Linux, shared libraries must be manually copied to <bundle>/lib/
           and rpath set via patchelf. On Windows, DLLs must be placed next to
           the executable. See docs/guides/app-bundle-packaging.md for details.

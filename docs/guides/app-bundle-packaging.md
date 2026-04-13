@@ -8,6 +8,22 @@ A `.app` bundle is a directory containing your executable, metadata, and resourc
 
 macOS uses its native `.app/Contents/` format — no custom SwiftOpenUI-specific packaging is needed, but the app must still be built as a `.app` bundle (via Xcode or `swift build` + standard macOS tooling) for `AppBundle.main` to resolve. This guide covers Linux and Windows only.
 
+## Quick Start: SPM Plugin
+
+The fastest way to create a bundle for same-machine, single-architecture builds:
+
+```bash
+swift package create-bundle <product> --allow-writing-to-package-directory
+```
+
+This builds the product (release by default), creates `.build/bundles/<product>.app/` with the correct layout, generates `Info.json`, and copies `Resources/` from the package root if present.
+
+**Limitation**: The plugin derives `architectures` in `Info.json` from the build host. For cross-compiled binaries, edit `Info.json` manually after bundling. Multi-architecture bundles are not supported by the plugin — use the manual steps below.
+
+Options:
+- `-c debug` — use debug build configuration
+- `--help` — show usage
+
 ## Linux
 
 ### Single-Architecture Bundle
