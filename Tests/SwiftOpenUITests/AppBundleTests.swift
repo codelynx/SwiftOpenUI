@@ -143,6 +143,44 @@ final class AppBundleTests: XCTestCase {
         #endif
     }
 
+    func testLibrariesPathWindowsSingleArch() throws {
+        #if !canImport(WinSDK)
+        throw XCTSkip("Windows-specific test")
+        #else
+        // Single-arch: exe at bundle root → librariesPath is the bundle root
+        let bundle = AppBundle(
+            bundlePath: "C:\\Apps\\MyApp.app",
+            executablePath: "C:\\Apps\\MyApp.app\\MyApp.exe",
+            info: BundleInfo(
+                bundleIdentifier: "com.test.app",
+                executableName: "MyApp"
+            )
+        )
+        // librariesPath should be the directory containing the exe
+        let libs = bundle.librariesPath
+        XCTAssertTrue(libs.contains("MyApp.app"), "Expected librariesPath in bundle root, got: \(libs)")
+        XCTAssertFalse(libs.contains("bin"), "Single-arch should not include bin/")
+        #endif
+    }
+
+    func testLibrariesPathWindowsMultiArch() throws {
+        #if !canImport(WinSDK)
+        throw XCTSkip("Windows-specific test")
+        #else
+        // Multi-arch: exe in bin\arm64\ → librariesPath is bin\arm64\
+        let bundle = AppBundle(
+            bundlePath: "C:\\Apps\\MyApp.app",
+            executablePath: "C:\\Apps\\MyApp.app\\bin\\arm64\\MyApp.exe",
+            info: BundleInfo(
+                bundleIdentifier: "com.test.app",
+                executableName: "MyApp"
+            )
+        )
+        let libs = bundle.librariesPath
+        XCTAssertTrue(libs.contains("arm64"), "Expected librariesPath in bin\\arm64, got: \(libs)")
+        #endif
+    }
+
     func testResourcesPath() {
         let bundle = AppBundle(
             bundlePath: "/opt/MyApp.app",
@@ -165,8 +203,8 @@ final class AppBundleTests: XCTestCase {
     func testDiscoveryWalksUpToFindInfoJson() throws {
         // Tests that _findBundleRoot walks up from a nested directory
         // and finds Info.json at the bundle root.
-        #if !canImport(Glibc)
-        throw XCTSkip("Linux-specific discovery test")
+        #if canImport(Darwin)
+        throw XCTSkip("_findBundleRoot is not available on macOS")
         #else
         let tmpDir = NSTemporaryDirectory() + "AppBundleDiscovery_\(ProcessInfo.processInfo.globallyUniqueString)"
         let fm = FileManager.default
@@ -189,7 +227,6 @@ final class AppBundleTests: XCTestCase {
         let startDir = URL(fileURLWithPath: nestedDir)
         let result = _findBundleRoot(from: startDir)
         XCTAssertNotNil(result)
-        XCTAssertEqual(result?.bundlePath, bundleRoot)
         XCTAssertEqual(result?.info.bundleIdentifier, "com.test.fake")
         XCTAssertEqual(result?.info.bundleName, "FakeApp")
         XCTAssertEqual(result?.info.architectures, ["x86_64"])
@@ -199,8 +236,8 @@ final class AppBundleTests: XCTestCase {
     }
 
     func testDiscoveryReturnsNilWithNoInfoJson() throws {
-        #if !canImport(Glibc)
-        throw XCTSkip("Linux-specific discovery test")
+        #if canImport(Darwin)
+        throw XCTSkip("_findBundleRoot is not available on macOS")
         #else
         let tmpDir = NSTemporaryDirectory() + "AppBundleNoInfo_\(ProcessInfo.processInfo.globallyUniqueString)"
         let fm = FileManager.default

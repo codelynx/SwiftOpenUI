@@ -1,7 +1,7 @@
 import Foundation
 
 /// Parsed bundle metadata from `Info.json` (Linux/Windows) or `Info.plist` (macOS).
-public struct BundleInfo: Codable {
+public struct BundleInfo: Codable, Equatable {
     public var bundleIdentifier: String
     public var bundleName: String?
     public var bundleVersion: String?
@@ -9,6 +9,24 @@ public struct BundleInfo: Codable {
     public var minimumSwiftOpenUIVersion: String?
     public var architectures: [String]?
     public var icon: String?
+
+    public init(
+        bundleIdentifier: String,
+        bundleName: String? = nil,
+        bundleVersion: String? = nil,
+        executableName: String,
+        minimumSwiftOpenUIVersion: String? = nil,
+        architectures: [String]? = nil,
+        icon: String? = nil
+    ) {
+        self.bundleIdentifier = bundleIdentifier
+        self.bundleName = bundleName
+        self.bundleVersion = bundleVersion
+        self.executableName = executableName
+        self.minimumSwiftOpenUIVersion = minimumSwiftOpenUIVersion
+        self.architectures = architectures
+        self.icon = icon
+    }
 }
 
 /// Platform-independent API for app bundle resource discovery.
@@ -168,11 +186,37 @@ private func _discoverMainBundle() -> AppBundle? {
     #endif
 }
 
+// MARK: - Shared helpers (Linux + Windows)
+
+#if !canImport(Darwin)
+/// Walk up from a directory looking for `Info.json`. Checks `startDir` and
+/// up to `maxLevels` parent directories (default 5, so 6 directories total).
+/// Exposed internally for testing.
+func _findBundleRoot(from startDir: URL, maxLevels: Int = 5) -> (bundlePath: String, info: BundleInfo)? {
+    var dir = startDir
+    let fileManager = FileManager.default
+    for _ in 0...maxLevels {
+        let infoPath = dir.appendingPathComponent("Info.json").path
+        if fileManager.fileExists(atPath: infoPath) {
+            guard let data = fileManager.contents(atPath: infoPath),
+                  let info = try? JSONDecoder().decode(BundleInfo.self, from: data) else {
+                return nil
+            }
+            return (dir.path, info)
+        }
+        let parent = dir.deletingLastPathComponent()
+        if parent.path == dir.path { break }
+        dir = parent
+    }
+    return nil
+}
+#endif
+
 #if canImport(Darwin)
 private func _discoverMacOSBundle() -> AppBundle? {
     let bundle = Bundle.main
-    guard let bundlePath = bundle.bundlePath as String?,
-          let execPath = bundle.executablePath else {
+    let bundlePath = bundle.bundlePath
+    guard let execPath = bundle.executablePath else {
         return nil
     }
 
@@ -216,28 +260,6 @@ func _resolveExecutablePath() -> String? {
     return path
 }
 
-/// Walk up from a directory looking for `Info.json`. Checks `startDir` and
-/// up to `maxLevels` parent directories (default 5, so 6 directories total).
-/// Exposed internally for testing.
-func _findBundleRoot(from startDir: URL, maxLevels: Int = 5) -> (bundlePath: String, info: BundleInfo)? {
-    var dir = startDir
-    let fileManager = FileManager.default
-    for _ in 0...maxLevels {
-        let infoPath = dir.appendingPathComponent("Info.json").path
-        if fileManager.fileExists(atPath: infoPath) {
-            guard let data = fileManager.contents(atPath: infoPath),
-                  let info = try? JSONDecoder().decode(BundleInfo.self, from: data) else {
-                return nil
-            }
-            return (dir.path, info)
-        }
-        let parent = dir.deletingLastPathComponent()
-        if parent.path == dir.path { break }
-        dir = parent
-    }
-    return nil
-}
-
 private func _discoverLinuxBundle() -> AppBundle? {
     guard let executablePath = _resolveExecutablePath() else {
         return nil
@@ -278,25 +300,14 @@ private func _discoverWindowsBundle() -> AppBundle? {
     guard let executablePath = _resolveWindowsExecutablePath() else {
         return nil
     }
-    var dir = URL(fileURLWithPath: executablePath).deletingLastPathComponent()
-    let fileManager = FileManager.default
-    for _ in 0..<5 {
-        let infoPath = dir.appendingPathComponent("Info.json").path
-        if fileManager.fileExists(atPath: infoPath) {
-            guard let data = fileManager.contents(atPath: infoPath),
-                  let info = try? JSONDecoder().decode(BundleInfo.self, from: data) else {
-                return nil
-            }
-            return AppBundle(
-                bundlePath: dir.path,
-                executablePath: executablePath,
-                info: info
-            )
-        }
-        let parent = dir.deletingLastPathComponent()
-        if parent.path == dir.path { break }
-        dir = parent
+    let exeDir = URL(fileURLWithPath: executablePath).deletingLastPathComponent()
+    guard let result = _findBundleRoot(from: exeDir) else {
+        return nil
     }
-    return nil
+    return AppBundle(
+        bundlePath: result.bundlePath,
+        executablePath: executablePath,
+        info: result.info
+    )
 }
 #endif
