@@ -1,6 +1,21 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include <fontconfig/fontconfig.h>
+
+// --- FontConfig process-local font shims ---
+
+/// Register a font file for the current process only via FontConfig.
+/// Used by SwiftOpenUI to load bundled fonts (Material Symbols) without
+/// installing them to the user's system font directory. Returns non-zero
+/// on success, 0 on failure. The file is added to the current FontConfig
+/// context and made visible to Pango; it disappears when the process
+/// exits.
+static inline int
+gtk_swift_fc_app_font_add_file(const char *path) {
+    return (int)FcConfigAppFontAddFile(
+        FcConfigGetCurrent(), (const FcChar8 *)path);
+}
 
 // --- CSS provider shims ---
 

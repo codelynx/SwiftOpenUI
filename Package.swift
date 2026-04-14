@@ -49,10 +49,34 @@ targets += [
         dependencies: ["CGTK"],
         path: "Sources/Backend/GTK4/CGTKBridge"
     ),
+    // Bundled icon font resources for non-macOS backends.  Gated to os(Linux)
+    // at package-evaluation time so macOS and Windows package resolutions
+    // don't see this target at all — the font is guaranteed not to land in
+    // macOS app bundles, which continue to use native SF Symbols via
+    // SwiftUI.  Win32 / Web / Android backends will adopt this target in
+    // follow-up milestones (M-Symbols-1 scope is GTK4-only).
+    .target(
+        name: "SwiftOpenUISymbols",
+        path: "Sources/SwiftOpenUISymbols",
+        resources: [
+            .copy("Resources/MaterialSymbolsRounded-Regular.ttf"),
+            .copy("Resources/LICENSES"),
+            .copy("Resources/README.md"),
+        ]
+    ),
     .target(
         name: "BackendGTK4",
-        dependencies: ["SwiftOpenUI", "CGTK", "CGTKBridge"],
-        path: "Sources/Backend/GTK4/Rendering"
+        dependencies: ["SwiftOpenUI", "CGTK", "CGTKBridge", "SwiftOpenUISymbols"],
+        path: "Sources/Backend/GTK4/Rendering",
+        linkerSettings: [
+            // FontConfig is used by the process-local font registration
+            // path that loads SwiftOpenUISymbols' bundled Material Symbols
+            // font. GTK/Pango pull libfontconfig in transitively for
+            // runtime calls but pkg-config's --libs gtk4 doesn't name
+            // it explicitly at link time; declare it here to keep the
+            // FcConfig* symbols resolvable.
+            .linkedLibrary("fontconfig"),
+        ]
     ),
     .testTarget(
         name: "GTK4RenderTests",
@@ -276,6 +300,20 @@ targets += [
         linkerSettings: exampleLinkerSettings
     ),
 ]
+
+// M-Symbols-1 minimum-viable proof: bundled font loads into FontConfig
+// process-locally and Pango renders a glyph by family name. Linux-only
+// for this milestone; other backends adopt SwiftOpenUISymbols in follow-ups.
+#if os(Linux)
+targets += [
+    .executableTarget(
+        name: "ParityMaterialSymbols",
+        dependencies: exampleDeps + ["CGTK", "CGTKBridge", "SwiftOpenUISymbols"],
+        path: "Examples/Parity/MaterialSymbols",
+        linkerSettings: exampleLinkerSettings
+    ),
+]
+#endif
 
 #if os(macOS)
 let deps: [Package.Dependency] = [

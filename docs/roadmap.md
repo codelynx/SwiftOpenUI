@@ -23,6 +23,8 @@
 - GTK4+Win32: `.keyboardShortcut()` — KeyEquivalent, EventModifiers, window-scoped dispatch (M1)
 - GTK4+Win32: `Commands` + `@FocusedValue` — native menu bar with observation-driven enable/disable (M2.1)
 - GTK4+Win32: `.dropDestination(for: URL.self)` — drag-and-drop from OS file manager (GTK4: GtkDropTarget; Win32: OLE IDropTarget) (M3)
+- GTK4: SwiftUI-parity visual polish — HStack/VStack default spacing, `Text.lineLimit(1)` hexpand in flex layouts, `.borderedProminent` filled+disabled button style, `RoundedRectangle.strokeBorder(style: StrokeStyle(dash:))` for dashed overlays (M-Visual-1)
+- GTK4: bundled Material Symbols font for non-macOS icon rendering — `SwiftOpenUISymbols` target ships a ~1.7 MB static Material Symbols Rounded Regular; process-local FontConfig registration at backend startup; zero bundle weight on macOS (M-Symbols-1, packaging only; SF-to-Material name compatibility tracked as follow-up milestones — see `docs/architecture/icon-symbols.md`)
 
 ## Next
 

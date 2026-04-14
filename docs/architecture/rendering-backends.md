@@ -91,6 +91,16 @@ The `Window` scene type provides single-instance windows opened via `OpenWindowA
 
 The `create-bundle` SPM plugin (`swift package create-bundle <product>`) automates packaging into `.build/bundles/<Product>.app` with platform-appropriate layout and generated metadata.
 
+## Icon Resources
+
+Icons / `Image(systemName:)` are resolved backend-specifically:
+
+- macOS uses SF Symbols natively via SwiftUI.
+- Non-macOS backends bundle a Material Symbols font in a dedicated SwiftPM target (`SwiftOpenUISymbols`), gated per-platform in `Package.swift`. Each backend registers the font process-locally at startup (FontConfig on Linux, `AddFontResourceExW` + `FR_PRIVATE` on Win32, `document.fonts.add` on Web, `Typeface.createFromAsset` on Android).
+- macOS builds never pull the symbols target — zero icon-font weight in macOS app bundles.
+
+See `icon-symbols.md` for the full design: bundling, license compliance, process-local loading, and the phased `Image(systemName:)` compatibility roadmap.
+
 ## macOS
 
 On macOS, examples use real SwiftUI directly (`import SwiftUI` + `App.main()`). No SwiftOpenUI backend is needed — the framework compiles for testing but rendering uses Apple's native implementation.

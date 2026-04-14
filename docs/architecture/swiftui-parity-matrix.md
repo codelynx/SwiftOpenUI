@@ -202,6 +202,7 @@ Last updated: 2026-04-13
 | @FocusedValue / .focusedValue() | Y | Y | Active-window-scoped state. GTK4 + Win32. M2.1 |
 | .keyboardShortcut() | Y | Y | Window-scoped registry. GTK4: GtkEventControllerKey; Win32: ACCEL. M1 |
 | .dropDestination(for:) | Y | Y | URL payloads. GTK4: GtkDropTarget; Win32: OLE IDropTarget. M3 |
+| Image(systemName:) | Y | ~ | macOS: native SF Symbols via SwiftUI. GTK4: bundled Material Symbols font loads process-locally (M-Symbols-1, packaging only); SF→Material name mapping phased (M-Symbols-3). Win32/Web/Android packaging deferred. See `docs/architecture/icon-symbols.md` |
 
 ## Layout System
 <!-- Parity: Examples/Parity/ViewsLayout (Alignment, Edge, EdgeInsets, ProposedViewSize) -->

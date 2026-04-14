@@ -1,10 +1,27 @@
 import CGTK
 import CGTKBridge
 import SwiftOpenUI
+import SwiftOpenUISymbols
 import Foundation
 #if canImport(Observation)
 import Observation
 #endif
+
+/// Register bundled Material Symbols font with FontConfig for this process
+/// only, so Pango / GtkLabel can resolve "Material Symbols Rounded" as a
+/// font family. The font file is shipped inside SwiftOpenUISymbols' resource
+/// bundle; this call makes it visible to FontConfig without installing it
+/// to the user's system font directory. Idempotent — calling it more than
+/// once just re-adds the same file.
+private func gtkRegisterBundledIconFont() {
+    let url = MaterialSymbolsResources.roundedRegularFontURL
+    let result = url.path.withCString { gtk_swift_fc_app_font_add_file($0) }
+    if result == 0 {
+        // Non-fatal: icons will render as empty glyphs / fallback text but
+        // nothing else breaks. Flag it so a developer notices.
+        print("SwiftOpenUI: failed to register bundled Material Symbols font at \(url.path)")
+    }
+}
 
 /// Recursively search a widget tree for a navigation-provided window titlebar.
 private func findTitlebar(in widget: UnsafeMutablePointer<GtkWidget>) -> UnsafeMutablePointer<GtkWidget>? {
@@ -516,6 +533,12 @@ public struct GTK4Backend: RenderBackend {
     public init() {}
 
     public func run<A: App>(_ appType: A.Type) {
+        // Load bundled icon fonts into FontConfig before GTK/Pango builds
+        // its default font map. Safe to call multiple times but cheapest
+        // to do exactly once per process, and must happen before any widget
+        // asks Pango to resolve the "Material Symbols Rounded" family.
+        gtkRegisterBundledIconFont()
+
         let gtkApp = gtk_application_new(nil, G_APPLICATION_DEFAULT_FLAGS)!
         let appPtr = OpaquePointer(gtkApp)
 
