@@ -683,18 +683,19 @@ extension VStack: GTKRenderable, GTKDescribable {
         return GTK4DescriptorNode(
             kind: .vStack, typeName: "VStack",
             props: .vStack(GTK4VStackDescriptor(
-                spacing: spacing,
+                spacing: resolveStackSpacing(spacing),
                 alignment: gtkHorizontalAlignmentDescriptor(alignment))),
             children: childDescs)
     }
 
     public func gtkCreateWidget() -> OpaquePointer {
+        let effectiveSpacing = resolveStackSpacing(spacing)
         let children = gtkRenderChildren(content).map(widgetFromOpaque)
         if gtkCanUseSharedVStackLayout(children) {
-            return gtkRenderSharedVStack(children, spacing: spacing, alignment: alignment)
+            return gtkRenderSharedVStack(children, spacing: effectiveSpacing, alignment: alignment)
         }
 
-        return gtkRenderFallbackVStack(children, spacing: spacing, alignment: alignment)
+        return gtkRenderFallbackVStack(children, spacing: effectiveSpacing, alignment: alignment)
     }
 }
 
@@ -787,18 +788,19 @@ extension HStack: GTKRenderable, GTKDescribable {
         return GTK4DescriptorNode(
             kind: .hStack, typeName: "HStack",
             props: .hStack(GTK4HStackDescriptor(
-                spacing: spacing,
+                spacing: resolveStackSpacing(spacing),
                 alignment: gtkVerticalAlignmentDescriptor(alignment))),
             children: childDescs)
     }
 
     public func gtkCreateWidget() -> OpaquePointer {
+        let effectiveSpacing = resolveStackSpacing(spacing)
         let children = gtkRenderChildren(content).map(widgetFromOpaque)
         if gtkCanUseSharedHStackLayout(children) {
-            return gtkRenderSharedHStack(children, spacing: spacing, alignment: alignment)
+            return gtkRenderSharedHStack(children, spacing: effectiveSpacing, alignment: alignment)
         }
 
-        return gtkRenderFallbackHStack(children, spacing: spacing, alignment: alignment)
+        return gtkRenderFallbackHStack(children, spacing: effectiveSpacing, alignment: alignment)
     }
 }
 

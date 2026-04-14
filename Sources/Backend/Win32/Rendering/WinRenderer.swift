@@ -1705,6 +1705,7 @@ public func dispatchCommand(wParam: WPARAM) -> Bool {
 
 extension VStack: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let spacing = resolveStackSpacing(spacing)
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
         let container = CreateWindowExW(
@@ -1790,6 +1791,7 @@ extension VStack: WinRenderable {
 
 extension HStack: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        let spacing = resolveStackSpacing(spacing)
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
         let container = CreateWindowExW(
@@ -3297,7 +3299,7 @@ extension VStack: WinDescribable {
             typeName: String(describing: Self.self),
             props: .vStack(
                 Win32VStackDescriptor(
-                    spacing: spacing,
+                    spacing: resolveStackSpacing(spacing),
                     alignment: winHorizontalAlignmentDescriptor(alignment)
                 )
             ),
@@ -3313,7 +3315,7 @@ extension HStack: WinDescribable {
             typeName: String(describing: Self.self),
             props: .hStack(
                 Win32HStackDescriptor(
-                    spacing: spacing,
+                    spacing: resolveStackSpacing(spacing),
                     alignment: winVerticalAlignmentDescriptor(alignment)
                 )
             ),

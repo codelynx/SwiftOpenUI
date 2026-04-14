@@ -165,7 +165,7 @@ extension SwiftOpenUI.Color: AndroidRenderable {
 extension VStack: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let node = RenderNode(type: "vstack")
-        node.props["spacing"] = "\(spacing)"
+        node.props["spacing"] = "\(resolveStackSpacing(spacing))"
         node.props["alignment"] = "\(alignment)"
         node.children = androidRenderChildren(content)
         return node
@@ -175,7 +175,7 @@ extension VStack: AndroidRenderable {
 extension HStack: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let node = RenderNode(type: "hstack")
-        node.props["spacing"] = "\(spacing)"
+        node.props["spacing"] = "\(resolveStackSpacing(spacing))"
         node.props["alignment"] = "\(alignment)"
         node.children = androidRenderChildren(content)
         return node

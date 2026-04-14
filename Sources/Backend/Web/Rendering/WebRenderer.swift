@@ -1609,6 +1609,7 @@ extension SwiftOpenUI.Color: WebRenderable, WebDescribable {
 
 extension VStack: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
+        let spacing = resolveStackSpacing(spacing)
         let div = document.createElement("div")
         div.style = .string("display: flex; flex-direction: column; gap: \(spacing)px; align-items: \(cssAlignment);")
 
@@ -1636,7 +1637,7 @@ extension VStack: WebRenderable, WebDescribable {
         return WebDescriptorNode(
             kind: .vStack, typeName: "VStack",
             props: .vStack(WebVStackDescriptor(
-                spacing: spacing,
+                spacing: resolveStackSpacing(spacing),
                 alignment: webHorizontalAlignmentDescriptor(alignment))),
             children: childDescs)
     }
@@ -1644,6 +1645,7 @@ extension VStack: WebRenderable, WebDescribable {
 
 extension HStack: WebRenderable, WebDescribable {
     public func webCreateElement() -> JSValue {
+        let spacing = resolveStackSpacing(spacing)
         let div = document.createElement("div")
         div.style = .string("display: flex; flex-direction: row; gap: \(spacing)px; align-items: \(cssAlignment);")
 
@@ -1671,7 +1673,7 @@ extension HStack: WebRenderable, WebDescribable {
         return WebDescriptorNode(
             kind: .hStack, typeName: "HStack",
             props: .hStack(WebHStackDescriptor(
-                spacing: spacing,
+                spacing: resolveStackSpacing(spacing),
                 alignment: webVerticalAlignmentDescriptor(alignment))),
             children: childDescs)
     }
