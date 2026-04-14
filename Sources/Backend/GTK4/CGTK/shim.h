@@ -968,3 +968,13 @@ static inline gpointer
 gtk_swift_gslist_nth_data(GSList *list, guint n) {
     return g_slist_nth_data(list, n);
 }
+
+/// Get the widget attached to a GtkEventController (or subclass like
+/// GtkDropTarget). Returns NULL if not attached. Used by the drop-target
+/// Swift wrapper to ref the controlled widget for the duration of a drop
+/// dispatch so SwiftOpenUI's @State-triggered view rebuild can't destroy
+/// the widget before GTK's post-drop state-flag cleanup runs on it.
+static inline GtkWidget *
+gtk_swift_event_controller_get_widget(gpointer controller) {
+    return gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller));
+}

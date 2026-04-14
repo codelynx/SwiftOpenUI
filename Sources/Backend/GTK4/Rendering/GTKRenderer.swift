@@ -504,10 +504,63 @@ extension FocusedValueView: GTKRenderable {
 private class GTKDropState {
     let action: ([URL], CGPoint) -> Bool
     let isTargeted: ((Bool) -> Void)?
+    weak var host: GTKViewHost?
+    var isHovering = false
+    var pendingLeaveSource: guint = 0
     init(action: @escaping ([URL], CGPoint) -> Bool, isTargeted: ((Bool) -> Void)?) {
         self.action = action
         self.isTargeted = isTargeted
     }
+
+    func beginHoverIfNeeded() {
+        cancelPendingLeave()
+        guard !isHovering else { return }
+        isHovering = true
+        host?.beginInteractiveUpdate()
+        isTargeted?(true)
+    }
+
+    func endHoverIfNeeded() {
+        cancelPendingLeave()
+        guard isHovering else { return }
+        isHovering = false
+        isTargeted?(false)
+        host?.endInteractiveUpdate()
+    }
+
+    func scheduleLeave() {
+        cancelPendingLeave()
+        let statePtr = Unmanaged.passRetained(self).toOpaque()
+        pendingLeaveSource = g_timeout_add(50, { userData -> gboolean in
+            guard let userData else { return 0 }
+            let state = Unmanaged<GTKDropState>.fromOpaque(userData).takeRetainedValue()
+            state.pendingLeaveSource = 0
+            state.endHoverIfNeeded()
+            return 0
+        }, statePtr)
+    }
+
+    func cancelPendingLeave() {
+        if pendingLeaveSource != 0 {
+            g_source_remove(pendingLeaveSource)
+            pendingLeaveSource = 0
+        }
+    }
+}
+
+/// Keep the controller's widget alive until the next main-loop turn.
+/// Drop handlers often mutate Swift state, which can synchronously rebuild
+/// and destroy the target widget before GTK finishes its internal drag-state
+/// cleanup for the current signal dispatch.
+private func gtkPinDropTargetWidgetUntilIdle(_ target: OpaquePointer?) {
+    guard let target,
+          let widget = gtk_swift_event_controller_get_widget(gpointer(target)) else { return }
+    let raw = UnsafeMutableRawPointer(widget)
+    g_object_ref(raw)
+    g_idle_add({ userData -> gboolean in
+        if let userData { g_object_unref(userData) }
+        return 0  // G_SOURCE_REMOVE
+    }, raw)
 }
 
 extension DropDestinationView: GTKRenderable {
@@ -519,6 +572,7 @@ extension DropDestinationView: GTKRenderable {
         let dropTarget = gtk_swift_drop_target_new_for_file_list()!
 
         let state = GTKDropState(action: action, isTargeted: isTargeted)
+        state.host = GTKViewHost.getCurrentRebuilding()
         let stateUD = Unmanaged.passRetained(state).toOpaque()
 
         // "enter" signal → isTargeted(true), return GDK_ACTION_COPY
@@ -527,7 +581,8 @@ extension DropDestinationView: GTKRenderable {
             unsafeBitCast({ (_target: OpaquePointer?, _x: Double, _y: Double, userData: gpointer?) -> Int32 in
                 guard let userData else { return 0 }
                 let state = Unmanaged<GTKDropState>.fromOpaque(userData).takeUnretainedValue()
-                state.isTargeted?(true)
+                state.beginHoverIfNeeded()
+                gtkPinDropTargetWidgetUntilIdle(_target)
                 return 1  // GDK_ACTION_COPY
             } as @convention(c) (OpaquePointer?, Double, Double, gpointer?) -> Int32, to: GCallback.self),
             stateUD, nil,
@@ -540,7 +595,8 @@ extension DropDestinationView: GTKRenderable {
             unsafeBitCast({ (_target: OpaquePointer?, userData: gpointer?) in
                 guard let userData else { return }
                 let state = Unmanaged<GTKDropState>.fromOpaque(userData).takeUnretainedValue()
-                state.isTargeted?(false)
+                state.scheduleLeave()
+                gtkPinDropTargetWidgetUntilIdle(_target)
             } as @convention(c) (OpaquePointer?, gpointer?) -> Void, to: GCallback.self),
             stateUD, nil,
             GConnectFlags(rawValue: 0)
@@ -552,6 +608,10 @@ extension DropDestinationView: GTKRenderable {
             unsafeBitCast({ (_target: OpaquePointer?, value: UnsafePointer<GValue>?, x: Double, y: Double, userData: gpointer?) -> gboolean in
                 guard let userData, let value else { return 0 }
                 let state = Unmanaged<GTKDropState>.fromOpaque(userData).takeUnretainedValue()
+                state.cancelPendingLeave()
+
+                // Keep the widget alive through GTK's post-drop cleanup.
+                gtkPinDropTargetWidgetUntilIdle(_target)
 
                 // Extract file list from the GValue
                 let fileList = gtk_swift_file_list_get_gslist(value)
@@ -571,8 +631,9 @@ extension DropDestinationView: GTKRenderable {
                 let location = CGPoint(x: x, y: y)
                 let accepted = state.action(urls, location)
 
-                // Clear hover state on drop (whether accepted or not)
-                state.isTargeted?(false)
+                // End hover after the user action has run. If GTK already
+                // sent "leave", this is a no-op.
+                state.endHoverIfNeeded()
 
                 return accepted ? 1 : 0
             } as @convention(c) (OpaquePointer?, UnsafePointer<GValue>?, Double, Double, gpointer?) -> gboolean, to: GCallback.self),
@@ -580,25 +641,30 @@ extension DropDestinationView: GTKRenderable {
             GConnectFlags(rawValue: 0)
         )
 
-        // Attach drop target to widget
-        gtk_widget_add_controller(widgetPtr, OpaquePointer(dropTarget))
+        // Tie GTKDropState's lifetime to the GtkDropTarget GObject, NOT to
+        // the child widget's destroy signal. When `isTargeted` mutates
+        // @State, SwiftOpenUI rebuilds the view and replaces the drop
+        // target mid-drag — if state were released only at child-widget
+        // destroy, a still-queued "drop" signal on the old controller
+        // would fire with a dangling stateUD and crash in state.action().
+        // With g_object_set_data_full on the drop target itself, state is
+        // released exactly when the controller that references it is
+        // finalized, which is after GTK has stopped dispatching signals
+        // to it. Bypass the widget-destroy race entirely.
+        let dropTargetGObject = UnsafeMutableRawPointer(dropTarget)
+            .assumingMemoryBound(to: GObject.self)
+        g_object_set_data_full(dropTargetGObject, "gtk-swift-drop-state", stateUD) { ud in
+            guard let ud else { return }
+            let state = Unmanaged<GTKDropState>.fromOpaque(ud).takeUnretainedValue()
+            state.cancelPendingLeave()
+            state.endHoverIfNeeded()
+            Unmanaged<GTKDropState>.fromOpaque(ud).release()
+        }
 
-        // Release state when widget is destroyed
-        let cleanupBox = Unmanaged.passRetained(ClosureBox {
-            Unmanaged<GTKDropState>.fromOpaque(stateUD).release()
-        }).toOpaque()
-        g_signal_connect_data(
-            gpointer(widgetPtr), "destroy",
-            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
-                guard let userData else { return }
-                Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
-            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
-            cleanupBox,
-            { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
-                if let data { Unmanaged<ClosureBox>.fromOpaque(data).release() }
-            },
-            GConnectFlags(rawValue: 0)
-        )
+        // Attach drop target to widget. GtkDropTarget IS-A GtkEventController,
+        // so gtk_widget_add_controller accepts it directly; dropTarget is
+        // already OpaquePointer from gtk_swift_drop_target_new_for_file_list().
+        gtk_widget_add_controller(widgetPtr, dropTarget)
 
         return widget
     }
