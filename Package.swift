@@ -269,6 +269,12 @@ targets += [
         path: "Examples/Parity/Commands",
         linkerSettings: exampleLinkerSettings
     ),
+    .executableTarget(
+        name: "ParityDropDestination",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/DropDestination",
+        linkerSettings: exampleLinkerSettings
+    ),
 ]
 
 #if os(macOS)

@@ -632,6 +632,13 @@ extension FocusedValueView: WebRenderable {
     }
 }
 
+extension DropDestinationView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        // Drop destination not yet implemented for Web backend.
+        return webRenderView(content)
+    }
+}
+
 // MARK: - Tag Web extension
 
 extension TagView: WebRenderable {

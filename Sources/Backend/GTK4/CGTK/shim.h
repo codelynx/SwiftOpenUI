@@ -932,3 +932,39 @@ static inline void
 gtk_swift_action_set_enabled(gpointer action, gboolean enabled) {
     g_simple_action_set_enabled(G_SIMPLE_ACTION(action), enabled);
 }
+
+// --- Drop target shims ---
+
+/// Create a GtkDropTarget for file list drops.
+/// GDK_TYPE_FILE_LIST is a boxed type that wraps a GSList of GFile*.
+static inline GtkDropTarget *
+gtk_swift_drop_target_new_for_file_list(void) {
+    return gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
+}
+
+/// Get the GValue from a GtkDropTarget drop signal's GdkDrop.
+/// The value is valid only during the "drop" signal handler.
+static inline const GValue *
+gtk_swift_drop_target_get_value(GtkDropTarget *target) {
+    return gtk_drop_target_get_value(target);
+}
+
+/// Extract the GSList of GFile* from a GdkFileList boxed value.
+static inline GSList *
+gtk_swift_file_list_get_gslist(const GValue *value) {
+    GdkFileList *file_list = (GdkFileList *)g_value_get_boxed(value);
+    if (!file_list) return NULL;
+    return gdk_file_list_get_files(file_list);
+}
+
+/// Get the number of items in a GSList.
+static inline guint
+gtk_swift_gslist_length(GSList *list) {
+    return g_slist_length(list);
+}
+
+/// Get the nth data pointer from a GSList (for iteration).
+static inline gpointer
+gtk_swift_gslist_nth_data(GSList *list, guint n) {
+    return g_slist_nth_data(list, n);
+}

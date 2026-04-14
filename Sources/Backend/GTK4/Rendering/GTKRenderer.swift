@@ -498,6 +498,112 @@ extension FocusedValueView: GTKRenderable {
     }
 }
 
+// MARK: - dropDestination GTK extension
+
+/// State for GTK4 drop target signal handlers.
+private class GTKDropState {
+    let action: ([URL], CGPoint) -> Bool
+    let isTargeted: ((Bool) -> Void)?
+    init(action: @escaping ([URL], CGPoint) -> Bool, isTargeted: ((Bool) -> Void)?) {
+        self.action = action
+        self.isTargeted = isTargeted
+    }
+}
+
+extension DropDestinationView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = gtkRenderView(content)
+        let widgetPtr = widgetFromOpaque(widget)
+
+        // Create GtkDropTarget for file list drops
+        let dropTarget = gtk_swift_drop_target_new_for_file_list()!
+
+        let state = GTKDropState(action: action, isTargeted: isTargeted)
+        let stateUD = Unmanaged.passRetained(state).toOpaque()
+
+        // "enter" signal → isTargeted(true), return GDK_ACTION_COPY
+        g_signal_connect_data(
+            gpointer(dropTarget), "enter",
+            unsafeBitCast({ (_target: OpaquePointer?, _x: Double, _y: Double, userData: gpointer?) -> Int32 in
+                guard let userData else { return 0 }
+                let state = Unmanaged<GTKDropState>.fromOpaque(userData).takeUnretainedValue()
+                state.isTargeted?(true)
+                return 1  // GDK_ACTION_COPY
+            } as @convention(c) (OpaquePointer?, Double, Double, gpointer?) -> Int32, to: GCallback.self),
+            stateUD, nil,
+            GConnectFlags(rawValue: 0)
+        )
+
+        // "leave" signal → isTargeted(false)
+        g_signal_connect_data(
+            gpointer(dropTarget), "leave",
+            unsafeBitCast({ (_target: OpaquePointer?, userData: gpointer?) in
+                guard let userData else { return }
+                let state = Unmanaged<GTKDropState>.fromOpaque(userData).takeUnretainedValue()
+                state.isTargeted?(false)
+            } as @convention(c) (OpaquePointer?, gpointer?) -> Void, to: GCallback.self),
+            stateUD, nil,
+            GConnectFlags(rawValue: 0)
+        )
+
+        // "drop" signal → extract file paths, call action
+        g_signal_connect_data(
+            gpointer(dropTarget), "drop",
+            unsafeBitCast({ (_target: OpaquePointer?, value: UnsafePointer<GValue>?, x: Double, y: Double, userData: gpointer?) -> gboolean in
+                guard let userData, let value else { return 0 }
+                let state = Unmanaged<GTKDropState>.fromOpaque(userData).takeUnretainedValue()
+
+                // Extract file list from the GValue
+                let fileList = gtk_swift_file_list_get_gslist(value)
+                let count = gtk_swift_gslist_length(fileList)
+
+                var urls: [URL] = []
+                for i in 0..<count {
+                    if let gfile = gtk_swift_gslist_nth_data(fileList, i) {
+                        if let pathPtr = gtk_swift_gfile_get_path(gfile) {
+                            let path = String(cString: pathPtr)
+                            urls.append(URL(fileURLWithPath: path))
+                            g_free(gpointer(mutating: pathPtr))
+                        }
+                    }
+                }
+
+                let location = CGPoint(x: x, y: y)
+                let accepted = state.action(urls, location)
+
+                // Clear hover state on drop (whether accepted or not)
+                state.isTargeted?(false)
+
+                return accepted ? 1 : 0
+            } as @convention(c) (OpaquePointer?, UnsafePointer<GValue>?, Double, Double, gpointer?) -> gboolean, to: GCallback.self),
+            stateUD, nil,
+            GConnectFlags(rawValue: 0)
+        )
+
+        // Attach drop target to widget
+        gtk_widget_add_controller(widgetPtr, OpaquePointer(dropTarget))
+
+        // Release state when widget is destroyed
+        let cleanupBox = Unmanaged.passRetained(ClosureBox {
+            Unmanaged<GTKDropState>.fromOpaque(stateUD).release()
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(widgetPtr), "destroy",
+            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                guard let userData else { return }
+                Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            cleanupBox,
+            { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                if let data { Unmanaged<ClosureBox>.fromOpaque(data).release() }
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        return widget
+    }
+}
+
 // MARK: - Container GTK extensions
 
 extension VStack: GTKRenderable, GTKDescribable {

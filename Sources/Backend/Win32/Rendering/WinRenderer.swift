@@ -744,6 +744,71 @@ private let win32FocusedValueCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, 
 	return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 }
 
+// MARK: - dropDestination Win32 extension
+
+extension DropDestinationView: WinRenderable {
+	public func winCreateWidget(in context: RenderContext) -> HWND? {
+		let hwnd = winRenderView(content, in: context)
+
+		guard let hwnd = hwnd else { return nil }
+
+		// Enable file drops on this HWND
+		DragAcceptFiles(hwnd, true)
+
+		// Install subclass to handle WM_DROPFILES
+		let state = Win32DropState(action: action)
+		let ptr = Unmanaged.passRetained(state).toOpaque()
+		SetWindowSubclass(hwnd, win32DropDestinationProc, 96, DWORD_PTR(UInt(bitPattern: ptr)))
+
+		return hwnd
+	}
+}
+
+private class Win32DropState {
+	let action: ([URL], CGPoint) -> Bool
+	init(action: @escaping ([URL], CGPoint) -> Bool) { self.action = action }
+}
+
+private let win32DropDestinationProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+	switch uMsg {
+	case UINT(WM_DROPFILES):
+		let hDrop = HDROP(bitPattern: Int(wParam))!
+		let state = Unmanaged<Win32DropState>.fromOpaque(
+			UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+		).takeUnretainedValue()
+
+		// Extract file count
+		let fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nil, 0)
+
+		// Extract file paths
+		var urls: [URL] = []
+		for i in 0..<fileCount {
+			let bufLen = DragQueryFileW(hDrop, i, nil, 0) + 1
+			var buffer = [WCHAR](repeating: 0, count: Int(bufLen))
+			DragQueryFileW(hDrop, i, &buffer, bufLen)
+			let path = String(decodingCString: buffer, as: UTF16.self)
+			urls.append(URL(fileURLWithPath: path))
+		}
+
+		DragFinish(hDrop)
+
+		// Fire action with placeholder location (WM_DROPFILES has no coords)
+		_ = state.action(urls, CGPoint(x: 0, y: 0))
+		return 0
+
+	case UINT(WM_NCDESTROY):
+		let _ = Unmanaged<Win32DropState>.fromOpaque(
+			UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+		).takeRetainedValue()
+		DragAcceptFiles(hwnd, false)
+		RemoveWindowSubclass(hwnd, win32DropDestinationProc, uIdSubclass)
+		return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+	default:
+		return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+	}
+}
+
 /// Create a flat D2D-rendered button with a text label.
 func createNativeButton(title: String, action: @escaping () -> Void,
                         style: ButtonStyleType = .automatic, context: RenderContext) -> HWND? {
