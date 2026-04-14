@@ -395,10 +395,25 @@ extension Button: GTKRenderable, GTKDescribable {
                 min-height: 0; min-width: 0;
                 """)
         case .borderedProminent:
+            // Concrete macOS-like accent blue with explicit overrides of
+            // GTK's default button gradient and inset shadow, both of which
+            // stack on top of `background-color` and render it invisible
+            // otherwise. App-configurable tint via a future `.tint()`
+            // modifier; theme-aware tint via `@theme_selected_bg_color` /
+            // `@accent_bg_color` is a future refinement — a previous attempt
+            // at a CSS cascade `background-color: X; background-color: Y;`
+            // made the button vanish (GTK CSS doesn't skip undefined-named-
+            // color declarations gracefully), so that's parked.
             applyCSSToWidget(button, properties: """
-                background: @accent_bg_color; color: white;
-                border-radius: 6px; padding: 6px 12px;
+                background-color: #3584e4;
+                background-image: none;
+                color: white;
                 border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+                box-shadow: none;
+                text-shadow: none;
+                min-height: 0;
                 """)
         case .bordered:
             applyCSSToWidget(button, properties: """
