@@ -117,9 +117,10 @@ extension WindowGroup: GTKWindowRenderable {
         }
 
         gtk_window_set_child(winPtr, contentWidget)
-        gtkSetupMenuBarIfNeeded(winPtr: winPtr, contentWidget: contentWidget, windowID: Int(bitPattern: winPtr))
-        gtkAttachKeyboardShortcutController(to: winPtr)
-        gtkAttachWindowActivationHandler(to: winPtr)
+        let winWidget = widgetPointer(winPtr)
+        gtkSetupMenuBarIfNeeded(winPtr: winWidget, contentWidget: contentWidget, windowID: Int(bitPattern: winPtr))
+        gtkAttachKeyboardShortcutController(to: winWidget)
+        gtkAttachWindowActivationHandler(to: winWidget)
         gtk_window_present(winPtr)
     }
 }
@@ -140,7 +141,7 @@ func gtkAttachKeyboardShortcutController(to window: UnsafeMutablePointer<GtkWidg
         GConnectFlags(rawValue: 0)
     )
 
-    gtk_widget_add_controller(window, OpaquePointer(controller))
+    gtk_widget_add_controller(window, controller)
 }
 
 /// Handler for GtkEventControllerKey "key-pressed" signal.
@@ -222,6 +223,16 @@ private let gtkWindowActivationHandler: @convention(c) (gpointer?, gpointer?, gp
 
 // MARK: - GTK4 menu bar host
 
+/// Mutable closure box whose identity (heap address) must remain stable for the
+/// lifetime of its owning GSimpleAction, because the action's activate signal
+/// callback holds an unretained pointer to it as user_data. Replacing the entry
+/// in `actionClosures` would free the old box while GObject still points at it,
+/// so `updateInPlace` mutates `.closure` instead of rebinding the slot.
+private final class MenuActionClosure {
+    var closure: () -> Void
+    init(_ closure: @escaping () -> Void) { self.closure = closure }
+}
+
 /// Manages a GtkPopoverMenuBar on a GTK4 window.
 /// Handles command dispatch via GAction, keyboard shortcut registration,
 /// and observation-based re-evaluation of Commands.
@@ -236,7 +247,7 @@ final class GTK4MenuBarHost {
     private var menuBar: UnsafeMutablePointer<GtkWidget>?
     private var actionGroup: OpaquePointer?
     private var actions: [String: OpaquePointer] = [:]  // actionName → GSimpleAction
-    private var actionClosures: [String: ClosureBox] = []  // kept alive for signal handlers
+    private var actionClosures: [String: MenuActionClosure] = [:]  // kept alive for signal handlers
     private var shortcutRegIDs: [ShortcutRegistrationID] = []
     private var focusedValuesObserverID: FocusedValuesObserverID?
     private var containerBox: UnsafeMutablePointer<GtkWidget>?
@@ -324,9 +335,14 @@ final class GTK4MenuBarHost {
     /// Build GMenu + GtkPopoverMenuBar from scratch.
     private func buildMenu(_ items: [CommandMenuItem]) {
         let group = g_simple_action_group_new()!
-        actionGroup = group
+        actionGroup = OpaquePointer(group)
 
+        // GtkPopoverMenuBar expects the top-level GMenu to contain submenus,
+        // not action items directly — otherwise it emits "Don't know how to
+        // handle this item" warnings. Mirror Win32's pattern: wrap all items
+        // in a single "File" submenu.
         let menuModel = gtk_swift_menu_new()!
+        let fileMenu = gtk_swift_menu_new()!
 
         for item in items {
             let actionName = "cmd_\(item.label.lowercased().replacingOccurrences(of: " ", with: "_"))"
@@ -335,15 +351,17 @@ final class GTK4MenuBarHost {
             // Set enabled state
             gtk_swift_action_set_enabled(gpointer(action), item.isDisabled ? 0 : 1)
 
-            // Connect activate signal
-            let closureBox = ClosureBox(item.action)
+            // Connect activate signal. The closure box identity must remain
+            // stable across updateInPlace, because GObject stores user_data as
+            // a raw pointer (passUnretained). See MenuActionClosure docstring.
+            let closureBox = MenuActionClosure(item.action)
             actionClosures[actionName] = closureBox
             let ud = Unmanaged.passUnretained(closureBox).toOpaque()
             g_signal_connect_data(
                 gpointer(action), "activate",
                 unsafeBitCast({ (_: gpointer?, _: gpointer?, userData: gpointer?) in
                     guard let userData else { return }
-                    Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
+                    Unmanaged<MenuActionClosure>.fromOpaque(userData).takeUnretainedValue().closure()
                 } as @convention(c) (gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
                 ud, nil,
                 GConnectFlags(rawValue: 0)
@@ -357,7 +375,7 @@ final class GTK4MenuBarHost {
             if let shortcut = item.shortcut {
                 label += "  (\(shortcutHintText(shortcut)))"
             }
-            gtk_swift_menu_append(menuModel, label, "menu.\(actionName)")
+            gtk_swift_menu_append(fileMenu, label, "menu.\(actionName)")
 
             // Register keyboard shortcut
             if let shortcut = item.shortcut, !item.isDisabled {
@@ -367,6 +385,8 @@ final class GTK4MenuBarHost {
                 shortcutRegIDs.append(regID)
             }
         }
+
+        gtk_swift_menu_append_submenu(menuModel, "File", fileMenu)
 
         // Create the popover menu bar
         let bar = gtk_swift_popover_menu_bar_new_from_model(menuModel)!
@@ -398,8 +418,10 @@ final class GTK4MenuBarHost {
                 gtk_swift_action_set_enabled(gpointer(action), item.isDisabled ? 0 : 1)
             }
 
-            // Update action closure
-            actionClosures[actionName] = ClosureBox(item.action)
+            // Update action closure IN PLACE — the GSimpleAction activate
+            // signal holds an unretained pointer to this box as user_data,
+            // so we must not replace the box (would dangle the pointer).
+            actionClosures[actionName]?.closure = item.action
 
             // Re-register shortcut with new closure
             if let shortcut = item.shortcut, !item.isDisabled {
@@ -584,9 +606,10 @@ extension Window: GTKWindowRenderable {
         }
 
         gtk_window_set_child(winPtr, contentWidget)
-        gtkSetupMenuBarIfNeeded(winPtr: winPtr, contentWidget: contentWidget, windowID: Int(bitPattern: winPtr))
-        gtkAttachKeyboardShortcutController(to: winPtr)
-        gtkAttachWindowActivationHandler(to: winPtr)
+        let winWidget = widgetPointer(winPtr)
+        gtkSetupMenuBarIfNeeded(winPtr: winWidget, contentWidget: contentWidget, windowID: Int(bitPattern: winPtr))
+        gtkAttachKeyboardShortcutController(to: winWidget)
+        gtkAttachWindowActivationHandler(to: winWidget)
         gtk_window_present(winPtr)
 
         // Track the live window so repeated openWindow(id:) refocuses
