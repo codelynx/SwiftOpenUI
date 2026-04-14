@@ -978,3 +978,16 @@ static inline GtkWidget *
 gtk_swift_event_controller_get_widget(gpointer controller) {
     return gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller));
 }
+
+/// Return the currently active GtkWindow for the default GApplication, or
+/// NULL if there is no default application or no active window. Used to
+/// supply a parent window to GtkFileDialog / GtkAlertDialog — without a
+/// parent, GTK's internal dialog widgets (sidebar GtkListBox, trash
+/// monitor icon, etc.) aren't properly rooted and emit Gtk-CRITICAL
+/// assertions during dialog realization on GTK 4.14.
+static inline GtkWindow *
+gtk_swift_get_active_window(void) {
+    GApplication *app = g_application_get_default();
+    if (!app || !GTK_IS_APPLICATION(app)) return NULL;
+    return gtk_application_get_active_window(GTK_APPLICATION(app));
+}
