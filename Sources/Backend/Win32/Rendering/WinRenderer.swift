@@ -744,43 +744,254 @@ private let win32FocusedValueCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, 
 	return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 }
 
-// MARK: - dropDestination Win32 extension
+// MARK: - dropDestination Win32 extension (OLE IDropTarget)
+
+/// OLE must be initialized once per thread for RegisterDragDrop to work.
+private var oleInitialized = false
+private func ensureOleInitialized() {
+	guard !oleInitialized else { return }
+	OleInitialize(nil)
+	oleInitialized = true
+}
 
 extension DropDestinationView: WinRenderable {
 	public func winCreateWidget(in context: RenderContext) -> HWND? {
-		let hwnd = winRenderView(content, in: context)
+		ensureOleInitialized()
 
-		guard let hwnd = hwnd else { return nil }
+		// Create a stable wrapper container for the drop target.
+		// The content inside may be rebuilt (destroyed + recreated) when
+		// isTargeted triggers a state change, but the wrapper survives
+		// so the OLE drag session is not interrupted.
+		let staticClass: [WCHAR] = Array("STATIC".utf16) + [0]
+		let wrapper = staticClass.withUnsafeBufferPointer { classPtr in
+			CreateWindowExW(
+				0,
+				classPtr.baseAddress!,
+				nil,
+				DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+				0, 0, 0, 0,
+				context.parent,
+				nil,
+				context.hInstance,
+				nil
+			)
+		}!
 
-		// Enable file drops on this HWND
-		DragAcceptFiles(hwnd, true)
+		// Render content into the wrapper
+		let childContext = RenderContext(parent: wrapper, hInstance: context.hInstance)
+		guard let contentHwnd = winRenderView(content, in: childContext) else {
+			return wrapper
+		}
 
-		// Install subclass to handle WM_DROPFILES
-		let state = Win32DropState(action: action)
-		let ptr = Unmanaged.passRetained(state).toOpaque()
-		SetWindowSubclass(hwnd, win32DropDestinationProc, 96, DWORD_PTR(UInt(bitPattern: ptr)))
+		// Create a stable overlay HWND above the composed child subtree.
+		// OLE hit-testing resolves the window directly under the cursor;
+		// if only the wrapper is registered, moving over nested child HWNDs
+		// can cause DragLeave/DragEnter oscillation and visible hover flicker.
+		let overlay = staticClass.withUnsafeBufferPointer { classPtr in
+			CreateWindowExW(
+				0,
+				classPtr.baseAddress!,
+				nil,
+				DWORD(WS_CHILD | WS_VISIBLE),
+				0, 0, 0, 0,
+				wrapper,
+				nil,
+				context.hInstance,
+				nil
+			)
+		}!
 
-		return hwnd
+		// Size wrapper to match content and stretch both content and overlay.
+		var rect = RECT()
+		GetWindowRect(contentHwnd, &rect)
+		let w = rect.right - rect.left
+		let h = rect.bottom - rect.top
+		SetWindowPos(wrapper, nil, 0, 0, w, h, UINT(SWP_NOMOVE | SWP_NOZORDER))
+		SetWindowPos(contentHwnd, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+		SetWindowPos(overlay, nil, 0, 0, w, h, 0)
+
+		let layoutInfo = Win32DropDestinationLayoutInfo(content: contentHwnd, overlay: overlay)
+		let layoutPtr = Unmanaged.passRetained(layoutInfo).toOpaque()
+		SetWindowSubclass(wrapper, win32DropDestinationLayoutProc, 95, DWORD_PTR(UInt(bitPattern: layoutPtr)))
+
+		// Register OLE drop target on the stable overlay.
+		let target = SwiftDropTarget(
+			hwnd: overlay, action: action, isTargeted: isTargeted
+		)
+		let hr = RegisterDragDrop(overlay, target.pDropTarget)
+		if hr != S_OK {
+			DragAcceptFiles(overlay, true)
+		}
+
+		// Store target for lifecycle management
+		let retained = Unmanaged.passRetained(target).toOpaque()
+		SetWindowSubclass(overlay, win32DropTargetCleanupProc, 96, DWORD_PTR(UInt(bitPattern: retained)))
+		SetWindowSubclass(overlay, win32DropOverlayProc, 94, 0)
+
+		return wrapper
 	}
 }
 
-private class Win32DropState {
-	let action: ([URL], CGPoint) -> Bool
-	init(action: @escaping ([URL], CGPoint) -> Bool) { self.action = action }
+private final class Win32DropDestinationLayoutInfo {
+	let content: HWND
+	let overlay: HWND
+
+	init(content: HWND, overlay: HWND) {
+		self.content = content
+		self.overlay = overlay
+	}
 }
 
-private let win32DropDestinationProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+private let win32DropDestinationLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+	guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+	let info = Unmanaged<Win32DropDestinationLayoutInfo>.fromOpaque(
+		UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+	).takeUnretainedValue()
+
 	switch uMsg {
-	case UINT(WM_DROPFILES):
-		let hDrop = HDROP(bitPattern: Int(wParam))!
-		let state = Unmanaged<Win32DropState>.fromOpaque(
+	case UINT(WM_SIZE):
+		var rect = RECT()
+		GetClientRect(hwnd, &rect)
+		let w = rect.right - rect.left
+		let h = rect.bottom - rect.top
+		SetWindowPos(info.content, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+		SetWindowPos(info.overlay, nil, 0, 0, w, h, 0)
+		return 0
+
+	case UINT(WM_NCDESTROY):
+		Unmanaged<Win32DropDestinationLayoutInfo>.fromOpaque(
 			UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-		).takeUnretainedValue()
+		).release()
+		RemoveWindowSubclass(hwnd, win32DropDestinationLayoutProc, uIdSubclass)
+		return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
-		// Extract file count
+	default:
+		return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+	}
+}
+
+// Keep the overlay visually transparent and forward clicks to the wrapper so
+// tap-to-pick and other pointer interactions still reach the underlying view.
+private let win32DropOverlayProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+	switch uMsg {
+	case UINT(WM_ERASEBKGND):
+		return 1
+
+	case UINT(WM_LBUTTONDOWN), UINT(WM_LBUTTONUP), UINT(WM_LBUTTONDBLCLK), UINT(WM_MOUSEMOVE):
+		if let parent = GetParent(hwnd) {
+			return SendMessageW(parent, uMsg, wParam, lParam)
+		}
+		return 0
+
+	case UINT(WM_NCDESTROY):
+		RemoveWindowSubclass(hwnd, win32DropOverlayProc, uIdSubclass)
+		return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+	default:
+		return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+	}
+}
+
+/// Cleanup subclass — revokes drag/drop registration on window destroy.
+/// Defers cleanup if a drag session is in progress.
+private let win32DropTargetCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+	if uMsg == UINT(WM_NCDESTROY) {
+		let target = Unmanaged<SwiftDropTarget>.fromOpaque(
+			UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+		)
+		if target.takeUnretainedValue().isDragging {
+			// Drag in progress — don't revoke yet. The Drop or DragLeave
+			// handler will clean up when the drag session ends.
+			// Don't release — the target must stay alive.
+		} else {
+			RevokeDragDrop(hwnd)
+			_ = target.takeRetainedValue()
+		}
+		RemoveWindowSubclass(hwnd, win32DropTargetCleanupProc, uIdSubclass)
+	}
+	return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
+
+// MARK: - OLE IDropTarget COM implementation
+
+/// A Swift class that implements the COM IDropTarget interface via a manual vtable.
+/// This enables full OLE drag/drop with DragEnter/DragLeave/DragOver/Drop
+/// callbacks, providing hover feedback (isTargeted) and proper cursor badges.
+private final class SwiftDropTarget {
+	let action: ([URL], CGPoint) -> Bool
+	let isTargeted: ((Bool) -> Void)?
+	let hwnd: HWND
+	let rootHwnd: HWND  // top-level window for posting messages
+	var refCount: ULONG = 1
+	/// True while an OLE drag session is over this target.
+	/// This still guards cleanup during rebuilds, but Win32 currently avoids
+	/// calling `isTargeted` while OLE drag is active because Swift state
+	/// changes can rebuild away the drop-target subtree before `Drop`.
+	var isDragging = false
+
+	/// The COM vtable — must be heap-allocated and stable for the object's lifetime.
+	let vtbl: UnsafeMutablePointer<IDropTargetVtbl>
+
+	/// The COM object struct pointing to our vtable.
+	/// This is what we pass to RegisterDragDrop.
+	let comObject: UnsafeMutablePointer<IDropTarget>
+
+	/// Convenience pointer for RegisterDragDrop.
+	var pDropTarget: UnsafeMutablePointer<IDropTarget> { comObject }
+
+	init(hwnd: HWND, action: @escaping ([URL], CGPoint) -> Bool, isTargeted: ((Bool) -> Void)?) {
+		self.hwnd = hwnd
+		self.rootHwnd = findRootWindow(from: hwnd)
+		self.action = action
+		self.isTargeted = isTargeted
+
+		// Allocate vtable
+		self.vtbl = .allocate(capacity: 1)
+		self.vtbl.pointee = IDropTargetVtbl(
+			QueryInterface: swiftDropTarget_QueryInterface,
+			AddRef: swiftDropTarget_AddRef,
+			Release: swiftDropTarget_Release,
+			DragEnter: swiftDropTarget_DragEnter,
+			DragOver: swiftDropTarget_DragOver,
+			DragLeave: swiftDropTarget_DragLeave,
+			Drop: swiftDropTarget_Drop
+		)
+
+		// Allocate COM object struct
+		self.comObject = .allocate(capacity: 1)
+		self.comObject.pointee.lpVtbl = UnsafeMutablePointer(vtbl)
+
+		// Register in global map so vtable functions can find us
+		win32_dropTargetMap[UInt(bitPattern: comObject)] = self
+	}
+
+	deinit {
+		win32_dropTargetMap.removeValue(forKey: UInt(bitPattern: comObject))
+		vtbl.deallocate()
+		comObject.deallocate()
+	}
+
+	/// Extract file URLs from an IDataObject.
+	static func extractURLs(from pDataObj: UnsafeMutablePointer<IDataObject>?) -> [URL] {
+		guard let pDataObj else { return [] }
+
+		var fmt = FORMATETC(
+			cfFormat: CLIPFORMAT(CF_HDROP),
+			ptd: nil,
+			dwAspect: DWORD(DVASPECT_CONTENT.rawValue),
+			lindex: -1,
+			tymed: DWORD(TYMED_HGLOBAL.rawValue)
+		)
+		var medium = STGMEDIUM()
+
+		let hr = pDataObj.pointee.lpVtbl.pointee.GetData(pDataObj, &fmt, &medium)
+		guard hr == S_OK else { return [] }
+		defer { ReleaseStgMedium(&medium) }
+
+		guard let hGlobal = medium.hGlobal else { return [] }
+		let hDrop = hGlobal.assumingMemoryBound(to: HDROP__.self) as HDROP
+
 		let fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nil, 0)
-
-		// Extract file paths
 		var urls: [URL] = []
 		for i in 0..<fileCount {
 			let bufLen = DragQueryFileW(hDrop, i, nil, 0) + 1
@@ -789,24 +1000,111 @@ private let win32DropDestinationProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lPar
 			let path = String(decodingCString: buffer, as: UTF16.self)
 			urls.append(URL(fileURLWithPath: path))
 		}
-
-		DragFinish(hDrop)
-
-		// Fire action with placeholder location (WM_DROPFILES has no coords)
-		_ = state.action(urls, CGPoint(x: 0, y: 0))
-		return 0
-
-	case UINT(WM_NCDESTROY):
-		let _ = Unmanaged<Win32DropState>.fromOpaque(
-			UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
-		).takeRetainedValue()
-		DragAcceptFiles(hwnd, false)
-		RemoveWindowSubclass(hwnd, win32DropDestinationProc, uIdSubclass)
-		return DefSubclassProc(hwnd, uMsg, wParam, lParam)
-
-	default:
-		return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+		return urls
 	}
+}
+
+/// Global map from COM object pointer to SwiftDropTarget.
+private var win32_dropTargetMap: [UInt: SwiftDropTarget] = [:]
+
+// MARK: - IDropTarget vtable function implementations
+
+private func swiftDropTarget_QueryInterface(
+	_ pThis: UnsafeMutablePointer<IDropTarget>?,
+	_ riid: UnsafePointer<IID>?,
+	_ ppvObject: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+) -> HRESULT {
+	guard let ppvObject, let _ = riid else { return HRESULT(bitPattern: 0x80070057) } // E_INVALIDARG
+	// Accept IUnknown and IDropTarget
+	ppvObject.pointee = UnsafeMutableRawPointer(pThis)
+	_ = pThis?.pointee.lpVtbl.pointee.AddRef(pThis)
+	return S_OK
+}
+
+private func swiftDropTarget_AddRef(
+	_ pThis: UnsafeMutablePointer<IDropTarget>?
+) -> ULONG {
+	guard let target = win32_dropTargetMap[UInt(bitPattern: pThis)] else { return 1 }
+	target.refCount += 1
+	return target.refCount
+}
+
+private func swiftDropTarget_Release(
+	_ pThis: UnsafeMutablePointer<IDropTarget>?
+) -> ULONG {
+	guard let target = win32_dropTargetMap[UInt(bitPattern: pThis)] else { return 0 }
+	target.refCount -= 1
+	if target.refCount == 0 {
+		win32_dropTargetMap.removeValue(forKey: UInt(bitPattern: pThis))
+	}
+	return target.refCount
+}
+
+private func swiftDropTarget_DragEnter(
+	_ pThis: UnsafeMutablePointer<IDropTarget>?,
+	_ pDataObj: UnsafeMutablePointer<IDataObject>?,
+	_ grfKeyState: DWORD,
+	_ pt: POINTL,
+	_ pdwEffect: UnsafeMutablePointer<DWORD>?
+) -> HRESULT {
+	guard let target = win32_dropTargetMap[UInt(bitPattern: pThis)] else {
+		pdwEffect?.pointee = DWORD(DROPEFFECT_NONE)
+		return S_OK
+	}
+	target.isDragging = true
+	// Win32 degrades `isTargeted` to a no-op for now. SwiftOpenUI rebuilds
+	// destroy the drop-target subtree, so toggling Swift state during an
+	// active OLE drag can invalidate the target before Drop fires.
+	// Future fix: keep hover visuals entirely in native Win32 state for the
+	// lifetime of the drag session, or otherwise preserve the registered
+	// drop-target subtree without a Swift rebuild.
+	pdwEffect?.pointee = DWORD(DROPEFFECT_COPY)
+	return S_OK
+}
+
+private func swiftDropTarget_DragOver(
+	_ pThis: UnsafeMutablePointer<IDropTarget>?,
+	_ grfKeyState: DWORD,
+	_ pt: POINTL,
+	_ pdwEffect: UnsafeMutablePointer<DWORD>?
+) -> HRESULT {
+	pdwEffect?.pointee = DWORD(DROPEFFECT_COPY)
+	return S_OK
+}
+
+private func swiftDropTarget_DragLeave(
+	_ pThis: UnsafeMutablePointer<IDropTarget>?
+) -> HRESULT {
+	if let target = win32_dropTargetMap[UInt(bitPattern: pThis)] {
+		target.isDragging = false
+	}
+	return S_OK
+}
+
+private func swiftDropTarget_Drop(
+	_ pThis: UnsafeMutablePointer<IDropTarget>?,
+	_ pDataObj: UnsafeMutablePointer<IDataObject>?,
+	_ grfKeyState: DWORD,
+	_ pt: POINTL,
+	_ pdwEffect: UnsafeMutablePointer<DWORD>?
+) -> HRESULT {
+	guard let target = win32_dropTargetMap[UInt(bitPattern: pThis)] else {
+		pdwEffect?.pointee = DWORD(DROPEFFECT_NONE)
+		return S_OK
+	}
+
+	let urls = SwiftDropTarget.extractURLs(from: pDataObj)
+
+	// Convert POINTL (screen coords) to client coords
+	var clientPt = POINT(x: pt.x, y: pt.y)
+	ScreenToClient(target.hwnd, &clientPt)
+	let location = CGPoint(x: Double(clientPt.x), y: Double(clientPt.y))
+
+	target.isDragging = false
+	let accepted = target.action(urls, location)
+
+	pdwEffect?.pointee = accepted ? DWORD(DROPEFFECT_COPY) : DWORD(DROPEFFECT_NONE)
+	return S_OK
 }
 
 /// Create a flat D2D-rendered button with a text label.
@@ -2289,9 +2587,12 @@ extension BackgroundView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         guard let color = background as? Color else { return container }
-        let r = UInt8(color.red * 255)
-        let g = UInt8(color.green * 255)
-        let b = UInt8(color.blue * 255)
+        // Pre-multiply alpha against white to simulate transparency.
+        // GDI brushes don't support alpha, so we blend manually.
+        let a = color.alpha
+        let r = UInt8((color.red * a + 1.0 * (1.0 - a)) * 255)
+        let g = UInt8((color.green * a + 1.0 * (1.0 - a)) * 255)
+        let b = UInt8((color.blue * a + 1.0 * (1.0 - a)) * 255)
         let colorRef = win32_RGB(r, g, b)
 
         let bgInfo = BackgroundInfo(child: child, colorRef: colorRef, brush: CreateSolidBrush(colorRef))
@@ -2550,9 +2851,11 @@ extension BorderView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
         SetWindowPos(child, nil, bw, bw, w - bw * 2, h - bw * 2, UINT(SWP_NOZORDER))
 
-        let r = UInt8(color.red * 255)
-        let g = UInt8(color.green * 255)
-        let b = UInt8(color.blue * 255)
+        // Pre-multiply alpha against white for GDI compatibility
+        let a = color.alpha
+        let r = UInt8((color.red * a + 1.0 * (1.0 - a)) * 255)
+        let g = UInt8((color.green * a + 1.0 * (1.0 - a)) * 255)
+        let b = UInt8((color.blue * a + 1.0 * (1.0 - a)) * 255)
 
         let borderInfo = FlatBorderInfo(child: child, colorRef: win32_RGB(r, g, b), borderWidth: bw)
         let infoPtr = Unmanaged.passRetained(borderInfo).toOpaque()

@@ -52,8 +52,8 @@ struct ParityDropDestinationView: View {
 			}
 			.frame(minWidth: 300, minHeight: 150)
 			.padding()
-			.background(isHovering ? Color.blue.opacity(0.2) : Color.gray.opacity(0.1))
-			.border(isHovering ? Color.blue : Color.gray)
+			.background(Color.gray.opacity(0.1))
+			.border(isHovering ? Color.green : Color.gray)
 			.dropDestination(for: URL.self) { urls, location in
 				let paths = urls.map { $0.path }
 				droppedPaths = paths
