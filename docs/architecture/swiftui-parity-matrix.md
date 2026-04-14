@@ -198,7 +198,10 @@ Last updated: 2026-04-13
 | @main | Y | - | Platform-specific entry points instead |
 | DocumentGroup | Y | - | |
 | Settings | Y | - | macOS only in SwiftUI |
-| Commands / menus | Y | - | |
+| Commands / menus | Y | Y | GTK4: GtkPopoverMenuBar; Win32: HMENU. M2.1 |
+| @FocusedValue / .focusedValue() | Y | Y | Active-window-scoped state. GTK4 + Win32. M2.1 |
+| .keyboardShortcut() | Y | Y | Window-scoped registry. GTK4: GtkEventControllerKey; Win32: ACCEL. M1 |
+| .dropDestination(for:) | Y | Y | URL payloads. GTK4: GtkDropTarget; Win32: OLE IDropTarget. M3 |
 
 ## Layout System
 <!-- Parity: Examples/Parity/ViewsLayout (Alignment, Edge, EdgeInsets, ProposedViewSize) -->

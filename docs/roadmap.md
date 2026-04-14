@@ -20,6 +20,9 @@
 - macOS support — examples use real SwiftUI via conditional compilation
 - Web/Wasm backend (experimental) — DOM rendering via JavaScriptKit, verified in browser
 - `./configure` script — automated toolchain + Wasm SDK setup
+- GTK4+Win32: `.keyboardShortcut()` — KeyEquivalent, EventModifiers, window-scoped dispatch (M1)
+- GTK4+Win32: `Commands` + `@FocusedValue` — native menu bar with observation-driven enable/disable (M2.1)
+- GTK4+Win32: `.dropDestination(for: URL.self)` — drag-and-drop from OS file manager (GTK4: GtkDropTarget; Win32: OLE IDropTarget) (M3)
 
 ## Next
 

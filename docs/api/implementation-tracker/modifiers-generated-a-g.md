@@ -50,6 +50,6 @@ Summary: 47 total, 0 implemented, 0 partial, 47 missing.
 | `focusedObject` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Missing | `-` | - |
 | `focusedSceneObject` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Missing | `-` | - |
 | `focusedSceneValue` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Missing | `-` | - |
-| `focusedValue` | Generated only | iOS 14+, macOS 11+, tvOS 14+, watchOS 7+ | Current | Missing | `-` | - |
+| `focusedValue` | Generated only | iOS 14+, macOS 11+, tvOS 14+, watchOS 7+ | Current | Implemented | `Sources/SwiftOpenUI/State/FocusedValue.swift` | Active-window-scoped value via FocusedValueKey + @FocusedValue. GTK4 + Win32. M2.1 |
 | `focusScope` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Missing | `-` | - |
 | `glassEffectID` | Generated only | visionOS 2+ | Current | Missing | `-` | - |

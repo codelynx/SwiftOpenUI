@@ -18,7 +18,7 @@ Summary: 55 total, 7 implemented, 1 partial, 47 missing.
 | `defersSystemGestures` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `disabled` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/DisabledModifier.swift` | - |
 | `draggable` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `dropDestination` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Missing | `-` | - |
+| `dropDestination` | Both | iOS 16 / macOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/DropDestinationModifier.swift` | GTK4: GtkDropTarget with GDK_TYPE_FILE_LIST; Win32: OLE IDropTarget. URL.self only. M3 |
 | `focusable` | Both | iOS 17 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |
 | `focused` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/FocusModifier.swift` | Web: DOM focus/blur + FocusState binding |
 | `focusEffectDisabled` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | - |
@@ -27,7 +27,7 @@ Summary: 55 total, 7 implemented, 1 partial, 47 missing.
 | `highPriorityGesture` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
 | `hoverEffect` | Both | iOS 13.4 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `hoverEffectGroup` | Both | iOS 18 / tvOS 18 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
-| `keyboardShortcut` | Both | iOS 14 / macOS 11 / visionOS 1 | Current | Missing | `-` | - |
+| `keyboardShortcut` | Both | iOS 14 / macOS 11 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/KeyboardShortcutModifier.swift` | KeyEquivalent + EventModifiers + window-scoped registry. GTK4: GtkEventControllerKey; Win32: ACCEL. M1 |
 | `modifierKeyAlternate` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `onAppear` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/LifecycleModifier.swift` | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | `onContinueUserActivity` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Missing | `-` | - |
