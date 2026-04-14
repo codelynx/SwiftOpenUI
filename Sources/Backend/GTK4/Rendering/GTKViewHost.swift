@@ -33,6 +33,15 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
     private var interactiveUpdateDepth = 0
     private var rebuildDeferredDuringInteraction = false
     private var pendingAnimation: Animation?
+    /// True when the pending/next rebuild was requested by withObservationTracking's
+    /// onChange callback. withObservationTracking is one-shot: once it fires, the
+    /// observation is no longer registered, and the only way to re-subscribe is to
+    /// run body through buildBodyWithTracking again. Therefore an observation-
+    /// triggered rebuild must NOT be short-circuited by the Phase 7 inputsUnchanged
+    /// optimization — that optimization only tracks @State / @Published generations
+    /// and can't see @Observable mutations, so it would wrongly declare the inputs
+    /// unchanged and leave observation permanently unsubscribed.
+    private var observationDidFire = false
     var capturedEnvironment: EnvironmentValues
 
     public init(buildBody: @escaping () -> OpaquePointer) {
@@ -139,7 +148,11 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
             withObservationTracking {
                 result = buildBody()
             } onChange: { [weak self] in
-                self?.scheduleRebuild()
+                guard let self else { return }
+                self.lock.lock()
+                self.observationDidFire = true
+                self.lock.unlock()
+                self.scheduleRebuild()
             }
             return result
         }
@@ -158,10 +171,17 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         let animation = pendingAnimation
         pendingAnimation = nil
         suppressFocusRestoreOnce = false
+        let fromObservation = observationDidFire
+        observationDidFire = false
         lock.unlock()
 
         // --- Narrow mutation path: try text/color in-place update ---
-        if let describeBody = describeBody,
+        // Skipped when withObservationTracking's onChange fired — the narrow
+        // path returns without re-running body under withObservationTracking,
+        // which would leave @Observable subscriptions dead after the first
+        // change. Fall through to the full rebuild so observation re-registers.
+        if !fromObservation,
+           let describeBody = describeBody,
            let oldRetained = lastRetainedDescriptor,
            let oldExecutor = retainedExecutor {
 
@@ -199,8 +219,14 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
             // Fall through to full rebuild
         }
 
-        // Phase 7: skip body evaluation if no storage was mutated since last render
-        if let snapshot = lastInputSnapshot,
+        // Phase 7: skip body evaluation if no storage was mutated since last render.
+        // But NOT when withObservationTracking's onChange fired — that callback
+        // only runs once, and re-subscribing requires running body through
+        // buildBodyWithTracking again. inputsUnchanged only tracks @State /
+        // @Published generations, so it can't detect @Observable mutations and
+        // would wrongly report "unchanged" here, leaving observation dead.
+        if !fromObservation,
+           let snapshot = lastInputSnapshot,
            inputsUnchanged(snapshot: snapshot) {
             return
         }
