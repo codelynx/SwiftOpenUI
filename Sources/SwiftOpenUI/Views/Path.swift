@@ -123,15 +123,25 @@ public struct StrokeStyle {
     public var lineWidth: CGFloat
     public var lineCap: LineCap
     public var lineJoin: LineJoin
+    /// Dash pattern — alternating "on" and "off" lengths in points.
+    /// Empty means solid line. `[8, 4]` draws 8-point dashes separated
+    /// by 4-point gaps.
+    public var dash: [CGFloat]
+    /// Starting offset into the dash pattern, in points.
+    public var dashPhase: CGFloat
 
     public init(
         lineWidth: CGFloat = 1,
         lineCap: LineCap = .butt,
-        lineJoin: LineJoin = .miter
+        lineJoin: LineJoin = .miter,
+        dash: [CGFloat] = [],
+        dashPhase: CGFloat = 0
     ) {
         self.lineWidth = lineWidth
         self.lineCap = lineCap
         self.lineJoin = lineJoin
+        self.dash = dash
+        self.dashPhase = dashPhase
     }
 }
 

@@ -587,6 +587,14 @@ gtk_swift_cairo_stroke(cairo_t *cr) {
     cairo_stroke(cr);
 }
 
+/// Set the dash pattern on a Cairo context. Pass n=0 and NULL to clear
+/// (solid stroke). `dashes` is an alternating array of on/off lengths.
+/// `offset` is the starting position into the pattern.
+static inline void
+gtk_swift_cairo_set_dash(cairo_t *cr, const double *dashes, int n, double offset) {
+    cairo_set_dash(cr, dashes, n, offset);
+}
+
 static inline void
 gtk_swift_cairo_fill(cairo_t *cr) {
     cairo_fill(cr);

@@ -139,4 +139,18 @@ extension Shape {
     public func stroke(_ color: Color, style: StrokeStyle) -> StrokedShape<Self> {
         StrokedShape(shape: self, color: color, style: style)
     }
+
+    /// Stroke the border of this shape with a color and line width. SwiftUI's
+    /// strokeBorder draws the stroke entirely inside the shape bounds; this
+    /// implementation currently aliases to `stroke`, which centers the stroke
+    /// on the path. For thin borders the visual difference is negligible;
+    /// insetting-by-lineWidth-/2 can be added later if needed.
+    public func strokeBorder(_ color: Color, lineWidth: Double = 1) -> StrokedShape<Self> {
+        StrokedShape(shape: self, color: color, style: StrokeStyle(lineWidth: lineWidth))
+    }
+
+    /// Stroke the border of this shape with a color and stroke style.
+    public func strokeBorder(_ color: Color, style: StrokeStyle) -> StrokedShape<Self> {
+        StrokedShape(shape: self, color: color, style: style)
+    }
 }

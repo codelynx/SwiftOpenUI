@@ -13,7 +13,18 @@ private let cssCleanupDataKey = "gtk-swift-css-cleanups"
 /// Apply inline CSS to a widget using a unique class name.
 /// The provider is attached to the widget via a shared cleanup list so it is
 /// automatically removed from the display when the widget is destroyed.
-func applyCSSToWidget(_ widget: UnsafeMutablePointer<GtkWidget>, properties: String) {
+///
+/// `disabledProperties`, when provided, are applied on top of the base rules
+/// via a `:disabled` pseudo-class — the widget's sensitivity state governs
+/// which set wins. Callers that skip it get GTK's default disabled styling,
+/// which usually means the base rules continue to apply even when the
+/// widget is insensitive (so a filled .borderedProminent button would keep
+/// its full-strength color when disabled, giving no visual signal).
+func applyCSSToWidget(
+    _ widget: UnsafeMutablePointer<GtkWidget>,
+    properties: String,
+    disabledProperties: String? = nil
+) {
     cssCounterLock.lock()
     cssClassCounter += 1
     let className = "gtk-swift-css-\(cssClassCounter)"
@@ -28,12 +39,22 @@ func applyCSSToWidget(_ widget: UnsafeMutablePointer<GtkWidget>, properties: Str
     case "GtkImage":  cssNode = "image"
     default:          cssNode = typeName.lowercased().replacingOccurrences(of: "gtk", with: "")
     }
-    let css = """
+    var css = """
         .\(className) { \(properties) }
         \(cssNode).\(className) { \(properties) }
         button.\(className) { \(properties) }
         label.\(className) { \(properties) }
         """
+
+    if let disabledProperties {
+        css += """
+
+            .\(className):disabled { \(disabledProperties) }
+            \(cssNode).\(className):disabled { \(disabledProperties) }
+            button.\(className):disabled { \(disabledProperties) }
+            label.\(className):disabled { \(disabledProperties) }
+            """
+    }
 
     let provider = gtk_css_provider_new()!
     gtk_css_provider_load_from_string(provider, css)

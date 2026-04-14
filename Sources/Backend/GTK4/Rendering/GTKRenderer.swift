@@ -404,17 +404,30 @@ extension Button: GTKRenderable, GTKDescribable {
             // at a CSS cascade `background-color: X; background-color: Y;`
             // made the button vanish (GTK CSS doesn't skip undefined-named-
             // color declarations gracefully), so that's parked.
-            applyCSSToWidget(button, properties: """
-                background-color: #3584e4;
-                background-image: none;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 6px 12px;
-                box-shadow: none;
-                text-shadow: none;
-                min-height: 0;
-                """)
+            //
+            // Disabled state: use a faded translucent blue with muted text
+            // so .disabled() has a visual signal. Without this override, our
+            // base rules apply even when the button is insensitive, so a
+            // .borderedProminent + .disabled() button looks identical to the
+            // enabled version (only click handling differs).
+            applyCSSToWidget(
+                button,
+                properties: """
+                    background-color: #3584e4;
+                    background-image: none;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 6px 12px;
+                    box-shadow: none;
+                    text-shadow: none;
+                    min-height: 0;
+                    """,
+                disabledProperties: """
+                    background-color: rgba(53, 132, 228, 0.4);
+                    color: rgba(255, 255, 255, 0.7);
+                    """
+            )
         case .bordered:
             applyCSSToWidget(button, properties: """
                 border: 1px solid @borders; border-radius: 6px;
@@ -3377,8 +3390,18 @@ extension OverlayView: GTKRenderable {
 
         let overlayWidget = widgetFromOpaque(gtkRenderView(overlay))
         let (hAlign, vAlign) = gtkAlignFromAlignment(alignment)
-        gtk_widget_set_halign(overlayWidget, hAlign)
-        gtk_widget_set_valign(overlayWidget, vAlign)
+        // Respect the overlay widget's own expansion intent. A Shape (or any
+        // view with hexpand/vexpand set via .frame(maxWidth: .infinity)) wants
+        // to fill its container — overwriting halign to CENTER would shrink
+        // it to its natural size (0x0 for GtkDrawingArea) and make it vanish.
+        // Only apply the requested alignment on the axes where the widget
+        // isn't asking to expand. This matches SwiftUI's "overlay fills when
+        // its content fills" semantics; explicit alignment still governs
+        // non-filling overlays like Text or Image.
+        let overlayWantsHExpand = gtk_widget_get_hexpand(overlayWidget) != 0
+        let overlayWantsVExpand = gtk_widget_get_vexpand(overlayWidget) != 0
+        gtk_widget_set_halign(overlayWidget, overlayWantsHExpand ? GTK_ALIGN_FILL : hAlign)
+        gtk_widget_set_valign(overlayWidget, overlayWantsVExpand ? GTK_ALIGN_FILL : vAlign)
         gtk_overlay_add_overlay(OpaquePointer(container), overlayWidget)
 
         return opaqueFromWidget(container)
@@ -5450,6 +5473,17 @@ extension DrawingContext {
         case .round: cairoJoin = CAIRO_LINE_JOIN_ROUND
         }
         gtk_swift_cairo_set_line_join(cr, cairoJoin)
+
+        // Apply dash pattern if specified. Empty = solid; a non-empty array
+        // draws alternating on/off segments (e.g. [8, 4] = 8pt dash, 4pt gap).
+        if style.dash.isEmpty {
+            gtk_swift_cairo_set_dash(cr, nil, 0, 0)
+        } else {
+            let dashes = style.dash.map { Double($0) }
+            dashes.withUnsafeBufferPointer { buf in
+                gtk_swift_cairo_set_dash(cr, buf.baseAddress, Int32(buf.count), Double(style.dashPhase))
+            }
+        }
 
         applyPathElements(path)
         gtk_swift_cairo_stroke(cr)
