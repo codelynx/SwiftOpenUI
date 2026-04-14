@@ -326,7 +326,7 @@ final class GTK4MenuBarHost {
             if existingLabels == newLabels.sorted() && allItems.count == actions.count {
                 updateInPlace(allItems)
             } else {
-                teardown()
+                teardown(widgetsValid: true)
                 buildMenu(allItems)
             }
         }
@@ -434,15 +434,23 @@ final class GTK4MenuBarHost {
     }
 
     /// Clean up all resources.
-    private func teardown() {
+    ///
+    /// `widgetsValid` must be false when called from the window-destroy
+    /// path: GTK has already torn down the containerBox/menuBar widget
+    /// tree by the time our g_object_set_data_full destroy notifier
+    /// fires, so calling gtk_box_remove on them triggers a GTK_IS_BOX
+    /// assertion failure. During a live menu rebuild the widgets are
+    /// still valid and the caller must pass true so the old menu bar
+    /// is actually unparented before a new one is appended.
+    private func teardown(widgetsValid: Bool) {
         // Unregister shortcuts
         for regID in shortcutRegIDs {
             KeyboardShortcutRegistry.shared.unregister(id: regID)
         }
         shortcutRegIDs.removeAll()
 
-        // Remove menu bar widget
-        if let bar = menuBar, let box = containerBox {
+        // Remove menu bar widget — only when the widget tree is still live.
+        if widgetsValid, let bar = menuBar, let box = containerBox {
             let boxPtr = UnsafeMutableRawPointer(box).assumingMemoryBound(to: GtkBox.self)
             gtk_box_remove(boxPtr, bar)
         }
@@ -454,9 +462,10 @@ final class GTK4MenuBarHost {
         actionGroup = nil
     }
 
-    /// Full cleanup on window destruction.
+    /// Full cleanup on window destruction. The widget tree is already
+    /// gone at this point — only release non-widget resources.
     func destroy() {
-        teardown()
+        teardown(widgetsValid: false)
         if let observerID = focusedValuesObserverID {
             FocusedValuesStore.shared.removeObserver(id: observerID)
         }
