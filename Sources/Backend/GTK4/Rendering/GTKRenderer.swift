@@ -1375,6 +1375,18 @@ extension LineLimitView: GTKRenderable {
                     if gtk_label_get_ellipsize(labelOp) == PANGO_ELLIPSIZE_NONE {
                         gtk_label_set_ellipsize(labelOp, PANGO_ELLIPSIZE_END)
                     }
+                    // A single-line truncating label in a flex horizontal
+                    // layout (HStack) needs hexpand=TRUE so GtkBox gives it
+                    // the remaining width after natural-sized siblings take
+                    // theirs. Without it, the label packs at its minimum —
+                    // which with ellipsize is just "…" — and adjacent
+                    // content sits flush against it. SwiftUI's behavior is
+                    // that single-line truncating Text fills available line
+                    // width. Setting hexpand on a standalone Text or inside
+                    // a VStack is a no-op for truncation and produces the
+                    // expected "text fills horizontally" SwiftUI behavior
+                    // anyway, so this is safe outside HStack too.
+                    gtk_widget_set_hexpand(label, 1)
                 } else {
                     gtk_label_set_wrap(labelOp, 1)
                     gtk_label_set_wrap_mode(labelOp, PANGO_WRAP_WORD_CHAR)
