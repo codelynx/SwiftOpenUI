@@ -287,6 +287,12 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         let childVexpand = gtk_widget_get_vexpand(newChild) != 0
         gtk_widget_set_hexpand(container, childHexpand ? 1 : 0)
         gtk_widget_set_vexpand(container, childVexpand ? 1 : 0)
+        if childHexpand {
+            gtk_widget_set_halign(newChild, GTK_ALIGN_FILL)
+        }
+        if childVexpand {
+            gtk_widget_set_valign(newChild, GTK_ALIGN_FILL)
+        }
         gtk_box_append(boxPointer(container), newChild)
 
         // If this subtree contains a NavigationStack titlebar, refresh it on the window.

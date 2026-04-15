@@ -133,6 +133,10 @@ public struct GTK4ZStackDescriptor: Equatable {
     public let alignment: GTK4AlignmentDescriptor
 }
 
+public struct GTK4BackgroundLayoutDescriptor: Equatable {
+    public let alignment: GTK4AlignmentDescriptor
+}
+
 public struct GTK4FontDescriptor: Equatable {
     public let font: Font
 }
@@ -194,6 +198,7 @@ public enum GTK4DescriptorProps: Equatable {
     case none
     case disabled(GTK4DisabledDescriptor)
     case background(GTK4ColorDescriptor)
+    case backgroundLayout(GTK4BackgroundLayoutDescriptor)
     case border(GTK4BorderDescriptor)
     case canvas(GTK4CanvasDescriptor)
     case font(GTK4FontDescriptor)
@@ -642,7 +647,13 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
                               new: GTK4DescriptorNode) -> GTK4DescriptorUpdateIntent {
     guard old.kind == new.kind else { return .none }
     switch new.kind {
-    case .background:    return .backgroundColor
+    case .background:
+        switch new.props {
+        case .background:
+            return .backgroundColor
+        default:
+            return .none
+        }
     case .border:        return .borderStyle
     case .canvas:        return .canvasContent
     case .color:         return .colorFill

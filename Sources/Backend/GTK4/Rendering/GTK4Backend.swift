@@ -127,10 +127,14 @@ extension WindowGroup: GTKWindowRenderable {
         if gtk_widget_get_hexpand(contentWidget) == 0 {
             gtk_widget_set_halign(contentWidget, GTK_ALIGN_CENTER)
             gtk_widget_set_hexpand(contentWidget, 1)
+        } else {
+            gtk_widget_set_halign(contentWidget, GTK_ALIGN_FILL)
         }
         if gtk_widget_get_vexpand(contentWidget) == 0 {
             gtk_widget_set_valign(contentWidget, GTK_ALIGN_CENTER)
             gtk_widget_set_vexpand(contentWidget, 1)
+        } else {
+            gtk_widget_set_valign(contentWidget, GTK_ALIGN_FILL)
         }
 
         gtk_window_set_child(winPtr, contentWidget)
@@ -285,7 +289,12 @@ final class GTK4MenuBarHost {
         g_object_ref(gpointer(contentWidget))
         gtk_window_set_child(windowPointer(winPtr), nil)
         gtk_box_append(UnsafeMutableRawPointer(vbox).assumingMemoryBound(to: GtkBox.self), contentWidget)
+        gtk_widget_set_hexpand(contentWidget, 1)
         gtk_widget_set_vexpand(contentWidget, 1)
+        gtk_widget_set_halign(contentWidget, GTK_ALIGN_FILL)
+        gtk_widget_set_valign(contentWidget, GTK_ALIGN_FILL)
+        gtk_widget_set_hexpand(vbox, 1)
+        gtk_widget_set_vexpand(vbox, 1)
         g_object_unref(gpointer(contentWidget))
 
         // Set the box as window child

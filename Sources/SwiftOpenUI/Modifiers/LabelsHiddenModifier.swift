@@ -2,11 +2,10 @@
 /// `.labelsHidden()` for selection controls (Picker, Toggle, etc.)
 /// where the surrounding layout already conveys what the control is.
 ///
-/// For GTK4 V1 this is effectively a pass-through: the `.segmented`
-/// style already renders without the `label` prefix, and the
-/// dropdown style doesn't render the label inline either (the label
-/// is used for accessibility only). The modifier still exists so
-/// source-shared views can compile on both macOS and Linux.
+/// Implemented via an environment flag — the backend renderers for
+/// label-carrying controls (currently `Picker`) read
+/// `EnvironmentValues.labelsHidden` during their own render and omit
+/// the label prefix when it's set.
 public struct LabelsHiddenView<Content: View>: View {
     public typealias Body = Never
 
@@ -19,5 +18,21 @@ extension View {
     /// Hide the inline labels of selection controls within this view.
     public func labelsHidden() -> LabelsHiddenView<Self> {
         LabelsHiddenView(content: self)
+    }
+}
+
+// MARK: - Environment plumbing
+
+/// Environment flag set by `LabelsHiddenView` for its content subtree.
+/// Backends consulting `labelsHidden` on the current environment omit
+/// inline labels from label-bearing controls (e.g. Picker).
+struct LabelsHiddenKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
+
+extension EnvironmentValues {
+    public var labelsHidden: Bool {
+        get { self[LabelsHiddenKey.self] }
+        set { self[LabelsHiddenKey.self] = newValue }
     }
 }

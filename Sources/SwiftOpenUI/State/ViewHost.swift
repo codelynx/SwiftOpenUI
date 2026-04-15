@@ -38,7 +38,8 @@ public func installState<V>(_ view: V, host: AnyViewHost) {
 }
 
 /// Check if a view has any reactive properties (@State, @ObservedObject,
-/// or @Observable stored properties) via reflection.
+/// @Observable stored properties, or `@Environment(SomeClass.self)`
+/// object-injection wrappers) via reflection.
 public func hasReactiveProperties<V>(_ view: V) -> Bool {
     // Fast path: primitive views never have reactive properties
     if V.self is any PrimitiveView.Type {
@@ -53,6 +54,31 @@ public func hasReactiveProperties<V>(_ view: V) -> Bool {
             if child.value is Observable { return true }
         }
         #endif
+        // `@Environment(SomeClass.self)` reads an injected reference
+        // object whose properties are typically `@Observable`. The
+        // wrapper itself isn't `Observable` (it holds a lookup
+        // function, not the object directly), so we recognize the
+        // object-injection variant via a dedicated marker and route
+        // the view through the reactive wrapper so its body is
+        // evaluated under `withObservationTracking`.
+        if let env = child.value as? AnyObjectInjectionEnvironment,
+           let reflected = env as? (any _EnvironmentObjectInjectionProbe),
+           reflected.isInjectedObjectProbe {
+            return true
+        }
         return false
     }
+}
+
+/// Internal probe used by `hasReactiveProperties` to distinguish the
+/// keyPath and object-injection variants of `Environment<Value>`
+/// without exposing the enum to callers. Conforming only in the
+/// Environment.swift file lets the `internal` runtime check stay
+/// private to the module.
+public protocol _EnvironmentObjectInjectionProbe {
+    var isInjectedObjectProbe: Bool { get }
+}
+
+extension Environment: _EnvironmentObjectInjectionProbe {
+    public var isInjectedObjectProbe: Bool { isInjectedObject }
 }

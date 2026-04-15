@@ -125,6 +125,17 @@ private class EnvironmentBox {
 ///   object (typically `@Observable`) that an ancestor injected via
 ///   `.environment(object)`. Matches SwiftUI's `@Environment(T.self)`
 ///   introduced alongside the Observation framework.
+/// Type-erased marker for `Environment<Value>` instances that read
+/// an injected reference object by type (the
+/// `@Environment(SomeClass.self)` form). The view-host's reactive-
+/// property detection checks for this so that views with only
+/// injected-object @Environment properties (no @State, no directly-
+/// stored @Observable) still get wrapped in `withObservationTracking`
+/// for their body evaluation — otherwise property reads on the
+/// injected object don't register with Observation and mutations
+/// never trigger rebuilds.
+public protocol AnyObjectInjectionEnvironment {}
+
 @propertyWrapper
 public struct Environment<Value> {
     /// How the wrapper reads its value at render time. A keyPath reads
@@ -137,6 +148,15 @@ public struct Environment<Value> {
     }
 
     private let reader: Reader
+
+    /// True when this wrapper was constructed via
+    /// `init(_ type: Value.Type)` (the object-injection form) rather
+    /// than the keyPath form. Read by the view-host's reactive-
+    /// property detection.
+    internal var isInjectedObject: Bool {
+        if case .injectedObject = reader { return true }
+        return false
+    }
 
     public init(_ keyPath: KeyPath<EnvironmentValues, Value>) {
         self.reader = .keyPath(keyPath)
@@ -173,6 +193,12 @@ public struct Environment<Value> {
         }
     }
 }
+
+/// `Environment<Value>` is an object-injection environment only when
+/// its reader was constructed via `init(_ type: Value.Type)`. Every
+/// instance conforms, but the runtime check on `isInjectedObject`
+/// distinguishes the two constructors.
+extension Environment: AnyObjectInjectionEnvironment {}
 
 // MARK: - Environment object lookup
 
