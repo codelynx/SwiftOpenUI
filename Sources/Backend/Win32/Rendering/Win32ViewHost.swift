@@ -222,7 +222,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
     /// rebuild entry point instead of `setCurrentEnvironment(captured)`
     /// alone, so descendant `@Environment(Type.self)` lookups survive
     /// even when the pushing modifier lives inside a parent's body.
-    private func installRebuildEnvironment() {
+    func installEffectiveEnvironment() {
         guard let captured = capturedEnvironment else { return }
         var env = captured
         for (typeID, object) in capturedInjectedObjects {
@@ -284,7 +284,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
 
         let previousEnv = getCurrentEnvironment()
         defer { setCurrentEnvironment(previousEnv) }
-        installRebuildEnvironment()
+        installEffectiveEnvironment()
 
         // Restore animation context for this rebuild.
         // Priority: withAnimation() pending token (one-shot from scheduleRebuild)
@@ -338,7 +338,6 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
             retainedDescriptorRoot = nil
             retainedExecutorRoot = nil
         }
-
     }
 
     /// Layout the current child to fill the container.
@@ -356,7 +355,14 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
             return
         }
 
+        // Descriptor capture can re-enter body after the initial child HWND
+        // tree has already been created. Re-install the host's effective
+        // environment so `@Environment(Type.self)` lookups see the same
+        // injected objects that body read during `buildBodyWithTracking()`.
+        let previousEnvForDesc = getCurrentEnvironment()
+        installEffectiveEnvironment()
         let identified = winIdentifyDescriptorTree(describeBody())
+        setCurrentEnvironment(previousEnvForDesc)
         retainedDescriptorRoot = winRetainDescriptorTree(identified)
         let executorRoot = winMakeExecutorTree(from: identified)
         retainedExecutorRoot = winCaptureSupportedNativeSlots(

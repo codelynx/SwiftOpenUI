@@ -88,6 +88,14 @@ private func winRenderStatefulView<V: View>(_ view: V, in context: RenderContext
     // This is critical for parent-routed messages like WM_CTLCOLORSTATIC.
     let containerContext = RenderContext(parent: host.container, hInstance: context.hInstance)
 
+    // Initial render should use the same effective environment as rebuilds.
+    // On Win32, child HWND creation can synchronously dispatch messages back
+    // through common-control/window-proc paths before `winRenderStatefulView`
+    // returns, so relying on an outer modifier's temporary TLS push is not
+    // stable enough for the host's full initial lifecycle.
+    let previousEnv = getCurrentEnvironment()
+    host.installEffectiveEnvironment()
+
     // Phase 6+7: track which storages are read during initial body evaluation
     beginDependencyTracking()
     let childHwnd = host.buildBodyWithTracking(containerContext)
@@ -99,7 +107,7 @@ private func winRenderStatefulView<V: View>(_ view: V, in context: RenderContext
     if let child = childHwnd {
         host.addChild(child)
     }
-
+    setCurrentEnvironment(previousEnv)
     return host.container
 }
 
@@ -661,9 +669,20 @@ func winCurrentColorFill(nativeSlotID: Int) -> Win32ColorDescriptor? {
     return state.currentFillColor
 }
 
+private func bindActionToCurrentEnvironment(_ action: @escaping () -> Void) -> () -> Void {
+    let capturedEnvironment = getCurrentEnvironment()
+    return {
+        let previousEnvironment = getCurrentEnvironment()
+        setCurrentEnvironment(capturedEnvironment)
+        defer { setCurrentEnvironment(previousEnvironment) }
+        action()
+    }
+}
+
 extension Button: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let style = getCurrentEnvironment().buttonStyle
+        let action = bindActionToCurrentEnvironment(action)
         let hwnd: HWND?
         if let textLabel = label as? Text {
             hwnd = createNativeButton(title: textLabel.content, action: action,

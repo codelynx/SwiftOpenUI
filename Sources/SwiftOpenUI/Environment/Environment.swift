@@ -73,31 +73,38 @@ public struct EnvironmentValues {
 // injected objects body needs and can re-push them on subsequent
 // rebuilds.
 //
-// Single-threaded thread-local: rendering is main-actor; no contention.
-private var _envReadTracker: [ObjectIdentifier: AnyObject]? = nil
+// Stack-based so nested reactive hosts can track independently while still
+// propagating descendant reads back to their parent render session.
+private var _envReadTrackerStack: [[ObjectIdentifier: AnyObject]] = []
 
 /// Begin a fresh round of environment-read tracking. Pairs with
 /// `endEnvironmentReadTracking()` after body evaluation. Backends call
 /// this around `buildBody` so reads of `@Environment(Type.self)`
 /// performed by descendants are recorded.
 public func beginEnvironmentReadTracking() {
-    _envReadTracker = [:]
+    _envReadTrackerStack.append([:])
 }
 
 /// Finish the current round and return the recorded reads, or nil if
 /// no round was active.
 public func endEnvironmentReadTracking() -> [ObjectIdentifier: AnyObject]? {
-    let result = _envReadTracker
-    _envReadTracker = nil
+    guard !_envReadTrackerStack.isEmpty else { return nil }
+    let result = _envReadTrackerStack.removeLast()
+    if !_envReadTrackerStack.isEmpty {
+        let parentIndex = _envReadTrackerStack.count - 1
+        for (typeID, object) in result {
+            _envReadTrackerStack[parentIndex][typeID] = object
+        }
+    }
     return result
 }
 
 /// Record a successful `@Environment(Type.self)` lookup against the
 /// active tracker, if any. No-op when no tracking round is active.
 internal func recordEnvironmentRead(typeID: ObjectIdentifier, object: AnyObject) {
-    if _envReadTracker != nil {
-        _envReadTracker?[typeID] = object
-    }
+    guard !_envReadTrackerStack.isEmpty else { return }
+    let index = _envReadTrackerStack.count - 1
+    _envReadTrackerStack[index][typeID] = object
 }
 
 // MARK: - Thread-local environment for render pass

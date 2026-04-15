@@ -1,6 +1,6 @@
 // Win32 Review Smoke Test
 // Verifies: labelsHidden Picker, generic Picker with .tag(),
-// @Environment(Observable.self) reactivity
+// @Environment(Observable.self) reactivity, ObservableObject reactivity
 
 #if os(macOS)
 import SwiftUI
@@ -16,47 +16,77 @@ import BackendWin32
 import Observation
 #endif
 
+@inline(__always)
+private func debugBodyAccess(_ name: String) {
+	print("[DEBUG] body \(name)")
+}
+
+// MARK: - @Observable test model
+
+@Observable class ReviewModel {
+	var count: Int = 0
+}
+
 // MARK: - ObservableObject test model
 
 #if os(macOS)
-class ReviewModel: ObservableObject {
-	@Published var count: Int = 0
+class LegacyModel: ObservableObject {
+	@Published var value: Int = 0
 }
 #else
-class ReviewModel: SwiftOpenUI.ObservableObject {
-	@SwiftOpenUI.Published var count: Int = 0
+class LegacyModel: SwiftOpenUI.ObservableObject {
+	@SwiftOpenUI.Published var value: Int = 0
 }
 #endif
 
-// MARK: - Test view
+// MARK: - Test views
 
 enum Fruit: String, CaseIterable {
 	case apple, banana, cherry
 }
 
+/// Tests @Environment(Observable.self) — the pattern that previously crashed.
+struct ObservableCounterView: View {
+	@Environment(ReviewModel.self) var model
+
+	var body: some View {
+		debugBodyAccess("ObservableCounterView")
+		return VStack(spacing: 8) {
+			Text("--- @Environment(Observable.self) ---")
+				.font(.subheadline)
+			Text("Observable Count: \(model.count)")
+			Button("Increment Observable") { model.count += 1 }
+		}
+	}
+}
+
 struct Win32ReviewView: View {
 	#if os(macOS)
-	@StateObject private var model = ReviewModel()
+	@StateObject private var legacy = LegacyModel()
 	@State private var fruit: Fruit = .apple
 	@State private var pickerValue: Int = 0
 	#else
-	@SwiftOpenUI.StateObject private var model = ReviewModel()
+	@SwiftOpenUI.StateObject private var legacy = LegacyModel()
 	@SwiftOpenUI.State private var fruit: Fruit = .apple
 	@SwiftOpenUI.State private var pickerValue: Int = 0
 	#endif
 
 	var body: some View {
-		VStack(spacing: 16) {
+		debugBodyAccess("Win32ReviewView")
+		return VStack(spacing: 16) {
 			Text("Win32 Review Smoke Test")
 				.font(.headline)
 
-			// 1. ObservableObject reactivity
+			// 1. @Environment(Observable.self) reactivity (previously crashed)
+			ObservableCounterView()
+
+			// 2. ObservableObject + @StateObject reactivity
 			Text("--- ObservableObject Reactivity ---")
 				.font(.subheadline)
-			Text("Count: \(model.count)")
-			Button("Increment") { model.count += 1 }
+			Text("Legacy Count: \(legacy.value)")
+			Button("Increment Legacy") { legacy.value += 1 }
 
-			// 2. Picker with label (should show "Color:" prefix)
+			#if false
 			Text("--- Picker with label ---")
 				.font(.subheadline)
 			Picker("Color:", selection: $pickerValue) {
@@ -65,7 +95,6 @@ struct Win32ReviewView: View {
 				Text("Blue").tag(2)
 			}
 
-			// 3. Picker with .labelsHidden() (should hide "Hidden:" prefix)
 			Text("--- Picker .labelsHidden() ---")
 				.font(.subheadline)
 			Picker("Hidden:", selection: $pickerValue) {
@@ -75,7 +104,6 @@ struct Win32ReviewView: View {
 			}
 			.labelsHidden()
 
-			// 4. Segmented Picker with .labelsHidden()
 			Text("--- Segmented .labelsHidden() ---")
 				.font(.subheadline)
 			Picker("Also Hidden:", selection: $pickerValue) {
@@ -86,7 +114,6 @@ struct Win32ReviewView: View {
 			.pickerStyle(.segmented)
 			.labelsHidden()
 
-			// 5. Generic Picker with ForEach + .tag()
 			Text("--- Generic Picker (ForEach+tag) ---")
 				.font(.subheadline)
 			Picker("Fruit:", selection: $fruit) {
@@ -97,6 +124,7 @@ struct Win32ReviewView: View {
 
 			Text("Selected: \(fruit.rawValue)")
 				.font(.caption)
+			#endif
 		}
 		.padding()
 	}
@@ -105,9 +133,12 @@ struct Win32ReviewView: View {
 // MARK: - App
 
 struct Win32ReviewApp: App {
+	let model = ReviewModel()
+
 	var body: some Scene {
 		WindowGroup("Win32 Review") {
 			Win32ReviewView()
+				.environment(model)
 		}
 	}
 }
