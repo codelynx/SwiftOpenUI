@@ -25,13 +25,17 @@ public struct EnvironmentValues {
         return copy
     }
 
-    /// Store an ObservableObject by type.
-    public mutating func setObject<T: ObservableObject>(_ object: T) {
+    /// Store an object by its static type. The constraint is `AnyObject`
+    /// rather than `ObservableObject` so this covers both the legacy
+    /// `@EnvironmentObject` path (Combine-style `ObservableObject`) and
+    /// the newer `@Environment(SomeClass.self)` path (any reference type,
+    /// typically an `@Observable` class).
+    public mutating func setObject<T: AnyObject>(_ object: T) {
         objects[ObjectIdentifier(T.self)] = object
     }
 
-    /// Retrieve an ObservableObject by type.
-    public func getObject<T: ObservableObject>(_ type: T.Type) -> T? {
+    /// Retrieve an object previously stored by `setObject`.
+    public func getObject<T: AnyObject>(_ type: T.Type) -> T? {
         objects[ObjectIdentifier(type)] as? T
     }
 }
@@ -112,23 +116,69 @@ private class EnvironmentBox {
 // MARK: - @Environment property wrapper
 
 /// Reads a value from the current environment at render time.
+///
+/// Two initializers are supported, matching SwiftUI:
+///
+/// - `@Environment(\.colorScheme)` — keyPath-based access to built-in
+///   environment values keyed by `EnvironmentKey`.
+/// - `@Environment(SomeClass.self)` — type-based access to a reference
+///   object (typically `@Observable`) that an ancestor injected via
+///   `.environment(object)`. Matches SwiftUI's `@Environment(T.self)`
+///   introduced alongside the Observation framework.
 @propertyWrapper
 public struct Environment<Value> {
-    private let keyPath: KeyPath<EnvironmentValues, Value>
+    /// How the wrapper reads its value at render time. A keyPath reads
+    /// from `EnvironmentValues`; the closure variant looks up an
+    /// injected reference object, capturing its `AnyObject` constraint
+    /// from the constrained init.
+    private enum Reader {
+        case keyPath(KeyPath<EnvironmentValues, Value>)
+        case injectedObject(() -> Value)
+    }
+
+    private let reader: Reader
 
     public init(_ keyPath: KeyPath<EnvironmentValues, Value>) {
-        self.keyPath = keyPath
+        self.reader = .keyPath(keyPath)
+    }
+
+    /// Look up an injected reference object by type. Matches SwiftUI's
+    /// `@Environment(SomeClass.self)` usage for `@Observable` classes.
+    ///
+    /// The object must have been injected by an ancestor via
+    /// `.environment(object)`; otherwise `wrappedValue` traps with a
+    /// diagnostic message, because silently returning a default would
+    /// hide a programmer error that SwiftUI callers expect to surface.
+    public init(_ type: Value.Type) where Value: AnyObject {
+        // Capturing `type` in the closure lets us reference the
+        // `AnyObject` constraint at read time without propagating it
+        // to the outer Environment<Value> struct.
+        self.reader = .injectedObject {
+            guard let object = getCurrentEnvironment().getObject(type) else {
+                fatalError(
+                    "@Environment(\(type).self) lookup failed — no object of this type was injected. " +
+                    "Call `.environment(object)` on an ancestor view."
+                )
+            }
+            return object
+        }
     }
 
     public var wrappedValue: Value {
-        getCurrentEnvironment()[keyPath: keyPath]
+        switch reader {
+        case .keyPath(let keyPath):
+            return getCurrentEnvironment()[keyPath: keyPath]
+        case .injectedObject(let read):
+            return read()
+        }
     }
 }
 
 // MARK: - Environment object lookup
 
-/// Retrieve an ObservableObject from the current thread-local environment by type.
-public func getEnvironmentObject<T: ObservableObject>(_ type: T.Type) -> T? {
+/// Retrieve an injected reference object from the current thread-local
+/// environment by type. Returns nil if none was injected.
+public func getEnvironmentObject<T: AnyObject>(_ type: T.Type) -> T? {
     getCurrentEnvironment().getObject(type)
 }
 

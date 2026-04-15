@@ -638,6 +638,18 @@ extension EnvironmentObjectModifierView: AndroidRenderable {
     }
 }
 
+extension EnvironmentObservableModifierView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let prev = getCurrentEnvironment()
+        var env = prev
+        env.setObject(object)
+        setCurrentEnvironment(env)
+        let node = androidRenderView(content)
+        setCurrentEnvironment(prev)
+        return node
+    }
+}
+
 extension EnvironmentModifierView: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let prev = getCurrentEnvironment()

@@ -3853,6 +3853,18 @@ extension EnvironmentObjectModifierView: GTKRenderable {
     }
 }
 
+extension EnvironmentObservableModifierView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        var env = getCurrentEnvironment()
+        env.setObject(object)
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let widget = gtkRenderView(content)
+        setCurrentEnvironment(prev)
+        return widget
+    }
+}
+
 extension EnvironmentModifierView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         var env = getCurrentEnvironment()

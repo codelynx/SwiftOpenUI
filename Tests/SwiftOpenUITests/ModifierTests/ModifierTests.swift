@@ -301,6 +301,34 @@ final class ModifierTests: XCTestCase {
         XCTAssertNotNil(view as EnvironmentModifierView<Text, ColorScheme>)
     }
 
+    // Exercises the Observation-era `.environment(object)` path.
+    // Uses a plain class (not ObservableObject) to confirm the new
+    // overload binds against `AnyObject`, not the legacy constraint.
+    class TestObservableLike {
+        var value: Int = 0
+    }
+
+    func testEnvironmentObjectOverloadWrapsInObservableModifier() {
+        let obj = TestObservableLike()
+        let view = Text("hello").environment(obj)
+        XCTAssertNotNil(view as EnvironmentObservableModifierView<Text, TestObservableLike>)
+        XCTAssertTrue(view.object === obj)
+    }
+
+    func testEnvironmentTypeInitReadsInjectedObject() {
+        let obj = TestObservableLike()
+        obj.value = 42
+
+        var env = EnvironmentValues()
+        env.setObject(obj)
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(nil) }
+
+        let env_read = Environment(TestObservableLike.self)
+        XCTAssertTrue(env_read.wrappedValue === obj)
+        XCTAssertEqual(env_read.wrappedValue.value, 42)
+    }
+
     func testEnvironmentValuesIsEnabledDefaultsTrue() {
         let env = EnvironmentValues()
         XCTAssertTrue(env.isEnabled)

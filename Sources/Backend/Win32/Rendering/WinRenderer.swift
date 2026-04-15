@@ -2951,6 +2951,18 @@ extension EnvironmentObjectModifierView: WinRenderable {
     }
 }
 
+extension EnvironmentObservableModifierView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        var env = getCurrentEnvironment()
+        env.setObject(object)
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let widget = winRenderView(content, in: context)
+        setCurrentEnvironment(prev)
+        return widget
+    }
+}
+
 extension EnvironmentModifierView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         var env = getCurrentEnvironment()

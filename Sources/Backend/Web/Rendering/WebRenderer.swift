@@ -2104,6 +2104,16 @@ extension EnvironmentObjectModifierView: WebRenderable {
     }
 }
 
+extension EnvironmentObservableModifierView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        var env = getCurrentEnvironment()
+        env.setObject(object)
+        setCurrentEnvironment(env)
+        let result = webRenderView(content)
+        return result
+    }
+}
+
 extension EnvironmentModifierView: WebRenderable {
     public func webCreateElement() -> JSValue {
         var env = getCurrentEnvironment()
