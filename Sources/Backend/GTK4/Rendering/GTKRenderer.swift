@@ -3289,6 +3289,20 @@ extension CornerRadiusView: GTKRenderable {
     }
 }
 
+// MARK: - Help / tooltip modifier
+
+extension HelpView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        // GTK interprets a non-NULL tooltip string (including empty) as
+        // "show a tooltip on hover"; passing NULL clears it. Forward
+        // whatever the caller provided — empty strings still register
+        // so callers can intentionally clear a prior help value.
+        gtk_widget_set_tooltip_text(widget, text)
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - Clip Shape GTK extensions
 
 extension ClippedView: GTKRenderable {

@@ -6480,6 +6480,15 @@ let searchableLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcl
 
 // MARK: - Phase 4C: Shape modifiers
 
+extension HelpView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // V1: pass-through. Win32 tooltips require attaching a
+        // shared tooltip control (TTM_ADDTOOL) with lifecycle
+        // management tied to the HWND; tracked as its own follow-up.
+        winRenderView(content, in: context)
+    }
+}
+
 extension CornerRadiusView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }

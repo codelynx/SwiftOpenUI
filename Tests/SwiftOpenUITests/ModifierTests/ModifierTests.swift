@@ -334,6 +334,22 @@ final class ModifierTests: XCTestCase {
         XCTAssertTrue(env.isEnabled)
     }
 
+    // MARK: - Help / tooltip modifier
+
+    func testHelpModifierWrapsContent() {
+        let view = Text("hello").help("Show details")
+        XCTAssertNotNil(view as HelpView<Text>)
+        XCTAssertEqual(view.text, "Show details")
+        XCTAssertEqual(view.content.content, "hello")
+    }
+
+    func testHelpModifierAcceptsEmptyString() {
+        // Empty string is forwarded verbatim so callers can intentionally
+        // clear a prior tooltip value rather than toggle it off.
+        let view = Text("hello").help("")
+        XCTAssertEqual(view.text, "")
+    }
+
     func testDisabledModifierStoresWrapperState() {
         let view = Text("hello").disabled(true)
         XCTAssertTrue(view.isDisabled)

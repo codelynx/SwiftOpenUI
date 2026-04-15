@@ -2344,6 +2344,16 @@ extension CornerRadiusView: WebRenderable {
     }
 }
 
+extension HelpView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        let element = webRenderView(content)
+        // The `title` attribute is the web-native tooltip mechanism,
+        // honored by every mainstream browser on hover.
+        element.title = .string(text)
+        return element
+    }
+}
+
 extension ShadowView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let child = webRenderView(content)
