@@ -1997,6 +1997,13 @@ extension OnChangeView: GTKRenderable {
     }
 }
 
+extension OnChangeTwoArgView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        onChangeCheckAndFireTwoArg(value: value, action: action)
+        return gtkRenderView(content)
+    }
+}
+
 // MARK: - Appearance modifier GTK extensions
 
 extension HiddenView: GTKRenderable {

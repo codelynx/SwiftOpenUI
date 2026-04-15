@@ -13,10 +13,39 @@ public struct OnChangeView<Content: View, V: Equatable>: View, PrimitiveView {
     public var body: Never { fatalError() }
 }
 
+/// Two-argument variant of `OnChangeView`: the action receives both
+/// the old and the new value, matching SwiftUI's iOS 17+ form
+/// `onChange(of:) { oldValue, newValue in … }`.
+public struct OnChangeTwoArgView<Content: View, V: Equatable>: View, PrimitiveView {
+    public typealias Body = Never
+    public let content: Content
+    public let value: V
+    public let action: (V, V) -> Void
+
+    public var body: Never { fatalError() }
+}
+
 extension View {
     /// Adds an action to perform when the given value changes.
+    /// Single-argument form — matches SwiftUI's pre-iOS-17 API.
     public func onChange<V: Equatable>(of value: V, perform action: @escaping (V) -> Void) -> OnChangeView<Self, V> {
         OnChangeView(content: self, value: value, action: action)
+    }
+
+    /// Adds an action to perform when the given value changes.
+    /// Two-argument form — matches SwiftUI's iOS 17+ API where the
+    /// closure receives both the previous and the new value.
+    ///
+    /// ```swift
+    /// .onChange(of: appState.selectedAction) { oldValue, newValue in
+    ///     // side effects based on the transition
+    /// }
+    /// ```
+    public func onChange<V: Equatable>(
+        of value: V,
+        _ action: @escaping (V, V) -> Void
+    ) -> OnChangeTwoArgView<Self, V> {
+        OnChangeTwoArgView(content: self, value: value, action: action)
     }
 }
 
@@ -58,6 +87,29 @@ public func onChangeCheckAndFire<V: Equatable>(value: V, action: (V) -> Void) ->
         }
     }
     // Store current value for next render pass
+    _onChangePreviousValues[key] = value
+
+    return key
+}
+
+/// Two-argument variant of `onChangeCheckAndFire`. The action is
+/// called with `(oldValue, newValue)` when the value has changed
+/// since the previous render. Uses the same counter-keyed storage
+/// as the single-argument form, so the two variants share the
+/// render-pass reset contract.
+@discardableResult
+public func onChangeCheckAndFireTwoArg<V: Equatable>(
+    value: V,
+    action: (V, V) -> Void
+) -> Int {
+    let key = _onChangeCounter
+    _onChangeCounter += 1
+
+    if let previous = _onChangePreviousValues[key] as? V {
+        if previous != value {
+            action(previous, value)
+        }
+    }
     _onChangePreviousValues[key] = value
 
     return key

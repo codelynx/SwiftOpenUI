@@ -7811,6 +7811,13 @@ extension OnChangeView: WinRenderable {
     }
 }
 
+extension OnChangeTwoArgView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        onChangeCheckAndFireTwoArg(value: value, action: action)
+        return winRenderView(content, in: context)
+    }
+}
+
 // MARK: - Appearance modifier Win32 extensions
 
 extension HiddenView: WinRenderable {

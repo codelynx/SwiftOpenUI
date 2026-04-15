@@ -1055,6 +1055,13 @@ extension OnChangeView: WebRenderable {
     }
 }
 
+extension OnChangeTwoArgView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        onChangeCheckAndFireTwoArg(value: value, action: action)
+        return webRenderView(content)
+    }
+}
+
 // MARK: - Appearance modifier Web extensions
 
 extension HiddenView: WebRenderable {
