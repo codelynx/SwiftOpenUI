@@ -2353,7 +2353,19 @@ extension CornerRadiusView: WebRenderable {
 
 extension LabelsHiddenView: WebRenderable {
     public func webCreateElement() -> JSValue {
-        webRenderView(content)
+        // Push `labelsHidden = true` for the content subtree so
+        // label-bearing controls (currently `Picker`) can consult
+        // the flag and omit their inline label prefix. Mirrors the
+        // GTK4 renderer — without this push, the modifier would be
+        // a no-op on Web even though its renderable extension
+        // exists. (Web's Picker renderer does not yet consult the
+        // flag as of this writing, but completing the env plumbing
+        // now means the inline-label suppression will work once
+        // WebPicker is updated in parity with GTK4/Win32.)
+        var env = getCurrentEnvironment()
+        env.labelsHidden = true
+        setCurrentEnvironment(env)
+        return webRenderView(content)
     }
 }
 

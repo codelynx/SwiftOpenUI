@@ -6497,7 +6497,21 @@ let searchableLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcl
 
 extension LabelsHiddenView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        winRenderView(content, in: context)
+        // Push `labelsHidden = true` into the env for the content
+        // subtree so label-bearing controls (currently `Picker`)
+        // consult the flag and omit their inline label prefix.
+        // Restored on exit so siblings are unaffected. Mirrors the
+        // GTK4 renderer — without this push, Win32's Picker would
+        // always read `labelsHidden = false` and the `.labelsHidden()`
+        // modifier would be a no-op even though its renderable
+        // extension exists.
+        var env = getCurrentEnvironment()
+        env.labelsHidden = true
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let widget = winRenderView(content, in: context)
+        setCurrentEnvironment(prev)
+        return widget
     }
 }
 
