@@ -4713,6 +4713,14 @@ extension Picker: WinRenderable {
         }
     }
 
+    /// True iff the caller wrapped us in `.labelsHidden()`. Mirrors the
+    /// GTK4 path: the env flag is set by `LabelsHiddenView`'s Win32
+    /// renderer, and both dropdown + segmented variants below suppress
+    /// their inline label prefix when it's on.
+    private var effectiveLabel: String {
+        getCurrentEnvironment().labelsHidden ? "" : label
+    }
+
     private func winCreateDropdownWidget(in context: RenderContext) -> HWND? {
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
@@ -4723,18 +4731,24 @@ extension Picker: WinRenderable {
             context.parent, nil, context.hInstance, nil
         )!
 
-        // Label
-        let labelMeasured = measureText(label, hwnd: context.parent)
-        _ = label.withCString(encodedAs: UTF16.self) { wstr in
-            win32_CreateChildWindow(
-                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                0, 2, labelMeasured.width + 4, 20,
-                container, nil, context.hInstance
-            )
+        // Label — rendered only when not hidden by `.labelsHidden()`.
+        let displayedLabel = effectiveLabel
+        let labelMeasured: (width: Int32, height: Int32)
+        if !displayedLabel.isEmpty {
+            labelMeasured = measureText(displayedLabel, hwnd: context.parent)
+            _ = displayedLabel.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
+                    0, 2, labelMeasured.width + 4, 20,
+                    container, nil, context.hInstance
+                )
+            }
+        } else {
+            labelMeasured = (width: 0, height: 0)
         }
 
-        // ComboBox
-        let comboX = labelMeasured.width + 8
+        // ComboBox — x offset collapses to 0 when the label is hidden.
+        let comboX = displayedLabel.isEmpty ? 0 : labelMeasured.width + 8
         let comboHwnd = win32_CreateChildWindow(
             win32_WC_COMBOBOX(), nil,
             DWORD(CBS_DROPDOWNLIST | WS_TABSTOP),
@@ -4783,10 +4797,11 @@ extension Picker: WinRenderable {
         let buttonHeight: Int32 = 24
         let clampedSel = options.isEmpty ? 0 : max(0, min(selected, options.count - 1))
 
-        // Optional label
-        if !label.isEmpty {
-            let labelMeasured = measureText(label, hwnd: context.parent)
-            _ = label.withCString(encodedAs: UTF16.self) { wstr in
+        // Optional label — hidden when `.labelsHidden()` wrapped us.
+        let displayedLabel = effectiveLabel
+        if !displayedLabel.isEmpty {
+            let labelMeasured = measureText(displayedLabel, hwnd: context.parent)
+            _ = displayedLabel.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
                     win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                     x, 2, labelMeasured.width + 4, 20,
