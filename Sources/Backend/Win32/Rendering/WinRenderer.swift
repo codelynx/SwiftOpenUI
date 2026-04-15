@@ -669,7 +669,7 @@ func winCurrentColorFill(nativeSlotID: Int) -> Win32ColorDescriptor? {
     return state.currentFillColor
 }
 
-private func bindActionToCurrentEnvironment(_ action: @escaping () -> Void) -> () -> Void {
+func bindActionToCurrentEnvironment(_ action: @escaping () -> Void) -> () -> Void {
     let capturedEnvironment = getCurrentEnvironment()
     return {
         let previousEnvironment = getCurrentEnvironment()
@@ -5236,7 +5236,7 @@ private let viewThatFitsResizeProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam
 extension Menu: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let menuElements = elements
-        return createNativeButton(title: "☰ \(title)", action: {
+        let action = bindActionToCurrentEnvironment {
             guard let hMenu = CreatePopupMenu() else { return }
             var menuID: UINT = 50000
             var menuActions: [UINT: () -> Void] = [:]
@@ -5249,7 +5249,7 @@ extension Menu: WinRenderable {
                         _ = label.withCString(encodedAs: UTF16.self) { wstr in
                             AppendMenuW(targetMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
                         }
-                        menuActions[id] = action
+                        menuActions[id] = bindActionToCurrentEnvironment(action)
                     case .divider:
                         AppendMenuW(targetMenu, UINT(MF_SEPARATOR), 0, nil)
                     case .submenu(let label, let children):
@@ -5275,7 +5275,8 @@ extension Menu: WinRenderable {
             for id in menuActions.keys {
                 unregisterCommandHandler(controlID: WORD(id))
             }
-        }, context: context)
+        }
+        return createNativeButton(title: "☰ \(title)", action: action, context: context)
     }
 }
 
