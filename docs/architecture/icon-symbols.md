@@ -180,14 +180,114 @@ for M-Symbols-3 for cross-platform portability.
 
 Scope: `Image(systemName: "magnifyingglass")` resolves on non-macOS
 via a curated translation table covering the most common ~150–200 SF
-symbols (built from Apple's sample-code usage). Unsupported names fall
-through to a visible "symbol not found" placeholder rather than
-silent failure. Documented list of supported names.
+symbols (built from Apple's sample-code usage and Synca's observed
+usage). After M-Symbols-3, the same `Image(systemName:)` source
+compiles and renders for the supported mapped names on every
+backend — macOS renders SF natively, non-macOS looks up the
+Material equivalent and renders via the existing `Image(material:)`
+path. Unsupported names fall through to a visible "symbol not
+found" placeholder rather than silent failure.
+
+**Problem it solves.** `Image(systemName:)` already exists in
+SwiftOpenUI and compiles fine on non-macOS — the GTK4 backend
+currently maps it to `gtk_image_new_from_icon_name` against the
+GTK icon theme. The issue is rendering semantics: Adwaita / Yaru /
+Breeze icons differ in name coverage, style, and availability from
+SF Symbols, so a SwiftUI app written with `Image(systemName: "magnifyingglass")`
+gets a different (or missing) icon on each Linux distro. M-Symbols-3
+routes that call through Material Symbols instead for uniform
+rendering across distros and platforms.
+
+**Payoff for app authors.** Synca's `#if os(macOS) / #elseif os(Linux)`
+branches *around icon references* collapse to a single shared-code
+path. Broader shared-code cleanup (removing the rest of
+`#elseif os(Linux)` view duplication) still depends on the other
+SwiftOpenUI API gaps tracked in `next_steps_shared_codebase.md` —
+this milestone doesn't solve those.
+
+**Design decisions** (reviewed 2026-04-14):
+
+1. **`.fill` variants deferred.** SwiftUI distinguishes `folder` vs
+   `folder.fill`. Material Symbols handles the same distinction via
+   the font's FILL axis (0 = outlined, 1 = filled). Shipping both
+   variants requires either a second committed static font (~1.7 MB
+   more, total ~3.4 MB of bundled font) or switching to the full
+   variable font (~14.8 MB). For V1 of M-Symbols-3, both variants
+   map to the same outlined glyph — `folder` and `folder.fill`
+   resolve to the same Material `folder`. This is a known visual
+   gap vs macOS; acceptance criterion is "doesn't crash or render
+   blank," not "pixel-perfect fill/outline contrast." A follow-up
+   (call it M-Symbols-3b) adds the filled-companion static if the
+   gap becomes practically annoying.
+
+2. **Swift source file for the map, not JSON.** The mapping lives
+   in `Sources/SwiftOpenUISymbols/SFSymbolCompatibility.swift` as a
+   `public enum SFSymbolCompatibility { public static let map: [String: String] = [...] }`.
+   Compile-time checks catch duplicate keys and obvious typos, the
+   grep/edit workflow is trivial, and no runtime parsing cost. JSON
+   was considered and rejected — the map is static data, zero
+   value from runtime malleability.
+
+3. **Visible glyph-box placeholder for unmapped names.** Names not
+   in the compatibility map render a dedicated "missing icon"
+   Material glyph (candidates: `help_outline` circle, `block`,
+   `question_mark` inside a boxed frame) so the result reads as
+   "icon is missing" rather than as stray text content. Explicitly
+   *not* a literal text `"?"` — that gets mistaken for UI copy.
+   Debug builds (`#if DEBUG`) additionally emit a one-line warning
+   naming the unmapped SF name so app developers notice.
+
+**Implementation sketch.**
+
+```swift
+// Sources/SwiftOpenUISymbols/SFSymbolCompatibility.swift
+public enum SFSymbolCompatibility {
+    public static let map: [String: String] = [
+        // File / folder family
+        "folder":             "folder",
+        "folder.fill":        "folder",           // .fill merged — see note above
+        "folder.badge.plus":  "create_new_folder",
+        "doc":                "description",
+        ...
+        // Navigation
+        "chevron.right":      "chevron_right",
+        "chevron.down":       "expand_more",
+        ...
+    ]
+}
+```
+
+```swift
+// Sources/Backend/GTK4/Rendering/GTKRenderer.swift (.systemName case)
+case .systemName(let sfName):
+    if let materialName = SFSymbolCompatibility.map[sfName] {
+        return renderMaterialGlyph(materialName, scale: scale)
+    }
+    #if DEBUG
+    print("[SwiftOpenUI] Image(systemName: \(sfName)) not in Material map — rendering placeholder")
+    #endif
+    return renderMaterialGlyph("help_outline", scale: scale)  // or whichever placeholder
+```
+
+**Documented output.** A new `docs/reference/supported-sf-symbols.md`
+lists each SF name the map supports, the Material equivalent, and
+any fidelity notes (e.g. `"folder.fill" rendered as outlined`).
+
+### M-Symbols-3b — Filled variant support (optional follow-up)
+
+Scope: ship `MaterialSymbolsRounded-Regular-Filled.ttf` (~1.7 MB)
+alongside the existing outlined static, update the renderer to pick
+the filled font when an SF name ends in `.fill`, and update the
+compatibility map to carry a boolean/enum alongside each Material
+name. Only undertaken if `.fill` fidelity becomes a concrete pain
+point after M-Symbols-3 ships.
 
 ### M-Symbols-4 — Expanding coverage
 
-Scope: respond to real-world demand. Add mappings as apps request them.
-No hard acceptance bar; ongoing track.
+Scope: respond to real-world demand. Add mappings as apps request
+them. No hard acceptance bar; ongoing track. Each added mapping is
+a tiny product decision (is Material's `edit_square` really the
+best match for SF's `square.and.pencil`? etc.), handled one by one.
 
 ## Why phased (rather than all at once)
 
@@ -206,9 +306,13 @@ product decision) keeps both tracks honest.
   distro packagers may install `fonts-google-material-symbols` system-
   wide if they prefer; apps won't depend on it.
 - **Runtime variable-font axis control.** The bundled static font fixes
-  `wght=400, FILL=0, GRAD=0, opsz=24`. Apps that need filled variants
-  (for SF's `foo.fill` semantics) will get a companion filled static
-  font in a follow-up milestone.
+  `wght=400, FILL=0, GRAD=0, opsz=24`. SF's `foo.fill` semantics are
+  handled in M-Symbols-3 by mapping the `.fill` variants to the same
+  outlined Material glyph as their non-filled counterparts — a
+  documented visual gap vs macOS, acceptable for V1. Shipping a
+  filled-companion static (~1.7 MB added for ~3.4 MB total bundled
+  font) or switching to the full variable font (~14.8 MB) is tracked
+  as optional milestone M-Symbols-3b.
 - **Multiple Material styles (Outlined, Rounded, Sharp).** Only Rounded
   ships, chosen for the closest visual match to SF Symbols. Additional
   styles could be added later if demand exists.
