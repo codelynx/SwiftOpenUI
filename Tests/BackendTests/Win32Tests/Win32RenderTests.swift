@@ -221,7 +221,7 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(node.kind, .vStack)
         XCTAssertEqual(
             node.props,
-            .vStack(Win32VStackDescriptor(spacing: 0, alignment: .center))
+            .vStack(Win32VStackDescriptor(spacing: 8, alignment: .center))
         )
         XCTAssertEqual(node.children.map(\.kind), [.text, .color, .slider])
     }

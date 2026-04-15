@@ -299,6 +299,12 @@ targets += [
         path: "Examples/Parity/DropDestination",
         linkerSettings: exampleLinkerSettings
     ),
+    .executableTarget(
+        name: "Win32ReviewSmoke",
+        dependencies: exampleDeps,
+        path: "Examples/Smoke/Win32Review",
+        linkerSettings: exampleLinkerSettings
+    ),
 ]
 
 // M-Symbols-1 minimum-viable proof: bundled font loads into FontConfig
