@@ -6480,6 +6480,12 @@ let searchableLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcl
 
 // MARK: - Phase 4C: Shape modifiers
 
+extension LabelsHiddenView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        winRenderView(content, in: context)
+    }
+}
+
 extension HelpView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         // V1: pass-through. Win32 tooltips require attaching a

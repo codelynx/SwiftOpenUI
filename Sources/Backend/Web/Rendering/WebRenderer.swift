@@ -2344,6 +2344,12 @@ extension CornerRadiusView: WebRenderable {
     }
 }
 
+extension LabelsHiddenView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        webRenderView(content)
+    }
+}
+
 extension HelpView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let element = webRenderView(content)

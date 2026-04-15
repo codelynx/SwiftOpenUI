@@ -3289,6 +3289,16 @@ extension CornerRadiusView: GTKRenderable {
     }
 }
 
+// MARK: - Labels hidden modifier (no-op pass-through)
+
+extension LabelsHiddenView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // GTK4 segmented / dropdown widgets don't render their label
+        // inline, so there's nothing to hide. Pass-through.
+        gtkRenderView(content)
+    }
+}
+
 // MARK: - Help / tooltip modifier
 
 extension HelpView: GTKRenderable {
