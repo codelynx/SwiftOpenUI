@@ -3714,6 +3714,13 @@ extension Image: WinRenderable {
             return winCreateSystemIcon(name: name, in: context)
         case .filePath(let path):
             return winCreateFileImage(path: path, in: context)
+        case .materialSymbol(let name):
+            // Win32 adoption of SwiftOpenUISymbols is deferred (M-Symbols-2
+            // per-backend rollout). Fall back to the same text-label
+            // placeholder that winCreateSystemIcon uses for unknown
+            // system names; the app still compiles and renders a readable
+            // placeholder so cross-platform code doesn't break on Windows.
+            return winCreateSystemIcon(name: name, in: context)
         }
     }
 

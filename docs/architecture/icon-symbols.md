@@ -161,10 +161,20 @@ Delivered in this milestone.
 
 ### M-Symbols-2 — Direct Material-name API on non-macOS
 
-Scope: a non-SF API for rendering Material glyphs cross-platform, e.g.
-`Image(material: "search")` or an equivalent Text-based helper. Apps
+Scope: a non-SF API for rendering Material glyphs cross-platform —
+`Image(material: "search")`, parallel to `Image(systemName:)`. Apps
 that want icons today use `#if os(macOS)` to pick SF names vs. this
 new API; no pretense of SF compatibility yet.
+
+**Status: API shipped, GTK4 renders glyphs.**  The `Image(material:)`
+initializer and the `.materialSymbol(String)` source case on `Image`
+live in `Sources/SwiftOpenUI/Views/Image.swift`. The GTK4 backend
+renders them via Pango markup against the `SwiftOpenUISymbols`-
+bundled font; Win32 and Web currently render a text placeholder
+pending per-backend font adoption. macOS renders the same placeholder
+since the font is deliberately absent from macOS bundles — macOS
+consumers should write `Image(systemName:)` with SF names and wait
+for M-Symbols-3 for cross-platform portability.
 
 ### M-Symbols-3 — Curated SF Symbols compatibility map
 

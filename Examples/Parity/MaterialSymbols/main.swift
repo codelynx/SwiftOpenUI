@@ -1,84 +1,84 @@
-// Parity: MaterialSymbols (M-Symbols-1 minimum viable proof)
+// Parity: MaterialSymbols — exercises Image(material: "name") on non-macOS.
 //
-// Proves that the bundled Material Symbols font shipped by the
-// SwiftOpenUISymbols target loads into FontConfig process-locally and that
-// Pango can render a glyph when a GtkLabel asks for the "Material Symbols
-// Rounded" family name. Deliberately uses raw CGTK rather than SwiftOpenUI's
-// Text API — SwiftOpenUI doesn't yet have a .font(.custom(...)) surface
-// (that's M-Symbols-2 work). This example exists to validate the
-// packaging / font-loading plumbing, not to demonstrate idiomatic usage.
+// The bundled Material Symbols Rounded font (from the SwiftOpenUISymbols
+// target) is loaded process-locally by each backend at startup. This
+// example renders three named glyphs via Image(material:) to prove the
+// full chain: font registration → Pango / DirectWrite / equivalent text
+// shaping → OpenType ligature substitution → visible icon glyph.
 //
-// On non-Linux platforms this target is empty — M-Symbols-1 scope is
-// GTK4-only; Win32/Web/Android adopt the SwiftOpenUISymbols target in
-// follow-up milestones.
+// macOS builds intentionally do not bundle the Material Symbols font
+// (SwiftUI uses native SF Symbols via Image(systemName:)). Running this
+// example on macOS renders placeholders for each icon — that's the
+// documented behavior; cross-platform code that needs true portability
+// uses Image(systemName:) instead.
 
-#if canImport(CGTK) && canImport(SwiftOpenUISymbols)
-import CGTK
-import CGTKBridge
-import SwiftOpenUISymbols
-import Foundation
-
-// Register the bundled font with FontConfig *before* gtk_application_new so
-// Pango's default font map picks it up when the application initializes.
-let fontURL = MaterialSymbolsResources.roundedRegularFontURL
-let added = fontURL.path.withCString { gtk_swift_fc_app_font_add_file($0) }
-if added == 0 {
-    FileHandle.standardError.write(Data("[ParityMaterialSymbols] ERROR: failed to register font at \(fontURL.path)\n".utf8))
-    exit(1)
-}
-
-let app = gtk_application_new(nil, G_APPLICATION_DEFAULT_FLAGS)!
-
-// The Material Symbols font uses OpenType ligatures: the plain text "home"
-// gets substituted to the home-icon glyph during Pango shaping when the
-// "Material Symbols Rounded" family is selected. We put three icon names
-// in one line so the reader can see the substitution working on several
-// glyphs at once.
-let demoMarkup = """
-<span font_family="\(MaterialSymbolsResources.roundedRegularFamilyName)" font_size="96000">home   search   folder_open</span>
-"""
-
-let activateHandler: @convention(c) (gpointer?, gpointer?) -> Void = { _, _ in
-    guard let defaultApp = g_application_get_default() else { return }
-    let applicationOpaque = gpointer(defaultApp)
-    let gtkApp = UnsafeMutableRawPointer(applicationOpaque)
-        .assumingMemoryBound(to: GtkApplication.self)
-
-    let win = gtk_application_window_new(gtkApp)!
-    let winPtr = windowPointer(win)
-    gtk_window_set_title(winPtr, "ParityMaterialSymbols")
-    gtk_window_set_default_size(winPtr, 640, 200)
-
-    let label = gtk_label_new(nil)!
-    gtk_swift_label_set_markup(label, demoMarkup)
-    gtk_widget_set_halign(label, GTK_ALIGN_CENTER)
-    gtk_widget_set_valign(label, GTK_ALIGN_CENTER)
-    gtk_widget_set_hexpand(label, 1)
-    gtk_widget_set_vexpand(label, 1)
-    gtk_window_set_child(winPtr, label)
-
-    gtk_window_present(winPtr)
-}
-
-g_signal_connect_data(
-    gpointer(OpaquePointer(app)),
-    "activate",
-    unsafeBitCast(activateHandler, to: GCallback.self),
-    nil, nil,
-    GConnectFlags(rawValue: 0)
-)
-
-let status = g_application_run(
-    UnsafeMutableRawPointer(app).assumingMemoryBound(to: GApplication.self),
-    0,
-    nil
-)
-g_object_unref(gpointer(OpaquePointer(app)))
-exit(Int32(status))
-
+#if os(macOS)
+import SwiftUI
+import MacExampleSupport
 #else
+import SwiftOpenUI
+#if canImport(BackendGTK4)
+import BackendGTK4
+#endif
+#if canImport(BackendWin32)
+import BackendWin32
+#endif
+#if canImport(BackendWeb)
+import BackendWeb
+#endif
+#endif
 
-import Foundation
-print("ParityMaterialSymbols is a Linux-only M-Symbols-1 proof; build target not active on this platform.")
+struct ParityMaterialSymbolsView: View {
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("Material Symbols parity")
+                .font(.headline)
 
+            Text("Icons render via Image(material: \"name\") on non-macOS,")
+                .font(.caption)
+            Text("using the bundled Material Symbols Rounded font.")
+                .font(.caption)
+
+            HStack(spacing: 32) {
+                #if os(macOS)
+                // macOS uses native SF Symbols — closest equivalents
+                Image(systemName: "house")
+                    .imageScale(.large)
+                Image(systemName: "magnifyingglass")
+                    .imageScale(.large)
+                Image(systemName: "folder")
+                    .imageScale(.large)
+                #else
+                Image(material: "home")
+                    .imageScale(.large)
+                Image(material: "search")
+                    .imageScale(.large)
+                Image(material: "folder_open")
+                    .imageScale(.large)
+                #endif
+            }
+            .padding()
+        }
+        .padding()
+    }
+}
+
+struct ParityMaterialSymbolsApp: App {
+    var body: some Scene {
+        WindowGroup("Material Symbols Parity") {
+            ParityMaterialSymbolsView()
+        }
+    }
+}
+
+#if os(macOS)
+MacAppLauncher.run(ParityMaterialSymbolsApp.self)
+#elseif canImport(BackendGTK4)
+GTK4Backend().run(ParityMaterialSymbolsApp.self)
+#elseif canImport(BackendWin32)
+Win32Backend().run(ParityMaterialSymbolsApp.self)
+#elseif canImport(BackendWeb)
+WebBackend().run(ParityMaterialSymbolsApp.self)
+#else
+print("ParityMaterialSymbols defined. No backend available on this platform.")
 #endif

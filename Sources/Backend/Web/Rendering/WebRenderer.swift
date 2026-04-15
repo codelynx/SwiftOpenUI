@@ -2400,6 +2400,14 @@ extension SwiftOpenUI.Image: WebRenderable {
             span.textContent = .string("[\(name)]")
             span.style = .string("font-size: \(size)px; color: #888;")
             return span
+        case .materialSymbol(let name):
+            // Web adoption of SwiftOpenUISymbols is deferred (M-Symbols-2
+            // per-backend rollout). Same placeholder treatment as
+            // .systemName until the font ships to the Web backend.
+            let span = document.createElement("span")
+            span.textContent = .string("[\(name)]")
+            span.style = .string("font-size: \(size)px; color: #888;")
+            return span
         }
     }
 }

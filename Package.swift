@@ -302,18 +302,18 @@ targets += [
 ]
 
 // M-Symbols-1 minimum-viable proof: bundled font loads into FontConfig
-// process-locally and Pango renders a glyph by family name. Linux-only
-// for this milestone; other backends adopt SwiftOpenUISymbols in follow-ups.
-#if os(Linux)
+// process-locally and Pango renders a glyph by family name. Active on all
+// platforms: macOS renders SF Symbol equivalents via the same example
+// (SwiftUI-canonical); non-macOS backends render Material glyphs via
+// Image(material:) against the SwiftOpenUISymbols font.
 targets += [
     .executableTarget(
         name: "ParityMaterialSymbols",
-        dependencies: exampleDeps + ["CGTK", "CGTKBridge", "SwiftOpenUISymbols"],
+        dependencies: exampleDeps,
         path: "Examples/Parity/MaterialSymbols",
         linkerSettings: exampleLinkerSettings
     ),
 ]
-#endif
 
 #if os(macOS)
 let deps: [Package.Dependency] = [
@@ -346,6 +346,11 @@ let package = Package(
         p.append(.library(name: "CGTK", targets: ["CGTK"]))
         p.append(.library(name: "CGTKBridge", targets: ["CGTKBridge"]))
         p.append(.library(name: "BackendGTK4", targets: ["BackendGTK4"]))
+        // SwiftOpenUISymbols is consumed transitively by BackendGTK4, but
+        // also exposed as an importable product so apps can reference
+        // `MaterialSymbolsResources` directly (e.g. to surface the bundled
+        // license text in an About dialog or to perform custom font lookups).
+        p.append(.library(name: "SwiftOpenUISymbols", targets: ["SwiftOpenUISymbols"]))
         #endif
         #if os(macOS)
         p.append(.library(name: "BackendAndroid", type: .dynamic, targets: ["BackendAndroid"]))

@@ -1,6 +1,7 @@
 import CGTK
 import CGTKBridge
 import SwiftOpenUI
+import SwiftOpenUISymbols
 import Foundation
 
 /// Marker string for Spacer widgets.
@@ -3689,18 +3690,73 @@ extension ScrollView: GTKRenderable, GTKDescribable {
 
 extension Image: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let image: UnsafeMutablePointer<GtkWidget>
         switch source {
         case .systemName(let name):
-            image = gtk_image_new_from_icon_name(name)!
+            let image = gtk_image_new_from_icon_name(name)!
             gtk_swift_image_set_pixel_size(image, gint(scale.pointSize))
+            return opaqueFromWidget(image)
+
         case .filePath(let path):
-            image = gtk_image_new_from_file(path)!
+            let image = gtk_image_new_from_file(path)!
             let size = gint(scale.pointSize)
             gtk_widget_set_size_request(image, size, size)
+            return opaqueFromWidget(image)
+
+        case .materialSymbol(let name):
+            // Render as a GtkLabel using Pango markup to select the Material
+            // Symbols Rounded family (registered process-locally by
+            // GTK4Backend.run() → gtkRegisterBundledIconFont). OpenType
+            // ligatures in the font substitute the literal name ("search",
+            // "folder_open", ...) with the icon glyph during text shaping.
+            //
+            // Pango's font_size attribute uses thousandths of a point. The
+            // scale.pointSize * 1000 gives us a reasonable default (14/20/24
+            // pt rendered at Material Symbols' recommended sizes). Users can
+            // override by wrapping in .imageScale(.large) like any other
+            // Image; font(.system) on the surrounding Text is not used here
+            // because the glyph's appearance is dictated by the Material
+            // Symbols font's own design, not the ambient font.
+            let label = gtk_label_new(nil)!
+            let familyName = gtkEscapeMarkup(MaterialSymbolsRoundedFamilyName)
+            let escapedName = gtkEscapeMarkup(name)
+            let markup = """
+                <span font_family="\(familyName)" font_size="\(scale.pointSize * 1000)">\(escapedName)</span>
+                """
+            gtk_swift_label_set_markup(label, markup)
+            // A bare GtkLabel wrapped in Pango markup sizes to its measured
+            // ink extents. For consistency with gtk_image icons, clamp the
+            // widget to the same point-size box.
+            let px = gint(scale.pointSize)
+            gtk_widget_set_size_request(label, px, px)
+            return opaqueFromWidget(label)
         }
-        return opaqueFromWidget(image)
     }
+}
+
+/// Material Symbols Rounded font family name, resolved via SwiftOpenUISymbols.
+/// Used by the .materialSymbol Image renderer. Kept as a file-scope constant
+/// to keep the Pango markup construction tight.
+private let MaterialSymbolsRoundedFamilyName: String =
+    MaterialSymbolsResources.roundedRegularFamilyName
+
+/// Minimal Pango-markup-safe escape. Pango's markup parser treats these
+/// characters specially; escape the four that show up in user-supplied icon
+/// names or family strings. Not a general-purpose XML escape; sufficient
+/// for internal use where the inputs are known to be icon tokens like
+/// "folder_open".
+private func gtkEscapeMarkup(_ s: String) -> String {
+    var out = ""
+    out.reserveCapacity(s.count)
+    for ch in s {
+        switch ch {
+        case "&": out += "&amp;"
+        case "<": out += "&lt;"
+        case ">": out += "&gt;"
+        case "\"": out += "&quot;"
+        default: out.append(ch)
+        }
+    }
+    return out
 }
 
 // MARK: - List GTK extension
