@@ -71,6 +71,17 @@ let allLayoutScenarios: [(name: String, view: AnyView)] = [
     ("empty-vstack", AnyView(scenario_emptyVstack)),
     ("single-child-vstack", AnyView(scenario_singleChildVstack)),
     ("deeply-nested-frames", AnyView(scenario_deeplyNestedFrames)),
+
+    // === Regression guards for 2026-04-15 GTK layout fixes ===
+    //
+    // Each scenario here pins a specific behavior that a one-off bug
+    // surfaced during Synca's Linux consolidation pass. Any future
+    // regression in the GTK translation layer (FrameView spacer
+    // centering, LineLimitView + TruncationMode in narrow parents,
+    // etc.) should show up here before it ships.
+    ("frame-minheight-centers-content", AnyView(scenario_frameMinHeightCentersContent)),
+    ("frame-maxwidth-infinity-with-minheight", AnyView(scenario_frameMaxWidthInfinityMinHeight)),
+    ("text-middle-truncation-narrow-parent", AnyView(scenario_textMiddleTruncationNarrow)),
 ]
 
 // MARK: - Basic Views
@@ -368,4 +379,53 @@ var scenario_deeplyNestedFrames: some View {
         .frame(width: 100, height: 40)
         .frame(width: 200, height: 100)
         .frame(width: 300, height: 200)
+}
+
+// MARK: - Regression guards (2026-04-15)
+
+/// A single short Text wrapped in `.frame(maxWidth: .infinity, minHeight: 180)`
+/// should render vertically centered within the 180-tall frame on GTK —
+/// i.e. the Text's y-origin should be roughly `(180 - textHeight) / 2`
+/// rather than `0` (top-aligned). Pre-fix, GTK's `FrameView` used
+/// default GtkBox packing here (`gtk_box_append` only), which pins the
+/// child to the top of the packing axis. The fix inserts `vexpand`
+/// spacers around the child when alignment is `.center` (the default).
+/// Mirrors the macOS SwiftUI behavior where `.frame(minHeight:)` with a
+/// default-center alignment centers content vertically.
+var scenario_frameMinHeightCentersContent: some View {
+    Text("Centered")
+        .frame(maxWidth: .infinity, minHeight: 180)
+}
+
+/// The combined "width can grow via `maxWidth: .infinity`, height has a
+/// hard minimum" case that Synca's `FolderDropZone` relies on. Hits the
+/// `widthMayGrowWithParent && !heightMayGrowWithParent` branch of
+/// `gtkFrameParentFlexibleAxes`. Tight-coupled to the vertical
+/// centering fix — if the else-branch of that function goes back to
+/// raw `gtk_box_append`, this scenario's rendered output would shift
+/// the inner VStack to the top of the frame.
+var scenario_frameMaxWidthInfinityMinHeight: some View {
+    VStack {
+        Text("Top")
+        Text("Bottom")
+    }
+    .frame(maxWidth: .infinity, minHeight: 180)
+}
+
+/// A Text with a long content, `.lineLimit(1)`, and
+/// `.truncationMode(.middle)` placed in a parent narrower than the
+/// natural text width. On GTK, pre-workaround, this degenerated to
+/// rendering just "…" because Pango's ellipsize minimum was the
+/// ellipsis glyph width and the parent allocation chain only delivered
+/// that minimum. The current workaround (`gtk_label_set_width_chars
+/// (..., 40)` in `LineLimitView`) keeps Pango's natural-width request
+/// at ~40 chars so middle-truncation produces readable start/end
+/// fragments. If this scenario's rendered leaf ever shows a label
+/// width close to 0 / a single ellipsis, the workaround has
+/// regressed or the underlying hexpand-chain bug re-surfaced.
+var scenario_textMiddleTruncationNarrow: some View {
+    Text("/home/kyoshikawa/Documents/projects/synca-test/synca-test/source")
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .frame(width: 200)
 }
