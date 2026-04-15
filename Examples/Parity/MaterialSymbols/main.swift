@@ -34,30 +34,43 @@ struct ParityMaterialSymbolsView: View {
             Text("Material Symbols parity")
                 .font(.headline)
 
-            Text("Icons render via Image(material: \"name\") on non-macOS,")
+            // Row 1: Image(material:) — direct Material names (non-macOS
+            // only; macOS placeholder since no font is bundled there).
+            // Exercises M-Symbols-2.
+            Text("Row 1 — Image(material: \"name\")")
                 .font(.caption)
-            Text("using the bundled Material Symbols Rounded font.")
-                .font(.caption)
-
             HStack(spacing: 32) {
-                #if os(macOS)
-                // macOS uses native SF Symbols — closest equivalents
-                Image(systemName: "house")
-                    .imageScale(.large)
-                Image(systemName: "magnifyingglass")
-                    .imageScale(.large)
-                Image(systemName: "folder")
-                    .imageScale(.large)
-                #else
                 Image(material: "home")
                     .imageScale(.large)
                 Image(material: "search")
                     .imageScale(.large)
                 Image(material: "folder_open")
                     .imageScale(.large)
-                #endif
             }
-            .padding()
+
+            // Row 2: Image(systemName:) — SwiftUI-canonical SF names.
+            // On macOS: native SF Symbols. On non-macOS: routed through
+            // SFSymbolCompatibility.map → Material glyph. Exercises
+            // M-Symbols-3. Same source, runs everywhere.
+            Text("Row 2 — Image(systemName: \"name\") via SF→Material map")
+                .font(.caption)
+            HStack(spacing: 32) {
+                Image(systemName: "house")
+                    .imageScale(.large)
+                Image(systemName: "magnifyingglass")
+                    .imageScale(.large)
+                Image(systemName: "folder")
+                    .imageScale(.large)
+            }
+
+            // Row 3: unmapped SF name → missing-icon placeholder glyph.
+            // Exercises the M-Symbols-3 fallback path.
+            Text("Row 3 — Unmapped SF name (placeholder expected)")
+                .font(.caption)
+            HStack(spacing: 32) {
+                Image(systemName: "definitely.not.a.real.sf.symbol")
+                    .imageScale(.large)
+            }
         }
         .padding()
     }

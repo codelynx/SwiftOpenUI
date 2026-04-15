@@ -3691,10 +3691,29 @@ extension ScrollView: GTKRenderable, GTKDescribable {
 extension Image: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         switch source {
-        case .systemName(let name):
-            let image = gtk_image_new_from_icon_name(name)!
-            gtk_swift_image_set_pixel_size(image, gint(scale.pointSize))
-            return opaqueFromWidget(image)
+        case .systemName(let sfName):
+            // M-Symbols-3: route Image(systemName:) through the curated
+            // SF→Material compatibility map. Mapped names render the
+            // corresponding Material glyph (uniform across all GTK4
+            // themes/distros); unmapped names render the "missing icon"
+            // placeholder glyph so the gap is visible rather than silent.
+            //
+            // This replaces the previous `gtk_image_new_from_icon_name`
+            // path. Any app that was passing a freedesktop-style icon
+            // name (e.g. "folder-new-symbolic") — not SwiftUI-canonical —
+            // will now see the placeholder; it should switch to a real
+            // SF name or use `Image(material:)` for direct Material
+            // names.
+            let materialName = SFSymbolCompatibility.materialName(for: sfName)
+                ?? SFSymbolCompatibility.missingSymbolPlaceholderName
+            #if DEBUG
+            if SFSymbolCompatibility.materialName(for: sfName) == nil {
+                FileHandle.standardError.write(Data(
+                    "[SwiftOpenUI] Image(systemName: \"\(sfName)\") has no Material mapping; rendering placeholder\n".utf8
+                ))
+            }
+            #endif
+            return opaqueFromWidget(gtkRenderMaterialSymbolLabel(materialName, scale: scale))
 
         case .filePath(let path):
             let image = gtk_image_new_from_file(path)!
@@ -3703,34 +3722,36 @@ extension Image: GTKRenderable {
             return opaqueFromWidget(image)
 
         case .materialSymbol(let name):
-            // Render as a GtkLabel using Pango markup to select the Material
-            // Symbols Rounded family (registered process-locally by
-            // GTK4Backend.run() → gtkRegisterBundledIconFont). OpenType
-            // ligatures in the font substitute the literal name ("search",
-            // "folder_open", ...) with the icon glyph during text shaping.
-            //
-            // Pango's font_size attribute uses thousandths of a point. The
-            // scale.pointSize * 1000 gives us a reasonable default (14/20/24
-            // pt rendered at Material Symbols' recommended sizes). Users can
-            // override by wrapping in .imageScale(.large) like any other
-            // Image; font(.system) on the surrounding Text is not used here
-            // because the glyph's appearance is dictated by the Material
-            // Symbols font's own design, not the ambient font.
-            let label = gtk_label_new(nil)!
-            let familyName = gtkEscapeMarkup(MaterialSymbolsRoundedFamilyName)
-            let escapedName = gtkEscapeMarkup(name)
-            let markup = """
-                <span font_family="\(familyName)" font_size="\(scale.pointSize * 1000)">\(escapedName)</span>
-                """
-            gtk_swift_label_set_markup(label, markup)
-            // A bare GtkLabel wrapped in Pango markup sizes to its measured
-            // ink extents. For consistency with gtk_image icons, clamp the
-            // widget to the same point-size box.
-            let px = gint(scale.pointSize)
-            gtk_widget_set_size_request(label, px, px)
-            return opaqueFromWidget(label)
+            return opaqueFromWidget(gtkRenderMaterialSymbolLabel(name, scale: scale))
         }
     }
+}
+
+/// Render a Material Symbols glyph as a GtkLabel via Pango markup.
+/// Shared helper used by both `.materialSymbol` and `.systemName` (the
+/// latter via the SF→Material compatibility map). The Material Symbols
+/// Rounded family is registered process-locally at backend startup by
+/// `gtkRegisterBundledIconFont()`; OpenType ligatures in the font
+/// substitute the literal name ("search", "folder_open", ...) into the
+/// icon glyph during text shaping.
+///
+/// Pango's font_size attribute uses thousandths of a point, hence
+/// `scale.pointSize * 1000`. The widget is clamped to a point-size box
+/// for consistency with the other `gtk_image`-based Image cases.
+private func gtkRenderMaterialSymbolLabel(
+    _ name: String,
+    scale: ImageScale
+) -> UnsafeMutablePointer<GtkWidget> {
+    let label = gtk_label_new(nil)!
+    let familyName = gtkEscapeMarkup(MaterialSymbolsRoundedFamilyName)
+    let escapedName = gtkEscapeMarkup(name)
+    let markup = """
+        <span font_family="\(familyName)" font_size="\(scale.pointSize * 1000)">\(escapedName)</span>
+        """
+    gtk_swift_label_set_markup(label, markup)
+    let px = gint(scale.pointSize)
+    gtk_widget_set_size_request(label, px, px)
+    return label
 }
 
 /// Material Symbols Rounded font family name, resolved via SwiftOpenUISymbols.
