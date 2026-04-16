@@ -706,11 +706,19 @@ extension Button: WinRenderable {
             hwnd = createCustomLabelButton(label: label, action: action, context: context)
         }
 
-        // Register keyboard shortcut if present in environment
+        // Register keyboard shortcut if present in environment.
+        // Guard the action with IsWindowEnabled so disabled buttons
+        // don't fire when their shortcut key is pressed.
         if let hwnd = hwnd, let ks = getCurrentEnvironment().keyboardShortcut {
             let windowID = getCurrentEnvironment().windowID
+            let buttonHwnd = hwnd
             let actionClosure = action
-            let regID = KeyboardShortcutRegistry.shared.register(ks, windowID: windowID, action: actionClosure)
+            let guardedAction: () -> Void = {
+                if IsWindowEnabled(buttonHwnd) {
+                    actionClosure()
+                }
+            }
+            let regID = KeyboardShortcutRegistry.shared.register(ks, windowID: windowID, action: guardedAction)
 
             let cleanup = Win32ShortcutCleanup(registrationID: regID)
             let ptr = Unmanaged.passRetained(cleanup).toOpaque()
@@ -1234,6 +1242,7 @@ class FlatButtonState {
         d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
 
         let cornerRadius: Float = 5
+        let enabled = IsWindowEnabled(hwnd)
 
         switch buttonStyle {
         case .plain:
@@ -1242,7 +1251,9 @@ class FlatButtonState {
 
         case .borderedProminent:
             // Filled accent background
-            if pressed {
+            if !enabled {
+                d2d1_SolidColorBrush_SetColor(brush, 0.75, 0.82, 0.92, 1)
+            } else if pressed {
                 d2d1_SolidColorBrush_SetColor(brush, 0.0, 0.35, 0.85, 1)
             } else if hovered {
                 d2d1_SolidColorBrush_SetColor(brush, 0.0, 0.42, 0.95, 1)
@@ -1254,7 +1265,9 @@ class FlatButtonState {
 
         case .automatic, .bordered:
             // Default bordered button
-            if pressed {
+            if !enabled {
+                d2d1_SolidColorBrush_SetColor(brush, 0.94, 0.94, 0.94, 1)
+            } else if pressed {
                 d2d1_SolidColorBrush_SetColor(brush, 0.78, 0.78, 0.80, 1)
             } else if hovered {
                 d2d1_SolidColorBrush_SetColor(brush, 0.88, 0.88, 0.90, 1)
@@ -1265,14 +1278,21 @@ class FlatButtonState {
                 1, 1, w - 2, h - 2, cornerRadius, cornerRadius)
 
             // Border
-            d2d1_SolidColorBrush_SetColor(brush, 0.75, 0.75, 0.78, 1)
+            if !enabled {
+                d2d1_SolidColorBrush_SetColor(brush, 0.85, 0.85, 0.85, 1)
+            } else {
+                d2d1_SolidColorBrush_SetColor(brush, 0.75, 0.75, 0.78, 1)
+            }
             d2d1_RenderTarget_DrawRoundedRectangle(rt, brush,
                 0.5, 0.5, w - 1, h - 1, cornerRadius, cornerRadius, 1)
         }
 
         // Text — centered, with optional custom color/font
         let tr: Float, tg: Float, tb: Float
-        if buttonStyle == .borderedProminent {
+        if !enabled {
+            // Faded text for disabled state
+            tr = 0.6; tg = 0.6; tb = 0.6
+        } else if buttonStyle == .borderedProminent {
             tr = textColorR ?? 1.0; tg = textColorG ?? 1.0; tb = textColorB ?? 1.0
         } else {
             tr = textColorR ?? 0.1; tg = textColorG ?? 0.1; tb = textColorB ?? 0.1
@@ -1285,8 +1305,8 @@ class FlatButtonState {
             dwrite_TextFormat_SetTextAlignment(fmt, 0) // restore to leading
         }
 
-        // Focus ring
-        if GetFocus() == hwnd {
+        // Focus ring (only when enabled)
+        if enabled && GetFocus() == hwnd {
             d2d1_SolidColorBrush_SetColor(brush, 0.0, 0.48, 1.0, 0.6)
             d2d1_RenderTarget_DrawRoundedRectangle(rt, brush,
                 1.5, 1.5, w - 3, h - 3, cornerRadius - 1, cornerRadius - 1, 1.5)
@@ -1323,7 +1343,19 @@ let flatButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
         state.ensureTarget(width: UInt32(r.right), height: UInt32(r.bottom))
         return 0
 
+    case UINT(WM_ENABLE):
+        // Clear stale interaction state and repaint
+        if wParam == 0 {
+            state.pressed = false
+            state.hovered = false
+            state.tracking = false
+            if GetCapture() == hwnd { ReleaseCapture() }
+        }
+        InvalidateRect(hwnd, nil, false)
+        return 0
+
     case UINT(WM_LBUTTONDOWN):
+        guard IsWindowEnabled(hwnd) else { return 0 }
         SetCapture(hwnd)
         SetFocus(hwnd)
         state.pressed = true
@@ -1335,7 +1367,7 @@ let flatButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
         let wasPressed = state.pressed
         state.pressed = false
         InvalidateRect(hwnd, nil, false)
-        if wasPressed {
+        if wasPressed && IsWindowEnabled(hwnd) {
             var rect = RECT()
             GetClientRect(hwnd, &rect)
             let x = Int32(win32_GET_X_LPARAM(lParam))
@@ -1347,6 +1379,7 @@ let flatButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
         return 0
 
     case UINT(WM_MOUSEMOVE):
+        guard IsWindowEnabled(hwnd) else { return 0 }
         if !state.tracking {
             var tme = TRACKMOUSEEVENT()
             tme.cbSize = DWORD(MemoryLayout<TRACKMOUSEEVENT>.size)
@@ -1369,6 +1402,7 @@ let flatButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
 
     case UINT(WM_KEYDOWN):
         if wParam == WPARAM(VK_SPACE) || wParam == WPARAM(VK_RETURN) {
+            guard IsWindowEnabled(hwnd) else { return 0 }
             state.pressed = true
             InvalidateRect(hwnd, nil, false)
             return 0
@@ -1380,7 +1414,9 @@ let flatButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
             if state.pressed {
                 state.pressed = false
                 InvalidateRect(hwnd, nil, false)
-                state.action()
+                if IsWindowEnabled(hwnd) {
+                    state.action()
+                }
             }
             return 0
         }
@@ -1565,9 +1601,18 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
     ).takeUnretainedValue()
 
     switch uMsg {
+    // --- Enabled/disabled state change ---
+    case UINT(WM_ENABLE):
+        if wParam == 0 {
+            info.pressed = false
+            if GetCapture() == hwnd { ReleaseCapture() }
+        }
+        InvalidateRect(hwnd, nil, true)
+        return 0
+
     // --- Mouse activation ---
     case UINT(WM_LBUTTONDOWN):
-        // Capture mouse and take focus so we get the matching LBUTTONUP
+        guard IsWindowEnabled(hwnd) else { return 0 }
         SetCapture(hwnd)
         SetFocus(hwnd)
         info.pressed = true
@@ -1579,8 +1624,7 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         let wasPressed = info.pressed
         info.pressed = false
         InvalidateRect(hwnd, nil, true)
-        // Only fire if mouse is still inside the button
-        if wasPressed {
+        if wasPressed && IsWindowEnabled(hwnd) {
             var rect = RECT()
             GetClientRect(hwnd, &rect)
             let x = Int32(win32_GET_X_LPARAM(lParam))
@@ -1594,6 +1638,7 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
     // --- Keyboard activation (Space / Enter) ---
     case UINT(WM_KEYDOWN):
         if wParam == WPARAM(VK_SPACE) || wParam == WPARAM(VK_RETURN) {
+            guard IsWindowEnabled(hwnd) else { return 0 }
             info.pressed = true
             InvalidateRect(hwnd, nil, true)
             return 0
@@ -1605,7 +1650,9 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
             if info.pressed {
                 info.pressed = false
                 InvalidateRect(hwnd, nil, true)
-                info.action()
+                if IsWindowEnabled(hwnd) {
+                    info.action()
+                }
             }
             return 0
         }

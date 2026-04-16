@@ -3009,6 +3009,71 @@ final class Win32RenderTests: XCTestCase {
         }
     }
 
+    // MARK: - Disabled Batch B (action gating)
+
+    func testDisabledButtonIgnoresClick() {
+        var clicked = false
+        let ctx = testContext()
+        let view = Button("Click", action: { clicked = true }).disabled(true)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        // Find the flat button leaf
+        let button = findFlatButton(in: hwnd!, titled: "Click") ?? hwnd!
+
+        let lParam = LPARAM(0) // coordinates (0,0)
+        SendMessageW(button, UINT(WM_LBUTTONDOWN), 0, lParam)
+        SendMessageW(button, UINT(WM_LBUTTONUP), 0, lParam)
+        XCTAssertFalse(clicked, "Disabled button should not fire action on click")
+    }
+
+    func testDisabledButtonIgnoresKeyboard() {
+        var pressed = false
+        let ctx = testContext()
+        let view = Button("Press", action: { pressed = true }).disabled(true)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let button = findFlatButton(in: hwnd!, titled: "Press") ?? hwnd!
+
+        SendMessageW(button, UINT(WM_KEYDOWN), WPARAM(VK_SPACE), 0)
+        SendMessageW(button, UINT(WM_KEYUP), WPARAM(VK_SPACE), 0)
+        XCTAssertFalse(pressed, "Disabled button should not fire action on Space key")
+    }
+
+    func testDisabledButtonShortcutDoesNotFire() {
+        var fired = false
+        let ctx = testContext()
+        // Use a distinctive shortcut to avoid registry collisions
+        let view = Button("Save", action: { fired = true })
+            .keyboardShortcut("j", modifiers: [.command, .shift])
+            .disabled(true)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let ks = KeyboardShortcut("j", modifiers: [.command, .shift])
+        let windowID = getCurrentEnvironment().windowID
+        let handled = KeyboardShortcutRegistry.shared.dispatch(ks, windowID: windowID)
+        XCTAssertTrue(handled, "Shortcut should be registered even when button is disabled")
+        XCTAssertFalse(fired, "Disabled button's keyboard shortcut should not fire")
+    }
+
+    func testEnabledButtonStillFiresAfterDisabledGuard() {
+        // Verify enabled buttons still work after the guard changes
+        var clicked = false
+        let ctx = testContext()
+        let view = Button("Go", action: { clicked = true }).disabled(false)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let button = findFlatButton(in: hwnd!, titled: "Go") ?? hwnd!
+
+        let lParam = LPARAM(0)
+        SendMessageW(button, UINT(WM_LBUTTONDOWN), 0, lParam)
+        SendMessageW(button, UINT(WM_LBUTTONUP), 0, lParam)
+        XCTAssertTrue(clicked, "Enabled button should still fire action on click")
+    }
+
     // MARK: - ViewThatFits Batch A
 
     func testViewThatFitsRendersFirstChild() {
