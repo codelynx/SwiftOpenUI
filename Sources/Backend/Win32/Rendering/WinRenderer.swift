@@ -2,6 +2,7 @@ import WinSDK
 import CWin32
 import CWin32Bridge
 import SwiftOpenUI
+import SwiftOpenUISymbols
 import Foundation
 
 // MARK: - Win32 rendering protocol
@@ -3816,17 +3817,77 @@ extension Image: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         switch source {
         case .systemName(let name):
+            // SF→Material compatibility: if the SF name maps to a Material
+            // Symbol, render via the bundled Material Symbols Rounded font
+            // so cross-platform code using `Image(systemName:)` sees real
+            // icons on Windows. Otherwise fall back to stock icons / text.
+            if let materialName = SFSymbolCompatibility.materialName(for: name) {
+                return winCreateMaterialSymbol(name: materialName, scale: scale, in: context)
+            }
             return winCreateSystemIcon(name: name, in: context)
         case .filePath(let path):
             return winCreateFileImage(path: path, in: context)
         case .materialSymbol(let name):
-            // Win32 adoption of SwiftOpenUISymbols is deferred (M-Symbols-2
-            // per-backend rollout). Fall back to the same text-label
-            // placeholder that winCreateSystemIcon uses for unknown
-            // system names; the app still compiles and renders a readable
-            // placeholder so cross-platform code doesn't break on Windows.
+            return winCreateMaterialSymbol(name: name, scale: scale, in: context)
+        }
+    }
+
+    /// Render a Material Symbols glyph as a STATIC control containing the
+    /// icon's PUA Unicode character, drawn with the bundled "Material
+    /// Symbols Rounded" font. GDI doesn't apply OpenType ligatures, so we
+    /// look the name up in `MaterialSymbolsCodepoints` and emit the raw
+    /// codepoint — a missing name renders as the `help_outline` glyph.
+    private func winCreateMaterialSymbol(name: String,
+                                         scale: ImageScale,
+                                         in context: RenderContext) -> HWND? {
+        let codepoint = MaterialSymbolsCodepoints.codepoint(for: name)
+            ?? MaterialSymbolsCodepoints.missingGlyphCodepoint
+        guard let scalar = Unicode.Scalar(codepoint) else {
             return winCreateSystemIcon(name: name, in: context)
         }
+        let glyph = String(scalar)
+
+        // Use the image scale's point size as the glyph size; matches
+        // GTK4's `gtkRenderMaterialSymbolLabel` sizing so cross-platform
+        // `.imageScale(.large)` produces visually comparable glyphs.
+        let dpi = win32_GetDpiForWindow(context.parent)
+        let dpiScale = Double(dpi) / 96.0
+        let pixelHeight = Int32(Double(scale.pointSize) * dpiScale)
+
+        let family = MaterialSymbolsResources.roundedRegularFamilyName
+        let hfont = family.withCString(encodedAs: UTF16.self) { namePtr in
+            CreateFontW(
+                -pixelHeight, 0, 0, 0,
+                FW_REGULAR,
+                0, 0, 0,
+                DWORD(DEFAULT_CHARSET),
+                DWORD(OUT_DEFAULT_PRECIS),
+                DWORD(CLIP_DEFAULT_PRECIS),
+                DWORD(CLEARTYPE_QUALITY),
+                DWORD(DEFAULT_PITCH) | DWORD(FF_DONTCARE),
+                namePtr
+            )
+        }
+
+        let size = Int32(scale.pointSize) + 4
+        let hwnd = glyph.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(), wstr,
+                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
+                0, 0, size, size,
+                context.parent, nil, context.hInstance
+            )
+        }
+
+        if let hwnd = hwnd, let hfont = hfont {
+            SendMessageW(hwnd, UINT(WM_SETFONT),
+                         WPARAM(UInt(bitPattern: hfont)), 1)
+            let info = FontCleanupInfo(hfont: hfont)
+            let ptr = Unmanaged.passRetained(info).toOpaque()
+            SetWindowSubclass(hwnd, fontCleanupProc, 21,
+                              DWORD_PTR(UInt(bitPattern: ptr)))
+        }
+        return hwnd
     }
 
     private func winCreateSystemIcon(name: String, in context: RenderContext) -> HWND? {

@@ -2,10 +2,35 @@ import WinSDK
 import CWin32
 import CWin32Bridge
 import SwiftOpenUI
+import SwiftOpenUISymbols
 import Foundation
 #if canImport(Observation)
 import Observation
 #endif
+
+/// Register the bundled Material Symbols Rounded font with GDI for this
+/// process only. Called once during `Win32Backend.run()` so subsequent
+/// HFONT creations (`CreateFontW` with `"Material Symbols Rounded"`)
+/// find the font family. Process-private registration via
+/// `AddFontResourceExW(FR_PRIVATE)` — no system font changes, no admin
+/// rights needed, and the registration dies with the process.
+///
+/// Idempotent: calling again just re-adds the same file, which is a no-op
+/// for a font already private-registered to this process.
+private var materialSymbolsFontRegistered = false
+private func win32RegisterBundledIconFont() {
+    guard !materialSymbolsFontRegistered else { return }
+    let url = MaterialSymbolsResources.roundedRegularFontURL
+    let added = url.path.withCString(encodedAs: UTF16.self) { wstr -> Int32 in
+        AddFontResourceExW(wstr, DWORD(FR_PRIVATE), nil)
+    }
+    if added == 0 {
+        // Non-fatal: Material Symbols glyphs will render as missing-font
+        // boxes. Flag it so a developer notices.
+        debugPrint("SwiftOpenUI: AddFontResourceExW failed for \(url.path)")
+    }
+    materialSymbolsFontRegistered = true
+}
 
 private final class MainWindowState {
     let contentHwnd: HWND
@@ -615,6 +640,11 @@ public struct Win32Backend: RenderBackend {
 
         // Initialize common controls (for modern visual styles)
         win32_InitCommonControlsEx(DWORD(ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES))
+
+        // Register the bundled Material Symbols Rounded font privately
+        // with GDI so Image(material:) / Image(systemName:) can render
+        // icon glyphs via CreateFontW("Material Symbols Rounded").
+        win32RegisterBundledIconFont()
 
         // Inject openWindow action into the environment so views
         // can programmatically open Window scenes by id.
