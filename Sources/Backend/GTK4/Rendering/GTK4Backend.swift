@@ -63,6 +63,15 @@ protocol GTKWindowRenderable {
     func gtkRender(app: OpaquePointer)
 }
 
+/// Root GTK window content should fill the proposed size; leaf alignment is
+/// handled by child containers, not by centering the hosted root widget.
+func gtkConfigureRootContentToFillWindow(_ contentWidget: UnsafeMutablePointer<GtkWidget>) {
+    gtk_widget_set_hexpand(contentWidget, 1)
+    gtk_widget_set_vexpand(contentWidget, 1)
+    gtk_widget_set_halign(contentWidget, GTK_ALIGN_FILL)
+    gtk_widget_set_valign(contentWidget, GTK_ALIGN_FILL)
+}
+
 extension WindowGroup: GTKWindowRenderable {
     func gtkRender(app: OpaquePointer) {
         let window = gtk_application_window_new(gtkApplicationPointer(app))!
@@ -121,21 +130,7 @@ extension WindowGroup: GTKWindowRenderable {
             break
         }
 
-        // If the root content doesn't expand, center it in the window
-        // (matches SwiftUI where root views fill the proposed size and
-        // content like Text is centered by default).
-        if gtk_widget_get_hexpand(contentWidget) == 0 {
-            gtk_widget_set_halign(contentWidget, GTK_ALIGN_CENTER)
-            gtk_widget_set_hexpand(contentWidget, 1)
-        } else {
-            gtk_widget_set_halign(contentWidget, GTK_ALIGN_FILL)
-        }
-        if gtk_widget_get_vexpand(contentWidget) == 0 {
-            gtk_widget_set_valign(contentWidget, GTK_ALIGN_CENTER)
-            gtk_widget_set_vexpand(contentWidget, 1)
-        } else {
-            gtk_widget_set_valign(contentWidget, GTK_ALIGN_FILL)
-        }
+        gtkConfigureRootContentToFillWindow(contentWidget)
 
         gtk_window_set_child(winPtr, contentWidget)
         let winWidget = widgetPointer(winPtr)
@@ -637,14 +632,7 @@ extension Window: GTKWindowRenderable {
             gtk_widget_set_size_request(contentWidget, minReqW, minReqH)
         }
 
-        if gtk_widget_get_hexpand(contentWidget) == 0 {
-            gtk_widget_set_halign(contentWidget, GTK_ALIGN_CENTER)
-            gtk_widget_set_hexpand(contentWidget, 1)
-        }
-        if gtk_widget_get_vexpand(contentWidget) == 0 {
-            gtk_widget_set_valign(contentWidget, GTK_ALIGN_CENTER)
-            gtk_widget_set_vexpand(contentWidget, 1)
-        }
+        gtkConfigureRootContentToFillWindow(contentWidget)
 
         gtk_window_set_child(winPtr, contentWidget)
         let winWidget = widgetPointer(winPtr)

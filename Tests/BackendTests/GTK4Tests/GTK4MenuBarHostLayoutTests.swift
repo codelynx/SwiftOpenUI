@@ -85,6 +85,23 @@ final class GTK4MenuBarHostLayoutTests: XCTestCase {
             "Menu wrapper must set valign=FILL on content"
         )
     }
+
+    func testRootWindowContentAlwaysFillsWindow() throws {
+        try requireGTK()
+
+        let contentWidget = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtk_widget_set_hexpand(contentWidget, 0)
+        gtk_widget_set_vexpand(contentWidget, 0)
+        gtk_widget_set_halign(contentWidget, GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(contentWidget, GTK_ALIGN_CENTER)
+
+        gtkConfigureRootContentToFillWindow(contentWidget)
+
+        XCTAssertEqual(gtk_widget_get_hexpand(contentWidget), 1)
+        XCTAssertEqual(gtk_widget_get_vexpand(contentWidget), 1)
+        XCTAssertEqual(gtk_widget_get_halign(contentWidget), GTK_ALIGN_FILL)
+        XCTAssertEqual(gtk_widget_get_valign(contentWidget), GTK_ALIGN_FILL)
+    }
 }
 
 private func requireGTK(
