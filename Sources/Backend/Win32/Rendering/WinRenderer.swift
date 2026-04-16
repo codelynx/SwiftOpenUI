@@ -3797,7 +3797,7 @@ private let stretchBitmapPaintProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam
     case UINT(WM_SIZE):
         // FrameView's SetWindowPos sends WM_SIZE; force a repaint so the
         // bitmap stretches to the new allocation.
-        InvalidateRect(hwnd, nil, 0)
+        InvalidateRect(hwnd, nil, false)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     case UINT(WM_NCDESTROY):
