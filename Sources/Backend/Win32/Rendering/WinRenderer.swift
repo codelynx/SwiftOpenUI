@@ -264,9 +264,10 @@ extension TextField: WinRenderable {
 
         // Wire up .onSubmit: intercept VK_RETURN and fire submitAction
         if let submitAction = getCurrentEnvironment().submitAction {
+            let boundAction = bindActionToCurrentEnvironment(submitAction.handler)
             handler.onMessage = { uMsg, wParam, _ in
                 if uMsg == UINT(WM_KEYDOWN), wParam == WPARAM(VK_RETURN) {
-                    submitAction()
+                    boundAction()
                     return 0
                 }
                 return nil
@@ -3995,9 +3996,10 @@ extension SecureField: WinRenderable {
 
         // Wire up .onSubmit: intercept VK_RETURN and fire submitAction
         if let submitAction = getCurrentEnvironment().submitAction {
+            let boundAction = bindActionToCurrentEnvironment(submitAction.handler)
             handler.onMessage = { uMsg, wParam, _ in
                 if uMsg == UINT(WM_KEYDOWN), wParam == WPARAM(VK_RETURN) {
-                    submitAction()
+                    boundAction()
                     return 0
                 }
                 return nil
@@ -4615,6 +4617,8 @@ extension ConfirmationDialogView: WinRenderable {
             let dlgTitle = titleVisibility == .hidden ? "" : title
             let dlgMessage = message.isEmpty ? dlgTitle : message
             let dlgButtons = buttons
+            let boundConfirmAction = dlgButtons.first.map { bindActionToCurrentEnvironment($0.action) }
+            let boundCancelAction = dlgButtons.first(where: { $0.role == .cancel }).map { bindActionToCurrentEnvironment($0.action) }
             let root = findRootWindow(from: context.parent)
             let interceptedSheet = participatesInDismissalInterception
                 ? win32ContainingSheetWindow(from: context.parent)
@@ -4629,12 +4633,12 @@ extension ConfirmationDialogView: WinRenderable {
                     flags: UINT(MB_YESNO | MB_ICONQUESTION)
                 )
                 if result == IDYES {
-                    dlgButtons.first?.action()
+                    boundConfirmAction?()
                     if let interceptedSheet, IsWindow(interceptedSheet) {
                         DestroyWindow(interceptedSheet)
                     }
                 } else {
-                    dlgButtons.first(where: { $0.role == .cancel })?.action()
+                    boundCancelAction?()
                 }
             }
         }
@@ -7858,11 +7862,28 @@ private class ContextMenuState {
     init(_ elements: [MenuElement]) { self.elements = elements }
 }
 
+private func bindContextMenuElements(_ elements: [MenuElement]) -> [MenuElement] {
+    return elements.map { element in
+        switch element {
+        case .item(let label, let action):
+            return .item(label: label, action: bindActionToCurrentEnvironment(action))
+        case .divider:
+            return .divider
+        case .submenu(let label, let children):
+            return .submenu(label: label, children: bindContextMenuElements(children))
+        }
+    }
+}
+
 extension ContextMenuView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
-        let state = ContextMenuState(menuElements)
+        // Bind every item action to the render-time environment so
+        // WM_COMMAND dispatch (later, outside render scope) can still
+        // read @Environment(...) safely. See deferred-callback doc.
+        let boundElements = bindContextMenuElements(menuElements)
+        let state = ContextMenuState(boundElements)
         let statePtr = Unmanaged.passRetained(state).toOpaque()
         SetWindowSubclass(hwnd, contextMenuProc, contextMenuSubclassID,
                           DWORD_PTR(UInt(bitPattern: statePtr)))
