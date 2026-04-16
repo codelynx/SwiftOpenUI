@@ -679,6 +679,16 @@ func bindActionToCurrentEnvironment(_ action: @escaping () -> Void) -> () -> Voi
     }
 }
 
+func bindActionToCurrentEnvironment<T>(_ action: @escaping (T) -> Void) -> (T) -> Void {
+    let capturedEnvironment = getCurrentEnvironment()
+    return { value in
+        let previousEnvironment = getCurrentEnvironment()
+        setCurrentEnvironment(capturedEnvironment)
+        defer { setCurrentEnvironment(previousEnvironment) }
+        action(value)
+    }
+}
+
 extension Button: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let style = getCurrentEnvironment().buttonStyle
@@ -4094,7 +4104,7 @@ extension OnAppearView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
         // Fire onAppear after the view is rendered (deferred to next message loop cycle)
-        let appearAction = action
+        let appearAction = bindActionToCurrentEnvironment(action)
         let root = findRootWindow(from: context.parent)
         runOnMainThread(hwnd: root) { appearAction() }
         return hwnd
@@ -4109,7 +4119,7 @@ extension OnDisappearView: WinRenderable {
         // ViewHost container is destroyed, not on individual rebuilds.
         // Full SwiftUI disappearance semantics would require tracking
         // view identity across rebuilds, which our architecture doesn't support yet.
-        let disappearAction = action
+        let disappearAction = bindActionToCurrentEnvironment(action)
         let box = Unmanaged.passRetained(ClosureBox(disappearAction)).toOpaque()
         SetWindowSubclass(hwnd, onDisappearProc, 90, DWORD_PTR(UInt(bitPattern: box)))
         return hwnd
@@ -5240,29 +5250,7 @@ extension Menu: WinRenderable {
             guard let hMenu = CreatePopupMenu() else { return }
             var menuID: UINT = 50000
             var menuActions: [UINT: () -> Void] = [:]
-
-            func addElementsTo(_ targetMenu: HMENU, _ elems: [MenuElement]) {
-                for elem in elems {
-                    switch elem {
-                    case .item(let label, let action):
-                        let id = menuID; menuID += 1
-                        _ = label.withCString(encodedAs: UTF16.self) { wstr in
-                            AppendMenuW(targetMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
-                        }
-                        menuActions[id] = bindActionToCurrentEnvironment(action)
-                    case .divider:
-                        AppendMenuW(targetMenu, UINT(MF_SEPARATOR), 0, nil)
-                    case .submenu(let label, let children):
-                        if let subMenu = CreatePopupMenu() {
-                            addElementsTo(subMenu, children)
-                            _ = label.withCString(encodedAs: UTF16.self) { wstr in
-                                AppendMenuW(targetMenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: subMenu)), wstr)
-                            }
-                        }
-                    }
-                }
-            }
-            addElementsTo(hMenu, menuElements)
+            winPopulateMenu(hMenu, elements: menuElements, nextMenuID: &menuID, actions: &menuActions)
 
             var pt = POINT()
             GetCursorPos(&pt)
@@ -5277,6 +5265,32 @@ extension Menu: WinRenderable {
             }
         }
         return createNativeButton(title: "☰ \(title)", action: action, context: context)
+    }
+}
+
+func winPopulateMenu(_ targetMenu: HMENU,
+                     elements: [MenuElement],
+                     nextMenuID: inout UINT,
+                     actions: inout [UINT: () -> Void]) {
+    for elem in elements {
+        switch elem {
+        case .item(let label, let action):
+            let id = nextMenuID
+            nextMenuID += 1
+            _ = label.withCString(encodedAs: UTF16.self) { wstr in
+                AppendMenuW(targetMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+            }
+            actions[id] = bindActionToCurrentEnvironment(action)
+        case .divider:
+            AppendMenuW(targetMenu, UINT(MF_SEPARATOR), 0, nil)
+        case .submenu(let label, let children):
+            if let subMenu = CreatePopupMenu() {
+                winPopulateMenu(subMenu, elements: children, nextMenuID: &nextMenuID, actions: &actions)
+                _ = label.withCString(encodedAs: UTF16.self) { wstr in
+                    AppendMenuW(targetMenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: subMenu)), wstr)
+                }
+            }
+        }
     }
 }
 
@@ -5305,7 +5319,7 @@ extension DisclosureGroup: WinRenderable {
             )
         }
 
-        let expandCallback = onExpandedChange
+        let expandCallback = onExpandedChange.map(bindActionToCurrentEnvironment)
         let currentExpanded = isExpanded
         registerCommandHandler(controlID: controlID) {
             expandCallback?(!currentExpanded)
@@ -7921,7 +7935,8 @@ extension TapGestureView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
-        let handler = TapGestureHandler(requiredCount: count, action: action)
+        let handler = TapGestureHandler(requiredCount: count,
+                                        action: bindActionToCurrentEnvironment(action))
         installGestureRecursively(on: hwnd, handler: handler,
                                   proc: tapGestureProc, subclassID: tapGestureSubclassID)
         return hwnd
@@ -8004,7 +8019,8 @@ extension LongPressGestureView: WinRenderable {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
         let durationMs = UInt32(minimumDuration * 1000)
-        let handler = LongPressGestureHandler(action: action, durationMs: durationMs, rootHwnd: hwnd)
+        let handler = LongPressGestureHandler(action: bindActionToCurrentEnvironment(action),
+                                              durationMs: durationMs, rootHwnd: hwnd)
         installGestureRecursively(on: hwnd, handler: handler,
                                   proc: longPressGestureProc, subclassID: longPressSubclassID)
         return hwnd
@@ -8106,7 +8122,8 @@ extension DragGestureView: WinRenderable {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
         let handler = DragGestureHandler(
-            onChanged: onChanged, onEnded: onEnded,
+            onChanged: onChanged.map(bindActionToCurrentEnvironment),
+            onEnded: onEnded.map(bindActionToCurrentEnvironment),
             minimumDistance: minimumDistance, rootHwnd: hwnd
         )
         installGestureRecursively(on: hwnd, handler: handler,
