@@ -94,6 +94,31 @@ private func gtkMeasureLayoutSubviews(
     }
 }
 
+// MARK: - Deferred callback environment binding
+
+/// Capture the current environment at registration time and restore it around
+/// a deferred callback that may read `@Environment(...)`.  See
+/// `docs/architecture/deferred-callback-environment-binding.md`.
+func bindActionToCurrentEnvironment(_ action: @escaping () -> Void) -> () -> Void {
+    let capturedEnvironment = getCurrentEnvironment()
+    return {
+        let previousEnvironment = getCurrentEnvironment()
+        setCurrentEnvironment(capturedEnvironment)
+        defer { setCurrentEnvironment(previousEnvironment) }
+        action()
+    }
+}
+
+func bindActionToCurrentEnvironment<T>(_ action: @escaping (T) -> Void) -> (T) -> Void {
+    let capturedEnvironment = getCurrentEnvironment()
+    return { value in
+        let previousEnvironment = getCurrentEnvironment()
+        setCurrentEnvironment(capturedEnvironment)
+        defer { setCurrentEnvironment(previousEnvironment) }
+        action(value)
+    }
+}
+
 // MARK: - View GTK extensions
 
 extension Text: GTKRenderable, GTKDescribable {
@@ -438,7 +463,8 @@ extension Button: GTKRenderable, GTKDescribable {
             break // default GTK button styling
         }
 
-        let box = Unmanaged.passRetained(ClosureBox(action)).toOpaque()
+        let boundAction = bindActionToCurrentEnvironment(action)
+        let box = Unmanaged.passRetained(ClosureBox(boundAction)).toOpaque()
         g_signal_connect_data(
             gpointer(button),
             "clicked",
@@ -455,7 +481,7 @@ extension Button: GTKRenderable, GTKDescribable {
         // Register keyboard shortcut if present in environment
         if let ks = getCurrentEnvironment().keyboardShortcut {
             let windowID = getCurrentEnvironment().windowID
-            let actionClosure = action
+            let actionClosure = bindActionToCurrentEnvironment(action)
             let regID = KeyboardShortcutRegistry.shared.register(ks, windowID: windowID, action: actionClosure)
 
             // Unregister by registration ID when the button widget is destroyed
@@ -2384,7 +2410,8 @@ extension TapGestureView: GTKRenderable, GTKDescribable {
         let widget = widgetFromOpaque(gtkRenderView(content))
         let gesture = gtk_gesture_click_new()!
 
-        let box = Unmanaged.passRetained(TapClosureBox(count: count, action: action)).toOpaque()
+        let boundAction = bindActionToCurrentEnvironment(action)
+        let box = Unmanaged.passRetained(TapClosureBox(count: count, action: boundAction)).toOpaque()
         g_signal_connect_data(
             gpointer(gesture),
             "pressed",
@@ -2414,7 +2441,8 @@ extension LongPressGestureView: GTKRenderable {
         // Set delay threshold
         g_object_set_double(gpointer(gesture), "delay-factor", minimumDuration / 0.5)
 
-        let box = Unmanaged.passRetained(ClosureBox(action)).toOpaque()
+        let boundAction = bindActionToCurrentEnvironment(action)
+        let box = Unmanaged.passRetained(ClosureBox(boundAction)).toOpaque()
         g_signal_connect_data(
             gpointer(gesture),
             "pressed",
@@ -2461,6 +2489,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
         let dragState = GTKDragState()
 
         if let onChanged = onChanged {
+            let boundOnChanged = bindActionToCurrentEnvironment(onChanged)
             let state = dragState
             let minimumDistance = self.minimumDistance
             let box = Unmanaged.passRetained(DoubleDoubleClosureBox { offsetX, offsetY in
@@ -2474,7 +2503,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
                     location: (x: state.startX + offsetX, y: state.startY + offsetY),
                     translation: (width: offsetX, height: offsetY)
                 )
-                onChanged(value)
+                boundOnChanged(value)
             }).toOpaque()
 
             // drag-begin: record start position
@@ -2512,6 +2541,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
         }
 
         if let onEnded = onEnded {
+            let boundOnEnded = bindActionToCurrentEnvironment(onEnded)
             let state = dragState
             let minimumDistance = self.minimumDistance
             // If no onChanged handler registered drag-begin, we need to capture start here too.
@@ -2546,7 +2576,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
                     location: (x: state.startX + offsetX, y: state.startY + offsetY),
                     translation: (width: offsetX, height: offsetY)
                 )
-                onEnded(value)
+                boundOnEnded(value)
             }).toOpaque()
             g_signal_connect_data(
                 gpointer(gesture),
@@ -2724,7 +2754,8 @@ extension OnAppearView: GTKRenderable {
         }
 
         if !isRebuild {
-            let box = Unmanaged.passRetained(ClosureBox(action)).toOpaque()
+            let boundAction = bindActionToCurrentEnvironment(action)
+            let box = Unmanaged.passRetained(ClosureBox(boundAction)).toOpaque()
             g_signal_connect_data(
                 gpointer(widget),
                 "map",
@@ -2766,8 +2797,9 @@ extension OnDisappearView: GTKRenderable {
             hostContainer = nil
         }
 
+        let boundAction = bindActionToCurrentEnvironment(action)
         let box = Unmanaged.passRetained(
-            DisappearBox(action: action, hostContainer: hostContainer)
+            DisappearBox(action: boundAction, hostContainer: hostContainer)
         ).toOpaque()
         g_signal_connect_data(
             gpointer(widget),
@@ -4583,7 +4615,8 @@ extension DisclosureGroup: GTKRenderable {
         gtk_swift_expander_set_child(expander, childWidget)
 
         if let onChange = onExpandedChange {
-            let box = Unmanaged.passRetained(ExpandedClosureBox(onChange)).toOpaque()
+            let boundOnChange = bindActionToCurrentEnvironment(onChange)
+            let box = Unmanaged.passRetained(ExpandedClosureBox(boundOnChange)).toOpaque()
             g_signal_connect_data(
                 gpointer(expander),
                 "notify::expanded",
@@ -5584,7 +5617,7 @@ private func gtkAddMenuElement(_ element: MenuElement, to menu: gpointer,
 
         let gAction = g_simple_action_new(actionName, nil)!
 
-        let box = ClosureBox(action)
+        let box = ClosureBox(bindActionToCurrentEnvironment(action))
         actionBox.actions.append(box)
         let boxPtr = Unmanaged.passUnretained(box).toOpaque()
 

@@ -1696,6 +1696,214 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(gtk_widget_get_sensitive(widget), 0,
                        "Disabled text field should have sensitivity = false")
     }
+
+    // MARK: - Deferred callback environment binding
+
+    func testBindActionToCurrentEnvironmentCapturesAndRestores() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        var env = getCurrentEnvironment()
+        env.setObject(model)
+
+        let previousEnv = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let bound = bindActionToCurrentEnvironment { model.count += 1 }
+        setCurrentEnvironment(previousEnv)
+
+        // The closure should still access the captured environment even though
+        // the current environment no longer contains the model.
+        bound()
+        XCTAssertEqual(model.count, 1,
+                       "Bound callback should execute with the captured render-time environment")
+    }
+
+    func testBindActionToCurrentEnvironmentGenericCapturesAndRestores() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        var env = getCurrentEnvironment()
+        env.setObject(model)
+
+        let previousEnv = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let bound: (Int) -> Void = bindActionToCurrentEnvironment { value in
+            model.count += value
+        }
+        setCurrentEnvironment(previousEnv)
+
+        bound(5)
+        XCTAssertEqual(model.count, 5,
+                       "Generic bound callback should execute with the captured environment")
+    }
+
+    func testButtonRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvButtonView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "Button view with .environment(model) should render a widget")
+    }
+
+    func testOnAppearRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvOnAppearView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onAppear view with .environment(model) should render a widget")
+    }
+
+    func testOnDisappearRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvOnDisappearView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onDisappear view with .environment(model) should render a widget")
+    }
+
+    func testTapGestureRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvTapGestureView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onTapGesture view with .environment(model) should render a widget")
+    }
+
+    func testLongPressGestureRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvLongPressView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onLongPressGesture view with .environment(model) should render a widget")
+    }
+
+    func testDragGestureRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvDragView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onDrag view with .environment(model) should render a widget")
+    }
+
+    func testDisclosureGroupRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvDisclosureGroupView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "DisclosureGroup with .environment(model) should render a widget")
+    }
+
+    func testMenuRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvMenuView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "Menu with .environment(model) should render a widget")
+    }
+}
+
+// MARK: - Deferred callback environment test fixtures
+
+private final class GTKDelayedEnvModel {
+    var count: Int = 0
+}
+
+private struct GTKDelayedEnvButtonView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Button("Increment") { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvOnAppearView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("appear").onAppear { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvOnDisappearView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("disappear").onDisappear { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvTapGestureView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("Tap").onTapGesture { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvLongPressView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("Hold").onLongPressGesture(minimumDuration: 0) { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvDragView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("Drag").onDrag(onChanged: { _ in model.count += 1 }, onEnded: { _ in model.count += 1 })
+    }
+}
+
+private struct GTKDelayedEnvDisclosureGroupView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        DisclosureGroup(
+            "Toggle",
+            isExpanded: Binding(
+                get: { false },
+                set: { _ in model.count += 1 }
+            )
+        ) {
+            Text("Hidden")
+        }
+    }
+}
+
+private struct GTKDelayedEnvMenuView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Menu("Actions") {
+            MenuItem("Increment") { model.count += 1 }
+        }
+    }
 }
 
 private func requireGTK(
