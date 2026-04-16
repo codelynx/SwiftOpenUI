@@ -4276,11 +4276,10 @@ extension TupleView: GTKRenderable {
 
 // MARK: - TabView GTK extension
 
-extension Tab: GTKRenderable {
-    public func gtkCreateWidget() -> OpaquePointer {
-        gtkRenderView(content)
-    }
-}
+// Note: `Tab<Content>` intentionally has no `GTKRenderable` conformance.
+// `TabBuilder` wraps every `Tab` into `AnyTab` at construction time, so
+// `TabView` iterates `[AnyTab]` and renders each `tab.wrapped` directly.
+// This matches the Win32 backend, which also does not render bare `Tab`.
 
 extension TabView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
