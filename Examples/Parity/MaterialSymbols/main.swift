@@ -71,6 +71,15 @@ struct ParityMaterialSymbolsView: View {
                 Image(systemName: "definitely.not.a.real.sf.symbol")
                     .imageScale(.large)
             }
+
+            // Row 4: bitmap resource loaded via `Image(resource:)` — resolves
+            // through `AppBundle.main` to find `Resources/Sample1.jpg` at the
+            // package root in dev mode, or the platform-native bundle path in
+            // packaged `.app` bundles. Demonstrates real file-based images
+            // without any `#if os()` branching.
+            Text("Row 4 — Image(resource: \"Sample1.jpg\") bitmap from Resources/")
+                .font(.caption)
+            Image(resource: "Sample1.jpg")
         }
         .padding()
     }

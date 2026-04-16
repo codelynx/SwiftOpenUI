@@ -41,6 +41,28 @@ public struct Image: View {
         self.source = .filePath(filePath)
     }
 
+    /// Create an image from a file in the app bundle's `Resources/`
+    /// directory.
+    ///
+    /// Resource discovery uses `AppBundle.main`, which in development mode
+    /// (`swift run`) walks up from the executable to find the package root's
+    /// `Resources/` directory, and in packaged `.app` bundles uses the
+    /// platform-native resources location.
+    ///
+    /// The file name may either include its extension directly
+    /// (`Image(resource: "logo.png")`) or pass it via `withExtension:`
+    /// (`Image(resource: "logo", withExtension: "png")`). If the resource is
+    /// not found, the `name` is kept as the file path so the renderer can
+    /// report the missing file consistently with other `filePath` loads.
+    public init(resource name: String, withExtension ext: String? = nil) {
+        if let bundle = AppBundle.main,
+           let resolvedPath = bundle.path(forResource: name, ofType: ext) {
+            self.source = .filePath(resolvedPath)
+        } else {
+            self.source = .filePath(name)
+        }
+    }
+
     /// Create an image from a Google Material Symbols name.
     ///
     /// The name is a Material Symbol token like `"search"`, `"folder_open"`,
