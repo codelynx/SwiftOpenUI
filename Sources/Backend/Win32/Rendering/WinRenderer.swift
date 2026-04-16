@@ -3748,6 +3748,69 @@ private let imageBitmapCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam
     return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 }
 
+/// Subclass proc for `.resizable()` file images.  Paints the stored HBITMAP
+/// stretched to the control's client rect on each `WM_PAINT`, so the image
+/// scales as `FrameView` resizes its child HWND via `SetWindowPos`.  Frees
+/// the HBITMAP on destruction (same ownership model as
+/// `imageBitmapCleanupProc`, but we own the bitmap via `dwRefData` rather
+/// than via `STM_SETIMAGE`).
+private let stretchBitmapPaintProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_PAINT):
+        guard dwRefData != 0,
+              let hbPtr = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData)) else {
+            return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+        }
+        let hBitmap = hbPtr.assumingMemoryBound(to: HBITMAP__.self)
+
+        var ps = PAINTSTRUCT()
+        let hdc = BeginPaint(hwnd, &ps)
+        defer { EndPaint(hwnd, &ps) }
+
+        var clientRect = RECT()
+        GetClientRect(hwnd, &clientRect)
+        let destW = clientRect.right - clientRect.left
+        let destH = clientRect.bottom - clientRect.top
+
+        var bm = BITMAP()
+        GetObjectW(hBitmap, Int32(MemoryLayout<BITMAP>.size), &bm)
+
+        let memDC = CreateCompatibleDC(hdc)
+        defer { DeleteDC(memDC) }
+        let oldBmp = SelectObject(memDC, hBitmap)
+        defer { _ = SelectObject(memDC, oldBmp) }
+
+        // HALFTONE gives smoother downscaling for photos than COLORONCOLOR.
+        // Per the Win32 docs, HALFTONE requires SetBrushOrgEx after
+        // SetStretchBltMode to define the brush origin for dithering.
+        SetStretchBltMode(hdc, HALFTONE)
+        SetBrushOrgEx(hdc, 0, 0, nil)
+        StretchBlt(hdc, 0, 0, destW, destH,
+                   memDC, 0, 0, bm.bmWidth, bm.bmHeight, DWORD(SRCCOPY))
+        return 0
+
+    case UINT(WM_ERASEBKGND):
+        // Suppress default erase — StretchBlt covers the full client rect.
+        return 1
+
+    case UINT(WM_SIZE):
+        // FrameView's SetWindowPos sends WM_SIZE; force a repaint so the
+        // bitmap stretches to the new allocation.
+        InvalidateRect(hwnd, nil, 0)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0, let handle = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData)) {
+            DeleteObject(handle.assumingMemoryBound(to: HBITMAP__.self))
+        }
+        RemoveWindowSubclass(hwnd, stretchBitmapPaintProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
 extension Image: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         switch source {
@@ -3827,52 +3890,19 @@ extension Image: WinRenderable {
 
             let displayW = Int32(imageData.width)
             let displayH = Int32(imageData.height)
-
-            let hwnd = win32_CreateChildWindow(
-                win32_WC_STATIC(), nil,
-                DWORD(SS_BITMAP | SS_REALSIZECONTROL | SS_NOTIFY),
-                0, 0, displayW, displayH,
-                context.parent, nil, context.hInstance
-            )
-
-            if let hwnd = hwnd {
-                SendMessageW(hwnd, UINT(STM_SETIMAGE), WPARAM(IMAGE_BITMAP),
-                             LPARAM(Int(bitPattern: OpaquePointer(hBitmap))))
-                // Attach cleanup subclass to free HBITMAP on destroy
-                SetWindowSubclass(hwnd, imageBitmapCleanupProc, 46,
-                                  DWORD_PTR(UInt(bitPattern: OpaquePointer(hBitmap))))
-            }
-
-            return hwnd
+            return createBitmapHWND(hBitmap, width: displayW, height: displayH, in: context)
         }
 
         // Fallback: try Win32 LoadImageW for BMP/ICO
-        let hBitmap = path.withCString(encodedAs: UTF16.self) { wstr in
+        let loadedHandle = path.withCString(encodedAs: UTF16.self) { wstr in
             LoadImageW(nil, wstr, UINT(IMAGE_BITMAP), 0, 0, UINT(LR_LOADFROMFILE))
         }
 
-        if let hBitmap = hBitmap {
+        if let loadedHandle = loadedHandle {
+            let hBitmap = loadedHandle.assumingMemoryBound(to: HBITMAP__.self)
             var bm = BITMAP()
-            GetObjectW(hBitmap.assumingMemoryBound(to: HBITMAP__.self),
-                       Int32(MemoryLayout<BITMAP>.size), &bm)
-            let displayW = bm.bmWidth
-            let displayH = bm.bmHeight
-
-            let hwnd = win32_CreateChildWindow(
-                win32_WC_STATIC(), nil,
-                DWORD(SS_BITMAP | SS_REALSIZECONTROL | SS_NOTIFY),
-                0, 0, displayW, displayH,
-                context.parent, nil, context.hInstance
-            )
-
-            if let hwnd = hwnd {
-                SendMessageW(hwnd, UINT(STM_SETIMAGE), WPARAM(IMAGE_BITMAP),
-                             LPARAM(Int(bitPattern: hBitmap)))
-                SetWindowSubclass(hwnd, imageBitmapCleanupProc, 46,
-                                  DWORD_PTR(UInt(bitPattern: hBitmap)))
-            }
-
-            return hwnd
+            GetObjectW(hBitmap, Int32(MemoryLayout<BITMAP>.size), &bm)
+            return createBitmapHWND(hBitmap, width: bm.bmWidth, height: bm.bmHeight, in: context)
         }
 
         // Final fallback: text label
@@ -3885,6 +3915,47 @@ extension Image: WinRenderable {
                 0, 0, measured.width + 4, measured.height + 2,
                 context.parent, nil, context.hInstance
             )
+        }
+    }
+
+    /// Create the STATIC control that hosts a loaded bitmap.  Branches on
+    /// `isResizable`: non-resizable uses `SS_BITMAP | SS_REALSIZECONTROL`
+    /// for natural-size rendering; resizable uses a custom subclass that
+    /// `StretchBlt`s the bitmap to the client rect on each paint, so the
+    /// image scales as `FrameView` resizes its allocation.
+    private func createBitmapHWND(_ hBitmap: UnsafeMutablePointer<HBITMAP__>,
+                                  width: Int32, height: Int32,
+                                  in context: RenderContext) -> HWND? {
+        let bitmapHandle = OpaquePointer(hBitmap)
+        let refData = DWORD_PTR(UInt(bitPattern: bitmapHandle))
+
+        if isResizable {
+            // Plain STATIC (no SS_BITMAP).  The subclass owns the HBITMAP
+            // via dwRefData and paints it via StretchBlt each frame.
+            let hwnd = win32_CreateChildWindow(
+                win32_WC_STATIC(), nil,
+                DWORD(SS_NOTIFY),
+                0, 0, width, height,
+                context.parent, nil, context.hInstance
+            )
+            if let hwnd = hwnd {
+                SetWindowSubclass(hwnd, stretchBitmapPaintProc, 46, refData)
+            }
+            return hwnd
+        } else {
+            // SS_BITMAP + SS_REALSIZECONTROL keeps the bitmap at natural size.
+            let hwnd = win32_CreateChildWindow(
+                win32_WC_STATIC(), nil,
+                DWORD(SS_BITMAP | SS_REALSIZECONTROL | SS_NOTIFY),
+                0, 0, width, height,
+                context.parent, nil, context.hInstance
+            )
+            if let hwnd = hwnd {
+                SendMessageW(hwnd, UINT(STM_SETIMAGE), WPARAM(IMAGE_BITMAP),
+                             LPARAM(Int(bitPattern: bitmapHandle)))
+                SetWindowSubclass(hwnd, imageBitmapCleanupProc, 46, refData)
+            }
+            return hwnd
         }
     }
 }

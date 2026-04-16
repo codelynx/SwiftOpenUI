@@ -4065,10 +4065,28 @@ extension Image: GTKRenderable {
             return opaqueFromWidget(gtkRenderMaterialSymbolLabel(materialName, scale: scale))
 
         case .filePath(let path):
-            let image = gtk_image_new_from_file(path)!
-            let size = gint(scale.pointSize)
-            gtk_widget_set_size_request(image, size, size)
-            return opaqueFromWidget(image)
+            // Use GtkPicture (GTK4's scalable image widget) rather than
+            // GtkImage (fixed-size icon widget).  GtkPicture honors its
+            // parent's allocation and scales the loaded pixbuf accordingly,
+            // which matches SwiftUI's `.resizable()` semantics.
+            let picture = gtk_swift_picture_new_for_filename(path)!
+            if isResizable {
+                // Stretch to fill the surrounding frame.  GTK_CONTENT_FIT_FILL
+                // disables aspect-ratio preservation to match SwiftUI.
+                gtk_swift_picture_set_content_fit(picture, GTK_CONTENT_FIT_FILL)
+                gtk_swift_picture_set_can_shrink(picture, 1)
+                gtk_widget_set_hexpand(picture, 1)
+                gtk_widget_set_vexpand(picture, 1)
+                gtk_widget_set_halign(picture, GTK_ALIGN_FILL)
+                gtk_widget_set_valign(picture, GTK_ALIGN_FILL)
+            } else {
+                // Natural size: GtkPicture reports the pixbuf's intrinsic
+                // dimensions as its natural size.  Surrounding frames
+                // position but do not scale the image.
+                gtk_swift_picture_set_content_fit(picture, GTK_CONTENT_FIT_CONTAIN)
+                gtk_swift_picture_set_can_shrink(picture, 0)
+            }
+            return opaqueFromWidget(picture)
 
         case .materialSymbol(let name):
             return opaqueFromWidget(gtkRenderMaterialSymbolLabel(name, scale: scale))

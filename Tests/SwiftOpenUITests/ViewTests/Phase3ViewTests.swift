@@ -79,6 +79,33 @@ final class Phase3ViewTests: XCTestCase {
         XCTAssertEqual(image.scale.pointSize, 24)
     }
 
+    func testImageDefaultsToNonResizable() {
+        XCTAssertFalse(Image(systemName: "star").isResizable)
+        XCTAssertFalse(Image(filePath: "/tmp/test.png").isResizable)
+        XCTAssertFalse(Image(material: "home").isResizable)
+    }
+
+    func testImageResizableSetsFlag() {
+        XCTAssertTrue(Image(systemName: "star").resizable().isResizable)
+        XCTAssertTrue(Image(filePath: "/tmp/test.png").resizable().isResizable)
+        XCTAssertTrue(Image(material: "home").resizable().isResizable)
+    }
+
+    func testImageResizablePreservesSource() {
+        let image = Image(filePath: "/tmp/photo.jpg").resizable()
+        if case .filePath(let path) = image.source {
+            XCTAssertEqual(path, "/tmp/photo.jpg")
+        } else {
+            XCTFail("Expected filePath source")
+        }
+    }
+
+    func testImageResizableComposesWithImageScale() {
+        let image = Image(systemName: "star").resizable().imageScale(.large)
+        XCTAssertTrue(image.isResizable)
+        XCTAssertEqual(image.scale.pointSize, 24)
+    }
+
     // MARK: - List
 
     func testListConstruction() {

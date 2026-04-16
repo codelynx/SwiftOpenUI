@@ -1697,6 +1697,48 @@ final class GTK4RenderTests: XCTestCase {
                        "Disabled text field should have sensitivity = false")
     }
 
+    // MARK: - Image.resizable()
+
+    func testFileImageRendersAsGtkPicture() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Image(filePath: "/tmp/does-not-exist.jpg")
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkPicture",
+                       "Image(filePath:) should render as GtkPicture, not GtkImage")
+    }
+
+    func testFileImageNonResizableHasNoExpandFlags() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Image(filePath: "/tmp/does-not-exist.jpg")
+        ))
+        XCTAssertEqual(gtk_widget_get_hexpand(widget), 0,
+                       "Non-resizable image should not advertise horizontal expansion")
+        XCTAssertEqual(gtk_widget_get_vexpand(widget), 0,
+                       "Non-resizable image should not advertise vertical expansion")
+    }
+
+    func testFileImageResizableAdvertisesFillBehavior() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Image(filePath: "/tmp/does-not-exist.jpg").resizable()
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkPicture",
+                       "Resizable image should also render as GtkPicture")
+        XCTAssertEqual(gtk_widget_get_hexpand(widget), 1,
+                       "Resizable image must set hexpand so FrameView stretches it")
+        XCTAssertEqual(gtk_widget_get_vexpand(widget), 1,
+                       "Resizable image must set vexpand so FrameView stretches it")
+        XCTAssertEqual(gtk_widget_get_halign(widget), GTK_ALIGN_FILL,
+                       "Resizable image must use FILL alignment horizontally")
+        XCTAssertEqual(gtk_widget_get_valign(widget), GTK_ALIGN_FILL,
+                       "Resizable image must use FILL alignment vertically")
+    }
+
     // MARK: - Deferred callback environment binding
 
     func testBindActionToCurrentEnvironmentCapturesAndRestores() throws {

@@ -31,6 +31,12 @@ public struct Image: View {
     public let source: Source
     public var scale: ImageScale = .medium
 
+    /// When `true`, the image stretches to fill any frame applied to it via
+    /// `.frame(width:height:)`. When `false` (the default), the image renders
+    /// at its natural size and any surrounding frame merely positions it.
+    /// Matches SwiftUI's `.resizable()` semantics.
+    public var isResizable: Bool = false
+
     /// Create an image from a system icon name (GTK icon theme names on Linux).
     public init(systemName: String) {
         self.source = .systemName(systemName)
@@ -86,6 +92,18 @@ public struct Image: View {
     public func imageScale(_ scale: ImageScale) -> Image {
         var copy = self
         copy.scale = scale
+        return copy
+    }
+
+    /// Allow the image to scale to fit any frame applied to it.
+    ///
+    /// Without `.resizable()`, an image renders at its natural size regardless
+    /// of any surrounding `.frame(width:height:)` — the frame positions the
+    /// image but does not scale its pixels. After `.resizable()`, the image
+    /// stretches to fill its frame. Matches SwiftUI's behavior.
+    public func resizable() -> Image {
+        var copy = self
+        copy.isResizable = true
         return copy
     }
 

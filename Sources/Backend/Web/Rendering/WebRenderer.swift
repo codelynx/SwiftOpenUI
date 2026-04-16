@@ -2437,7 +2437,17 @@ extension SwiftOpenUI.Image: WebRenderable {
         case .filePath(let path):
             let img = document.createElement("img")
             img.src = .string(path)
-            img.style = .string("width: \(size)px; height: \(size)px; object-fit: contain;")
+            if isResizable {
+                // Resizable: fill any surrounding frame. The image stretches
+                // to match the parent's width/height (set by the .frame()
+                // wrapper). object-fit: fill matches SwiftUI's resizable
+                // semantics (no aspect preservation).
+                img.style = .string("width: 100%; height: 100%; object-fit: fill;")
+            } else {
+                // Non-resizable: render at the image's natural pixel size.
+                // Surrounding frames position but do not scale the image.
+                img.style = .string("display: inline-block;")
+            }
             return img
         case .systemName(let name):
             // No browser icon theme — render as text placeholder

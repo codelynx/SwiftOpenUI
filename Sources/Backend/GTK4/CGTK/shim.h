@@ -243,6 +243,23 @@ gtk_swift_grid_set_column_homogeneous(GtkWidget *grid, gboolean homogeneous) {
     gtk_grid_set_column_homogeneous(GTK_GRID(grid), homogeneous);
 }
 
+// --- GtkPicture shims ---
+
+static inline GtkWidget *
+gtk_swift_picture_new_for_filename(const char *filename) {
+    return gtk_picture_new_for_filename(filename);
+}
+
+static inline void
+gtk_swift_picture_set_content_fit(GtkWidget *picture, GtkContentFit fit) {
+    gtk_picture_set_content_fit(GTK_PICTURE(picture), fit);
+}
+
+static inline void
+gtk_swift_picture_set_can_shrink(GtkWidget *picture, gboolean can_shrink) {
+    gtk_picture_set_can_shrink(GTK_PICTURE(picture), can_shrink);
+}
+
 // --- GtkExpander shims ---
 
 static inline GtkWidget *
