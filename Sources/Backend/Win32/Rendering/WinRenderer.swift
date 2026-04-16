@@ -7190,7 +7190,7 @@ extension LineLimitView: WinRenderable {
 
             let hdc = GetDC(label)
             defer { ReleaseDC(label, hdc) }
-            let hfont = HFONT(bitPattern: UInt(SendMessageW(label, UINT(WM_GETFONT), 0, 0)))
+            let hfont = HFONT(bitPattern: UInt(bitPattern: Int(SendMessageW(label, UINT(WM_GETFONT), 0, 0))))
             let oldFont = hfont.map { SelectObject(hdc, $0) }
             defer { if let oldFont { SelectObject(hdc, oldFont) } }
 
@@ -7226,7 +7226,7 @@ extension LineLimitView: WinRenderable {
 
         let hdc = GetDC(label)
         defer { ReleaseDC(label, hdc) }
-        let hfont = HFONT(bitPattern: UInt(SendMessageW(label, UINT(WM_GETFONT), 0, 0)))
+        let hfont = HFONT(bitPattern: UInt(bitPattern: Int(SendMessageW(label, UINT(WM_GETFONT), 0, 0))))
         let oldFont = hfont.map { SelectObject(hdc, $0) }
         defer { if let oldFont { SelectObject(hdc, oldFont) } }
 
@@ -7621,7 +7621,7 @@ extension RadialGradient: WinRenderable {
 /// Pass nil for parameters that should keep their current value.
 private func winApplyFontStyle(to hwnd: HWND, weight: Int32? = nil, italic: Bool? = nil, underline: Bool? = nil, strikeout: Bool? = nil, hInstance: HINSTANCE) {
     // Get current font to preserve all existing attributes
-    let currentFont = HFONT(bitPattern: UInt(SendMessageW(hwnd, UINT(WM_GETFONT), 0, 0)))
+    let currentFont = HFONT(bitPattern: UInt(bitPattern: Int(SendMessageW(hwnd, UINT(WM_GETFONT), 0, 0))))
     var lf = LOGFONTW()
     if let currentFont {
         GetObjectW(currentFont, Int32(MemoryLayout<LOGFONTW>.size), &lf)

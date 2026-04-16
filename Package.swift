@@ -357,6 +357,14 @@ let package = Package(
         // license text in an About dialog or to perform custom font lookups).
         p.append(.library(name: "SwiftOpenUISymbols", targets: ["SwiftOpenUISymbols"]))
         #endif
+        #if os(Windows)
+        p.append(.library(name: "CWin32", targets: ["CWin32"]))
+        p.append(.library(name: "CWin32Bridge", targets: ["CWin32Bridge"]))
+        p.append(.library(name: "BackendWin32", targets: ["BackendWin32"]))
+        // Same rationale as Linux: expose SwiftOpenUISymbols so apps can
+        // reference MaterialSymbolsResources directly.
+        p.append(.library(name: "SwiftOpenUISymbols", targets: ["SwiftOpenUISymbols"]))
+        #endif
         #if os(macOS)
         p.append(.library(name: "BackendAndroid", type: .dynamic, targets: ["BackendAndroid"]))
         #endif
