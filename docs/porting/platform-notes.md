@@ -106,6 +106,9 @@ The workaround is `d2d1_shim.cpp`: a C++ file that wraps each COM call in a `ext
 - Recursive font application via `applyFontRecursively()` to reach controls inside modifier wrappers
 - HFONT leak prevention via cleanup subclass on `WM_NCDESTROY`
 - Thread-local environment via `TlsAlloc` / `TlsGetValue`
+- Delayed callback environment binding for actions, menus, lifecycle hooks, and gestures that may
+  read `@Environment(...)` after render scope has ended. See
+  [Deferred Callback Environment Binding](../architecture/deferred-callback-environment-binding.md)
 - Gesture routing via recursive subclassing (same proc on root + all descendants, not WM_PARENTNOTIFY)
 - Navigation via Win32Navigation.swift — show/hide HWND stack with header bar, thread-local context sharing
 - Animation: Timer-driven (SetTimer 60fps + easing) for `OpacityView`/`ScaleEffectView` on fully D2D-renderable subtrees (Text, Color, Divider, simple wrappers). Easing: linear, easeIn, easeOut, easeInOut, spring. `consumePendingAnimation()` reads animation set by `withAnimation()` after deferred rebuild
