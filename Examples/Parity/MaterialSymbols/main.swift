@@ -40,12 +40,17 @@ struct ParityMaterialSymbolsView: View {
             Text("Row 1 — Image(material: \"name\")")
                 .font(.caption)
             HStack(spacing: 32) {
+                #if os(macOS)
+                Text("(material: not available on macOS)")
+                    .foregroundColor(.secondary)
+                #else
                 Image(material: "home")
                     .imageScale(.large)
                 Image(material: "search")
                     .imageScale(.large)
                 Image(material: "folder_open")
                     .imageScale(.large)
+                #endif
             }
 
             // Row 2: Image(systemName:) — SwiftUI-canonical SF names.

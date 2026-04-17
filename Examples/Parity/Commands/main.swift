@@ -106,7 +106,11 @@ struct MainContentView: View {
 				.font(.caption)
 		}
 		.padding()
+		#if os(macOS)
+		.focusedValue(\.counter, counter)
+		#else
 		.focusedValue(CounterFocusKey.self, counter)
+		#endif
 	}
 }
 

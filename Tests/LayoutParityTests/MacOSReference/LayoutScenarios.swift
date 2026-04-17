@@ -71,6 +71,25 @@ let allLayoutScenarios: [(name: String, view: AnyView)] = [
     ("empty-vstack", AnyView(scenario_emptyVstack)),
     ("single-child-vstack", AnyView(scenario_singleChildVstack)),
     ("deeply-nested-frames", AnyView(scenario_deeplyNestedFrames)),
+
+    // === App Patterns (composition) ===
+    ("app-header-content-footer", AnyView(scenario_appHeaderContentFooter)),
+    ("sidebar-detail-split", AnyView(scenario_sidebarDetailSplit)),
+    ("toolbar-content-layout", AnyView(scenario_toolbarContentLayout)),
+
+    // === Modifier Composition ===
+    ("frame-inside-padding", AnyView(scenario_frameInsidePadding)),
+    ("padding-inside-frame", AnyView(scenario_paddingInsideFrame)),
+    ("nested-alignment-override", AnyView(scenario_nestedAlignmentOverride)),
+    ("stacked-frames-with-alignment", AnyView(scenario_stackedFramesWithAlignment)),
+
+    // === Flex Distribution ===
+    ("unequal-flex-spacers", AnyView(scenario_unequalFlexSpacers)),
+    ("mixed-fixed-flexible-hstack", AnyView(scenario_mixedFixedFlexibleHstack)),
+
+    // === Edge Cases (new) ===
+    ("zero-spacing-vstack", AnyView(scenario_zeroSpacingVstack)),
+    ("deeply-nested-padding-frame", AnyView(scenario_deeplyNestedPaddingFrame)),
 ]
 
 // MARK: - Basic Views
@@ -368,4 +387,142 @@ var scenario_deeplyNestedFrames: some View {
         .frame(width: 100, height: 40)
         .frame(width: 200, height: 100)
         .frame(width: 300, height: 200)
+}
+
+// MARK: - App Pattern Scenarios
+
+var scenario_appHeaderContentFooter: some View {
+    VStack(spacing: 0) {
+        Text("Header")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        Spacer()
+        HStack {
+            Text("Status")
+            Spacer()
+            Text("v1.0")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+    }
+}
+
+var scenario_sidebarDetailSplit: some View {
+    HStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Item 1")
+            Text("Item 2")
+            Text("Item 3")
+            Text("Item 4")
+            Text("Item 5")
+        }
+        .frame(width: 120)
+        .padding(.vertical, 8)
+
+        Color.gray
+            .frame(width: 1)
+
+        VStack(alignment: .leading) {
+            Text("Detail")
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+    }
+}
+
+var scenario_toolbarContentLayout: some View {
+    VStack(spacing: 0) {
+        HStack {
+            Text("Back")
+            Spacer()
+            Text("Title")
+            Spacer()
+            Text("Done")
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity)
+
+        Color.gray
+            .frame(height: 1)
+
+        Spacer()
+    }
+}
+
+// MARK: - Modifier Composition Scenarios
+
+var scenario_frameInsidePadding: some View {
+    Text("X")
+        .frame(width: 100, height: 50)
+        .padding(20)
+}
+
+var scenario_paddingInsideFrame: some View {
+    Text("X")
+        .padding(20)
+        .frame(width: 200, height: 100)
+}
+
+var scenario_nestedAlignmentOverride: some View {
+    VStack(alignment: .leading) {
+        HStack {
+            Text("A")
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+
+        Text("B")
+            .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+}
+
+var scenario_stackedFramesWithAlignment: some View {
+    Text("Z")
+        .frame(width: 50, height: 30, alignment: .bottomTrailing)
+        .frame(width: 150, height: 80, alignment: .topLeading)
+}
+
+// MARK: - Flex Distribution Scenarios
+
+var scenario_unequalFlexSpacers: some View {
+    VStack {
+        Text("Top")
+        Spacer()
+        Text("Mid")
+        Spacer()
+        Spacer()
+        Text("Bottom")
+    }
+}
+
+var scenario_mixedFixedFlexibleHstack: some View {
+    HStack(spacing: 0) {
+        Text("Fixed")
+            .frame(width: 80)
+        Color.blue
+        Spacer()
+        Text("End")
+            .frame(width: 60)
+    }
+}
+
+// MARK: - Edge Cases (new)
+
+var scenario_zeroSpacingVstack: some View {
+    VStack(spacing: 0) {
+        Text("A")
+        Text("B")
+        Text("C")
+    }
+}
+
+var scenario_deeplyNestedPaddingFrame: some View {
+    Text("X")
+        .padding(4)
+        .frame(width: 80, height: 40)
+        .padding(8)
+        .frame(width: 150, height: 80)
+        .padding(12)
 }

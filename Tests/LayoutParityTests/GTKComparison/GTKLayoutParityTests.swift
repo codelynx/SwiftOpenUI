@@ -36,7 +36,7 @@ final class GTKLayoutParityTests: XCTestCase {
     func testCompareAllScenariosAgainstReference() throws {
         try requireGTK()
 
-        var passed: [String] = []
+        var passed: [(String, LeafComparisonResult)] = []
         var failed: [(String, LeafComparisonResult)] = []
         var skipped: [String] = []
         var errors: [(String, Error)] = []
@@ -57,20 +57,14 @@ final class GTKLayoutParityTests: XCTestCase {
                     height: parityRootHeight
                 )
 
-                // Use leaf-based comparison (handles flat macOS vs nested GTK trees).
-                // Tolerances: 15pt for both position and size. Font metrics
-                // differ ~6-14pt between macOS SF and GTK Pango, and alignment-
-                // driven position offsets track the size difference (e.g.,
-                // bottom-trailing text shifts x by its width delta).
                 let result = compareLeaves(
                     reference: reference,
                     actual: actual,
-                    positionTolerance: 15.0,
-                    sizeTolerance: 15.0
+                    tolerances: ParityTolerances()
                 )
 
                 if result.passed {
-                    passed.append(name)
+                    passed.append((name, result))
                 } else {
                     failed.append((name, result))
                 }
@@ -99,11 +93,19 @@ final class GTKLayoutParityTests: XCTestCase {
             }
         }
 
+        // Collect text-metric diffs from ALL scenarios (passed + failed)
+        let allResults = passed + failed
+        let totalStructuralFailures = failed.flatMap { $0.1.structuralDiffs }.count
+        let totalTextMetricInfo = allResults.flatMap { $0.1.textMetricDiffs }.count
+
         print("\n=== PARITY SUMMARY ===")
-        print("Passed:  \(passed.count)")
-        print("Failed:  \(failed.count)")
+        print("Passed:  \(passed.count) (no structural failures)")
+        print("Failed:  \(failed.count) (structural layout bugs)")
         print("Skipped: \(skipped.count) (no reference fixture)")
         print("Errors:  \(errors.count)")
+        print("")
+        print("Structural failures: \(totalStructuralFailures) diffs across \(failed.count) scenarios")
+        print("Text-metric info:    \(totalTextMetricInfo) diffs across \(allResults.count) scenarios (expected, not bugs)")
 
         for (name, result) in failed {
             print("\nFAILED: \(name)")
@@ -113,9 +115,12 @@ final class GTKLayoutParityTests: XCTestCase {
             print("\nERROR: \(name): \(err)")
         }
 
-        // Don't hard-fail — we're establishing baselines and collecting data
-        if !failed.isEmpty || !errors.isEmpty {
-            print("\n⚠ \(failed.count) parity failures, \(errors.count) errors (non-fatal, baseline run)")
+        // Hard-fail the test on structural failures or errors
+        for (name, result) in failed {
+            XCTFail("\(name): \(result.structuralDiffs.count) structural layout failure(s)")
+        }
+        for (name, err) in errors {
+            XCTFail("\(name): capture error: \(err)")
         }
     }
 
@@ -157,10 +162,19 @@ final class GTKLayoutParityTests: XCTestCase {
         XCTAssertGreaterThan(snapshot.root.children.count, 0)
     }
 
-    // MARK: - Dump All (no comparison, just captures)
+    // MARK: - Dump All (gated, not run by default)
 
+    /// Dumps all GTK snapshots to the fixtures directory for manual inspection.
+    /// Skipped unless DUMP_PARITY_SNAPSHOTS=1 is set — avoids dirtying the
+    /// working tree during normal test runs.
+    ///
+    /// Usage: DUMP_PARITY_SNAPSHOTS=1 swift test --filter testDumpAllGTKSnapshots
     func testDumpAllGTKSnapshots() throws {
         try requireGTK()
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["DUMP_PARITY_SNAPSHOTS"] == "1",
+            "Set DUMP_PARITY_SNAPSHOTS=1 to run snapshot dumps"
+        )
 
         for (name, view) in allLayoutScenarios {
             do {
@@ -174,7 +188,6 @@ final class GTKLayoutParityTests: XCTestCase {
                 print(snapshot.root)
                 print()
 
-                // Also write GTK snapshots for manual inspection
                 let url = fixturesDir.appendingPathComponent("gtk-\(name).json")
                 try writeSnapshot(snapshot, to: url)
             } catch {

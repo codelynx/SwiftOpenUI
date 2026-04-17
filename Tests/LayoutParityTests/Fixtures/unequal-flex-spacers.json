@@ -1,5 +1,5 @@
 {
-  "capturedAt" : "2026-04-17T22:17:26Z",
+  "capturedAt" : "2026-04-17T22:17:28Z",
   "platform" : "macOS-SwiftUI",
   "root" : {
     "children" : [
@@ -10,8 +10,8 @@
         "height" : 16,
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
-        "width" : 24,
-        "x" : 0,
+        "width" : 22.5,
+        "x" : 11.5,
         "y" : 0
       },
       {
@@ -21,19 +21,30 @@
         "height" : 16,
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
-        "width" : 32,
-        "x" : 32,
-        "y" : 0
+        "width" : 22.5,
+        "x" : 11.5,
+        "y" : 200
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 44.5,
+        "x" : 0.5,
+        "y" : 584
       }
     ],
-    "height" : 16,
+    "height" : 600,
     "tag" : "_TtGC7SwiftUI13NSHostingViewVS_7AnyView_",
     "viewType" : "NSViewBackingLayer",
-    "width" : 64,
+    "width" : 45,
     "x" : 0,
     "y" : 0
   },
   "rootHeight" : 600,
   "rootWidth" : 400,
-  "scenario" : "hstack-default"
+  "scenario" : "unequal-flex-spacers"
 }

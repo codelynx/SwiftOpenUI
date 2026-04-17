@@ -88,18 +88,88 @@ public struct LayoutSnapshot: Codable, Equatable {
 
 // MARK: - Comparison
 
+/// Category of a layout diff — structural bugs vs expected font-metric variance.
+public enum LeafDiffCategory: String, CustomStringConvertible {
+    /// Layout engine placed something wrong (alignment, spacing, flex distribution).
+    /// These are bugs to fix.
+    case structural
+    /// Font metrics differ across platforms (SF vs Pango vs DirectWrite).
+    /// Expected and informational — not actionable in layout code.
+    case textMetric
+
+    public var description: String { rawValue }
+}
+
 /// Result of comparing two layout nodes.
 public struct LayoutDiff: CustomStringConvertible {
     public var path: String
     public var message: String
+    public var category: LeafDiffCategory
 
-    public init(path: String, message: String) {
+    public init(path: String, message: String, category: LeafDiffCategory = .structural) {
         self.path = path
         self.message = message
+        self.category = category
     }
 
     public var description: String {
-        "\(path): \(message)"
+        "[\(category)] \(path): \(message)"
+    }
+}
+
+/// Per-category tolerances for leaf-based comparison.
+///
+/// Separates font-metric variance (expected, generous tolerance) from
+/// structural layout bugs (tight tolerance). This prevents a single
+/// blanket tolerance from hiding real bugs.
+public struct ParityTolerances {
+    /// Structural position/size tolerance for non-text leaves (Color, Divider, etc.).
+    /// Tight — catches alignment, spacing, and flex distribution bugs.
+    public var structuralPosition: Double
+    public var structuralSize: Double
+
+    /// Text size tolerance — expected variance from different font engines.
+    public var textSize: Double
+
+    /// Text position tolerance — position shifts caused by text size differences.
+    /// E.g., bottom-trailing alignment shifts x by the text width delta.
+    public var textPosition: Double
+
+    /// Inter-leaf gap tolerance — tight, applied to spacing between consecutive
+    /// leaves regardless of whether they are text. Gaps are pure layout decisions
+    /// (spacing, flex distribution) and do not depend on font metrics.
+    public var gapTolerance: Double
+
+    /// Alignment tolerance for single-leaf scenarios — how far a leaf's position
+    /// within its container can drift. Tight, catches frame alignment bugs.
+    public var alignmentTolerance: Double
+
+    public init(
+        structuralPosition: Double = 2.0,
+        structuralSize: Double = 2.0,
+        textSize: Double = 10.0,
+        textPosition: Double = 10.0,
+        gapTolerance: Double = 2.0,
+        alignmentTolerance: Double = 2.0
+    ) {
+        self.structuralPosition = structuralPosition
+        self.structuralSize = structuralSize
+        self.textSize = textSize
+        self.textPosition = textPosition
+        self.gapTolerance = gapTolerance
+        self.alignmentTolerance = alignmentTolerance
+    }
+
+    /// Legacy blanket tolerance (for migration).
+    public static func blanket(_ tolerance: Double) -> ParityTolerances {
+        ParityTolerances(
+            structuralPosition: tolerance,
+            structuralSize: tolerance,
+            textSize: tolerance,
+            textPosition: tolerance,
+            gapTolerance: tolerance,
+            alignmentTolerance: tolerance
+        )
     }
 }
 
@@ -183,17 +253,24 @@ public func compareLayouts(
 /// A leaf node extracted from a layout tree — the actual visible content.
 public struct LayoutLeaf: CustomStringConvertible {
     public var tag: String
+    public var viewType: String
     public var x: Double
     public var y: Double
     public var width: Double
     public var height: Double
 
-    public init(tag: String, x: Double, y: Double, width: Double, height: Double) {
+    public init(tag: String, viewType: String = "", x: Double, y: Double, width: Double, height: Double) {
         self.tag = tag
+        self.viewType = viewType
         self.x = x
         self.y = y
         self.width = width
         self.height = height
+    }
+
+    /// Whether this leaf represents text content (uses generous font-metric tolerances).
+    public var isTextLeaf: Bool {
+        tag.hasPrefix("text:") || viewType == "CGDrawingLayer" || viewType == "GtkLabel"
     }
 
     public var description: String {
@@ -220,7 +297,7 @@ public func extractLeaves(from node: LayoutNode, skipSpacers: Bool = true) -> [L
         let isVisibleContent = visibleContentTypes.contains(node.viewType)
         if skipSpacers && !isVisibleContent && (node.width == 0 || node.height == 0) { return [] }
         return [LayoutLeaf(
-            tag: node.tag, x: node.x, y: node.y,
+            tag: node.tag, viewType: node.viewType, x: node.x, y: node.y,
             width: node.width, height: node.height
         )]
     }
@@ -247,18 +324,24 @@ public struct LeafComparisonResult: CustomStringConvertible {
     public var matchedCount: Int
 
     public var allDiffs: [LayoutDiff] { rootDiffs + leafDiffs }
-    public var passed: Bool { allDiffs.isEmpty }
+
+    /// Only structural diffs count as failures. Text-metric diffs are informational.
+    public var structuralDiffs: [LayoutDiff] { allDiffs.filter { $0.category == .structural } }
+    public var textMetricDiffs: [LayoutDiff] { allDiffs.filter { $0.category == .textMetric } }
+
+    /// Pass if no structural failures. Text-metric diffs are expected and allowed.
+    public var passed: Bool { structuralDiffs.isEmpty }
 
     public var description: String {
         var lines: [String] = []
         lines.append("Leaves: ref=\(referenceLeafCount) actual=\(actualLeafCount) matched=\(matchedCount)")
-        if !rootDiffs.isEmpty {
-            lines.append("Root diffs:")
-            for d in rootDiffs { lines.append("  \(d)") }
+        if !structuralDiffs.isEmpty {
+            lines.append("Structural failures (\(structuralDiffs.count)):")
+            for d in structuralDiffs { lines.append("  \(d)") }
         }
-        if !leafDiffs.isEmpty {
-            lines.append("Leaf diffs:")
-            for d in leafDiffs { lines.append("  \(d)") }
+        if !textMetricDiffs.isEmpty {
+            lines.append("Text-metric info (\(textMetricDiffs.count)):")
+            for d in textMetricDiffs { lines.append("  \(d)") }
         }
         if passed { lines.append("PASS") }
         return lines.joined(separator: "\n")
@@ -282,6 +365,7 @@ public func normalizeLeaves(_ leaves: [LayoutLeaf]) -> [LayoutLeaf] {
     return leaves.map { leaf in
         LayoutLeaf(
             tag: leaf.tag,
+            viewType: leaf.viewType,
             x: leaf.x - bbox.x,
             y: leaf.y - bbox.y,
             width: leaf.width,
@@ -300,14 +384,13 @@ public func normalizeLeaves(_ leaves: [LayoutLeaf]) -> [LayoutLeaf] {
 /// sorted by position, and compared. Root size differences are reported
 /// separately and don't cause leaf comparison failures.
 ///
-/// Parameters:
-///   - positionTolerance: Max allowed difference in x/y position (default 4pt)
-///   - sizeTolerance: Max allowed difference in width/height (default 6pt, generous for font differences)
+/// Per-leaf tolerance: text leaves (font-metric dependent) get generous
+/// tolerances; structural leaves (Color, Divider) get tight tolerances
+/// that catch real layout bugs.
 public func compareLeaves(
     reference: LayoutSnapshot,
     actual: LayoutSnapshot,
-    positionTolerance: Double = 4.0,
-    sizeTolerance: Double = 6.0
+    tolerances: ParityTolerances = ParityTolerances()
 ) -> LeafComparisonResult {
     var rootDiffs: [LayoutDiff] = []
 
@@ -316,18 +399,20 @@ public func compareLeaves(
     let actBBox = leafBoundingBox(sortLeaves(extractLeaves(from: actual.root)))
     let contentWidthDiff = abs(refBBox.width - actBBox.width)
     let contentHeightDiff = abs(refBBox.height - actBBox.height)
-    if contentWidthDiff > sizeTolerance {
+    if contentWidthDiff > tolerances.textSize {
         rootDiffs.append(LayoutDiff(
             path: "content-bbox",
             message: String(format: "content width: %.1f vs %.1f (delta %.1f)",
-                          refBBox.width, actBBox.width, contentWidthDiff)
+                          refBBox.width, actBBox.width, contentWidthDiff),
+            category: .textMetric
         ))
     }
-    if contentHeightDiff > sizeTolerance {
+    if contentHeightDiff > tolerances.textSize {
         rootDiffs.append(LayoutDiff(
             path: "content-bbox",
             message: String(format: "content height: %.1f vs %.1f (delta %.1f)",
-                          refBBox.height, actBBox.height, contentHeightDiff)
+                          refBBox.height, actBBox.height, contentHeightDiff),
+            category: .textMetric
         ))
     }
 
@@ -345,44 +430,167 @@ public func compareLeaves(
     if refLeaves.count != actLeaves.count {
         leafDiffs.append(LayoutDiff(
             path: "leaves",
-            message: "leaf count: \(refLeaves.count) vs \(actLeaves.count)"
+            message: "leaf count: \(refLeaves.count) vs \(actLeaves.count)",
+            category: .structural
         ))
     }
 
-    // Compare matched leaves (positions are now content-relative)
+    // Compare matched leaves with per-leaf tolerance selection.
+    //
+    // Key distinction: text *size* (width/height) differs due to font metrics
+    // (SF vs Pango vs DirectWrite) — these are informational (.textMetric).
+    // Text *position* (x/y) reflects layout engine decisions (alignment,
+    // spacing, flex distribution) — these are bugs (.structural) even for
+    // text leaves. Only the text position tolerance is more generous to
+    // account for cascaded size differences (e.g., centered text shifts
+    // when its width changes).
     for i in 0..<matchCount {
         let ref = refLeaves[i]
         let act = actLeaves[i]
         let label = "leaf[\(i)] ref=\(ref.tag) act=\(act.tag)"
+
+        let isText = ref.isTextLeaf || act.isTextLeaf
+        let posTol = isText ? tolerances.textPosition : tolerances.structuralPosition
+        let sizTol = isText ? tolerances.textSize : tolerances.structuralSize
 
         let dx = abs(ref.x - act.x)
         let dy = abs(ref.y - act.y)
         let dw = abs(ref.width - act.width)
         let dh = abs(ref.height - act.height)
 
-        if dx > positionTolerance {
+        // Position diffs are always structural — layout engine placed it wrong
+        if dx > posTol {
             leafDiffs.append(LayoutDiff(
                 path: label,
-                message: String(format: "x: %.1f vs %.1f (delta %.1f)", ref.x, act.x, dx)
+                message: String(format: "x: %.1f vs %.1f (delta %.1f)", ref.x, act.x, dx),
+                category: .structural
             ))
         }
-        if dy > positionTolerance {
+        if dy > posTol {
             leafDiffs.append(LayoutDiff(
                 path: label,
-                message: String(format: "y: %.1f vs %.1f (delta %.1f)", ref.y, act.y, dy)
+                message: String(format: "y: %.1f vs %.1f (delta %.1f)", ref.y, act.y, dy),
+                category: .structural
             ))
         }
-        if dw > sizeTolerance {
+        // Size diffs: structural for non-text, textMetric for text
+        if dw > sizTol {
             leafDiffs.append(LayoutDiff(
                 path: label,
-                message: String(format: "width: %.1f vs %.1f (delta %.1f)", ref.width, act.width, dw)
+                message: String(format: "width: %.1f vs %.1f (delta %.1f)", ref.width, act.width, dw),
+                category: isText ? .textMetric : .structural
             ))
         }
-        if dh > sizeTolerance {
+        if dh > sizTol {
             leafDiffs.append(LayoutDiff(
                 path: label,
-                message: String(format: "height: %.1f vs %.1f (delta %.1f)", ref.height, act.height, dh)
+                message: String(format: "height: %.1f vs %.1f (delta %.1f)", ref.height, act.height, dh),
+                category: isText ? .textMetric : .structural
             ))
+        }
+    }
+
+    // Inter-leaf gap checks: compare the spacing between consecutive leaves.
+    // Gaps are pure layout decisions (VStack spacing, Spacer distribution)
+    // and do not depend on font metrics. Use tight tolerance even for text.
+    if matchCount >= 2 {
+        for i in 1..<matchCount {
+            let refPrev = refLeaves[i - 1]
+            let refCurr = refLeaves[i]
+            let actPrev = actLeaves[i - 1]
+            let actCurr = actLeaves[i]
+
+            let refSameRow = abs(refPrev.y - refCurr.y) <= 4.0
+            let actSameRow = abs(actPrev.y - actCurr.y) <= 4.0
+
+            // Vertical gap: only for vertically-stacked pairs (different rows).
+            // Same-row pairs (HStack children) have meaningless vertical gaps
+            // that vary with font height across platforms.
+            if !refSameRow && !actSameRow {
+                let refGapY = refCurr.y - (refPrev.y + refPrev.height)
+                let actGapY = actCurr.y - (actPrev.y + actPrev.height)
+                let gapDeltaY = abs(refGapY - actGapY)
+
+                if gapDeltaY > tolerances.gapTolerance {
+                    leafDiffs.append(LayoutDiff(
+                        path: "gap[\(i-1)->\(i)]",
+                        message: String(format: "vertical gap: %.1f vs %.1f (delta %.1f)",
+                                      refGapY, actGapY, gapDeltaY),
+                        category: .structural
+                    ))
+                }
+            }
+
+            // Horizontal gap (for leaves on the same row)
+            if refSameRow && actSameRow {
+                let refGapX = refCurr.x - (refPrev.x + refPrev.width)
+                let actGapX = actCurr.x - (actPrev.x + actPrev.width)
+                let gapDeltaX = abs(refGapX - actGapX)
+
+                if gapDeltaX > tolerances.gapTolerance {
+                    leafDiffs.append(LayoutDiff(
+                        path: "gap[\(i-1)->\(i)]",
+                        message: String(format: "horizontal gap: %.1f vs %.1f (delta %.1f)",
+                                      refGapX, actGapX, gapDeltaX),
+                        category: .structural
+                    ))
+                }
+            }
+        }
+    }
+
+    // Single-leaf alignment check: for scenarios with exactly one leaf,
+    // normalization collapses position to (0,0) on both sides, hiding
+    // alignment bugs. Compare the leaf's raw position relative to the
+    // captured root container dimensions (not the requested render size,
+    // since macOS root is content-sized while GTK/Win32 roots fill the window).
+    if matchCount == 1 {
+        let refRaw = sortLeaves(extractLeaves(from: reference.root))
+        let actRaw = sortLeaves(extractLeaves(from: actual.root))
+        if refRaw.count == 1 && actRaw.count == 1 {
+            let ref = refRaw[0]
+            let act = actRaw[0]
+
+            // Use the captured root node dimensions, not snapshot.rootWidth/Height
+            let refRootW = reference.root.width
+            let refRootH = reference.root.height
+            let actRootW = actual.root.width
+            let actRootH = actual.root.height
+
+            // Use center-point fraction, not leading-edge fraction.
+            // Leading-edge shifts when text width differs (font metrics),
+            // but center stays stable for centered alignment. For
+            // top-leading or bottom-trailing alignment the center still
+            // detects the bug (large fractional shift).
+            let refCenterX = refRootW > 0 ? (ref.x + ref.width / 2) / refRootW : 0
+            let actCenterX = actRootW > 0 ? (act.x + act.width / 2) / actRootW : 0
+            let refCenterY = refRootH > 0 ? (ref.y + ref.height / 2) / refRootH : 0
+            let actCenterY = actRootH > 0 ? (act.y + act.height / 2) / actRootH : 0
+
+            // Convert fractional difference to pixel drift at the reference scale.
+            // For text leaves, use the text-position tolerance since center
+            // shifts slightly with font-metric width changes.
+            let fracDX = abs(refCenterX - actCenterX) * refRootW
+            let fracDY = abs(refCenterY - actCenterY) * refRootH
+            let isText = ref.isTextLeaf || act.isTextLeaf
+            let alignTol = isText ? tolerances.textPosition : tolerances.alignmentTolerance
+
+            if fracDX > alignTol {
+                leafDiffs.append(LayoutDiff(
+                    path: "alignment",
+                    message: String(format: "x alignment center: ref=%.3f act=%.3f (drift %.1fpt)",
+                                  refCenterX, actCenterX, fracDX),
+                    category: .structural
+                ))
+            }
+            if fracDY > alignTol {
+                leafDiffs.append(LayoutDiff(
+                    path: "alignment",
+                    message: String(format: "y alignment center: ref=%.3f act=%.3f (drift %.1fpt)",
+                                  refCenterY, actCenterY, fracDY),
+                    category: .structural
+                ))
+            }
         }
     }
 
@@ -392,6 +600,20 @@ public func compareLeaves(
         referenceLeafCount: refLeaves.count,
         actualLeafCount: actLeaves.count,
         matchedCount: matchCount
+    )
+}
+
+/// Legacy convenience — calls the new tolerances-based API.
+public func compareLeaves(
+    reference: LayoutSnapshot,
+    actual: LayoutSnapshot,
+    positionTolerance: Double,
+    sizeTolerance: Double
+) -> LeafComparisonResult {
+    compareLeaves(
+        reference: reference,
+        actual: actual,
+        tolerances: .blanket(max(positionTolerance, sizeTolerance))
     )
 }
 
