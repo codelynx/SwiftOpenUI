@@ -1897,6 +1897,91 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertNotNil(widget,
                         "Menu with .environment(model) should render a widget")
     }
+
+    // MARK: - Layout parity regressions
+
+    func testVStackDefaultSpacingIsZero() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            VStack {
+                Text("A")
+                Text("B")
+            }
+        ))
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+        let firstSize = allocatedSize(of: first)
+        let secondOrigin = translatedChildOrigin(child: second, in: wrapper)
+
+        XCTAssertEqual(
+            secondOrigin.y,
+            firstSize.height,
+            accuracy: 0.01,
+            "Default VStack spacing must collapse to 0 to match macOS SwiftUI for text siblings."
+        )
+    }
+
+    func testFixedWidthFrameAroundColorStaysFixedInHStack() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            HStack {
+                Color.red.frame(width: 50, height: 20)
+                Text("End")
+            }
+        ))
+        allocate(widget: wrapper, size: ViewSize(width: 400, height: 40))
+
+        let first = try unwrapFirstChild(of: wrapper)
+        let firstSize = allocatedSize(of: first)
+
+        XCTAssertEqual(
+            firstSize.width,
+            50,
+            accuracy: 0.01,
+            "Color inside a fixed-width frame must not bleed hexpand into the HStack."
+        )
+    }
+
+    func testFrameMinHeightCenteringHelpersAreMarked() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            Text("Centered").frame(maxWidth: .infinity, minHeight: 120)
+        ))
+        let markerCount = gtkCountLayoutHelpers(in: wrapper)
+
+        XCTAssertGreaterThan(
+            markerCount,
+            0,
+            "FrameView vertical centering must mark its synthetic spacers so layout parity capture excludes them."
+        )
+    }
+
+    func testMiddleTruncationFrameRendersScrolledWindowWithSingleLabel() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            Text("/home/kyoshikawa/Documents/projects/sync/very/long/path")
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(width: 100)
+        ))
+        let scrolled = try unwrapFirstDescendant(ofType: "GtkScrolledWindow", in: wrapper)
+
+        var labels: [UnsafeMutablePointer<GtkWidget>] = []
+        gtkCollectLabels(in: scrolled, into: &labels)
+
+        XCTAssertEqual(
+            labels.count,
+            1,
+            "Middle-truncated text clipped by a fixed-width frame must render a single label inside the scroll clip."
+        )
+    }
 }
 
 // MARK: - Deferred callback environment test fixtures
@@ -2071,4 +2156,33 @@ private func translatedChildOrigin(
 
 private func gtkWidgetTypeName(_ widget: UnsafeMutablePointer<GtkWidget>) -> String {
     String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
+}
+
+private func gtkCountLayoutHelpers(in widget: UnsafeMutablePointer<GtkWidget>) -> Int {
+    var count = 0
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    if g_object_get_data(gobject, gtkSwiftLayoutHelperMarker) != nil {
+        count += 1
+    }
+    var child = gtk_widget_get_first_child(widget)
+    while let current = child {
+        count += gtkCountLayoutHelpers(in: current)
+        child = gtk_widget_get_next_sibling(current)
+    }
+    return count
+}
+
+private func gtkCollectLabels(
+    in widget: UnsafeMutablePointer<GtkWidget>,
+    into labels: inout [UnsafeMutablePointer<GtkWidget>]
+) {
+    if gtkWidgetTypeName(widget) == "GtkLabel" {
+        labels.append(widget)
+        return
+    }
+    var child = gtk_widget_get_first_child(widget)
+    while let current = child {
+        gtkCollectLabels(in: current, into: &labels)
+        child = gtk_widget_get_next_sibling(current)
+    }
 }
