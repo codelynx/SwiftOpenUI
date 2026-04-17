@@ -1297,7 +1297,16 @@ extension FrameView: GTKRenderable, GTKDescribable {
         let requestHeight = heightMayGrowWithParent ? -1 : gint(layout.containerSize.height)
         gtk_widget_set_size_request(wrapper, requestWidth, requestHeight)
         if widthMayGrowWithParent { gtk_widget_set_hexpand(wrapper, 1) }
-        if heightMayGrowWithParent { gtk_widget_set_vexpand(wrapper, 1) }
+        if heightMayGrowWithParent {
+            gtk_widget_set_vexpand(wrapper, 1)
+        } else {
+            // Explicit 0: alignment spacers inside the wrapper have
+            // vexpand=1 for internal vertical centering. Without an
+            // explicit value, GTK auto-computes vexpand from children
+            // and inherits the spacers' expansion — leaking vexpand
+            // to the parent container.
+            gtk_widget_set_vexpand(wrapper, 0)
+        }
 
         let horizontalAlign: GtkAlign
         if childExpH {
@@ -4200,6 +4209,12 @@ extension List: GTKRenderable {
         let scrolledOp = OpaquePointer(scrolled)
         gtk_scrolled_window_set_policy(scrolledOp, GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC)
         gtk_scrolled_window_set_propagate_natural_width(scrolledOp, 1)
+        // Mirror ScrollView: don't let the child listbox's full natural
+        // height dictate the scroll's natural size. Otherwise a List
+        // inside a VStack reports "I need N×row-height" as natural, and
+        // the VStack's allocation pass leaves too little slack — trailing
+        // siblings (status bars, footers) swallow the remainder.
+        gtk_scrolled_window_set_propagate_natural_height(scrolledOp, 0)
         gtk_scrolled_window_set_child(scrolledOp, listBox)
         gtk_widget_set_vexpand(scrolled, 1)
         gtk_widget_set_hexpand(scrolled, 1)
