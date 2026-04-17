@@ -213,7 +213,7 @@ extension WindowGroup: Win32WindowRenderable {
 
             // Store the host on the window so it stays alive and can be cleaned up
             let retained = Unmanaged.passRetained(host).toOpaque()
-            menuBarHostPropName.withUnsafeBufferPointer { ptr in
+            _ = menuBarHostPropName.withUnsafeBufferPointer { ptr in
                 SetPropW(hwnd, ptr.baseAddress!, HANDLE(retained))
             }
         }
@@ -491,7 +491,7 @@ final class Win32MenuBarHost {
                 ? UINT(MF_STRING | MF_GRAYED)
                 : UINT(MF_STRING)
             let labelWide: [WCHAR] = Array(labelText.utf16) + [0]
-            labelWide.withUnsafeBufferPointer { ptr in
+            _ = labelWide.withUnsafeBufferPointer { ptr in
                 AppendMenuW(fileMenu, flags, UINT_PTR(controlID), ptr.baseAddress!)
             }
 
@@ -517,7 +517,7 @@ final class Win32MenuBarHost {
         }
 
         let fileLabel: [WCHAR] = Array("File".utf16) + [0]
-        fileLabel.withUnsafeBufferPointer { ptr in
+        _ = fileLabel.withUnsafeBufferPointer { ptr in
             AppendMenuW(menuBar, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: fileMenu)), ptr.baseAddress!)
         }
 
@@ -787,7 +787,7 @@ extension Window: Win32WindowRenderable {
             let host = Win32MenuBarHost(hwnd: hwnd, factory: commandsFactory, windowID: winID)
             host.setup()
             let retained = Unmanaged.passRetained(host).toOpaque()
-            menuBarHostPropName.withUnsafeBufferPointer { ptr in
+            _ = menuBarHostPropName.withUnsafeBufferPointer { ptr in
                 SetPropW(hwnd, ptr.baseAddress!, HANDLE(retained))
             }
         }

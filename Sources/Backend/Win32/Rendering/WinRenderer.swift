@@ -4849,71 +4849,312 @@ extension TabView: WinRenderable {
     }
 }
 
-/// Retains per-radio-button callback info for segmented Picker.
-private class SegmentedPickerInfo {
-    let index: Int
-    let callback: (Int) -> Void
-    init(index: Int, callback: @escaping (Int) -> Void) {
-        self.index = index
-        self.callback = callback
+// MARK: - D2D Segmented Control
+
+/// State for a D2D-rendered segmented control (replaces radio buttons).
+private class SegmentedControlState {
+    let hwnd: HWND
+    let segments: [String]
+    /// Widths of each segment in pixels (computed from text measurement).
+    let segmentWidths: [Int32]
+    let segmentHeight: Int32
+    var selected: Int
+    var hovered: Int = -1
+    var pressed: Int = -1
+    var tracking: Bool = false
+    let onChanged: ((Int) -> Void)?
+    var renderTarget: D2DRenderTarget?
+    var brush: D2DBrush?
+
+    init(hwnd: HWND, segments: [String], segmentWidths: [Int32],
+         segmentHeight: Int32, selected: Int, onChanged: ((Int) -> Void)?) {
+        self.hwnd = hwnd
+        self.segments = segments
+        self.segmentWidths = segmentWidths
+        self.segmentHeight = segmentHeight
+        self.selected = selected
+        self.onChanged = onChanged
     }
+
+    /// Total width of all segments combined.
+    var totalWidth: Int32 { segmentWidths.reduce(0, +) }
+
+    /// Returns which segment index contains the given x coordinate, or -1.
+    func hitTest(x: Int32) -> Int {
+        var offset: Int32 = 0
+        for (i, w) in segmentWidths.enumerated() {
+            if x >= offset && x < offset + w { return i }
+            offset += w
+        }
+        return -1
+    }
+
+    func ensureTarget(width: UInt32, height: UInt32) {
+        guard width > 0, height > 0 else { return }
+        if let old = renderTarget { D2DRenderer.shared.releaseRenderTarget(old) }
+        if let old = brush { D2DRenderer.shared.releaseBrush(old) }
+        renderTarget = D2DRenderer.shared.createRenderTarget(for: hwnd, width: width, height: height)
+        if let rt = renderTarget { brush = D2DRenderer.shared.createBrush(rt, r: 0, g: 0, b: 0) }
+    }
+
+    func paint() {
+        if renderTarget == nil {
+            var r = RECT()
+            GetClientRect(hwnd, &r)
+            ensureTarget(width: UInt32(r.right), height: UInt32(r.bottom))
+        }
+        guard let rt = renderTarget, let brush = brush else { return }
+
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let w = Float(rect.right)
+        let h = Float(rect.bottom)
+        guard w > 0, h > 0 else { return }
+
+        let enabled = IsWindowEnabled(hwnd)
+        let cornerRadius: Float = 5
+
+        d2d1_RenderTarget_BeginDraw(rt)
+
+        // Clear with parent background
+        var bgR: Float = Float(win32_GetRValue(GetSysColor(COLOR_WINDOW))) / 255.0
+        var bgG: Float = Float(win32_GetGValue(GetSysColor(COLOR_WINDOW))) / 255.0
+        var bgB: Float = Float(win32_GetBValue(GetSysColor(COLOR_WINDOW))) / 255.0
+        if let parent = GetParent(hwnd) {
+            let hdc = GetDC(hwnd)
+            let brushResult = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC),
+                                            WPARAM(UInt(bitPattern: hdc)), LPARAM(Int(bitPattern: hwnd)))
+            if brushResult != 0, let hBrush = HBRUSH(bitPattern: Int(brushResult)) {
+                var logBrush = LOGBRUSH()
+                GetObjectW(hBrush, Int32(MemoryLayout<LOGBRUSH>.size), &logBrush)
+                bgR = Float(win32_GetRValue(logBrush.lbColor)) / 255.0
+                bgG = Float(win32_GetGValue(logBrush.lbColor)) / 255.0
+                bgB = Float(win32_GetBValue(logBrush.lbColor)) / 255.0
+            }
+            ReleaseDC(hwnd, hdc)
+        }
+        d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
+
+        // Outer border — rounded rect around the entire control
+        if enabled {
+            d2d1_SolidColorBrush_SetColor(brush, 0.78, 0.78, 0.80, 1)
+        } else {
+            d2d1_SolidColorBrush_SetColor(brush, 0.88, 0.88, 0.88, 1)
+        }
+        d2d1_RenderTarget_DrawRoundedRectangle(rt, brush,
+            0.5, 0.5, w - 1, h - 1, cornerRadius, cornerRadius, 1)
+
+        // Draw each segment
+        var xOffset: Float = 0
+        for i in 0..<segments.count {
+            let segW = Float(segmentWidths[i])
+            let isSelected = (i == selected)
+            let isHovered = (i == hovered && enabled)
+            let isPressed = (i == pressed && enabled)
+
+            // Segment fill
+            if isSelected {
+                if !enabled {
+                    d2d1_SolidColorBrush_SetColor(brush, 0.88, 0.88, 0.90, 1)
+                } else if isPressed {
+                    d2d1_SolidColorBrush_SetColor(brush, 0.78, 0.78, 0.82, 1)
+                } else {
+                    d2d1_SolidColorBrush_SetColor(brush, 0.85, 0.85, 0.88, 1)
+                }
+                // Clip the fill to the outer rounded rect by using a slightly
+                // inset rect; first/last segments get rounded corners.
+                let inset: Float = 1.5
+                let fillX = xOffset + inset
+                let fillW = segW - inset * (i == 0 || i == segments.count - 1 ? 1 : 2)
+                let cr: Float = (i == 0 || i == segments.count - 1) ? cornerRadius - 1 : 0
+                if cr > 0 {
+                    d2d1_RenderTarget_FillRoundedRectangle(rt, brush,
+                        fillX, inset, fillX + fillW, h - inset, cr, cr)
+                } else {
+                    d2d1_RenderTarget_FillRectangle(rt, brush,
+                        fillX, inset, fillX + fillW, h - inset)
+                }
+            } else if isHovered || isPressed {
+                d2d1_SolidColorBrush_SetColor(brush, 0.94, 0.94, 0.96, 1)
+                let inset: Float = 1.5
+                d2d1_RenderTarget_FillRectangle(rt, brush,
+                    xOffset + inset, inset, xOffset + segW - inset, h - inset)
+            }
+
+            // Divider line between segments (skip before first, after last)
+            if i > 0 {
+                if enabled {
+                    d2d1_SolidColorBrush_SetColor(brush, 0.78, 0.78, 0.80, 1)
+                } else {
+                    d2d1_SolidColorBrush_SetColor(brush, 0.88, 0.88, 0.88, 1)
+                }
+                d2d1_RenderTarget_DrawLine(rt, brush,
+                    xOffset, 4, xOffset, h - 4, 1)
+            }
+
+            // Text — centered in segment; selected uses semibold weight
+            let fmt = isSelected
+                ? D2DRenderer.shared.textFormat(bold: true)
+                : D2DRenderer.shared.textFormat()
+            if let fmt = fmt {
+                if !enabled {
+                    d2d1_SolidColorBrush_SetColor(brush, 0.6, 0.6, 0.6, 1)
+                } else if isSelected {
+                    d2d1_SolidColorBrush_SetColor(brush, 0.05, 0.05, 0.05, 1)
+                } else {
+                    d2d1_SolidColorBrush_SetColor(brush, 0.35, 0.35, 0.35, 1)
+                }
+                dwrite_TextFormat_SetTextAlignment(fmt, 2) // center
+                D2DRenderer.shared.drawText(segments[i], target: rt, format: fmt,
+                                             brush: brush, x: xOffset, y: 0,
+                                             width: segW, height: h)
+                dwrite_TextFormat_SetTextAlignment(fmt, 0) // restore
+            }
+
+            xOffset += segW
+        }
+
+        // Focus ring around entire control
+        if enabled && GetFocus() == hwnd {
+            d2d1_SolidColorBrush_SetColor(brush, 0.0, 0.48, 1.0, 0.6)
+            d2d1_RenderTarget_DrawRoundedRectangle(rt, brush,
+                1.5, 1.5, w - 3, h - 3, cornerRadius - 1, cornerRadius - 1, 1.5)
+        }
+
+        _ = d2d1_RenderTarget_EndDraw(rt)
+    }
+
+    func cleanup() {
+        if let b = brush { D2DRenderer.shared.releaseBrush(b); brush = nil }
+        if let rt = renderTarget { D2DRenderer.shared.releaseRenderTarget(rt); renderTarget = nil }
+    }
+
+    deinit { cleanup() }
 }
 
-/// Subclass proc for radio buttons in a segmented Picker.
-private let segmentedRadioProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+/// Subclass proc for the D2D segmented control.
+private let segmentedControlProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+    let state = Unmanaged<SegmentedControlState>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
     switch uMsg {
-    case UINT(WM_COMMAND):
-        let code = Int32(win32_HIWORD(DWORD_PTR(wParam)))
-        if code == BN_CLICKED {
-            let childHwnd = HWND(bitPattern: UInt(lParam))
-            if let childHwnd = childHwnd {
-                let ptr = GetPropW(childHwnd, segmentedPickerPropName)
-                if let ptr = ptr {
-                    let info = Unmanaged<SegmentedPickerInfo>.fromOpaque(ptr).takeUnretainedValue()
-                    info.callback(info.index)
-                }
+    case UINT(WM_PAINT):
+        var ps = PAINTSTRUCT()
+        BeginPaint(hwnd, &ps)
+        state.paint()
+        EndPaint(hwnd, &ps)
+        return 0
+
+    case UINT(WM_SIZE):
+        var r = RECT()
+        GetClientRect(hwnd!, &r)
+        state.ensureTarget(width: UInt32(r.right), height: UInt32(r.bottom))
+        return 0
+
+    case UINT(WM_ENABLE):
+        if wParam == 0 {
+            state.pressed = -1
+            state.hovered = -1
+            state.tracking = false
+            if GetCapture() == hwnd { ReleaseCapture() }
+        }
+        InvalidateRect(hwnd, nil, false)
+        return 0
+
+    case UINT(WM_LBUTTONDOWN):
+        guard IsWindowEnabled(hwnd) else { return 0 }
+        SetCapture(hwnd)
+        SetFocus(hwnd)
+        let x = Int32(win32_GET_X_LPARAM(lParam))
+        state.pressed = state.hitTest(x: x)
+        InvalidateRect(hwnd, nil, false)
+        return 0
+
+    case UINT(WM_LBUTTONUP):
+        ReleaseCapture()
+        let wasPressed = state.pressed
+        state.pressed = -1
+        InvalidateRect(hwnd, nil, false)
+        if wasPressed >= 0 && IsWindowEnabled(hwnd) {
+            let x = Int32(win32_GET_X_LPARAM(lParam))
+            let hit = state.hitTest(x: x)
+            if hit == wasPressed && hit != state.selected {
+                state.selected = hit
+                state.onChanged?(hit)
+                InvalidateRect(hwnd, nil, false)
             }
         }
-        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+        return 0
 
-    case UINT(WM_CTLCOLORSTATIC):
-        // Forward to parent for background color propagation
-        let parentHwnd = GetParent(hwnd)
-        if let parentHwnd = parentHwnd {
-            return SendMessageW(parentHwnd, uMsg, wParam, lParam)
+    case UINT(WM_MOUSEMOVE):
+        guard IsWindowEnabled(hwnd) else { return 0 }
+        if !state.tracking {
+            var tme = TRACKMOUSEEVENT()
+            tme.cbSize = DWORD(MemoryLayout<TRACKMOUSEEVENT>.size)
+            tme.dwFlags = DWORD(TME_LEAVE)
+            tme.hwndTrack = hwnd
+            TrackMouseEvent(&tme)
+            state.tracking = true
+        }
+        let x = Int32(win32_GET_X_LPARAM(lParam))
+        let hit = state.hitTest(x: x)
+        if hit != state.hovered {
+            state.hovered = hit
+            InvalidateRect(hwnd, nil, false)
+        }
+        return 0
+
+    case UINT(WM_MOUSELEAVE):
+        state.hovered = -1
+        state.tracking = false
+        InvalidateRect(hwnd, nil, false)
+        return 0
+
+    case UINT(WM_KEYDOWN):
+        guard IsWindowEnabled(hwnd) else { return 0 }
+        // Arrow keys navigate between segments
+        if wParam == WPARAM(VK_LEFT) || wParam == WPARAM(VK_UP) {
+            if state.selected > 0 {
+                state.selected -= 1
+                state.onChanged?(state.selected)
+                InvalidateRect(hwnd, nil, false)
+            }
+            return 0
+        }
+        if wParam == WPARAM(VK_RIGHT) || wParam == WPARAM(VK_DOWN) {
+            if state.selected < state.segments.count - 1 {
+                state.selected += 1
+                state.onChanged?(state.selected)
+                InvalidateRect(hwnd, nil, false)
+            }
+            return 0
         }
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
+    case UINT(WM_GETDLGCODE):
+        return LRESULT(DLGC_WANTARROWS)
+
+    case UINT(WM_SETFOCUS), UINT(WM_KILLFOCUS):
+        InvalidateRect(hwnd, nil, false)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_ERASEBKGND):
+        return 1
+
     case UINT(WM_NCDESTROY):
-        RemoveWindowSubclass(hwnd, segmentedRadioProc, uIdSubclass)
+        state.cleanup()
+        Unmanaged<SegmentedControlState>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, segmentedControlProc, uIdSubclass)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     default:
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
-
-/// Cleanup proc for radio buttons — releases the SegmentedPickerInfo.
-private let segmentedRadioCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
-    if uMsg == UINT(WM_NCDESTROY) {
-        let ptr = GetPropW(hwnd, segmentedPickerPropName)
-        if let ptr = ptr {
-            Unmanaged<SegmentedPickerInfo>.fromOpaque(ptr).release()
-            RemovePropW(hwnd, segmentedPickerPropName)
-        }
-        RemoveWindowSubclass(hwnd, segmentedRadioCleanupProc, uIdSubclass)
-    }
-    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
-}
-
-private let segmentedPickerPropName: UnsafePointer<WCHAR> = {
-    "SwiftUISegPicker".withCString(encodedAs: UTF16.self) { ptr in
-        let len = wcslen(ptr) + 1
-        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
-        buf.initialize(from: ptr, count: len)
-        return UnsafePointer(buf)
-    }
-}()
 
 extension Picker: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
@@ -4997,6 +5238,7 @@ extension Picker: WinRenderable {
 
     private func winCreateSegmentedWidget(in context: RenderContext) -> HWND? {
         registerStackClassIfNeeded(hInstance: context.hInstance)
+        registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
 
         let container = CreateWindowExW(
             0, stackContainerClassName, nil,
@@ -5006,7 +5248,7 @@ extension Picker: WinRenderable {
         )!
 
         var x: Int32 = 0
-        let buttonHeight: Int32 = 24
+        let segmentHeight: Int32 = 28
         let clampedSel = options.isEmpty ? 0 : max(0, min(selected, options.count - 1))
 
         // Optional label — hidden when `.labelsHidden()` wrapped us.
@@ -5016,49 +5258,40 @@ extension Picker: WinRenderable {
             _ = displayedLabel.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
                     win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                    x, 2, labelMeasured.width + 4, 20,
+                    x, 4, labelMeasured.width + 4, 20,
                     container, nil, context.hInstance
                 )
             }
             x += labelMeasured.width + 8
         }
 
-        // Radio buttons — first gets WS_GROUP for keyboard grouping
-        for (index, option) in options.enumerated() {
+        // Compute segment widths from text measurement
+        let segmentPadding: Int32 = 24
+        var segmentWidths: [Int32] = []
+        for option in options {
             let measured = measureText(option, hwnd: context.parent)
-            let btnWidth = measured.width + 24  // extra space for radio circle
-            let groupStyle: Int32 = (index == 0) ? WS_GROUP : 0
+            segmentWidths.append(measured.width + segmentPadding)
+        }
+        let totalWidth = segmentWidths.reduce(0 as Int32, +)
 
-            let radioHwnd = option.withCString(encodedAs: UTF16.self) { wstr in
-                win32_CreateChildWindow(
-                    win32_WC_BUTTON(), wstr,
-                    DWORD(BS_AUTORADIOBUTTON | WS_TABSTOP | groupStyle),
-                    x, 0, btnWidth, buttonHeight,
-                    container, nil, context.hInstance
-                )
-            }
+        // D2D segmented control — single HWND drawing all segments
+        let segHwnd = CreateWindowExW(
+            0, d2dSurfaceClassName, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP),
+            x, 0, totalWidth, segmentHeight,
+            container, nil, context.hInstance, nil
+        )
 
-            if let radioHwnd = radioHwnd {
-                if index == clampedSel {
-                    SendMessageW(radioHwnd, UINT(BM_SETCHECK), WPARAM(BST_CHECKED), 0)
-                }
-
-                // Attach callback info via window property
-                if let callback = onChanged {
-                    let info = SegmentedPickerInfo(index: index, callback: callback)
-                    let infoPtr = Unmanaged.passRetained(info).toOpaque()
-                    SetPropW(radioHwnd, segmentedPickerPropName, HANDLE(infoPtr))
-                    SetWindowSubclass(radioHwnd, segmentedRadioCleanupProc, 42, 0)
-                }
-            }
-
-            x += btnWidth + 4
+        if let segHwnd = segHwnd {
+            let state = SegmentedControlState(
+                hwnd: segHwnd, segments: options, segmentWidths: segmentWidths,
+                segmentHeight: segmentHeight, selected: clampedSel, onChanged: onChanged
+            )
+            let ptr = Unmanaged.passRetained(state).toOpaque()
+            SetWindowSubclass(segHwnd, segmentedControlProc, 43, DWORD_PTR(UInt(bitPattern: ptr)))
         }
 
-        // Subclass container to handle WM_COMMAND from radio buttons
-        SetWindowSubclass(container, segmentedRadioProc, 42, 0)
-
-        SetWindowPos(container, nil, 0, 0, x > 0 ? x - 4 : 0, buttonHeight,
+        SetWindowPos(container, nil, 0, 0, x + totalWidth, segmentHeight,
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         return container
@@ -7633,8 +7866,8 @@ extension LinearGradient: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         // Render as a D2D surface with gradient fill
         let stops = gradient.stops
-        let sp = startPoint
-        let ep = endPoint
+        _ = startPoint  // TODO: use for D2D linear gradient brush
+        _ = endPoint    // TODO: use for D2D linear gradient brush
         return createShapeSurface(draw: { rt, brush, w, h in
             // For now, fill with the first color as a solid approximation.
             // Full D2D linear gradient brush requires ID2D1LinearGradientBrush
@@ -7885,7 +8118,7 @@ extension PopoverView: WinRenderable {
             // Programmatic dismiss: isPresented became false.
             // Destroy the popup if one exists on this anchor.
             if let existingPopup = GetPropW(anchor, popoverPropName) {
-                let popupHwnd = unsafeBitCast(existingPopup, to: HWND.self)
+                let popupHwnd = UnsafeMutableRawPointer(existingPopup).assumingMemoryBound(to: HWND__.self)
                 RemovePropW(anchor, popoverPropName)
                 DestroyWindow(popupHwnd)
             }
@@ -8050,7 +8283,7 @@ private func winBuildContextMenu(_ hmenu: HMENU, elements: [MenuElement],
             let id = cmdID
             cmdID += 1
             actions[id] = action
-            label.withCString(encodedAs: UTF16.self) { wstr in
+            _ = label.withCString(encodedAs: UTF16.self) { wstr in
                 AppendMenuW(hmenu, UINT(MF_STRING), UINT_PTR(id), wstr)
             }
         case .divider:
@@ -8058,7 +8291,7 @@ private func winBuildContextMenu(_ hmenu: HMENU, elements: [MenuElement],
         case .submenu(let label, let children):
             let sub = CreatePopupMenu()!
             winBuildContextMenu(sub, elements: children, cmdID: &cmdID, actions: &actions)
-            label.withCString(encodedAs: UTF16.self) { wstr in
+            _ = label.withCString(encodedAs: UTF16.self) { wstr in
                 AppendMenuW(hmenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: sub)), wstr)
             }
         }
@@ -8782,7 +9015,7 @@ private func createShapeSurface(
 private func d2dFillPath(_ path: Path, rt: D2DRenderTarget, brush: D2DBrush,
                          r: Float, g: Float, b: Float, a: Float) {
     d2d1_SolidColorBrush_SetColor(brush, r, g, b, a)
-    guard let factory = D2DRenderer.shared.d2dFactory else { return }
+    guard D2DRenderer.shared.d2dFactory != nil else { return }
 
     // Use DrawingContext's buildPathGeometry by creating a temporary context
     let d2dCtx = D2DCanvasContext(renderTarget: rt, brush: brush)
@@ -9307,7 +9540,7 @@ extension DrawingContext {
                 let sweep: CGFloat = clockwise
                     ? -(((startAngle - endAngle).truncatingRemainder(dividingBy: 2 * .pi) + 2 * .pi).truncatingRemainder(dividingBy: 2 * .pi))
                     : ((endAngle - startAngle).truncatingRemainder(dividingBy: 2 * .pi) + 2 * .pi).truncatingRemainder(dividingBy: 2 * .pi)
-                let actualEnd = startAngle + sweep
+                _ = startAngle + sweep  // actualEnd — available for future arc endpoint validation
                 let segments = max(8, Int(abs(sweep) / (CGFloat.pi / 16)))
                 let step = sweep / CGFloat(segments)
                 let sx = center.x + radius * cos(startAngle)
