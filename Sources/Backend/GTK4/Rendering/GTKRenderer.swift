@@ -5088,8 +5088,9 @@ extension Picker: GTKRenderable {
 
         var firstButton: UnsafeMutablePointer<GtkWidget>?
         let clampedSelection = options.isEmpty ? 0 : max(0, min(selected, options.count - 1))
+        var buttons: [UnsafeMutablePointer<GtkWidget>] = []
 
-        for (index, option) in options.enumerated() {
+        for option in options {
             let button = gtk_toggle_button_new_with_label(option)!
 
             if let first = firstButton {
@@ -5098,10 +5099,15 @@ extension Picker: GTKRenderable {
                 firstButton = button
             }
 
-            if index == clampedSelection {
-                gtk_swift_toggle_button_set_active(button, 1)
-            }
+            buttons.append(button)
+            gtk_box_append(boxPointer(hbox), button)
+        }
 
+        if buttons.indices.contains(clampedSelection) {
+            gtk_swift_toggle_button_set_active(buttons[clampedSelection], 1)
+        }
+
+        for (index, button) in buttons.enumerated() {
             if let onChanged = onChanged {
                 let box = Unmanaged.passRetained(
                     SegmentClosureBox(index: index, closure: onChanged)
@@ -5125,8 +5131,6 @@ extension Picker: GTKRenderable {
                     GConnectFlags(rawValue: 0)
                 )
             }
-
-            gtk_box_append(boxPointer(hbox), button)
         }
 
         let displayedLabel = effectiveLabel

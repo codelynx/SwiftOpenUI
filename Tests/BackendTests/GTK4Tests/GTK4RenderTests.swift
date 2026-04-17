@@ -1050,6 +1050,37 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(gtkWidgetTypeName(thirdBtn), "GtkToggleButton")
     }
 
+    func testSegmentedPickerDoesNotFireCallbackDuringRender() throws {
+        try requireGTK()
+
+        var changedIndex: Int?
+        var callbackCount = 0
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Picker(
+                "Mode",
+                selection: 0,
+                options: ["Snapshot", "Compare", "Sync"],
+                onChanged: { index in
+                    changedIndex = index
+                    callbackCount += 1
+                }
+            )
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        ))
+
+        XCTAssertEqual(callbackCount, 0)
+        XCTAssertNil(changedIndex)
+
+        let firstButton = try unwrapFirstChild(of: widget)
+        let secondButton = try unwrapNextSibling(of: firstButton)
+        gtk_swift_toggle_button_set_active(secondButton, 1)
+
+        XCTAssertEqual(callbackCount, 1)
+        XCTAssertEqual(changedIndex, 1)
+    }
+
     func testSearchScopeDescriptorDetectsSelectionChange() throws {
         try requireGTK()
 
