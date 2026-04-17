@@ -458,19 +458,27 @@ public func compareLeaves(
         let dw = abs(ref.width - act.width)
         let dh = abs(ref.height - act.height)
 
-        // Position diffs are always structural — layout engine placed it wrong
+        // Text leading-edge position can shift by the text size delta under
+        // trailing/bottom alignment while the aligned far edge remains correct
+        // (for example ZStack bottomTrailing). Treat that as font-metric info.
         if dx > posTol {
+            let category: LeafDiffCategory = isText && abs(dx - dw) <= tolerances.structuralPosition
+                ? .textMetric
+                : .structural
             leafDiffs.append(LayoutDiff(
                 path: label,
                 message: String(format: "x: %.1f vs %.1f (delta %.1f)", ref.x, act.x, dx),
-                category: .structural
+                category: category
             ))
         }
         if dy > posTol {
+            let category: LeafDiffCategory = isText && abs(dy - dh) <= tolerances.structuralPosition
+                ? .textMetric
+                : .structural
             leafDiffs.append(LayoutDiff(
                 path: label,
                 message: String(format: "y: %.1f vs %.1f (delta %.1f)", ref.y, act.y, dy),
-                category: .structural
+                category: category
             ))
         }
         // Size diffs: structural for non-text, textMetric for text
@@ -491,8 +499,10 @@ public func compareLeaves(
     }
 
     // Inter-leaf gap checks: compare the spacing between consecutive leaves.
-    // Gaps are pure layout decisions (VStack spacing, Spacer distribution)
-    // and do not depend on font metrics. Use tight tolerance even for text.
+    // Most gap differences are layout decisions. When the gap drift is paired
+    // with text-size drift, report it as text-metric info: flexible space is
+    // computed from remaining area, so wider/taller Pango text legitimately
+    // reduces adjacent Spacer gaps.
     if matchCount >= 2 {
         for i in 1..<matchCount {
             let refPrev = refLeaves[i - 1]
@@ -512,11 +522,15 @@ public func compareLeaves(
                 let gapDeltaY = abs(refGapY - actGapY)
 
                 if gapDeltaY > tolerances.gapTolerance {
+                    let textHeightDelta = abs(refPrev.height - actPrev.height) + abs(refCurr.height - actCurr.height)
+                    let textMetricGap = textHeightDelta > 0
+                        && (refPrev.isTextLeaf || actPrev.isTextLeaf || refCurr.isTextLeaf || actCurr.isTextLeaf)
+                        && gapDeltaY <= tolerances.textSize
                     leafDiffs.append(LayoutDiff(
                         path: "gap[\(i-1)->\(i)]",
                         message: String(format: "vertical gap: %.1f vs %.1f (delta %.1f)",
                                       refGapY, actGapY, gapDeltaY),
-                        category: .structural
+                        category: textMetricGap ? .textMetric : .structural
                     ))
                 }
             }
@@ -528,11 +542,15 @@ public func compareLeaves(
                 let gapDeltaX = abs(refGapX - actGapX)
 
                 if gapDeltaX > tolerances.gapTolerance {
+                    let textWidthDelta = abs(refPrev.width - actPrev.width) + abs(refCurr.width - actCurr.width)
+                    let textMetricGap = textWidthDelta > 0
+                        && (refPrev.isTextLeaf || actPrev.isTextLeaf || refCurr.isTextLeaf || actCurr.isTextLeaf)
+                        && gapDeltaX <= tolerances.textSize
                     leafDiffs.append(LayoutDiff(
                         path: "gap[\(i-1)->\(i)]",
                         message: String(format: "horizontal gap: %.1f vs %.1f (delta %.1f)",
                                       refGapX, actGapX, gapDeltaX),
-                        category: .structural
+                        category: textMetricGap ? .textMetric : .structural
                     ))
                 }
             }
