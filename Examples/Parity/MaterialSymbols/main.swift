@@ -76,6 +76,24 @@ struct ParityMaterialSymbolsView: View {
                 Image(systemName: "definitely.not.a.real.sf.symbol")
                     .imageScale(.large)
             }
+
+            // Row 4: bitmap resource loaded via `Image(resource:)` — resolves
+            // through `AppBundle.main` to find `Resources/Sample1.jpg` at the
+            // package root in dev mode, or the platform-native bundle path in
+            // packaged `.app` bundles. `.resizable().frame(...)` matches
+            // SwiftUI semantics: without `.resizable()`, the frame positions
+            // but does not scale the image; with it, the image stretches to
+            // fill the frame.
+            Text("Row 4 — Image(resource:).resizable().frame(...) bitmap from Resources/")
+                .font(.caption)
+            #if os(macOS)
+            Text("(resource: not available on macOS)")
+                .foregroundColor(.secondary)
+            #else
+            Image(resource: "Sample1.jpg")
+                .resizable()
+                .frame(width: 240, height: 180)
+            #endif
         }
         .padding()
     }

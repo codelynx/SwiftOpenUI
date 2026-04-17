@@ -34,6 +34,20 @@ var targets: [Target] = [
         dependencies: ["LayoutParityShared"],
         path: "Tests/LayoutParityTests/ComparisonTests"
     ),
+
+    // Bundled icon font resources for non-macOS backends. Ungated so
+    // Windows / Web / Android backends can declare it as a dependency
+    // alongside GTK4. macOS targets continue to use native SF Symbols
+    // via real SwiftUI and never consume this target.
+    .target(
+        name: "SwiftOpenUISymbols",
+        path: "Sources/SwiftOpenUISymbols",
+        resources: [
+            .copy("Resources/MaterialSymbolsRounded-Regular.ttf"),
+            .copy("Resources/LICENSES"),
+            .copy("Resources/README.md"),
+        ]
+    ),
 ]
 
 // Example runner dependencies:
@@ -54,21 +68,6 @@ targets += [
         name: "CGTKBridge",
         dependencies: ["CGTK"],
         path: "Sources/Backend/GTK4/CGTKBridge"
-    ),
-    // Bundled icon font resources for non-macOS backends.  Gated to os(Linux)
-    // at package-evaluation time so macOS and Windows package resolutions
-    // don't see this target at all — the font is guaranteed not to land in
-    // macOS app bundles, which continue to use native SF Symbols via
-    // SwiftUI.  Win32 / Web / Android backends will adopt this target in
-    // follow-up milestones (M-Symbols-1 scope is GTK4-only).
-    .target(
-        name: "SwiftOpenUISymbols",
-        path: "Sources/SwiftOpenUISymbols",
-        resources: [
-            .copy("Resources/MaterialSymbolsRounded-Regular.ttf"),
-            .copy("Resources/LICENSES"),
-            .copy("Resources/README.md"),
-        ]
     ),
     .target(
         name: "BackendGTK4",
@@ -123,7 +122,7 @@ targets += [
     ),
     .target(
         name: "BackendWin32",
-        dependencies: ["SwiftOpenUI", "CWin32", "CWin32Bridge"],
+        dependencies: ["SwiftOpenUI", "CWin32", "CWin32Bridge", "SwiftOpenUISymbols"],
         path: "Sources/Backend/Win32/Rendering"
     ),
     .testTarget(
@@ -309,6 +308,12 @@ targets += [
         name: "ParityDropDestination",
         dependencies: exampleDeps,
         path: "Examples/Parity/DropDestination",
+        linkerSettings: exampleLinkerSettings
+    ),
+    .executableTarget(
+        name: "Win32ReviewSmoke",
+        dependencies: exampleDeps,
+        path: "Examples/Smoke/Win32Review",
         linkerSettings: exampleLinkerSettings
     ),
 ]

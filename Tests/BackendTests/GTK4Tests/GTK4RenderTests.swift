@@ -1050,6 +1050,37 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(gtkWidgetTypeName(thirdBtn), "GtkToggleButton")
     }
 
+    func testSegmentedPickerDoesNotFireCallbackDuringRender() throws {
+        try requireGTK()
+
+        var changedIndex: Int?
+        var callbackCount = 0
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Picker(
+                "Mode",
+                selection: 0,
+                options: ["Snapshot", "Compare", "Sync"],
+                onChanged: { index in
+                    changedIndex = index
+                    callbackCount += 1
+                }
+            )
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        ))
+
+        XCTAssertEqual(callbackCount, 0)
+        XCTAssertNil(changedIndex)
+
+        let firstButton = try unwrapFirstChild(of: widget)
+        let secondButton = try unwrapNextSibling(of: firstButton)
+        gtk_swift_toggle_button_set_active(secondButton, 1)
+
+        XCTAssertEqual(callbackCount, 1)
+        XCTAssertEqual(changedIndex, 1)
+    }
+
     func testSearchScopeDescriptorDetectsSelectionChange() throws {
         try requireGTK()
 
@@ -1695,6 +1726,256 @@ final class GTK4RenderTests: XCTestCase {
         ))
         XCTAssertEqual(gtk_widget_get_sensitive(widget), 0,
                        "Disabled text field should have sensitivity = false")
+    }
+
+    // MARK: - Image.resizable()
+
+    func testFileImageRendersAsGtkPicture() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Image(filePath: "/tmp/does-not-exist.jpg")
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkPicture",
+                       "Image(filePath:) should render as GtkPicture, not GtkImage")
+    }
+
+    func testFileImageNonResizableHasNoExpandFlags() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Image(filePath: "/tmp/does-not-exist.jpg")
+        ))
+        XCTAssertEqual(gtk_widget_get_hexpand(widget), 0,
+                       "Non-resizable image should not advertise horizontal expansion")
+        XCTAssertEqual(gtk_widget_get_vexpand(widget), 0,
+                       "Non-resizable image should not advertise vertical expansion")
+    }
+
+    func testFileImageResizableAdvertisesFillBehavior() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Image(filePath: "/tmp/does-not-exist.jpg").resizable()
+        ))
+        XCTAssertEqual(gtkWidgetTypeName(widget), "GtkPicture",
+                       "Resizable image should also render as GtkPicture")
+        XCTAssertEqual(gtk_widget_get_hexpand(widget), 1,
+                       "Resizable image must set hexpand so FrameView stretches it")
+        XCTAssertEqual(gtk_widget_get_vexpand(widget), 1,
+                       "Resizable image must set vexpand so FrameView stretches it")
+        XCTAssertEqual(gtk_widget_get_halign(widget), GTK_ALIGN_FILL,
+                       "Resizable image must use FILL alignment horizontally")
+        XCTAssertEqual(gtk_widget_get_valign(widget), GTK_ALIGN_FILL,
+                       "Resizable image must use FILL alignment vertically")
+    }
+
+    // MARK: - Deferred callback environment binding
+
+    func testBindActionToCurrentEnvironmentCapturesAndRestores() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        var env = getCurrentEnvironment()
+        env.setObject(model)
+
+        let previousEnv = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let bound = bindActionToCurrentEnvironment { model.count += 1 }
+        setCurrentEnvironment(previousEnv)
+
+        // The closure should still access the captured environment even though
+        // the current environment no longer contains the model.
+        bound()
+        XCTAssertEqual(model.count, 1,
+                       "Bound callback should execute with the captured render-time environment")
+    }
+
+    func testBindActionToCurrentEnvironmentGenericCapturesAndRestores() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        var env = getCurrentEnvironment()
+        env.setObject(model)
+
+        let previousEnv = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let bound: (Int) -> Void = bindActionToCurrentEnvironment { value in
+            model.count += value
+        }
+        setCurrentEnvironment(previousEnv)
+
+        bound(5)
+        XCTAssertEqual(model.count, 5,
+                       "Generic bound callback should execute with the captured environment")
+    }
+
+    func testButtonRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvButtonView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "Button view with .environment(model) should render a widget")
+    }
+
+    func testOnAppearRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvOnAppearView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onAppear view with .environment(model) should render a widget")
+    }
+
+    func testOnDisappearRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvOnDisappearView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onDisappear view with .environment(model) should render a widget")
+    }
+
+    func testTapGestureRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvTapGestureView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onTapGesture view with .environment(model) should render a widget")
+    }
+
+    func testLongPressGestureRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvLongPressView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onLongPressGesture view with .environment(model) should render a widget")
+    }
+
+    func testDragGestureRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvDragView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "onDrag view with .environment(model) should render a widget")
+    }
+
+    func testDisclosureGroupRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvDisclosureGroupView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "DisclosureGroup with .environment(model) should render a widget")
+    }
+
+    func testMenuRendersWithEnvironmentBinding() throws {
+        try requireGTK()
+
+        let model = GTKDelayedEnvModel()
+        let widget = widgetFromOpaque(gtkRenderView(
+            GTKDelayedEnvMenuView().environment(model)
+        ))
+        XCTAssertNotNil(widget,
+                        "Menu with .environment(model) should render a widget")
+    }
+}
+
+// MARK: - Deferred callback environment test fixtures
+
+private final class GTKDelayedEnvModel {
+    var count: Int = 0
+}
+
+private struct GTKDelayedEnvButtonView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Button("Increment") { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvOnAppearView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("appear").onAppear { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvOnDisappearView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("disappear").onDisappear { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvTapGestureView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("Tap").onTapGesture { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvLongPressView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("Hold").onLongPressGesture(minimumDuration: 0) { model.count += 1 }
+    }
+}
+
+private struct GTKDelayedEnvDragView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Text("Drag").onDrag(onChanged: { _ in model.count += 1 }, onEnded: { _ in model.count += 1 })
+    }
+}
+
+private struct GTKDelayedEnvDisclosureGroupView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        DisclosureGroup(
+            "Toggle",
+            isExpanded: Binding(
+                get: { false },
+                set: { _ in model.count += 1 }
+            )
+        ) {
+            Text("Hidden")
+        }
+    }
+}
+
+private struct GTKDelayedEnvMenuView: View {
+    @Environment(GTKDelayedEnvModel.self) var model
+
+    var body: some View {
+        Menu("Actions") {
+            MenuItem("Increment") { model.count += 1 }
+        }
     }
 }
 

@@ -483,7 +483,7 @@ extension NavigationLink: WinRenderable {
 
         if let value = pushValue {
             // Value-based NavigationLink — resolve via destination registry
-            let action = { [weak navCtx] in
+            let action = bindActionToCurrentEnvironment { [weak navCtx] in
                 guard let navCtx = navCtx else { return }
                 if let factory = navCtx.destinationRegistry.resolve(value) {
                     navCtx.push(title: destTitle) { factory() }
@@ -497,7 +497,7 @@ extension NavigationLink: WinRenderable {
 
         // Destination-based NavigationLink
         let dest = self.destination
-        let action = { [weak navCtx] in
+        let action = bindActionToCurrentEnvironment { [weak navCtx] in
             guard let navCtx = navCtx else { return }
             navCtx.push(title: destTitle) {
                 let destContext = RenderContext(parent: navCtx.contentArea, hInstance: hInst)

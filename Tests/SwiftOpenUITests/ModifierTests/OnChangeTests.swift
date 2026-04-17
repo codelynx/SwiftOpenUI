@@ -84,4 +84,37 @@ final class OnChangeTests: XCTestCase {
         onChangeCheckAndFire(value: Pair(x: 1, y: 3)) { received = $0 }
         XCTAssertEqual(received, Pair(x: 1, y: 3))
     }
+
+    // MARK: - Two-arg form
+
+    func testOnChangeTwoArgWrapsContent() {
+        let view = Text("Hello").onChange(of: 1) { _, _ in }
+        XCTAssertEqual(view.content.content, "Hello")
+        XCTAssertEqual(view.value, 1)
+    }
+
+    func testOnChangeTwoArgFiresWithOldAndNewValue() {
+        var received: (Int, Int)?
+
+        // First render — seeds key 0 with value 10, no fire
+        onChangeCheckAndFireTwoArg(value: 10) { _, _ in }
+        // Second render — same key, changed value, should fire with (10, 20)
+        resetOnChangeTracking()
+        onChangeCheckAndFireTwoArg(value: 20) { old, new in
+            received = (old, new)
+        }
+
+        XCTAssertEqual(received?.0, 10)
+        XCTAssertEqual(received?.1, 20)
+    }
+
+    func testOnChangeTwoArgDoesNotFireWhenUnchanged() {
+        var fired = false
+
+        onChangeCheckAndFireTwoArg(value: "a") { _, _ in }
+        resetOnChangeTracking()
+        onChangeCheckAndFireTwoArg(value: "a") { _, _ in fired = true }
+
+        XCTAssertFalse(fired)
+    }
 }

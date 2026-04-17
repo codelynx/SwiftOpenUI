@@ -44,6 +44,29 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
     private var observationDidFire = false
     var capturedEnvironment: EnvironmentValues
 
+    /// Objects read by body via `@Environment(Type.self)` during the
+    /// last successful render. Re-pushed into the environment before
+    /// each rebuild so body's lookups find the same objects even when
+    /// the originating `.environment(object)` modifier lives below
+    /// this ViewHost in the render tree (and therefore isn't
+    /// guaranteed to re-run the push before body's next read). Filled
+    /// by `endEnvironmentReadTracking()` after each buildBody.
+    private var capturedInjectedObjects: [ObjectIdentifier: AnyObject] = [:]
+
+    /// Install the captured ancestor environment plus every injected
+    /// object body read during its last render. Called at each
+    /// rebuild entry point instead of `setCurrentEnvironment(
+    /// capturedEnvironment)` alone, so descendant `@Environment(
+    /// Type.self)` lookups survive even when the pushing modifier
+    /// lives inside a parent's body.
+    private func installRebuildEnvironment() {
+        var env = capturedEnvironment
+        for (typeID, object) in capturedInjectedObjects {
+            env.setObjectByID(typeID, object)
+        }
+        setCurrentEnvironment(env)
+    }
+
     public init(buildBody: @escaping () -> OpaquePointer) {
         self.buildBody = buildBody
         self.capturedEnvironment = getCurrentEnvironment()
@@ -142,6 +165,12 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
     /// accessed during rendering are automatically tracked; when they change,
     /// scheduleRebuild() fires and the next rebuild re-registers tracking.
     func buildBodyWithTracking() -> OpaquePointer {
+        // Track `@Environment(Type.self)` reads so we can re-push the
+        // same objects into env on rebuild even if the pushing
+        // modifier lives below us in the render tree. Pairs with
+        // `endEnvironmentReadTracking()` after body evaluates.
+        beginEnvironmentReadTracking()
+
         #if canImport(Observation)
         if #available(macOS 14.0, iOS 17.0, *) {
             var result: OpaquePointer!
@@ -154,10 +183,18 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
                 self.lock.unlock()
                 self.scheduleRebuild()
             }
+            if let reads = endEnvironmentReadTracking() {
+                capturedInjectedObjects = reads
+            }
             return result
         }
         #endif
-        return buildBody()
+
+        let result = buildBody()
+        if let reads = endEnvironmentReadTracking() {
+            capturedInjectedObjects = reads
+        }
+        return result
     }
 
     func rebuild() {
@@ -186,7 +223,7 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
            let oldExecutor = retainedExecutor {
 
             let previousEnv = getCurrentEnvironment()
-            setCurrentEnvironment(capturedEnvironment)
+            installRebuildEnvironment()
             let described = gtkDescribeCapturingCanvasPayloads(describeBody)
             setCurrentEnvironment(previousEnv)
 
@@ -265,7 +302,7 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
 
         // Restore environment for the rebuild pass
         let previousEnv = getCurrentEnvironment()
-        setCurrentEnvironment(capturedEnvironment)
+        installRebuildEnvironment()
         resetOnChangeTracking()
         // Note: clearViewIDRegistry() is NOT called here because the registry
         // is global. Clearing it during one host's rebuild would wipe IDs from
@@ -287,6 +324,12 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         let childVexpand = gtk_widget_get_vexpand(newChild) != 0
         gtk_widget_set_hexpand(container, childHexpand ? 1 : 0)
         gtk_widget_set_vexpand(container, childVexpand ? 1 : 0)
+        if childHexpand {
+            gtk_widget_set_halign(newChild, GTK_ALIGN_FILL)
+        }
+        if childVexpand {
+            gtk_widget_set_valign(newChild, GTK_ALIGN_FILL)
+        }
         gtk_box_append(boxPointer(container), newChild)
 
         // If this subtree contains a NavigationStack titlebar, refresh it on the window.
@@ -372,7 +415,7 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         // Capture descriptor state for next rebuild's narrow mutation path
         if let describeBody = describeBody {
             let previousEnvForDesc = getCurrentEnvironment()
-            setCurrentEnvironment(capturedEnvironment)
+            installRebuildEnvironment()
             let described = gtkDescribeCapturingCanvasPayloads(describeBody)
             setCurrentEnvironment(previousEnvForDesc)
 

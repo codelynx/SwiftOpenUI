@@ -74,6 +74,106 @@ private func windowText(of hwnd: HWND?) -> String {
     return String(decodingCString: buffer, as: UTF16.self)
 }
 
+private final class DelayedEnvironmentModel {
+    var count: Int
+
+    init(count: Int = 0) {
+        self.count = count
+    }
+}
+
+private struct DelayedEnvironmentButtonView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var body: some View {
+        Button("Increment") { model.count += 1 }
+    }
+}
+
+private struct DelayedEnvironmentDestinationView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var body: some View {
+        Text("Destination Count: \(model.count)")
+    }
+}
+
+private struct DelayedEnvironmentMenuHostView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var menu: Menu {
+        Menu("Actions") {
+            MenuItem("Increment") { model.count += 1 }
+        }
+    }
+
+    var body: some View { menu }
+}
+
+private struct DelayedEnvironmentOnAppearView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var body: some View {
+        Text("appear").onAppear { model.count += 1 }
+    }
+}
+
+private struct DelayedEnvironmentOnDisappearView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var body: some View {
+        Text("disappear").onDisappear { model.count += 1 }
+    }
+}
+
+private struct DelayedEnvironmentDisclosureGroupView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var body: some View {
+        DisclosureGroup(
+            "Toggle",
+            isExpanded: Binding(
+                get: { false },
+                set: { _ in model.count += 1 }
+            )
+        ) {
+            Text("Hidden")
+        }
+    }
+}
+
+private struct DelayedEnvironmentTapGestureView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var body: some View {
+        Text("Tap").onTapGesture { model.count += 1 }
+    }
+}
+
+private struct DelayedEnvironmentLongPressGestureView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var body: some View {
+        Text("Hold").onLongPressGesture(minimumDuration: 0) { model.count += 1 }
+    }
+}
+
+private struct DelayedEnvironmentDragChangedView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var body: some View {
+        Text("Drag").onDrag(onChanged: { _ in model.count += 1 }, onEnded: nil)
+    }
+}
+
+private struct DelayedEnvironmentDragEndedView: View {
+    @Environment(DelayedEnvironmentModel.self) var model
+
+    var body: some View {
+        Text("Drag").onDrag(onChanged: nil, onEnded: { _ in model.count += 1 })
+    }
+}
+
 // MARK: - Tests
 
 final class Win32RenderTests: XCTestCase {
@@ -221,7 +321,7 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(node.kind, .vStack)
         XCTAssertEqual(
             node.props,
-            .vStack(Win32VStackDescriptor(spacing: 0, alignment: .center))
+            .vStack(Win32VStackDescriptor(spacing: 8, alignment: .center))
         )
         XCTAssertEqual(node.children.map(\.kind), [.text, .color, .slider])
     }
@@ -1520,6 +1620,23 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertTrue(clicked, "Button action should fire via WM_LBUTTONDOWN + WM_LBUTTONUP")
     }
 
+    func testDelayedEnvironmentButtonActionUsesCapturedEnvironment() {
+        let ctx = testContext()
+        let model = DelayedEnvironmentModel()
+        let hwnd = winRenderView(DelayedEnvironmentButtonView().environment(model), in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let button = findFlatButton(in: hwnd!, titled: "Increment")
+        XCTAssertNotNil(button, "Delayed environment button view should render a flat button leaf")
+
+        let lParam = LPARAM(0)
+        SendMessageW(button, UINT(WM_LBUTTONDOWN), 0, lParam)
+        SendMessageW(button, UINT(WM_LBUTTONUP), 0, lParam)
+
+        XCTAssertEqual(model.count, 1,
+                       "Delayed button action should run with the render-time environment installed")
+    }
+
     // MARK: - Stateful view rendering
 
     func testStatefulViewCreatesViewHostContainer() {
@@ -2203,6 +2320,47 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertTrue(ended, "Drag gesture should fire onEnded after exceeding minimumDistance")
     }
 
+    func testDragGestureOnChangedUsesCapturedEnvironment() {
+        let ctx = testContext()
+        let model = DelayedEnvironmentModel()
+        let hwnd = winRenderView(DelayedEnvironmentDragChangedView().environment(model), in: ctx)!
+
+        guard let staticHwnd = collectStaticLabels(in: hwnd).first else {
+            XCTFail("Drag gesture onChanged environment test should render a STATIC control")
+            return
+        }
+
+        let startLP = LPARAM(Int16(10)) | (LPARAM(Int16(10)) << 16)
+        let moveLP = LPARAM(Int16(30)) | (LPARAM(Int16(20)) << 16)
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONDOWN), 0, startLP)
+        SendMessageW(staticHwnd, UINT(WM_MOUSEMOVE), 0, moveLP)
+
+        XCTAssertEqual(model.count, 1,
+                       "Drag gesture onChanged should run with the render-time environment installed")
+
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONUP), 0, moveLP)
+    }
+
+    func testDragGestureOnEndedUsesCapturedEnvironment() {
+        let ctx = testContext()
+        let model = DelayedEnvironmentModel()
+        let hwnd = winRenderView(DelayedEnvironmentDragEndedView().environment(model), in: ctx)!
+
+        guard let staticHwnd = collectStaticLabels(in: hwnd).first else {
+            XCTFail("Drag gesture onEnded environment test should render a STATIC control")
+            return
+        }
+
+        let startLP = LPARAM(Int16(5)) | (LPARAM(Int16(5)) << 16)
+        let moveLP = LPARAM(Int16(50)) | (LPARAM(Int16(50)) << 16)
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONDOWN), 0, startLP)
+        SendMessageW(staticHwnd, UINT(WM_MOUSEMOVE), 0, moveLP)
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONUP), 0, moveLP)
+
+        XCTAssertEqual(model.count, 1,
+                       "Drag gesture onEnded should run with the render-time environment installed")
+    }
+
     func testTapGestureFiresThroughNestedContainers() {
         let ctx = testContext()
         var tapped = false
@@ -2237,6 +2395,38 @@ final class Win32RenderTests: XCTestCase {
         SendMessageW(staticHwnd, UINT(WM_LBUTTONDOWN), 0, 0)
         SendMessageW(staticHwnd, UINT(WM_LBUTTONUP), 0, 0)
         XCTAssertTrue(tapped, "Tap gesture should fire on deeply nested descendant via recursive subclassing")
+    }
+
+    func testTapGestureUsesCapturedEnvironment() {
+        let ctx = testContext()
+        let model = DelayedEnvironmentModel()
+        let hwnd = winRenderView(DelayedEnvironmentTapGestureView().environment(model), in: ctx)!
+
+        guard let staticHwnd = collectStaticLabels(in: hwnd).first else {
+            XCTFail("Tap gesture environment test should render a STATIC control")
+            return
+        }
+
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONDOWN), 0, 0)
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONUP), 0, 0)
+        XCTAssertEqual(model.count, 1,
+                       "Tap gesture should run with the render-time environment installed")
+    }
+
+    func testLongPressGestureUsesCapturedEnvironment() {
+        let ctx = testContext()
+        let model = DelayedEnvironmentModel()
+        let hwnd = winRenderView(DelayedEnvironmentLongPressGestureView().environment(model), in: ctx)!
+
+        guard let staticHwnd = collectStaticLabels(in: hwnd).first else {
+            XCTFail("Long press environment test should render a STATIC control")
+            return
+        }
+
+        SendMessageW(staticHwnd, UINT(WM_LBUTTONDOWN), 0, 0)
+        pumpWindowMessages(for: staticHwnd)
+        XCTAssertEqual(model.count, 1,
+                       "Long press gesture should run with the render-time environment installed")
     }
     // MARK: - Phase 3 views
 
@@ -2371,6 +2561,65 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(className(of: hwnd!), "SwiftUID2DSurface")
     }
 
+    func testNavigationLinkDelayedPushUsesCapturedEnvironment() {
+        let ctx = testContext()
+        let model = DelayedEnvironmentModel(count: 7)
+        let view = NavigationStack {
+            NavigationLink("Go", title: "Detail") {
+                DelayedEnvironmentDestinationView()
+            }
+        }
+        .environment(model)
+
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let goButton = findFlatButton(in: hwnd!, titled: "Go")
+        XCTAssertNotNil(goButton, "NavigationStack should render a flat button for the link label")
+
+        let lParam = LPARAM(0)
+        SendMessageW(goButton, UINT(WM_LBUTTONDOWN), 0, lParam)
+        SendMessageW(goButton, UINT(WM_LBUTTONUP), 0, lParam)
+
+        let texts = collectStaticLabels(in: hwnd!).map { windowText(of: $0) }
+        XCTAssertTrue(texts.contains("Destination Count: 7"),
+                      "Delayed NavigationLink push should preserve the injected environment for the destination")
+    }
+
+    func testMenuItemCommandDispatchUsesCapturedEnvironment() {
+        let previousEnv = getCurrentEnvironment()
+        defer { setCurrentEnvironment(previousEnv) }
+
+        let model = DelayedEnvironmentModel()
+        var renderEnv = previousEnv
+        renderEnv.setObject(model)
+        setCurrentEnvironment(renderEnv)
+
+        let menu = DelayedEnvironmentMenuHostView().menu
+        guard let hMenu = CreatePopupMenu() else {
+            return XCTFail("Expected popup menu creation to succeed in test harness")
+        }
+        defer { DestroyMenu(hMenu) }
+
+        var nextMenuID: UINT = 50000
+        var actions: [UINT: () -> Void] = [:]
+        winPopulateMenu(hMenu, elements: menu.elements, nextMenuID: &nextMenuID, actions: &actions)
+
+        guard let itemAction = actions[50000] else {
+            return XCTFail("Expected first menu item action to be registered through winPopulateMenu")
+        }
+
+        let controlID: WORD = 50000
+        registerCommandHandler(controlID: controlID, action: itemAction)
+        defer { unregisterCommandHandler(controlID: controlID) }
+
+        setCurrentEnvironment(previousEnv)
+
+        XCTAssertTrue(dispatchCommand(wParam: WPARAM(controlID)))
+        XCTAssertEqual(model.count, 1,
+                       "Menu item command dispatch should run with the render-time environment installed")
+    }
+
     // MARK: - Phase 4B modifiers
 
     func testOnAppearFiresAction() {
@@ -2381,10 +2630,51 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(hwnd)
     }
 
+    func testOnAppearUsesCapturedEnvironment() {
+        let ctx = testContext()
+        let model = DelayedEnvironmentModel()
+        let hwnd = winRenderView(DelayedEnvironmentOnAppearView().environment(model), in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        let root = findRootWindow(from: hwnd!)
+        pumpInvokeMessages(for: root)
+
+        XCTAssertEqual(model.count, 1,
+                       "Deferred onAppear should run with the render-time environment installed")
+    }
+
     func testOnDisappearRendersContent() {
         let ctx = testContext()
         let hwnd = winRenderView(Text("disappear").onDisappear { }, in: ctx)
         XCTAssertNotNil(hwnd)
+    }
+
+    func testOnDisappearUsesCapturedEnvironment() {
+        let ctx = testContext()
+        let model = DelayedEnvironmentModel()
+        let hwnd = winRenderView(DelayedEnvironmentOnDisappearView().environment(model), in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        XCTAssertTrue(DestroyWindow(hwnd))
+        XCTAssertEqual(model.count, 1,
+                       "Deferred onDisappear should run with the render-time environment installed")
+    }
+
+    func testDisclosureGroupUsesCapturedEnvironmentForExpansionCallback() {
+        let ctx = testContext()
+        let model = DelayedEnvironmentModel()
+        let hwnd = winRenderView(DelayedEnvironmentDisclosureGroupView().environment(model), in: ctx)
+        XCTAssertNotNil(hwnd)
+
+        var buttons: [HWND] = []
+        collectButtonControls(in: hwnd!, into: &buttons)
+        XCTAssertEqual(buttons.count, 1, "DisclosureGroup should render one native button")
+        guard let button = buttons.first else { return }
+
+        let controlID = WPARAM(GetDlgCtrlID(button))
+        XCTAssertTrue(dispatchCommand(wParam: controlID))
+        XCTAssertEqual(model.count, 1,
+                       "DisclosureGroup expansion callback should run with the render-time environment installed")
     }
 
     func testOverlayRendersContentAndOverlay() {
@@ -4065,6 +4355,18 @@ private func pumpInvokeMessages(for hwnd: HWND) {
     win32PumpInvokeMessages(for: hwnd)
 }
 
+private func pumpWindowMessages(for hwnd: HWND, timeoutMs: DWORD = 50) {
+    let start = GetTickCount()
+    var msg = MSG()
+    repeat {
+        while PeekMessageW(&msg, hwnd, 0, 0, UINT(PM_REMOVE)) {
+            TranslateMessage(&msg)
+            DispatchMessageW(&msg)
+        }
+        Sleep(1)
+    } while (GetTickCount() - start) < timeoutMs
+}
+
 private func collectButtonControls(in parent: HWND, into result: inout [HWND]) {
     var child = GetWindow(parent, UINT(GW_CHILD))
     while let c = child {
@@ -4074,4 +4376,26 @@ private func collectButtonControls(in parent: HWND, into result: inout [HWND]) {
         collectButtonControls(in: c, into: &result)
         child = GetWindow(c, UINT(GW_HWNDNEXT))
     }
+}
+
+private func findFlatButton(in parent: HWND, titled title: String) -> HWND? {
+    var child = GetWindow(parent, UINT(GW_CHILD))
+    while let c = child {
+        var refData: DWORD_PTR = 0
+        if className(of: c) == "SwiftUID2DSurface",
+           GetWindowSubclass(c, flatButtonProc, 48, &refData),
+           refData != 0 {
+            let state = Unmanaged<FlatButtonState>.fromOpaque(
+                UnsafeMutableRawPointer(bitPattern: UInt(refData))!
+            ).takeUnretainedValue()
+            if state.title == title {
+                return c
+            }
+        }
+        if let nested = findFlatButton(in: c, titled: title) {
+            return nested
+        }
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+    return nil
 }

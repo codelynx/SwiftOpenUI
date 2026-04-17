@@ -523,11 +523,16 @@ extension NavigationLink: GTKRenderable {
         // Destination-based NavigationLink
         let dest = self.destination
 
+        // Capture the render-time environment so the deferred click callback
+        // restores the correct ancestor environment (not whatever is ambient
+        // at dispatch time). See deferred-callback-environment-binding.md.
+        let capturedEnv = getCurrentEnvironment()
+
         let box = Unmanaged.passRetained(ClosureBox {
             // Set context for rendering the destination
             setCurrentNavigationContext(context)
             let prevEnv = getCurrentEnvironment()
-            var env = prevEnv
+            var env = capturedEnv
             env[NavigateKey.self] = NavigateAction(
                 push: { [weak context] value in context?.pushValue(value) },
                 pop: { [weak context] in context?.pop() },
@@ -570,10 +575,12 @@ extension NavigationDestinationModifier: GTKRenderable {
         // Register the destination factory on the current context
         if let context = getCurrentNavigationContext() {
             let destinationBuilder = destination
+            // Capture render-time environment for the deferred factory callback.
+            let capturedEnv = getCurrentEnvironment()
             context.destinationRegistry.register(for: dataType) { value in
                 setCurrentNavigationContext(context)
                 let prevEnv = getCurrentEnvironment()
-                var env = prevEnv
+                var env = capturedEnv
                 env[NavigateKey.self] = NavigateAction(
                     push: { [weak context] value in context?.pushValue(value) },
                     pop: { [weak context] in context?.pop() },

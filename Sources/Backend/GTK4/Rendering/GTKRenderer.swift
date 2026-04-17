@@ -94,6 +94,31 @@ private func gtkMeasureLayoutSubviews(
     }
 }
 
+// MARK: - Deferred callback environment binding
+
+/// Capture the current environment at registration time and restore it around
+/// a deferred callback that may read `@Environment(...)`.  See
+/// `docs/architecture/deferred-callback-environment-binding.md`.
+func bindActionToCurrentEnvironment(_ action: @escaping () -> Void) -> () -> Void {
+    let capturedEnvironment = getCurrentEnvironment()
+    return {
+        let previousEnvironment = getCurrentEnvironment()
+        setCurrentEnvironment(capturedEnvironment)
+        defer { setCurrentEnvironment(previousEnvironment) }
+        action()
+    }
+}
+
+func bindActionToCurrentEnvironment<T>(_ action: @escaping (T) -> Void) -> (T) -> Void {
+    let capturedEnvironment = getCurrentEnvironment()
+    return { value in
+        let previousEnvironment = getCurrentEnvironment()
+        setCurrentEnvironment(capturedEnvironment)
+        defer { setCurrentEnvironment(previousEnvironment) }
+        action(value)
+    }
+}
+
 // MARK: - View GTK extensions
 
 extension Text: GTKRenderable, GTKDescribable {
@@ -438,7 +463,8 @@ extension Button: GTKRenderable, GTKDescribable {
             break // default GTK button styling
         }
 
-        let box = Unmanaged.passRetained(ClosureBox(action)).toOpaque()
+        let boundAction = bindActionToCurrentEnvironment(action)
+        let box = Unmanaged.passRetained(ClosureBox(boundAction)).toOpaque()
         g_signal_connect_data(
             gpointer(button),
             "clicked",
@@ -455,7 +481,7 @@ extension Button: GTKRenderable, GTKDescribable {
         // Register keyboard shortcut if present in environment
         if let ks = getCurrentEnvironment().keyboardShortcut {
             let windowID = getCurrentEnvironment().windowID
-            let actionClosure = action
+            let actionClosure = bindActionToCurrentEnvironment(action)
             let regID = KeyboardShortcutRegistry.shared.register(ks, windowID: windowID, action: actionClosure)
 
             // Unregister by registration ID when the button widget is destroyed
@@ -1111,6 +1137,24 @@ extension FrameView: GTKRenderable, GTKDescribable {
         // in these cases so GTK's expand/fill system handles the flexible axis.
         let heightFree = height == nil && minHeight == nil && maxHeight == nil
         let widthFree  = width == nil && minWidth == nil && (maxWidth == nil || maxWidth == .infinity)
+        let widthMayGrowWithParent = width == nil
+            && (
+                (maxWidth != nil && maxWidth == .infinity)
+                || (maxWidth == nil && childExpH)
+            )
+        let heightMayGrowWithParent = height == nil
+            && (
+                (maxHeight != nil && maxHeight == .infinity)
+                || (maxHeight == nil && childExpV)
+            )
+
+        if widthMayGrowWithParent || heightMayGrowWithParent {
+            return gtkFrameParentFlexibleAxes(
+                child: child,
+                childExpH: childExpH,
+                childExpV: childExpV
+            )
+        }
 
         if !widthFree && heightFree && childExpV {
             // Width-constrained, height-flexible, child expands vertically.
@@ -1211,6 +1255,133 @@ extension FrameView: GTKRenderable, GTKDescribable {
         return opaqueFromWidget(wrapper)
     }
 
+    /// Build a frame wrapper for cases where the parent may later allocate
+    /// extra space on one or both axes (`maxWidth/maxHeight == .infinity`),
+    /// but the child itself does not expand on that axis. GtkFixed computes
+    /// placement once at creation time, so it cannot recenter/realign the
+    /// child when the wrapper grows later. A GtkBox-based wrapper keeps the
+    /// child aligned inside the live parent allocation.
+    private func gtkFrameParentFlexibleAxes(
+        child: UnsafeMutablePointer<GtkWidget>,
+        childExpH: Bool,
+        childExpV: Bool
+    ) -> OpaquePointer {
+        let naturalSize = gtkMeasureWidgetNaturalSize(child)
+        let layout = computeFrameLayout(
+            childNaturalSize: naturalSize,
+            width: width,
+            height: height,
+            minWidth: minWidth,
+            minHeight: minHeight,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            alignment: alignment,
+            expandsToFillWidth: childExpH,
+            expandsToFillHeight: childExpV
+        )
+
+        let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+
+        let widthMayGrowWithParent = width == nil
+            && (
+                (maxWidth != nil && maxWidth == .infinity)
+                || (maxWidth == nil && childExpH)
+            )
+        let heightMayGrowWithParent = height == nil
+            && (
+                (maxHeight != nil && maxHeight == .infinity)
+                || (maxHeight == nil && childExpV)
+            )
+
+        let requestWidth = widthMayGrowWithParent ? -1 : gint(layout.containerSize.width)
+        let requestHeight = heightMayGrowWithParent ? -1 : gint(layout.containerSize.height)
+        gtk_widget_set_size_request(wrapper, requestWidth, requestHeight)
+        if widthMayGrowWithParent { gtk_widget_set_hexpand(wrapper, 1) }
+        if heightMayGrowWithParent {
+            gtk_widget_set_vexpand(wrapper, 1)
+        } else {
+            // Explicit 0: alignment spacers inside the wrapper have
+            // vexpand=1 for internal vertical centering. Without an
+            // explicit value, GTK auto-computes vexpand from children
+            // and inherits the spacers' expansion — leaking vexpand
+            // to the parent container.
+            gtk_widget_set_vexpand(wrapper, 0)
+        }
+
+        let horizontalAlign: GtkAlign
+        if childExpH {
+            horizontalAlign = GTK_ALIGN_FILL
+            gtk_widget_set_hexpand(child, 1)
+        } else {
+            switch alignment {
+            case .topLeading, .leading, .bottomLeading:
+                horizontalAlign = GTK_ALIGN_START
+            case .top, .center, .bottom:
+                horizontalAlign = GTK_ALIGN_CENTER
+            case .topTrailing, .trailing, .bottomTrailing:
+                horizontalAlign = GTK_ALIGN_END
+            }
+        }
+        gtk_widget_set_halign(child, horizontalAlign)
+
+        if childExpV {
+            gtk_widget_set_valign(child, GTK_ALIGN_FILL)
+            gtk_widget_set_vexpand(child, 1)
+            gtk_box_append(boxPointer(wrapper), child)
+            return opaqueFromWidget(wrapper)
+        }
+
+        if heightMayGrowWithParent {
+            switch alignment {
+            case .topLeading, .top, .topTrailing:
+                gtk_box_append(boxPointer(wrapper), child)
+            case .leading, .center, .trailing:
+                let topSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                let bottomSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                gtk_widget_set_vexpand(topSpacer, 1)
+                gtk_widget_set_vexpand(bottomSpacer, 1)
+                gtk_box_append(boxPointer(wrapper), topSpacer)
+                gtk_box_append(boxPointer(wrapper), child)
+                gtk_box_append(boxPointer(wrapper), bottomSpacer)
+            case .bottomLeading, .bottom, .bottomTrailing:
+                let topSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                gtk_widget_set_vexpand(topSpacer, 1)
+                gtk_box_append(boxPointer(wrapper), topSpacer)
+                gtk_box_append(boxPointer(wrapper), child)
+            }
+        } else {
+            // Height is fixed (minHeight / height pinned the wrapper at
+            // `layout.containerSize.height`), but the child's natural
+            // height may be smaller. GtkBox packs children from the
+            // start of its packing axis and doesn't honor `valign` on
+            // children along that axis, so just appending leaves the
+            // child visually top-aligned even if the wrapper has
+            // plenty of extra height. Insert vexpand spacers to split
+            // the extra space according to the frame's alignment
+            // intent — matching SwiftUI's default of centering when
+            // the frame is larger than content.
+            switch alignment {
+            case .topLeading, .top, .topTrailing:
+                gtk_box_append(boxPointer(wrapper), child)
+            case .leading, .center, .trailing:
+                let topSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                let bottomSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                gtk_widget_set_vexpand(topSpacer, 1)
+                gtk_widget_set_vexpand(bottomSpacer, 1)
+                gtk_box_append(boxPointer(wrapper), topSpacer)
+                gtk_box_append(boxPointer(wrapper), child)
+                gtk_box_append(boxPointer(wrapper), bottomSpacer)
+            case .bottomLeading, .bottom, .bottomTrailing:
+                let topSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                gtk_widget_set_vexpand(topSpacer, 1)
+                gtk_box_append(boxPointer(wrapper), topSpacer)
+                gtk_box_append(boxPointer(wrapper), child)
+            }
+        }
+
+        return opaqueFromWidget(wrapper)
+    }
+
     /// Build a frame wrapper using GtkBox instead of GtkFixed, for frames
     /// that constrain one axis while the child expands on the other.
     /// GtkFixed can't propagate allocation to children, so we let GTK's
@@ -1299,6 +1470,17 @@ extension BackgroundView: GTKRenderable, GTKDescribable {
                 children: [gtkDescribeView(content)])
         }
 
+        if gtkCanRenderNativeBackground(background) {
+            return GTK4DescriptorNode(
+                kind: .background, typeName: "BackgroundView",
+                props: .backgroundLayout(GTK4BackgroundLayoutDescriptor(
+                    alignment: gtkAlignmentDescriptor(alignment))),
+                children: [
+                    gtkDescribeView(content),
+                    gtkDescribeView(background),
+                ])
+        }
+
         return gtkDescribeView(ZStack(alignment: alignment) {
             self.background
             content
@@ -1312,11 +1494,91 @@ extension BackgroundView: GTKRenderable, GTKDescribable {
             return opaqueFromWidget(widget)
         }
 
+        if gtkCanRenderNativeBackground(background) {
+            return gtkRenderBackground(content: content, background: background, alignment: alignment)
+        }
+
         return gtkRenderView(ZStack(alignment: alignment) {
             self.background
             content
         })
     }
+}
+
+private func gtkCanRenderNativeBackground<Background: View>(_ background: Background) -> Bool {
+    background is FilledShape<RoundedRectangle>
+        || background is FilledShape<Rectangle>
+        || background is FilledShape<Capsule>
+}
+
+private func gtkRenderBackground<Content: View, Background: View>(
+    content: Content,
+    background: Background,
+    alignment: Alignment
+) -> OpaquePointer {
+    let contentWidget = widgetFromOpaque(gtkRenderView(content))
+
+    if let rounded = background as? FilledShape<RoundedRectangle> {
+        return gtkRenderFilledShapeBackground(
+            contentWidget: contentWidget,
+            color: rounded.color,
+            cornerRadius: rounded.shape.cornerRadius
+        )
+    }
+
+    if let rectangle = background as? FilledShape<Rectangle> {
+        return gtkRenderFilledShapeBackground(
+            contentWidget: contentWidget,
+            color: rectangle.color,
+            cornerRadius: 0
+        )
+    }
+
+    if let capsule = background as? FilledShape<Capsule> {
+        return gtkRenderFilledShapeBackground(
+            contentWidget: contentWidget,
+            color: capsule.color,
+            cornerRadius: 9999
+        )
+    }
+
+    return gtkRenderView(ZStack(alignment: alignment) {
+        background
+        content
+    })
+}
+
+private func gtkRenderFilledShapeBackground(
+    contentWidget: UnsafeMutablePointer<GtkWidget>,
+    color: Color,
+    cornerRadius: Double
+) -> OpaquePointer {
+    let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+    if gtk_widget_get_hexpand(contentWidget) != 0 { gtk_widget_set_hexpand(wrapper, 1) }
+    if gtk_widget_get_vexpand(contentWidget) != 0 { gtk_widget_set_vexpand(wrapper, 1) }
+
+    let css: String
+    if cornerRadius > 0 {
+        css = String(
+            format: "background-color: rgba(%d, %d, %d, %.3f); border-radius: %.1fpx;",
+            Int(color.red * 255),
+            Int(color.green * 255),
+            Int(color.blue * 255),
+            color.alpha,
+            cornerRadius
+        )
+    } else {
+        css = String(
+            format: "background-color: rgba(%d, %d, %d, %.3f);",
+            Int(color.red * 255),
+            Int(color.green * 255),
+            Int(color.blue * 255),
+            color.alpha
+        )
+    }
+    applyCSSToWidget(wrapper, properties: css)
+    gtk_box_append(boxPointer(wrapper), contentWidget)
+    return opaqueFromWidget(wrapper)
 }
 
 extension FontModifiedView: GTKRenderable, GTKDescribable {
@@ -1416,6 +1678,57 @@ extension LineLimitView: GTKRenderable {
                     // expected "text fills horizontally" SwiftUI behavior
                     // anyway, so this is safe outside HStack too.
                     gtk_widget_set_hexpand(label, 1)
+                    // Also force halign=FILL so the label actually
+                    // stretches to the parent's allocated width. VStack's
+                    // fallback renderer already does this when it sees
+                    // hexpand=1 on a child, but some stack paths (e.g.
+                    // the shared VStack when other children are at
+                    // natural width) or VStack wrappers from composite
+                    // views don't always propagate, leaving the label
+                    // at its natural/minimum request. Setting halign
+                    // here is idempotent and safe.
+                    gtk_widget_set_halign(label, GTK_ALIGN_FILL)
+                    // Free the label's natural-width hint from the
+                    // enclosing container's measurement cycle. Pango
+                    // uses `max-width-chars` as the natural-width
+                    // budget for ellipsizing labels; leaving it at the
+                    // default -1 makes the label request the FULL
+                    // text width as natural, which can force ancestor
+                    // containers to negotiate tight allocations and
+                    // send the label back its *minimum* — typically
+                    // just an ellipsis. Setting a generous but
+                    // finite cap (80 chars ≈ a long filesystem path)
+                    // keeps the natural-width request reasonable so
+                    // ancestors allocate space closer to the actual
+                    // desired display width, and Pango ellipsizes to
+                    // fit whatever final allocation lands — rather
+                    // than collapsing to `…`.
+                    // Pragmatic character-based sizing.
+                    //
+                    // The ideal here would be "label takes whatever the
+                    // parent allocates, ellipsizes if text exceeds that"
+                    // — i.e. elastic width driven by `hexpand + halign
+                    // = FILL`. In practice, somewhere in the container
+                    // chain (VStack → padding → frame → background →
+                    // overlay → outer VStack → outer HStack → ...) the
+                    // hexpand signal is not propagated into a final
+                    // allocation wider than the label's natural request,
+                    // so with `width-chars = -1` the label gets its
+                    // MINIMUM (the ellipsis glyph) and degenerates to
+                    // rendering just "…".
+                    //
+                    // Until the propagation bug is tracked down and
+                    // fixed, we set a sensible character-based natural
+                    // request: ~40 characters. This gives Pango enough
+                    // budget to show meaningful start/end fragments
+                    // with middle-truncation on long file paths while
+                    // still allowing shorter text to display in full.
+                    // Labels with shorter natural widths are unaffected
+                    // (short text simply fits). Follow-up tracked as
+                    // "GTK hexpand propagation through BackgroundView /
+                    // OverlayView / nested-VStack chains".
+                    gtk_label_set_width_chars(labelOp, 40)
+                    gtk_label_set_max_width_chars(labelOp, -1)
                 } else {
                     gtk_label_set_wrap(labelOp, 1)
                     gtk_label_set_wrap_mode(labelOp, PANGO_WRAP_WORD_CHAR)
@@ -1997,6 +2310,13 @@ extension OnChangeView: GTKRenderable {
     }
 }
 
+extension OnChangeTwoArgView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        onChangeCheckAndFireTwoArg(value: value, action: action)
+        return gtkRenderView(content)
+    }
+}
+
 // MARK: - Appearance modifier GTK extensions
 
 extension HiddenView: GTKRenderable {
@@ -2099,7 +2419,8 @@ extension TapGestureView: GTKRenderable, GTKDescribable {
         let widget = widgetFromOpaque(gtkRenderView(content))
         let gesture = gtk_gesture_click_new()!
 
-        let box = Unmanaged.passRetained(TapClosureBox(count: count, action: action)).toOpaque()
+        let boundAction = bindActionToCurrentEnvironment(action)
+        let box = Unmanaged.passRetained(TapClosureBox(count: count, action: boundAction)).toOpaque()
         g_signal_connect_data(
             gpointer(gesture),
             "pressed",
@@ -2129,7 +2450,8 @@ extension LongPressGestureView: GTKRenderable {
         // Set delay threshold
         g_object_set_double(gpointer(gesture), "delay-factor", minimumDuration / 0.5)
 
-        let box = Unmanaged.passRetained(ClosureBox(action)).toOpaque()
+        let boundAction = bindActionToCurrentEnvironment(action)
+        let box = Unmanaged.passRetained(ClosureBox(boundAction)).toOpaque()
         g_signal_connect_data(
             gpointer(gesture),
             "pressed",
@@ -2176,6 +2498,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
         let dragState = GTKDragState()
 
         if let onChanged = onChanged {
+            let boundOnChanged = bindActionToCurrentEnvironment(onChanged)
             let state = dragState
             let minimumDistance = self.minimumDistance
             let box = Unmanaged.passRetained(DoubleDoubleClosureBox { offsetX, offsetY in
@@ -2189,7 +2512,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
                     location: (x: state.startX + offsetX, y: state.startY + offsetY),
                     translation: (width: offsetX, height: offsetY)
                 )
-                onChanged(value)
+                boundOnChanged(value)
             }).toOpaque()
 
             // drag-begin: record start position
@@ -2227,6 +2550,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
         }
 
         if let onEnded = onEnded {
+            let boundOnEnded = bindActionToCurrentEnvironment(onEnded)
             let state = dragState
             let minimumDistance = self.minimumDistance
             // If no onChanged handler registered drag-begin, we need to capture start here too.
@@ -2261,7 +2585,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
                     location: (x: state.startX + offsetX, y: state.startY + offsetY),
                     translation: (width: offsetX, height: offsetY)
                 )
-                onEnded(value)
+                boundOnEnded(value)
             }).toOpaque()
             g_signal_connect_data(
                 gpointer(gesture),
@@ -2439,7 +2763,8 @@ extension OnAppearView: GTKRenderable {
         }
 
         if !isRebuild {
-            let box = Unmanaged.passRetained(ClosureBox(action)).toOpaque()
+            let boundAction = bindActionToCurrentEnvironment(action)
+            let box = Unmanaged.passRetained(ClosureBox(boundAction)).toOpaque()
             g_signal_connect_data(
                 gpointer(widget),
                 "map",
@@ -2481,8 +2806,9 @@ extension OnDisappearView: GTKRenderable {
             hostContainer = nil
         }
 
+        let boundAction = bindActionToCurrentEnvironment(action)
         let box = Unmanaged.passRetained(
-            DisappearBox(action: action, hostContainer: hostContainer)
+            DisappearBox(action: boundAction, hostContainer: hostContainer)
         ).toOpaque()
         g_signal_connect_data(
             gpointer(widget),
@@ -3289,6 +3615,24 @@ extension CornerRadiusView: GTKRenderable {
     }
 }
 
+// MARK: - Labels hidden modifier (no-op pass-through)
+
+extension LabelsHiddenView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // Push `labelsHidden = true` into the env for the content
+        // subtree. Picker's renderer (and any future label-bearing
+        // control) consults this flag and omits its inline label
+        // prefix. Restored on exit so siblings aren't affected.
+        var env = getCurrentEnvironment()
+        env.labelsHidden = true
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let widget = gtkRenderView(content)
+        setCurrentEnvironment(prev)
+        return widget
+    }
+}
+
 // MARK: - Help / tooltip modifier
 
 extension HelpView: GTKRenderable {
@@ -3730,10 +4074,28 @@ extension Image: GTKRenderable {
             return opaqueFromWidget(gtkRenderMaterialSymbolLabel(materialName, scale: scale))
 
         case .filePath(let path):
-            let image = gtk_image_new_from_file(path)!
-            let size = gint(scale.pointSize)
-            gtk_widget_set_size_request(image, size, size)
-            return opaqueFromWidget(image)
+            // Use GtkPicture (GTK4's scalable image widget) rather than
+            // GtkImage (fixed-size icon widget).  GtkPicture honors its
+            // parent's allocation and scales the loaded pixbuf accordingly,
+            // which matches SwiftUI's `.resizable()` semantics.
+            let picture = gtk_swift_picture_new_for_filename(path)!
+            if isResizable {
+                // Stretch to fill the surrounding frame.  GTK_CONTENT_FIT_FILL
+                // disables aspect-ratio preservation to match SwiftUI.
+                gtk_swift_picture_set_content_fit(picture, GTK_CONTENT_FIT_FILL)
+                gtk_swift_picture_set_can_shrink(picture, 1)
+                gtk_widget_set_hexpand(picture, 1)
+                gtk_widget_set_vexpand(picture, 1)
+                gtk_widget_set_halign(picture, GTK_ALIGN_FILL)
+                gtk_widget_set_valign(picture, GTK_ALIGN_FILL)
+            } else {
+                // Natural size: GtkPicture reports the pixbuf's intrinsic
+                // dimensions as its natural size.  Surrounding frames
+                // position but do not scale the image.
+                gtk_swift_picture_set_content_fit(picture, GTK_CONTENT_FIT_CONTAIN)
+                gtk_swift_picture_set_can_shrink(picture, 0)
+            }
+            return opaqueFromWidget(picture)
 
         case .materialSymbol(let name):
             return opaqueFromWidget(gtkRenderMaterialSymbolLabel(name, scale: scale))
@@ -3847,6 +4209,12 @@ extension List: GTKRenderable {
         let scrolledOp = OpaquePointer(scrolled)
         gtk_scrolled_window_set_policy(scrolledOp, GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC)
         gtk_scrolled_window_set_propagate_natural_width(scrolledOp, 1)
+        // Mirror ScrollView: don't let the child listbox's full natural
+        // height dictate the scroll's natural size. Otherwise a List
+        // inside a VStack reports "I need N×row-height" as natural, and
+        // the VStack's allocation pass leaves too little slack — trailing
+        // siblings (status bars, footers) swallow the remainder.
+        gtk_scrolled_window_set_propagate_natural_height(scrolledOp, 0)
         gtk_scrolled_window_set_child(scrolledOp, listBox)
         gtk_widget_set_vexpand(scrolled, 1)
         gtk_widget_set_hexpand(scrolled, 1)
@@ -3941,11 +4309,10 @@ extension TupleView: GTKRenderable {
 
 // MARK: - TabView GTK extension
 
-extension Tab: GTKRenderable {
-    public func gtkCreateWidget() -> OpaquePointer {
-        gtkRenderView(content)
-    }
-}
+// Note: `Tab<Content>` intentionally has no `GTKRenderable` conformance.
+// `TabBuilder` wraps every `Tab` into `AnyTab` at construction time, so
+// `TabView` iterates `[AnyTab]` and renders each `tab.wrapped` directly.
+// This matches the Win32 backend, which also does not render bare `Tab`.
 
 extension TabView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
@@ -4280,7 +4647,8 @@ extension DisclosureGroup: GTKRenderable {
         gtk_swift_expander_set_child(expander, childWidget)
 
         if let onChange = onExpandedChange {
-            let box = Unmanaged.passRetained(ExpandedClosureBox(onChange)).toOpaque()
+            let boundOnChange = bindActionToCurrentEnvironment(onChange)
+            let box = Unmanaged.passRetained(ExpandedClosureBox(boundOnChange)).toOpaque()
             g_signal_connect_data(
                 gpointer(expander),
                 "notify::expanded",
@@ -4674,6 +5042,14 @@ extension Picker: GTKRenderable {
         return widget
     }
 
+    /// True iff the caller wrapped us in `.labelsHidden()`. The
+    /// env flag is set by `LabelsHiddenView`'s GTK renderer; when on,
+    /// both the dropdown and segmented variants omit the label prefix
+    /// they'd otherwise inline before the control.
+    private var effectiveLabel: String {
+        getCurrentEnvironment().labelsHidden ? "" : label
+    }
+
     private func gtkCreateDropdownWidget() -> OpaquePointer {
         let cStrings: [UnsafeMutablePointer<CChar>?] = options.map { strdup($0) } + [nil]
 
@@ -4709,9 +5085,10 @@ extension Picker: GTKRenderable {
             )
         }
 
-        if !label.isEmpty {
+        let displayedLabel = effectiveLabel
+        if !displayedLabel.isEmpty {
             let hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)!
-            let labelWidget = gtk_label_new(label)!
+            let labelWidget = gtk_label_new(displayedLabel)!
             gtk_box_append(boxPointer(hbox), labelWidget)
             gtk_box_append(boxPointer(hbox), dropdown)
             return opaqueFromWidget(hbox)
@@ -4726,8 +5103,9 @@ extension Picker: GTKRenderable {
 
         var firstButton: UnsafeMutablePointer<GtkWidget>?
         let clampedSelection = options.isEmpty ? 0 : max(0, min(selected, options.count - 1))
+        var buttons: [UnsafeMutablePointer<GtkWidget>] = []
 
-        for (index, option) in options.enumerated() {
+        for option in options {
             let button = gtk_toggle_button_new_with_label(option)!
 
             if let first = firstButton {
@@ -4736,10 +5114,15 @@ extension Picker: GTKRenderable {
                 firstButton = button
             }
 
-            if index == clampedSelection {
-                gtk_swift_toggle_button_set_active(button, 1)
-            }
+            buttons.append(button)
+            gtk_box_append(boxPointer(hbox), button)
+        }
 
+        if buttons.indices.contains(clampedSelection) {
+            gtk_swift_toggle_button_set_active(buttons[clampedSelection], 1)
+        }
+
+        for (index, button) in buttons.enumerated() {
             if let onChanged = onChanged {
                 let box = Unmanaged.passRetained(
                     SegmentClosureBox(index: index, closure: onChanged)
@@ -4763,13 +5146,12 @@ extension Picker: GTKRenderable {
                     GConnectFlags(rawValue: 0)
                 )
             }
-
-            gtk_box_append(boxPointer(hbox), button)
         }
 
-        if !label.isEmpty {
+        let displayedLabel = effectiveLabel
+        if !displayedLabel.isEmpty {
             let outer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)!
-            let labelWidget = gtk_label_new(label)!
+            let labelWidget = gtk_label_new(displayedLabel)!
             gtk_box_append(boxPointer(outer), labelWidget)
             gtk_box_append(boxPointer(outer), hbox)
             return opaqueFromWidget(outer)
@@ -5271,7 +5653,7 @@ private func gtkAddMenuElement(_ element: MenuElement, to menu: gpointer,
 
         let gAction = g_simple_action_new(actionName, nil)!
 
-        let box = ClosureBox(action)
+        let box = ClosureBox(bindActionToCurrentEnvironment(action))
         actionBox.actions.append(box)
         let boxPtr = Unmanaged.passUnretained(box).toOpaque()
 
@@ -5853,6 +6235,12 @@ private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {
     let childVexpand = gtk_widget_get_vexpand(child) != 0
     gtk_widget_set_hexpand(host.container, childHexpand ? 1 : 0)
     gtk_widget_set_vexpand(host.container, childVexpand ? 1 : 0)
+    if childHexpand {
+        gtk_widget_set_halign(child, GTK_ALIGN_FILL)
+    }
+    if childVexpand {
+        gtk_widget_set_valign(child, GTK_ALIGN_FILL)
+    }
     gtk_box_append(boxPointer(host.container), child)
 
     // Capture initial descriptor state so the narrow mutation path is

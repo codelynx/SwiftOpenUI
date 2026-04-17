@@ -33,6 +33,15 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
     /// Captured environment at initial render time, restored during rebuilds.
     private var capturedEnvironment: EnvironmentValues?
 
+    /// Objects read by body via `@Environment(Type.self)` during the
+    /// last successful render. Re-pushed into the environment before
+    /// each rebuild so body's lookups find the same objects even when
+    /// the originating `.environment(object)` modifier lives below
+    /// this ViewHost in the render tree (and therefore isn't
+    /// guaranteed to re-run the push before body's next read). Filled
+    /// by `endEnvironmentReadTracking()` after each buildBody.
+    private var capturedInjectedObjects: [ObjectIdentifier: AnyObject] = [:]
+
     /// Animation captured at initial render time from a wrapping .animation()
     /// modifier. Restored during every rebuild so D2D surfaces see the
     /// animation context even though AnimatedView.winCreateWidget doesn't
@@ -180,6 +189,12 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
 
     /// Build the body with observation tracking for @Observable support.
     public func buildBodyWithTracking(_ context: RenderContext) -> HWND? {
+        // Track `@Environment(Type.self)` reads so we can re-push the
+        // same objects into env on rebuild even if the pushing
+        // modifier lives below us in the render tree. Pairs with
+        // `endEnvironmentReadTracking()` after body evaluates.
+        beginEnvironmentReadTracking()
+
         #if canImport(Observation)
         if #available(macOS 14.0, iOS 17.0, *) {
             var result: HWND?
@@ -188,10 +203,32 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
             } onChange: { [weak self] in
                 self?.scheduleRebuild()
             }
+            if let reads = endEnvironmentReadTracking() {
+                capturedInjectedObjects = reads
+            }
             return result
         }
         #endif
-        return buildBody(context)
+
+        let result = buildBody(context)
+        if let reads = endEnvironmentReadTracking() {
+            capturedInjectedObjects = reads
+        }
+        return result
+    }
+
+    /// Install the captured ancestor environment plus every injected
+    /// object body read during its last render. Called at each
+    /// rebuild entry point instead of `setCurrentEnvironment(captured)`
+    /// alone, so descendant `@Environment(Type.self)` lookups survive
+    /// even when the pushing modifier lives inside a parent's body.
+    func installEffectiveEnvironment() {
+        guard let captured = capturedEnvironment else { return }
+        var env = captured
+        for (typeID, object) in capturedInjectedObjects {
+            env.setObjectByID(typeID, object)
+        }
+        setCurrentEnvironment(env)
     }
 
     /// Describe the body with observation tracking for @Observable support.
@@ -247,9 +284,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
 
         let previousEnv = getCurrentEnvironment()
         defer { setCurrentEnvironment(previousEnv) }
-        if let captured = capturedEnvironment {
-            setCurrentEnvironment(captured)
-        }
+        installEffectiveEnvironment()
 
         // Restore animation context for this rebuild.
         // Priority: withAnimation() pending token (one-shot from scheduleRebuild)
@@ -303,7 +338,6 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
             retainedDescriptorRoot = nil
             retainedExecutorRoot = nil
         }
-
     }
 
     /// Layout the current child to fill the container.
@@ -321,7 +355,14 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
             return
         }
 
+        // Descriptor capture can re-enter body after the initial child HWND
+        // tree has already been created. Re-install the host's effective
+        // environment so `@Environment(Type.self)` lookups see the same
+        // injected objects that body read during `buildBodyWithTracking()`.
+        let previousEnvForDesc = getCurrentEnvironment()
+        installEffectiveEnvironment()
         let identified = winIdentifyDescriptorTree(describeBody())
+        setCurrentEnvironment(previousEnvForDesc)
         retainedDescriptorRoot = winRetainDescriptorTree(identified)
         let executorRoot = winMakeExecutorTree(from: identified)
         retainedExecutorRoot = winCaptureSupportedNativeSlots(

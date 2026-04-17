@@ -38,6 +38,73 @@ public struct EnvironmentValues {
     public func getObject<T: AnyObject>(_ type: T.Type) -> T? {
         objects[ObjectIdentifier(type)] as? T
     }
+
+    /// Type-erased object insertion for the environment-read tracker
+    /// rebuild path. Backends use this to re-push objects that body
+    /// previously read via `@Environment(SomeClass.self)` into a fresh
+    /// environment before re-running the body on rebuild. The
+    /// `ObjectIdentifier` is the key returned by
+    /// `endEnvironmentReadTracking()`; the `AnyObject` is the same
+    /// reference body originally read.
+    public mutating func setObjectByID(_ id: ObjectIdentifier, _ object: AnyObject) {
+        objects[id] = object
+    }
+}
+
+// MARK: - Environment-read tracker
+//
+// The thread-local read tracker captures every `@Environment(Type.self)`
+// lookup that succeeds during a body evaluation. ViewHosts use the
+// tracker to remember which injected objects descendant views consumed
+// during their last render, so the same objects can be re-pushed into
+// a fresh environment before re-running body on rebuild.
+//
+// Without this mechanism, an env-modifier (`.environment(model)`) that
+// lives INSIDE a parent's body — i.e. between two ViewHosts in the
+// render tree — pushes the object only during its renderer's
+// execution. The inner ViewHost's `capturedEnvironment` snapshot
+// (taken at init time, BEFORE the modifier ran) misses the object.
+// On rebuild, restoring the captured snapshot leaves the env without
+// the object, and the inner body's `@Environment(Type.self).wrappedValue`
+// fatal-errors with "lookup failed".
+//
+// The tracker fixes this by recording each successful object lookup
+// during body evaluation, so the ViewHost has the complete set of
+// injected objects body needs and can re-push them on subsequent
+// rebuilds.
+//
+// Stack-based so nested reactive hosts can track independently while still
+// propagating descendant reads back to their parent render session.
+private var _envReadTrackerStack: [[ObjectIdentifier: AnyObject]] = []
+
+/// Begin a fresh round of environment-read tracking. Pairs with
+/// `endEnvironmentReadTracking()` after body evaluation. Backends call
+/// this around `buildBody` so reads of `@Environment(Type.self)`
+/// performed by descendants are recorded.
+public func beginEnvironmentReadTracking() {
+    _envReadTrackerStack.append([:])
+}
+
+/// Finish the current round and return the recorded reads, or nil if
+/// no round was active.
+public func endEnvironmentReadTracking() -> [ObjectIdentifier: AnyObject]? {
+    guard !_envReadTrackerStack.isEmpty else { return nil }
+    let result = _envReadTrackerStack.removeLast()
+    if !_envReadTrackerStack.isEmpty {
+        let parentIndex = _envReadTrackerStack.count - 1
+        for (typeID, object) in result {
+            _envReadTrackerStack[parentIndex][typeID] = object
+        }
+    }
+    return result
+}
+
+/// Record a successful `@Environment(Type.self)` lookup against the
+/// active tracker, if any. No-op when no tracking round is active.
+internal func recordEnvironmentRead(typeID: ObjectIdentifier, object: AnyObject) {
+    guard !_envReadTrackerStack.isEmpty else { return }
+    let index = _envReadTrackerStack.count - 1
+    _envReadTrackerStack[index][typeID] = object
 }
 
 // MARK: - Thread-local environment for render pass
@@ -125,6 +192,17 @@ private class EnvironmentBox {
 ///   object (typically `@Observable`) that an ancestor injected via
 ///   `.environment(object)`. Matches SwiftUI's `@Environment(T.self)`
 ///   introduced alongside the Observation framework.
+/// Type-erased marker for `Environment<Value>` instances that read
+/// an injected reference object by type (the
+/// `@Environment(SomeClass.self)` form). The view-host's reactive-
+/// property detection checks for this so that views with only
+/// injected-object @Environment properties (no @State, no directly-
+/// stored @Observable) still get wrapped in `withObservationTracking`
+/// for their body evaluation — otherwise property reads on the
+/// injected object don't register with Observation and mutations
+/// never trigger rebuilds.
+public protocol AnyObjectInjectionEnvironment {}
+
 @propertyWrapper
 public struct Environment<Value> {
     /// How the wrapper reads its value at render time. A keyPath reads
@@ -137,6 +215,15 @@ public struct Environment<Value> {
     }
 
     private let reader: Reader
+
+    /// True when this wrapper was constructed via
+    /// `init(_ type: Value.Type)` (the object-injection form) rather
+    /// than the keyPath form. Read by the view-host's reactive-
+    /// property detection.
+    internal var isInjectedObject: Bool {
+        if case .injectedObject = reader { return true }
+        return false
+    }
 
     public init(_ keyPath: KeyPath<EnvironmentValues, Value>) {
         self.reader = .keyPath(keyPath)
@@ -160,6 +247,13 @@ public struct Environment<Value> {
                     "Call `.environment(object)` on an ancestor view."
                 )
             }
+            // Record the read so the enclosing ViewHost can re-push
+            // this object into env on rebuild, even if the
+            // `.environment(object)` modifier that originally pushed
+            // it lives inside a parent's body (between two ViewHosts
+            // in the render tree) and wouldn't otherwise be
+            // guaranteed to re-run before this read fires again.
+            recordEnvironmentRead(typeID: ObjectIdentifier(type), object: object)
             return object
         }
     }
@@ -173,6 +267,12 @@ public struct Environment<Value> {
         }
     }
 }
+
+/// `Environment<Value>` is an object-injection environment only when
+/// its reader was constructed via `init(_ type: Value.Type)`. Every
+/// instance conforms, but the runtime check on `isInjectedObject`
+/// distinguishes the two constructors.
+extension Environment: AnyObjectInjectionEnvironment {}
 
 // MARK: - Environment object lookup
 

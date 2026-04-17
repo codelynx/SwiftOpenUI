@@ -31,6 +31,12 @@ public struct Image: View {
     public let source: Source
     public var scale: ImageScale = .medium
 
+    /// When `true`, the image stretches to fill any frame applied to it via
+    /// `.frame(width:height:)`. When `false` (the default), the image renders
+    /// at its natural size and any surrounding frame merely positions it.
+    /// Matches SwiftUI's `.resizable()` semantics.
+    public var isResizable: Bool = false
+
     /// Create an image from a system icon name (GTK icon theme names on Linux).
     public init(systemName: String) {
         self.source = .systemName(systemName)
@@ -39,6 +45,28 @@ public struct Image: View {
     /// Create an image from a file path.
     public init(filePath: String) {
         self.source = .filePath(filePath)
+    }
+
+    /// Create an image from a file in the app bundle's `Resources/`
+    /// directory.
+    ///
+    /// Resource discovery uses `AppBundle.main`, which in development mode
+    /// (`swift run`) walks up from the executable to find the package root's
+    /// `Resources/` directory, and in packaged `.app` bundles uses the
+    /// platform-native resources location.
+    ///
+    /// The file name may either include its extension directly
+    /// (`Image(resource: "logo.png")`) or pass it via `withExtension:`
+    /// (`Image(resource: "logo", withExtension: "png")`). If the resource is
+    /// not found, the `name` is kept as the file path so the renderer can
+    /// report the missing file consistently with other `filePath` loads.
+    public init(resource name: String, withExtension ext: String? = nil) {
+        if let bundle = AppBundle.main,
+           let resolvedPath = bundle.path(forResource: name, ofType: ext) {
+            self.source = .filePath(resolvedPath)
+        } else {
+            self.source = .filePath(name)
+        }
     }
 
     /// Create an image from a Google Material Symbols name.
@@ -64,6 +92,18 @@ public struct Image: View {
     public func imageScale(_ scale: ImageScale) -> Image {
         var copy = self
         copy.scale = scale
+        return copy
+    }
+
+    /// Allow the image to scale to fit any frame applied to it.
+    ///
+    /// Without `.resizable()`, an image renders at its natural size regardless
+    /// of any surrounding `.frame(width:height:)` — the frame positions the
+    /// image but does not scale its pixels. After `.resizable()`, the image
+    /// stretches to fill its frame. Matches SwiftUI's behavior.
+    public func resizable() -> Image {
+        var copy = self
+        copy.isResizable = true
         return copy
     }
 

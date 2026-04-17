@@ -2,6 +2,7 @@ import WinSDK
 import CWin32
 import CWin32Bridge
 import SwiftOpenUI
+import SwiftOpenUISymbols
 import Foundation
 
 // MARK: - Win32 rendering protocol
@@ -88,6 +89,14 @@ private func winRenderStatefulView<V: View>(_ view: V, in context: RenderContext
     // This is critical for parent-routed messages like WM_CTLCOLORSTATIC.
     let containerContext = RenderContext(parent: host.container, hInstance: context.hInstance)
 
+    // Initial render should use the same effective environment as rebuilds.
+    // On Win32, child HWND creation can synchronously dispatch messages back
+    // through common-control/window-proc paths before `winRenderStatefulView`
+    // returns, so relying on an outer modifier's temporary TLS push is not
+    // stable enough for the host's full initial lifecycle.
+    let previousEnv = getCurrentEnvironment()
+    host.installEffectiveEnvironment()
+
     // Phase 6+7: track which storages are read during initial body evaluation
     beginDependencyTracking()
     let childHwnd = host.buildBodyWithTracking(containerContext)
@@ -99,7 +108,7 @@ private func winRenderStatefulView<V: View>(_ view: V, in context: RenderContext
     if let child = childHwnd {
         host.addChild(child)
     }
-
+    setCurrentEnvironment(previousEnv)
     return host.container
 }
 
@@ -256,9 +265,10 @@ extension TextField: WinRenderable {
 
         // Wire up .onSubmit: intercept VK_RETURN and fire submitAction
         if let submitAction = getCurrentEnvironment().submitAction {
+            let boundAction = bindActionToCurrentEnvironment(submitAction.handler)
             handler.onMessage = { uMsg, wParam, _ in
                 if uMsg == UINT(WM_KEYDOWN), wParam == WPARAM(VK_RETURN) {
-                    submitAction()
+                    boundAction()
                     return 0
                 }
                 return nil
@@ -661,9 +671,30 @@ func winCurrentColorFill(nativeSlotID: Int) -> Win32ColorDescriptor? {
     return state.currentFillColor
 }
 
+func bindActionToCurrentEnvironment(_ action: @escaping () -> Void) -> () -> Void {
+    let capturedEnvironment = getCurrentEnvironment()
+    return {
+        let previousEnvironment = getCurrentEnvironment()
+        setCurrentEnvironment(capturedEnvironment)
+        defer { setCurrentEnvironment(previousEnvironment) }
+        action()
+    }
+}
+
+func bindActionToCurrentEnvironment<T>(_ action: @escaping (T) -> Void) -> (T) -> Void {
+    let capturedEnvironment = getCurrentEnvironment()
+    return { value in
+        let previousEnvironment = getCurrentEnvironment()
+        setCurrentEnvironment(capturedEnvironment)
+        defer { setCurrentEnvironment(previousEnvironment) }
+        action(value)
+    }
+}
+
 extension Button: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let style = getCurrentEnvironment().buttonStyle
+        let action = bindActionToCurrentEnvironment(action)
         let hwnd: HWND?
         if let textLabel = label as? Text {
             hwnd = createNativeButton(title: textLabel.content, action: action,
@@ -3719,21 +3750,144 @@ private let imageBitmapCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam
     return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 }
 
+/// Subclass proc for `.resizable()` file images.  Paints the stored HBITMAP
+/// stretched to the control's client rect on each `WM_PAINT`, so the image
+/// scales as `FrameView` resizes its child HWND via `SetWindowPos`.  Frees
+/// the HBITMAP on destruction (same ownership model as
+/// `imageBitmapCleanupProc`, but we own the bitmap via `dwRefData` rather
+/// than via `STM_SETIMAGE`).
+private let stretchBitmapPaintProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    switch uMsg {
+    case UINT(WM_PAINT):
+        guard dwRefData != 0,
+              let hbPtr = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData)) else {
+            return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+        }
+        let hBitmap = hbPtr.assumingMemoryBound(to: HBITMAP__.self)
+
+        var ps = PAINTSTRUCT()
+        let hdc = BeginPaint(hwnd, &ps)
+        defer { EndPaint(hwnd, &ps) }
+
+        var clientRect = RECT()
+        GetClientRect(hwnd, &clientRect)
+        let destW = clientRect.right - clientRect.left
+        let destH = clientRect.bottom - clientRect.top
+
+        var bm = BITMAP()
+        GetObjectW(hBitmap, Int32(MemoryLayout<BITMAP>.size), &bm)
+
+        let memDC = CreateCompatibleDC(hdc)
+        defer { DeleteDC(memDC) }
+        let oldBmp = SelectObject(memDC, hBitmap)
+        defer { _ = SelectObject(memDC, oldBmp) }
+
+        // HALFTONE gives smoother downscaling for photos than COLORONCOLOR.
+        // Per the Win32 docs, HALFTONE requires SetBrushOrgEx after
+        // SetStretchBltMode to define the brush origin for dithering.
+        SetStretchBltMode(hdc, HALFTONE)
+        SetBrushOrgEx(hdc, 0, 0, nil)
+        StretchBlt(hdc, 0, 0, destW, destH,
+                   memDC, 0, 0, bm.bmWidth, bm.bmHeight, DWORD(SRCCOPY))
+        return 0
+
+    case UINT(WM_ERASEBKGND):
+        // Suppress default erase — StretchBlt covers the full client rect.
+        return 1
+
+    case UINT(WM_SIZE):
+        // FrameView's SetWindowPos sends WM_SIZE; force a repaint so the
+        // bitmap stretches to the new allocation.
+        InvalidateRect(hwnd, nil, false)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    case UINT(WM_NCDESTROY):
+        if dwRefData != 0, let handle = UnsafeMutableRawPointer(bitPattern: UInt(dwRefData)) {
+            DeleteObject(handle.assumingMemoryBound(to: HBITMAP__.self))
+        }
+        RemoveWindowSubclass(hwnd, stretchBitmapPaintProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
 extension Image: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         switch source {
         case .systemName(let name):
+            // SF→Material compatibility: if the SF name maps to a Material
+            // Symbol, render via the bundled Material Symbols Rounded font
+            // so cross-platform code using `Image(systemName:)` sees real
+            // icons on Windows. Otherwise fall back to stock icons / text.
+            if let materialName = SFSymbolCompatibility.materialName(for: name) {
+                return winCreateMaterialSymbol(name: materialName, scale: scale, in: context)
+            }
             return winCreateSystemIcon(name: name, in: context)
         case .filePath(let path):
             return winCreateFileImage(path: path, in: context)
         case .materialSymbol(let name):
-            // Win32 adoption of SwiftOpenUISymbols is deferred (M-Symbols-2
-            // per-backend rollout). Fall back to the same text-label
-            // placeholder that winCreateSystemIcon uses for unknown
-            // system names; the app still compiles and renders a readable
-            // placeholder so cross-platform code doesn't break on Windows.
+            return winCreateMaterialSymbol(name: name, scale: scale, in: context)
+        }
+    }
+
+    /// Render a Material Symbols glyph as a STATIC control containing the
+    /// icon's PUA Unicode character, drawn with the bundled "Material
+    /// Symbols Rounded" font. GDI doesn't apply OpenType ligatures, so we
+    /// look the name up in `MaterialSymbolsCodepoints` and emit the raw
+    /// codepoint — a missing name renders as the `help_outline` glyph.
+    private func winCreateMaterialSymbol(name: String,
+                                         scale: ImageScale,
+                                         in context: RenderContext) -> HWND? {
+        let codepoint = MaterialSymbolsCodepoints.codepoint(for: name)
+            ?? MaterialSymbolsCodepoints.missingGlyphCodepoint
+        guard let scalar = Unicode.Scalar(codepoint) else {
             return winCreateSystemIcon(name: name, in: context)
         }
+        let glyph = String(scalar)
+
+        // Use the image scale's point size as the glyph size; matches
+        // GTK4's `gtkRenderMaterialSymbolLabel` sizing so cross-platform
+        // `.imageScale(.large)` produces visually comparable glyphs.
+        let dpi = win32_GetDpiForWindow(context.parent)
+        let dpiScale = Double(dpi) / 96.0
+        let pixelHeight = Int32(Double(scale.pointSize) * dpiScale)
+
+        let family = MaterialSymbolsResources.roundedRegularFamilyName
+        let hfont = family.withCString(encodedAs: UTF16.self) { namePtr in
+            CreateFontW(
+                -pixelHeight, 0, 0, 0,
+                FW_REGULAR,
+                0, 0, 0,
+                DWORD(DEFAULT_CHARSET),
+                DWORD(OUT_DEFAULT_PRECIS),
+                DWORD(CLIP_DEFAULT_PRECIS),
+                DWORD(CLEARTYPE_QUALITY),
+                DWORD(DEFAULT_PITCH) | DWORD(FF_DONTCARE),
+                namePtr
+            )
+        }
+
+        let size = Int32(scale.pointSize) + 4
+        let hwnd = glyph.withCString(encodedAs: UTF16.self) { wstr in
+            win32_CreateChildWindow(
+                win32_WC_STATIC(), wstr,
+                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
+                0, 0, size, size,
+                context.parent, nil, context.hInstance
+            )
+        }
+
+        if let hwnd = hwnd, let hfont = hfont {
+            SendMessageW(hwnd, UINT(WM_SETFONT),
+                         WPARAM(UInt(bitPattern: hfont)), 1)
+            let info = FontCleanupInfo(hfont: hfont)
+            let ptr = Unmanaged.passRetained(info).toOpaque()
+            SetWindowSubclass(hwnd, fontCleanupProc, 21,
+                              DWORD_PTR(UInt(bitPattern: ptr)))
+        }
+        return hwnd
     }
 
     private func winCreateSystemIcon(name: String, in context: RenderContext) -> HWND? {
@@ -3798,52 +3952,19 @@ extension Image: WinRenderable {
 
             let displayW = Int32(imageData.width)
             let displayH = Int32(imageData.height)
-
-            let hwnd = win32_CreateChildWindow(
-                win32_WC_STATIC(), nil,
-                DWORD(SS_BITMAP | SS_REALSIZECONTROL | SS_NOTIFY),
-                0, 0, displayW, displayH,
-                context.parent, nil, context.hInstance
-            )
-
-            if let hwnd = hwnd {
-                SendMessageW(hwnd, UINT(STM_SETIMAGE), WPARAM(IMAGE_BITMAP),
-                             LPARAM(Int(bitPattern: OpaquePointer(hBitmap))))
-                // Attach cleanup subclass to free HBITMAP on destroy
-                SetWindowSubclass(hwnd, imageBitmapCleanupProc, 46,
-                                  DWORD_PTR(UInt(bitPattern: OpaquePointer(hBitmap))))
-            }
-
-            return hwnd
+            return createBitmapHWND(hBitmap, width: displayW, height: displayH, in: context)
         }
 
         // Fallback: try Win32 LoadImageW for BMP/ICO
-        let hBitmap = path.withCString(encodedAs: UTF16.self) { wstr in
+        let loadedHandle = path.withCString(encodedAs: UTF16.self) { wstr in
             LoadImageW(nil, wstr, UINT(IMAGE_BITMAP), 0, 0, UINT(LR_LOADFROMFILE))
         }
 
-        if let hBitmap = hBitmap {
+        if let loadedHandle = loadedHandle {
+            let hBitmap = loadedHandle.assumingMemoryBound(to: HBITMAP__.self)
             var bm = BITMAP()
-            GetObjectW(hBitmap.assumingMemoryBound(to: HBITMAP__.self),
-                       Int32(MemoryLayout<BITMAP>.size), &bm)
-            let displayW = bm.bmWidth
-            let displayH = bm.bmHeight
-
-            let hwnd = win32_CreateChildWindow(
-                win32_WC_STATIC(), nil,
-                DWORD(SS_BITMAP | SS_REALSIZECONTROL | SS_NOTIFY),
-                0, 0, displayW, displayH,
-                context.parent, nil, context.hInstance
-            )
-
-            if let hwnd = hwnd {
-                SendMessageW(hwnd, UINT(STM_SETIMAGE), WPARAM(IMAGE_BITMAP),
-                             LPARAM(Int(bitPattern: hBitmap)))
-                SetWindowSubclass(hwnd, imageBitmapCleanupProc, 46,
-                                  DWORD_PTR(UInt(bitPattern: hBitmap)))
-            }
-
-            return hwnd
+            GetObjectW(hBitmap, Int32(MemoryLayout<BITMAP>.size), &bm)
+            return createBitmapHWND(hBitmap, width: bm.bmWidth, height: bm.bmHeight, in: context)
         }
 
         // Final fallback: text label
@@ -3856,6 +3977,47 @@ extension Image: WinRenderable {
                 0, 0, measured.width + 4, measured.height + 2,
                 context.parent, nil, context.hInstance
             )
+        }
+    }
+
+    /// Create the STATIC control that hosts a loaded bitmap.  Branches on
+    /// `isResizable`: non-resizable uses `SS_BITMAP | SS_REALSIZECONTROL`
+    /// for natural-size rendering; resizable uses a custom subclass that
+    /// `StretchBlt`s the bitmap to the client rect on each paint, so the
+    /// image scales as `FrameView` resizes its allocation.
+    private func createBitmapHWND(_ hBitmap: UnsafeMutablePointer<HBITMAP__>,
+                                  width: Int32, height: Int32,
+                                  in context: RenderContext) -> HWND? {
+        let bitmapHandle = OpaquePointer(hBitmap)
+        let refData = DWORD_PTR(UInt(bitPattern: bitmapHandle))
+
+        if isResizable {
+            // Plain STATIC (no SS_BITMAP).  The subclass owns the HBITMAP
+            // via dwRefData and paints it via StretchBlt each frame.
+            let hwnd = win32_CreateChildWindow(
+                win32_WC_STATIC(), nil,
+                DWORD(SS_NOTIFY),
+                0, 0, width, height,
+                context.parent, nil, context.hInstance
+            )
+            if let hwnd = hwnd {
+                SetWindowSubclass(hwnd, stretchBitmapPaintProc, 46, refData)
+            }
+            return hwnd
+        } else {
+            // SS_BITMAP + SS_REALSIZECONTROL keeps the bitmap at natural size.
+            let hwnd = win32_CreateChildWindow(
+                win32_WC_STATIC(), nil,
+                DWORD(SS_BITMAP | SS_REALSIZECONTROL | SS_NOTIFY),
+                0, 0, width, height,
+                context.parent, nil, context.hInstance
+            )
+            if let hwnd = hwnd {
+                SendMessageW(hwnd, UINT(STM_SETIMAGE), WPARAM(IMAGE_BITMAP),
+                             LPARAM(Int(bitPattern: bitmapHandle)))
+                SetWindowSubclass(hwnd, imageBitmapCleanupProc, 46, refData)
+            }
+            return hwnd
         }
     }
 }
@@ -3895,9 +4057,10 @@ extension SecureField: WinRenderable {
 
         // Wire up .onSubmit: intercept VK_RETURN and fire submitAction
         if let submitAction = getCurrentEnvironment().submitAction {
+            let boundAction = bindActionToCurrentEnvironment(submitAction.handler)
             handler.onMessage = { uMsg, wParam, _ in
                 if uMsg == UINT(WM_KEYDOWN), wParam == WPARAM(VK_RETURN) {
-                    submitAction()
+                    boundAction()
                     return 0
                 }
                 return nil
@@ -4075,7 +4238,7 @@ extension OnAppearView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
         // Fire onAppear after the view is rendered (deferred to next message loop cycle)
-        let appearAction = action
+        let appearAction = bindActionToCurrentEnvironment(action)
         let root = findRootWindow(from: context.parent)
         runOnMainThread(hwnd: root) { appearAction() }
         return hwnd
@@ -4090,7 +4253,7 @@ extension OnDisappearView: WinRenderable {
         // ViewHost container is destroyed, not on individual rebuilds.
         // Full SwiftUI disappearance semantics would require tracking
         // view identity across rebuilds, which our architecture doesn't support yet.
-        let disappearAction = action
+        let disappearAction = bindActionToCurrentEnvironment(action)
         let box = Unmanaged.passRetained(ClosureBox(disappearAction)).toOpaque()
         SetWindowSubclass(hwnd, onDisappearProc, 90, DWORD_PTR(UInt(bitPattern: box)))
         return hwnd
@@ -4515,6 +4678,8 @@ extension ConfirmationDialogView: WinRenderable {
             let dlgTitle = titleVisibility == .hidden ? "" : title
             let dlgMessage = message.isEmpty ? dlgTitle : message
             let dlgButtons = buttons
+            let boundConfirmAction = dlgButtons.first.map { bindActionToCurrentEnvironment($0.action) }
+            let boundCancelAction = dlgButtons.first(where: { $0.role == .cancel }).map { bindActionToCurrentEnvironment($0.action) }
             let root = findRootWindow(from: context.parent)
             let interceptedSheet = participatesInDismissalInterception
                 ? win32ContainingSheetWindow(from: context.parent)
@@ -4529,12 +4694,12 @@ extension ConfirmationDialogView: WinRenderable {
                     flags: UINT(MB_YESNO | MB_ICONQUESTION)
                 )
                 if result == IDYES {
-                    dlgButtons.first?.action()
+                    boundConfirmAction?()
                     if let interceptedSheet, IsWindow(interceptedSheet) {
                         DestroyWindow(interceptedSheet)
                     }
                 } else {
-                    dlgButtons.first(where: { $0.role == .cancel })?.action()
+                    boundCancelAction?()
                 }
             }
         }
@@ -4713,6 +4878,14 @@ extension Picker: WinRenderable {
         }
     }
 
+    /// True iff the caller wrapped us in `.labelsHidden()`. Mirrors the
+    /// GTK4 path: the env flag is set by `LabelsHiddenView`'s Win32
+    /// renderer, and both dropdown + segmented variants below suppress
+    /// their inline label prefix when it's on.
+    private var effectiveLabel: String {
+        getCurrentEnvironment().labelsHidden ? "" : label
+    }
+
     private func winCreateDropdownWidget(in context: RenderContext) -> HWND? {
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
@@ -4723,18 +4896,24 @@ extension Picker: WinRenderable {
             context.parent, nil, context.hInstance, nil
         )!
 
-        // Label
-        let labelMeasured = measureText(label, hwnd: context.parent)
-        _ = label.withCString(encodedAs: UTF16.self) { wstr in
-            win32_CreateChildWindow(
-                win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                0, 2, labelMeasured.width + 4, 20,
-                container, nil, context.hInstance
-            )
+        // Label — rendered only when not hidden by `.labelsHidden()`.
+        let displayedLabel = effectiveLabel
+        let labelMeasured: (width: Int32, height: Int32)
+        if !displayedLabel.isEmpty {
+            labelMeasured = measureText(displayedLabel, hwnd: context.parent)
+            _ = displayedLabel.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
+                    0, 2, labelMeasured.width + 4, 20,
+                    container, nil, context.hInstance
+                )
+            }
+        } else {
+            labelMeasured = (width: 0, height: 0)
         }
 
-        // ComboBox
-        let comboX = labelMeasured.width + 8
+        // ComboBox — x offset collapses to 0 when the label is hidden.
+        let comboX = displayedLabel.isEmpty ? 0 : labelMeasured.width + 8
         let comboHwnd = win32_CreateChildWindow(
             win32_WC_COMBOBOX(), nil,
             DWORD(CBS_DROPDOWNLIST | WS_TABSTOP),
@@ -4783,10 +4962,11 @@ extension Picker: WinRenderable {
         let buttonHeight: Int32 = 24
         let clampedSel = options.isEmpty ? 0 : max(0, min(selected, options.count - 1))
 
-        // Optional label
-        if !label.isEmpty {
-            let labelMeasured = measureText(label, hwnd: context.parent)
-            _ = label.withCString(encodedAs: UTF16.self) { wstr in
+        // Optional label — hidden when `.labelsHidden()` wrapped us.
+        let displayedLabel = effectiveLabel
+        if !displayedLabel.isEmpty {
+            let labelMeasured = measureText(displayedLabel, hwnd: context.parent)
+            _ = displayedLabel.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
                     win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
                     x, 2, labelMeasured.width + 4, 20,
@@ -5202,33 +5382,11 @@ private let viewThatFitsResizeProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam
 extension Menu: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let menuElements = elements
-        return createNativeButton(title: "☰ \(title)", action: {
+        let action = bindActionToCurrentEnvironment {
             guard let hMenu = CreatePopupMenu() else { return }
             var menuID: UINT = 50000
             var menuActions: [UINT: () -> Void] = [:]
-
-            func addElementsTo(_ targetMenu: HMENU, _ elems: [MenuElement]) {
-                for elem in elems {
-                    switch elem {
-                    case .item(let label, let action):
-                        let id = menuID; menuID += 1
-                        _ = label.withCString(encodedAs: UTF16.self) { wstr in
-                            AppendMenuW(targetMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
-                        }
-                        menuActions[id] = action
-                    case .divider:
-                        AppendMenuW(targetMenu, UINT(MF_SEPARATOR), 0, nil)
-                    case .submenu(let label, let children):
-                        if let subMenu = CreatePopupMenu() {
-                            addElementsTo(subMenu, children)
-                            _ = label.withCString(encodedAs: UTF16.self) { wstr in
-                                AppendMenuW(targetMenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: subMenu)), wstr)
-                            }
-                        }
-                    }
-                }
-            }
-            addElementsTo(hMenu, menuElements)
+            winPopulateMenu(hMenu, elements: menuElements, nextMenuID: &menuID, actions: &menuActions)
 
             var pt = POINT()
             GetCursorPos(&pt)
@@ -5241,7 +5399,34 @@ extension Menu: WinRenderable {
             for id in menuActions.keys {
                 unregisterCommandHandler(controlID: WORD(id))
             }
-        }, context: context)
+        }
+        return createNativeButton(title: "☰ \(title)", action: action, context: context)
+    }
+}
+
+func winPopulateMenu(_ targetMenu: HMENU,
+                     elements: [MenuElement],
+                     nextMenuID: inout UINT,
+                     actions: inout [UINT: () -> Void]) {
+    for elem in elements {
+        switch elem {
+        case .item(let label, let action):
+            let id = nextMenuID
+            nextMenuID += 1
+            _ = label.withCString(encodedAs: UTF16.self) { wstr in
+                AppendMenuW(targetMenu, UINT(MF_STRING), UINT_PTR(id), wstr)
+            }
+            actions[id] = bindActionToCurrentEnvironment(action)
+        case .divider:
+            AppendMenuW(targetMenu, UINT(MF_SEPARATOR), 0, nil)
+        case .submenu(let label, let children):
+            if let subMenu = CreatePopupMenu() {
+                winPopulateMenu(subMenu, elements: children, nextMenuID: &nextMenuID, actions: &actions)
+                _ = label.withCString(encodedAs: UTF16.self) { wstr in
+                    AppendMenuW(targetMenu, UINT(MF_POPUP), UINT_PTR(Int(bitPattern: subMenu)), wstr)
+                }
+            }
+        }
     }
 }
 
@@ -5270,7 +5455,7 @@ extension DisclosureGroup: WinRenderable {
             )
         }
 
-        let expandCallback = onExpandedChange
+        let expandCallback = onExpandedChange.map(bindActionToCurrentEnvironment)
         let currentExpanded = isExpanded
         registerCommandHandler(controlID: controlID) {
             expandCallback?(!currentExpanded)
@@ -6479,6 +6664,26 @@ let searchableLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcl
 }
 
 // MARK: - Phase 4C: Shape modifiers
+
+extension LabelsHiddenView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Push `labelsHidden = true` into the env for the content
+        // subtree so label-bearing controls (currently `Picker`)
+        // consult the flag and omit their inline label prefix.
+        // Restored on exit so siblings are unaffected. Mirrors the
+        // GTK4 renderer — without this push, Win32's Picker would
+        // always read `labelsHidden = false` and the `.labelsHidden()`
+        // modifier would be a no-op even though its renderable
+        // extension exists.
+        var env = getCurrentEnvironment()
+        env.labelsHidden = true
+        let prev = getCurrentEnvironment()
+        setCurrentEnvironment(env)
+        let widget = winRenderView(content, in: context)
+        setCurrentEnvironment(prev)
+        return widget
+    }
+}
 
 extension HelpView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
@@ -7718,11 +7923,28 @@ private class ContextMenuState {
     init(_ elements: [MenuElement]) { self.elements = elements }
 }
 
+private func bindContextMenuElements(_ elements: [MenuElement]) -> [MenuElement] {
+    return elements.map { element in
+        switch element {
+        case .item(let label, let action):
+            return .item(label: label, action: bindActionToCurrentEnvironment(action))
+        case .divider:
+            return .divider
+        case .submenu(let label, let children):
+            return .submenu(label: label, children: bindContextMenuElements(children))
+        }
+    }
+}
+
 extension ContextMenuView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
-        let state = ContextMenuState(menuElements)
+        // Bind every item action to the render-time environment so
+        // WM_COMMAND dispatch (later, outside render scope) can still
+        // read @Environment(...) safely. See deferred-callback doc.
+        let boundElements = bindContextMenuElements(menuElements)
+        let state = ContextMenuState(boundElements)
         let statePtr = Unmanaged.passRetained(state).toOpaque()
         SetWindowSubclass(hwnd, contextMenuProc, contextMenuSubclassID,
                           DWORD_PTR(UInt(bitPattern: statePtr)))
@@ -7805,6 +8027,13 @@ extension OnChangeView: WinRenderable {
     }
 }
 
+extension OnChangeTwoArgView: WinRenderable {
+    public func winCreateWidget(in context: RenderContext) -> HWND? {
+        onChangeCheckAndFireTwoArg(value: value, action: action)
+        return winRenderView(content, in: context)
+    }
+}
+
 // MARK: - Appearance modifier Win32 extensions
 
 extension HiddenView: WinRenderable {
@@ -7859,7 +8088,8 @@ extension TapGestureView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
-        let handler = TapGestureHandler(requiredCount: count, action: action)
+        let handler = TapGestureHandler(requiredCount: count,
+                                        action: bindActionToCurrentEnvironment(action))
         installGestureRecursively(on: hwnd, handler: handler,
                                   proc: tapGestureProc, subclassID: tapGestureSubclassID)
         return hwnd
@@ -7942,7 +8172,8 @@ extension LongPressGestureView: WinRenderable {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
         let durationMs = UInt32(minimumDuration * 1000)
-        let handler = LongPressGestureHandler(action: action, durationMs: durationMs, rootHwnd: hwnd)
+        let handler = LongPressGestureHandler(action: bindActionToCurrentEnvironment(action),
+                                              durationMs: durationMs, rootHwnd: hwnd)
         installGestureRecursively(on: hwnd, handler: handler,
                                   proc: longPressGestureProc, subclassID: longPressSubclassID)
         return hwnd
@@ -8044,7 +8275,8 @@ extension DragGestureView: WinRenderable {
         guard let hwnd = winRenderView(content, in: context) else { return nil }
 
         let handler = DragGestureHandler(
-            onChanged: onChanged, onEnded: onEnded,
+            onChanged: onChanged.map(bindActionToCurrentEnvironment),
+            onEnded: onEnded.map(bindActionToCurrentEnvironment),
             minimumDistance: minimumDistance, rootHwnd: hwnd
         )
         installGestureRecursively(on: hwnd, handler: handler,
@@ -9232,12 +9464,6 @@ func performSafeAreaInsetLayout(container: HWND, info: SafeAreaInsetLayoutInfo) 
     let containerW = rect.right - rect.left
     let containerH = rect.bottom - rect.top
 
-    // Measure inset natural size (inset keeps its natural cross-axis dimension)
-    var insetRect = RECT()
-    GetWindowRect(info.insetHwnd, &insetRect)
-    let iNatW = insetRect.right - insetRect.left
-    let iNatH = insetRect.bottom - insetRect.top
-
     let gap = info.spacing
 
     // Check expand flags for both children
@@ -9246,52 +9472,59 @@ func performSafeAreaInsetLayout(container: HWND, info: SafeAreaInsetLayoutInfo) 
     let contentExpandsW = shouldExpandWidth(info.contentHwnd)
     let contentExpandsH = shouldExpandHeight(info.contentHwnd)
 
+    // Use retained natural sizes (not current HWND rect which may be stale from
+    // a previous shrink), clamped to current container bounds
+    let clampedINatW = min(info.insetNatW, containerW)
+    let clampedINatH = min(info.insetNatH, containerH)
+    let clampedCNatW = min(info.contentNatW, containerW)
+    let clampedCNatH = min(info.contentNatH, containerH)
+
     switch info.edge {
     case .top:
-        let iw = insetExpandsW ? containerW : iNatW
+        let iw = insetExpandsW ? containerW : clampedINatW
         let ix = insetExpandsW ? Int32(0)
             : safeAreaCrossAlignX(alignment: info.alignment,
-                                   insetWidth: iNatW, containerWidth: containerW)
-        SetWindowPos(info.insetHwnd, nil, ix, 0, iw, iNatH, UINT(SWP_NOZORDER))
-        let contentY = iNatH + gap
+                                   insetWidth: clampedINatW, containerWidth: containerW)
+        SetWindowPos(info.insetHwnd, nil, ix, 0, iw, clampedINatH, UINT(SWP_NOZORDER))
+        let contentY = clampedINatH + gap
         let availH = max(0, containerH - contentY)
-        let cw = contentExpandsW ? containerW : info.contentNatW
-        let ch = contentExpandsH ? availH : min(info.contentNatH, availH)
+        let cw = contentExpandsW ? containerW : min(clampedCNatW, containerW)
+        let ch = contentExpandsH ? availH : min(clampedCNatH, availH)
         SetWindowPos(info.contentHwnd, nil, 0, contentY, cw, ch, UINT(SWP_NOZORDER))
 
     case .bottom:
-        let availH = max(0, containerH - iNatH - gap)
-        let cw = contentExpandsW ? containerW : info.contentNatW
-        let ch = contentExpandsH ? availH : min(info.contentNatH, availH)
+        let availH = max(0, containerH - clampedINatH - gap)
+        let cw = contentExpandsW ? containerW : min(clampedCNatW, containerW)
+        let ch = contentExpandsH ? availH : min(clampedCNatH, availH)
         SetWindowPos(info.contentHwnd, nil, 0, 0, cw, ch, UINT(SWP_NOZORDER))
-        let iw = insetExpandsW ? containerW : iNatW
+        let iw = insetExpandsW ? containerW : clampedINatW
         let ix = insetExpandsW ? Int32(0)
             : safeAreaCrossAlignX(alignment: info.alignment,
-                                   insetWidth: iNatW, containerWidth: containerW)
-        SetWindowPos(info.insetHwnd, nil, ix, ch + gap, iw, iNatH, UINT(SWP_NOZORDER))
+                                   insetWidth: clampedINatW, containerWidth: containerW)
+        SetWindowPos(info.insetHwnd, nil, ix, ch + gap, iw, clampedINatH, UINT(SWP_NOZORDER))
 
     case .leading:
-        let ih = insetExpandsH ? containerH : iNatH
+        let ih = insetExpandsH ? containerH : clampedINatH
         let iy = insetExpandsH ? Int32(0)
             : safeAreaCrossAlignY(alignment: info.alignment,
-                                   insetHeight: iNatH, containerHeight: containerH)
-        SetWindowPos(info.insetHwnd, nil, 0, iy, iNatW, ih, UINT(SWP_NOZORDER))
-        let contentX = iNatW + gap
+                                   insetHeight: clampedINatH, containerHeight: containerH)
+        SetWindowPos(info.insetHwnd, nil, 0, iy, clampedINatW, ih, UINT(SWP_NOZORDER))
+        let contentX = clampedINatW + gap
         let availW = max(0, containerW - contentX)
-        let cw = contentExpandsW ? availW : min(info.contentNatW, availW)
-        let ch = contentExpandsH ? containerH : info.contentNatH
+        let cw = contentExpandsW ? availW : min(clampedCNatW, availW)
+        let ch = contentExpandsH ? containerH : min(clampedCNatH, containerH)
         SetWindowPos(info.contentHwnd, nil, contentX, 0, cw, ch, UINT(SWP_NOZORDER))
 
     case .trailing:
-        let availW = max(0, containerW - iNatW - gap)
-        let cw = contentExpandsW ? availW : min(info.contentNatW, availW)
-        let ch = contentExpandsH ? containerH : info.contentNatH
+        let availW = max(0, containerW - clampedINatW - gap)
+        let cw = contentExpandsW ? availW : min(clampedCNatW, availW)
+        let ch = contentExpandsH ? containerH : min(clampedCNatH, containerH)
         SetWindowPos(info.contentHwnd, nil, 0, 0, cw, ch, UINT(SWP_NOZORDER))
-        let ih = insetExpandsH ? containerH : iNatH
+        let ih = insetExpandsH ? containerH : clampedINatH
         let iy = insetExpandsH ? Int32(0)
             : safeAreaCrossAlignY(alignment: info.alignment,
-                                   insetHeight: iNatH, containerHeight: containerH)
-        SetWindowPos(info.insetHwnd, nil, cw + gap, iy, iNatW, ih, UINT(SWP_NOZORDER))
+                                   insetHeight: clampedINatH, containerHeight: containerH)
+        SetWindowPos(info.insetHwnd, nil, cw + gap, iy, clampedINatW, ih, UINT(SWP_NOZORDER))
     }
 }
 

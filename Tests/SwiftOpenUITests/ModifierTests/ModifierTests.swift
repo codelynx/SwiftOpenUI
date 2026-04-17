@@ -329,6 +329,81 @@ final class ModifierTests: XCTestCase {
         XCTAssertEqual(env_read.wrappedValue.value, 42)
     }
 
+    // MARK: - Environment-read tracker (rebuild-survival)
+    //
+    // The tracker captures `@Environment(Type.self)` reads so a
+    // ViewHost can re-push the same objects into env on rebuild,
+    // even when the originating `.environment(object)` modifier
+    // lives below the ViewHost in the render tree (and isn't
+    // guaranteed to re-run before body's next read on rebuild).
+
+    func testEnvironmentReadTrackerCapturesObjectAccessedDuringBody() {
+        let obj = TestObservableLike()
+        obj.value = 99
+
+        var env = EnvironmentValues()
+        env.setObject(obj)
+        setCurrentEnvironment(env)
+        defer { setCurrentEnvironment(nil) }
+
+        beginEnvironmentReadTracking()
+        // Simulate body evaluation: a descendant view reads via @Environment.
+        let env_read = Environment(TestObservableLike.self)
+        _ = env_read.wrappedValue
+        let captured = endEnvironmentReadTracking()
+
+        XCTAssertNotNil(captured)
+        XCTAssertEqual(captured?.count, 1)
+        XCTAssertTrue(captured?[ObjectIdentifier(TestObservableLike.self)] === obj)
+    }
+
+    func testEnvironmentReadTrackerNotActiveOutsideBody() {
+        // A read outside `beginEnvironmentReadTracking()` should NOT
+        // record anywhere — `endEnvironmentReadTracking()` returns nil.
+        XCTAssertNil(endEnvironmentReadTracking())
+    }
+
+    func testEnvironmentReadTrackerSurvivesRebuildCycle() {
+        // This is the crash-reproduction the Win32 reviewer hit:
+        // a parent's body installs `.environment(model)` for a child,
+        // the child reads via @Environment(Type.self), then the parent
+        // restores its captured env (which lacks the model) and asks
+        // the child to re-render. With the tracker, the captured
+        // injected-object reads are remembered and can be re-installed
+        // before the child's body re-evaluates.
+        let model = TestObservableLike()
+        model.value = 7
+
+        // === First render: env is set, body reads, tracker captures. ===
+        var setupEnv = EnvironmentValues()
+        setupEnv.setObject(model)
+        setCurrentEnvironment(setupEnv)
+
+        beginEnvironmentReadTracking()
+        let firstRead = Environment(TestObservableLike.self).wrappedValue
+        XCTAssertTrue(firstRead === model)
+        let captured = endEnvironmentReadTracking()
+        XCTAssertEqual(captured?.count, 1)
+
+        // === Simulate parent restoring its (object-less) captured env
+        // for the rebuild pass — without the tracker fix, body's next
+        // read would fatalError. With the fix, ViewHost re-installs
+        // captured.injected-objects via setObjectByID(_:) before body
+        // re-evaluates.
+        var rebuildEnv = EnvironmentValues()  // ancestor env with no model
+        for (typeID, obj) in captured ?? [:] {
+            rebuildEnv.setObjectByID(typeID, obj)
+        }
+        setCurrentEnvironment(rebuildEnv)
+
+        // === Second render: body's @Environment(Type.self) read
+        // succeeds because the tracker preserved the object. ===
+        let secondRead = Environment(TestObservableLike.self).wrappedValue
+        XCTAssertTrue(secondRead === model, "Tracker-restored env must yield the same object instance")
+
+        setCurrentEnvironment(nil)
+    }
+
     func testEnvironmentValuesIsEnabledDefaultsTrue() {
         let env = EnvironmentValues()
         XCTAssertTrue(env.isEnabled)

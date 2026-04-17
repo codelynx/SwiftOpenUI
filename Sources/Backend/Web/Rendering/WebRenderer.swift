@@ -1055,6 +1055,13 @@ extension OnChangeView: WebRenderable {
     }
 }
 
+extension OnChangeTwoArgView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        onChangeCheckAndFireTwoArg(value: value, action: action)
+        return webRenderView(content)
+    }
+}
+
 // MARK: - Appearance modifier Web extensions
 
 extension HiddenView: WebRenderable {
@@ -2344,6 +2351,24 @@ extension CornerRadiusView: WebRenderable {
     }
 }
 
+extension LabelsHiddenView: WebRenderable {
+    public func webCreateElement() -> JSValue {
+        // Push `labelsHidden = true` for the content subtree so
+        // label-bearing controls (currently `Picker`) can consult
+        // the flag and omit their inline label prefix. Mirrors the
+        // GTK4 renderer — without this push, the modifier would be
+        // a no-op on Web even though its renderable extension
+        // exists. (Web's Picker renderer does not yet consult the
+        // flag as of this writing, but completing the env plumbing
+        // now means the inline-label suppression will work once
+        // WebPicker is updated in parity with GTK4/Win32.)
+        var env = getCurrentEnvironment()
+        env.labelsHidden = true
+        setCurrentEnvironment(env)
+        return webRenderView(content)
+    }
+}
+
 extension HelpView: WebRenderable {
     public func webCreateElement() -> JSValue {
         let element = webRenderView(content)
@@ -2412,7 +2437,17 @@ extension SwiftOpenUI.Image: WebRenderable {
         case .filePath(let path):
             let img = document.createElement("img")
             img.src = .string(path)
-            img.style = .string("width: \(size)px; height: \(size)px; object-fit: contain;")
+            if isResizable {
+                // Resizable: fill any surrounding frame. The image stretches
+                // to match the parent's width/height (set by the .frame()
+                // wrapper). object-fit: fill matches SwiftUI's resizable
+                // semantics (no aspect preservation).
+                img.style = .string("width: 100%; height: 100%; object-fit: fill;")
+            } else {
+                // Non-resizable: render at the image's natural pixel size.
+                // Surrounding frames position but do not scale the image.
+                img.style = .string("display: inline-block;")
+            }
             return img
         case .systemName(let name):
             // No browser icon theme — render as text placeholder
