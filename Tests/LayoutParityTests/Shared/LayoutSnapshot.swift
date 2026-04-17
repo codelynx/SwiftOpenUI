@@ -460,9 +460,14 @@ public func compareLeaves(
 
         // Text leading-edge position can shift by the text size delta under
         // trailing/bottom alignment while the aligned far edge remains correct
-        // (for example ZStack bottomTrailing). Treat that as font-metric info.
+        // (for example ZStack bottomTrailing). Classify as font-metric info only
+        // when the anchoring far edge (ref.x+ref.width vs act.x+act.width) is
+        // stable — matching deltas on their own don't prove the text stayed
+        // anchored. Without that check, a leaf that moved and grew in the same
+        // direction would also satisfy |dx - dw| == 0.
         if dx > posTol {
-            let category: LeafDiffCategory = isText && abs(dx - dw) <= tolerances.structuralPosition
+            let trailingEdgeDrift = abs((ref.x + ref.width) - (act.x + act.width))
+            let category: LeafDiffCategory = isText && trailingEdgeDrift <= tolerances.structuralPosition
                 ? .textMetric
                 : .structural
             leafDiffs.append(LayoutDiff(
@@ -472,7 +477,8 @@ public func compareLeaves(
             ))
         }
         if dy > posTol {
-            let category: LeafDiffCategory = isText && abs(dy - dh) <= tolerances.structuralPosition
+            let bottomEdgeDrift = abs((ref.y + ref.height) - (act.y + act.height))
+            let category: LeafDiffCategory = isText && bottomEdgeDrift <= tolerances.structuralPosition
                 ? .textMetric
                 : .structural
             leafDiffs.append(LayoutDiff(
@@ -523,9 +529,12 @@ public func compareLeaves(
 
                 if gapDeltaY > tolerances.gapTolerance {
                     let textHeightDelta = abs(refPrev.height - actPrev.height) + abs(refCurr.height - actCurr.height)
+                    // Only absorb the portion of the gap drift explainable by
+                    // the text-height delta. A 1pt font difference cannot
+                    // account for an 8pt gap insertion/removal.
                     let textMetricGap = textHeightDelta > 0
                         && (refPrev.isTextLeaf || actPrev.isTextLeaf || refCurr.isTextLeaf || actCurr.isTextLeaf)
-                        && gapDeltaY <= tolerances.textSize
+                        && gapDeltaY <= textHeightDelta + tolerances.structuralPosition
                     leafDiffs.append(LayoutDiff(
                         path: "gap[\(i-1)->\(i)]",
                         message: String(format: "vertical gap: %.1f vs %.1f (delta %.1f)",
@@ -545,7 +554,7 @@ public func compareLeaves(
                     let textWidthDelta = abs(refPrev.width - actPrev.width) + abs(refCurr.width - actCurr.width)
                     let textMetricGap = textWidthDelta > 0
                         && (refPrev.isTextLeaf || actPrev.isTextLeaf || refCurr.isTextLeaf || actCurr.isTextLeaf)
-                        && gapDeltaX <= tolerances.textSize
+                        && gapDeltaX <= textWidthDelta + tolerances.structuralPosition
                     leafDiffs.append(LayoutDiff(
                         path: "gap[\(i-1)->\(i)]",
                         message: String(format: "horizontal gap: %.1f vs %.1f (delta %.1f)",

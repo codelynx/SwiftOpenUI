@@ -282,4 +282,124 @@ final class CompareLeafTests: XCTestCase {
         let gapDiffs = result.structuralDiffs.filter { $0.path.hasPrefix("gap[") }
         XCTAssertGreaterThanOrEqual(gapDiffs.count, 1, "Should detect horizontal gap difference")
     }
+
+    // MARK: - Tight text-position reclassification
+
+    /// A trailing-aligned text that grows in width may legitimately shift its
+    /// leading x by the width delta while keeping the trailing edge fixed.
+    /// That must be reported as a non-structural text-metric diff.
+    /// Two leaves are used so content-bbox normalization preserves the
+    /// x offset of the trailing leaf (a single-leaf case is collapsed to 0).
+    func testTrailingAnchoredTextGrowingReclassifiesAsTextMetric() {
+        let ref = makeSnapshot(root: LayoutNode(
+            tag: "root", viewType: "root", x: 0, y: 0, width: 200, height: 40,
+            children: [
+                textLeaf("Anchor", x: 0, y: 0, w: 20, h: 16),
+                textLeaf("End", x: 112.5, y: 24, w: 87.5, h: 16),
+            ]
+        ))
+        // Trailing edge of "End" stays anchored at 200 (112.5+87.5 == 98+102).
+        let act = makeSnapshot(root: LayoutNode(
+            tag: "root", viewType: "root", x: 0, y: 0, width: 200, height: 40,
+            children: [
+                textLeaf("Anchor", x: 0, y: 0, w: 20, h: 16),
+                textLeaf("End", x: 98, y: 24, w: 102, h: 16),
+            ]
+        ))
+
+        let result = compareLeaves(reference: ref, actual: act, tolerances: ParityTolerances())
+        let xStructural = result.structuralDiffs.contains {
+            $0.message.contains("x:") && $0.path.contains("End")
+        }
+        XCTAssertFalse(xStructural,
+                       "Anchored-edge text x drift must be text-metric, not structural.")
+    }
+
+    /// A text leaf whose magnitude of x-drift equals its width-drift but in
+    /// a direction that moves the trailing edge must remain structural —
+    /// the old |dx - dw| heuristic wrongly reclassified these as text-metric.
+    func testSameWidthDeltaWrongDirectionStaysStructural() {
+        let ref = makeSnapshot(root: LayoutNode(
+            tag: "root", viewType: "root", x: 0, y: 0, width: 250, height: 40,
+            children: [
+                textLeaf("Anchor", x: 0, y: 0, w: 20, h: 16),
+                textLeaf("End", x: 112.5, y: 24, w: 87.5, h: 16),  // trailing=200
+            ]
+        ))
+        // Trailing edge drifted from 200 to 229 — a real 29pt placement bug.
+        // |dx|=14.5 matches |dw|=14.5, but they move in the SAME direction,
+        // so the trailing edge is not anchored.
+        let act = makeSnapshot(root: LayoutNode(
+            tag: "root", viewType: "root", x: 0, y: 0, width: 250, height: 40,
+            children: [
+                textLeaf("Anchor", x: 0, y: 0, w: 20, h: 16),
+                textLeaf("End", x: 127, y: 24, w: 102, h: 16),  // trailing=229
+            ]
+        ))
+
+        let result = compareLeaves(reference: ref, actual: act, tolerances: ParityTolerances())
+        let xStructural = result.structuralDiffs.contains {
+            $0.message.contains("x:") && $0.path.contains("End")
+        }
+        XCTAssertTrue(xStructural,
+                      "Same |dx|==|dw| magnitudes in the wrong direction must stay structural.")
+    }
+
+    // MARK: - Tight gap reclassification
+
+    /// A tiny 1pt font delta cannot explain an 8pt gap insertion. The old
+    /// absolute textSize threshold masked this — the proportional rule must
+    /// keep it structural.
+    func testSmallFontDeltaWithLargeGapStaysStructural() {
+        // Ref: two texts stacked tightly with no gap, 16pt tall.
+        let ref = makeSnapshot(root: LayoutNode(
+            tag: "root", viewType: "root", x: 0, y: 0, width: 30, height: 34,
+            children: [
+                textLeaf("A", x: 0, y: 0, w: 30, h: 16),
+                textLeaf("B", x: 0, y: 16, w: 30, h: 16),
+            ]
+        ))
+        // Act: labels are 17pt (1pt font diff) AND an 8pt gap sneaks in.
+        let act = makeSnapshot(root: LayoutNode(
+            tag: "root", viewType: "root", x: 0, y: 0, width: 30, height: 42,
+            children: [
+                textLeaf("A", x: 0, y: 0, w: 30, h: 17),
+                textLeaf("B", x: 0, y: 25, w: 30, h: 17),  // gap=8
+            ]
+        ))
+
+        let result = compareLeaves(reference: ref, actual: act, tolerances: ParityTolerances())
+        let gapStructural = result.structuralDiffs.contains { $0.path.hasPrefix("gap[") }
+        XCTAssertTrue(gapStructural,
+                      "A font delta cannot justify a gap drift that exceeds it.")
+    }
+
+    /// Gap drift that's covered by the accumulated text-height delta is a
+    /// legitimate text-metric effect (macOS 16pt labels vs Linux 18pt labels:
+    /// each taller label pushes subsequent siblings down, which shows up as
+    /// gap shrinkage in flex-packed columns).
+    func testGapDriftWithinFontDeltaReclassifiesAsTextMetric() {
+        // Ref: 16pt labels, 24pt gap.
+        let ref = makeSnapshot(root: LayoutNode(
+            tag: "root", viewType: "root", x: 0, y: 0, width: 30, height: 56,
+            children: [
+                textLeaf("A", x: 0, y: 0, w: 30, h: 16),
+                textLeaf("B", x: 0, y: 40, w: 30, h: 16),
+            ]
+        ))
+        // Act: 18pt labels (2pt taller each = 4pt combined); gap drops to 22pt
+        // (2pt drift is within the 4pt cumulative text-height delta).
+        let act = makeSnapshot(root: LayoutNode(
+            tag: "root", viewType: "root", x: 0, y: 0, width: 30, height: 58,
+            children: [
+                textLeaf("A", x: 0, y: 0, w: 30, h: 18),
+                textLeaf("B", x: 0, y: 40, w: 30, h: 18),
+            ]
+        ))
+
+        let result = compareLeaves(reference: ref, actual: act, tolerances: ParityTolerances())
+        let gapStructural = result.structuralDiffs.contains { $0.path.hasPrefix("gap[") }
+        XCTAssertFalse(gapStructural,
+                       "Gap drift within cumulative text-height delta must be text-metric.")
+    }
 }
