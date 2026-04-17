@@ -283,11 +283,27 @@ func captureGTKWidgetTree(
     var children: [LayoutNode] = []
     var child = gtk_widget_get_first_child(widget)
     while let c = child {
-        children.append(captureGTKWidgetTree(widget: c, rootWidget: rootWidget))
+        let childGObject = UnsafeMutableRawPointer(c).assumingMemoryBound(to: GObject.self)
+        if g_object_get_data(childGObject, gtkSwiftLayoutHelperMarker) == nil {
+            children.append(captureGTKWidgetTree(widget: c, rootWidget: rootWidget))
+        }
         child = gtk_widget_get_next_sibling(c)
     }
 
     let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
+    if typeName == "GtkScrolledWindow",
+       let clippedLabel = gtkSingleLabelDescendant(in: widget) {
+        let tag = gtkIdentifyWidget(clippedLabel, typeName: "GtkLabel")
+        return LayoutNode(
+            tag: tag,
+            viewType: "GtkLabel",
+            x: origin.x,
+            y: origin.y,
+            width: size.width,
+            height: size.height,
+            children: []
+        )
+    }
     let tag = gtkIdentifyWidget(widget, typeName: typeName)
 
     // Map hosted node kinds to semantic view types for leaf extraction
@@ -312,6 +328,30 @@ func captureGTKWidgetTree(
         height: size.height,
         children: children
     )
+}
+
+private func gtkSingleLabelDescendant(
+    in widget: UnsafeMutablePointer<GtkWidget>
+) -> UnsafeMutablePointer<GtkWidget>? {
+    var labels: [UnsafeMutablePointer<GtkWidget>] = []
+    gtkCollectLabelDescendants(in: widget, into: &labels)
+    return labels.count == 1 ? labels[0] : nil
+}
+
+private func gtkCollectLabelDescendants(
+    in widget: UnsafeMutablePointer<GtkWidget>,
+    into labels: inout [UnsafeMutablePointer<GtkWidget>]
+) {
+    let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
+    if typeName == "GtkLabel" {
+        labels.append(widget)
+        return
+    }
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        gtkCollectLabelDescendants(in: c, into: &labels)
+        child = gtk_widget_get_next_sibling(c)
+    }
 }
 
 /// Identify a GTK widget with a human-readable tag.

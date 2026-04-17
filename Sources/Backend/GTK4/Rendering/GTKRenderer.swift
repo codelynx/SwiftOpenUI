@@ -8,6 +8,18 @@ import Foundation
 let gtkSwiftSpacerMarker = "gtk-swift-spacer"
 /// Marker string for Divider widgets.
 let gtkSwiftDividerMarker = "gtk-swift-divider"
+/// Marker string for backend-only layout helpers that should not be
+/// considered rendered SwiftOpenUI content by snapshot capture.
+let gtkSwiftLayoutHelperMarker = "gtk-swift-layout-helper"
+
+private func gtkMarkLayoutHelper(_ widget: UnsafeMutablePointer<GtkWidget>) {
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    g_object_set_data(gobject, gtkSwiftLayoutHelperMarker, UnsafeMutableRawPointer(bitPattern: 1))
+}
+
+private func gtkVStackSpacing(_ spacing: Int) -> Int {
+    spacing == stackDefaultSpacing ? 0 : resolveStackSpacing(spacing)
+}
 
 // MARK: - GTK rendering protocol
 
@@ -738,13 +750,13 @@ extension VStack: GTKRenderable, GTKDescribable {
         return GTK4DescriptorNode(
             kind: .vStack, typeName: "VStack",
             props: .vStack(GTK4VStackDescriptor(
-                spacing: resolveStackSpacing(spacing),
+                spacing: gtkVStackSpacing(spacing),
                 alignment: gtkHorizontalAlignmentDescriptor(alignment))),
             children: childDescs)
     }
 
     public func gtkCreateWidget() -> OpaquePointer {
-        let effectiveSpacing = resolveStackSpacing(spacing)
+        let effectiveSpacing = gtkVStackSpacing(spacing)
         let children = gtkRenderChildren(content).map(widgetFromOpaque)
         if gtkCanUseSharedVStackLayout(children) {
             return gtkRenderSharedVStack(children, spacing: effectiveSpacing, alignment: alignment)
@@ -909,6 +921,11 @@ private func gtkRenderFallbackHStack(
     let box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, gint(spacing))!
     var needsHExpand = false
     var needsVExpand = false
+    let hasNonSpacerHExpand = children.contains { widget in
+        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+        return g_object_get_data(gobject, gtkSwiftSpacerMarker) == nil
+            && gtk_widget_get_hexpand(widget) != 0
+    }
 
     let gtkAlign: GtkAlign
     switch alignment {
@@ -920,7 +937,12 @@ private func gtkRenderFallbackHStack(
     for widget in children {
         let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
         if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
-            gtk_widget_set_hexpand(widget, 1)
+            if hasNonSpacerHExpand {
+                gtk_widget_set_size_request(widget, 8, -1)
+                gtk_widget_set_hexpand(widget, 0)
+            } else {
+                gtk_widget_set_hexpand(widget, 1)
+            }
             gtk_widget_set_vexpand(widget, 0)
         }
         if g_object_get_data(gobject, gtkSwiftDividerMarker) != nil {
@@ -1198,6 +1220,13 @@ extension FrameView: GTKRenderable, GTKDescribable {
         gtk_widget_set_valign(slot, GTK_ALIGN_START)
         if clampsChild {
             gtk_widget_set_overflow(wrapper, GTK_OVERFLOW_HIDDEN)
+            if childExpH || childExpV {
+                gtk_widget_set_size_request(
+                    child,
+                    childExpH ? gint(layout.childPlacement.size.width) : -1,
+                    childExpV ? gint(layout.childPlacement.size.height) : -1
+                )
+            }
             gtk_swift_scrolled_window_configure_clip(
                 slot,
                 gint(layout.childPlacement.size.width),
@@ -1296,7 +1325,14 @@ extension FrameView: GTKRenderable, GTKDescribable {
         let requestWidth = widthMayGrowWithParent ? -1 : gint(layout.containerSize.width)
         let requestHeight = heightMayGrowWithParent ? -1 : gint(layout.containerSize.height)
         gtk_widget_set_size_request(wrapper, requestWidth, requestHeight)
-        if widthMayGrowWithParent { gtk_widget_set_hexpand(wrapper, 1) }
+        if widthMayGrowWithParent {
+            gtk_widget_set_hexpand(wrapper, 1)
+        } else {
+            // Prevent flexible children such as Color from making an
+            // explicitly width-constrained frame participate as flexible
+            // space in a parent HStack.
+            gtk_widget_set_hexpand(wrapper, 0)
+        }
         if heightMayGrowWithParent {
             gtk_widget_set_vexpand(wrapper, 1)
         } else {
@@ -1338,6 +1374,8 @@ extension FrameView: GTKRenderable, GTKDescribable {
             case .leading, .center, .trailing:
                 let topSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
                 let bottomSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                gtkMarkLayoutHelper(topSpacer)
+                gtkMarkLayoutHelper(bottomSpacer)
                 gtk_widget_set_vexpand(topSpacer, 1)
                 gtk_widget_set_vexpand(bottomSpacer, 1)
                 gtk_box_append(boxPointer(wrapper), topSpacer)
@@ -1345,6 +1383,7 @@ extension FrameView: GTKRenderable, GTKDescribable {
                 gtk_box_append(boxPointer(wrapper), bottomSpacer)
             case .bottomLeading, .bottom, .bottomTrailing:
                 let topSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                gtkMarkLayoutHelper(topSpacer)
                 gtk_widget_set_vexpand(topSpacer, 1)
                 gtk_box_append(boxPointer(wrapper), topSpacer)
                 gtk_box_append(boxPointer(wrapper), child)
@@ -1366,6 +1405,8 @@ extension FrameView: GTKRenderable, GTKDescribable {
             case .leading, .center, .trailing:
                 let topSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
                 let bottomSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                gtkMarkLayoutHelper(topSpacer)
+                gtkMarkLayoutHelper(bottomSpacer)
                 gtk_widget_set_vexpand(topSpacer, 1)
                 gtk_widget_set_vexpand(bottomSpacer, 1)
                 gtk_box_append(boxPointer(wrapper), topSpacer)
@@ -1373,6 +1414,7 @@ extension FrameView: GTKRenderable, GTKDescribable {
                 gtk_box_append(boxPointer(wrapper), bottomSpacer)
             case .bottomLeading, .bottom, .bottomTrailing:
                 let topSpacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+                gtkMarkLayoutHelper(topSpacer)
                 gtk_widget_set_vexpand(topSpacer, 1)
                 gtk_box_append(boxPointer(wrapper), topSpacer)
                 gtk_box_append(boxPointer(wrapper), child)
