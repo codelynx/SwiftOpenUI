@@ -8741,6 +8741,14 @@ class D2DCanvasContext {
 
     /// Create or update the D2D stroke style for current lineCap/lineJoin.
     func ensureStrokeStyle() {
+        createStrokeStyle(dash: [], dashPhase: 0)
+    }
+
+    /// Create a D2D stroke style with the given dash pattern.
+    /// Dash values are in absolute points (SwiftUI convention); they
+    /// are normalized by lineWidth for D2D which interprets them as
+    /// multiples of stroke width.
+    func createStrokeStyle(dash: [CGFloat], dashPhase: CGFloat) {
         if let old = strokeStyle {
             d2d1_StrokeStyle_Release(old)
             strokeStyle = nil
@@ -8761,8 +8769,22 @@ class D2DCanvasContext {
             }
         }()
         var style: D2DStrokeStyle?
-        let hr = d2d1_Factory_CreateStrokeStyle(factory, capInt, joinInt, &style)
-        if hr >= 0 { strokeStyle = style }
+        if dash.isEmpty {
+            let hr = d2d1_Factory_CreateStrokeStyle(
+                factory, capInt, joinInt, nil, 0, 0, &style)
+            if hr >= 0 { strokeStyle = style }
+        } else {
+            let lw = max(lineWidth, 0.001)
+            let floatDashes = dash.map { Float($0) / lw }
+            let phaseNorm = Float(dashPhase) / lw
+            floatDashes.withUnsafeBufferPointer { buf in
+                let hr = d2d1_Factory_CreateStrokeStyle(
+                    factory, capInt, joinInt,
+                    buf.baseAddress, Int32(buf.count), phaseNorm,
+                    &style)
+                if hr >= 0 { strokeStyle = style }
+            }
+        }
     }
 
     deinit {
@@ -9463,12 +9485,29 @@ extension DrawingContext {
         guard let geometry = buildPathGeometry(path, factory: factory, filled: false) else { return }
         defer { d2d1_PathGeometry_Release(geometry) }
 
-        // Create stroke style if needed
+        // Create stroke style with dash support.
+        // D2D dash lengths are multiples of strokeWidth, but SwiftUI
+        // specifies them in absolute points — normalize by dividing.
         let capInt: Int32 = { switch style.lineCap { case .butt: return 0; case .square: return 1; case .round: return 2 } }()
         let joinInt: Int32 = { switch style.lineJoin { case .miter: return 0; case .bevel: return 1; case .round: return 2 } }()
         var strokeStyle: D2DStrokeStyle?
-        if d2d1_Factory_CreateStrokeStyle(factory, capInt, joinInt, &strokeStyle) >= 0,
-           let ss = strokeStyle {
+        let lw = max(Float(style.lineWidth), 0.001) // avoid division by zero
+        let floatDashes = style.dash.map { Float($0) / lw }
+        let dashPhaseNorm = Float(style.dashPhase) / lw
+        let createStyle: () -> Int32 = {
+            if floatDashes.isEmpty {
+                return d2d1_Factory_CreateStrokeStyle(
+                    factory, capInt, joinInt, nil, 0, 0, &strokeStyle)
+            } else {
+                return floatDashes.withUnsafeBufferPointer { buf in
+                    d2d1_Factory_CreateStrokeStyle(
+                        factory, capInt, joinInt,
+                        buf.baseAddress, Int32(buf.count), dashPhaseNorm,
+                        &strokeStyle)
+                }
+            }
+        }
+        if createStyle() >= 0, let ss = strokeStyle {
             d2d1_RenderTarget_DrawGeometryStyled(c.renderTarget, geometry, c.brush,
                                                   Float(style.lineWidth), ss)
             d2d1_StrokeStyle_Release(ss)

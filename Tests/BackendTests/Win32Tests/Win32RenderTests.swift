@@ -4316,6 +4316,39 @@ final class Win32RenderTests: XCTestCase {
         let afterRebuild = getCurrentAnimation()
         XCTAssertNil(afterRebuild, "Animation TLS should be restored after rebuild")
     }
+
+    // MARK: - Dashed Stroke Smoke Tests
+
+    func testDashedRoundedRectangleRenders() {
+        let ctx = testContext()
+        let view = RoundedRectangle(cornerRadius: 8)
+            .stroke(Color.gray, style: StrokeStyle(lineWidth: 1, dash: [6, 5]))
+            .frame(width: 200, height: 100)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Dashed RoundedRectangle should render an HWND")
+        // Force the D2D paint path so the dash shim is actually exercised
+        XCTAssertTrue(RedrawWindow(hwnd!, nil, nil, UINT(RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN)), "RedrawWindow should succeed")
+    }
+
+    func testDashedRectangleWithThickStrokeRenders() {
+        let ctx = testContext()
+        let view = Rectangle()
+            .stroke(Color.blue, style: StrokeStyle(lineWidth: 3, dash: [10, 4], dashPhase: 2))
+            .frame(width: 150, height: 80)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Dashed Rectangle with thick stroke should render")
+        XCTAssertTrue(RedrawWindow(hwnd!, nil, nil, UINT(RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN)), "RedrawWindow should succeed")
+    }
+
+    func testSolidStrokeStillWorks() {
+        let ctx = testContext()
+        let view = Circle()
+            .stroke(Color.red, lineWidth: 2)
+            .frame(width: 60, height: 60)
+        let hwnd = winRenderView(view, in: ctx)
+        XCTAssertNotNil(hwnd, "Solid stroke Circle should still render")
+        XCTAssertTrue(RedrawWindow(hwnd!, nil, nil, UINT(RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN)), "RedrawWindow should succeed")
+    }
 }
 
 // MARK: - Test helpers

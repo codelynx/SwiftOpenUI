@@ -418,19 +418,26 @@ HRESULT d2d1_Factory_CreateStrokeStyle(
     D2DFactory factory,
     int capStyle,
     int lineJoin,
+    const float *dashes,
+    int dashCount,
+    float dashOffset,
     D2DStrokeStyle *ppStyle
 ) {
+    D2D1_DASH_STYLE dashStyle = (dashes && dashCount > 0)
+        ? D2D1_DASH_STYLE_CUSTOM
+        : D2D1_DASH_STYLE_SOLID;
     D2D1_STROKE_STYLE_PROPERTIES props = D2D1::StrokeStyleProperties(
         mapCapStyle(capStyle),   // startCap
         mapCapStyle(capStyle),   // endCap
         mapCapStyle(capStyle),   // dashCap
         mapLineJoin(lineJoin),
         10.0f,                   // miterLimit
-        D2D1_DASH_STYLE_SOLID,
-        0.0f                     // dashOffset
+        dashStyle,
+        dashOffset
     );
     ID2D1StrokeStyle *style = nullptr;
-    HRESULT hr = AS_FACTORY(factory)->CreateStrokeStyle(props, nullptr, 0, &style);
+    HRESULT hr = AS_FACTORY(factory)->CreateStrokeStyle(
+        props, dashes, static_cast<UINT32>(dashCount), &style);
     *ppStyle = reinterpret_cast<D2DStrokeStyle>(style);
     return hr;
 }
@@ -464,6 +471,18 @@ void d2d1_RenderTarget_DrawRectangleStyled(
 ) {
     D2D1_RECT_F rect = D2D1::RectF(x, y, x + width, y + height);
     AS_TARGET(target)->DrawRectangle(rect, AS_BRUSH(brush), strokeWidth, AS_STROKE_STYLE(style));
+}
+
+void d2d1_RenderTarget_DrawRoundedRectangleStyled(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float x, float y, float width, float height,
+    float radiusX, float radiusY,
+    float strokeWidth,
+    D2DStrokeStyle style
+) {
+    D2D1_ROUNDED_RECT rr = { D2D1::RectF(x, y, x + width, y + height), radiusX, radiusY };
+    AS_TARGET(target)->DrawRoundedRectangle(rr, AS_BRUSH(brush), strokeWidth, AS_STROKE_STYLE(style));
 }
 
 void d2d1_RenderTarget_DrawEllipseStyled(

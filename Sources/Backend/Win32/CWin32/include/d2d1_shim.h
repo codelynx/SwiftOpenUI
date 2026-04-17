@@ -109,13 +109,19 @@ void d2d1_RenderTarget_DrawEllipse(
 
 typedef struct D2DStrokeStyleImpl *D2DStrokeStyle;
 
-// Create a stroke style with line cap and join.
+// Create a stroke style with line cap, join, and optional dash pattern.
 // capStyle: 0 = flat, 1 = square, 2 = round, 3 = triangle
 // lineJoin: 0 = miter, 1 = bevel, 2 = round, 3 = miter-or-bevel
+// dashes:   pointer to an array of dash/gap lengths (NULL = solid)
+// dashCount: number of elements in the dashes array (0 = solid)
+// dashOffset: starting offset into the dash pattern
 HRESULT d2d1_Factory_CreateStrokeStyle(
     D2DFactory factory,
     int capStyle,
     int lineJoin,
+    const float *dashes,
+    int dashCount,
+    float dashOffset,
     D2DStrokeStyle *ppStyle
 );
 void d2d1_StrokeStyle_Release(D2DStrokeStyle style);
@@ -133,6 +139,15 @@ void d2d1_RenderTarget_DrawRectangleStyled(
     D2DRenderTarget target,
     D2DBrush brush,
     float x, float y, float width, float height,
+    float strokeWidth,
+    D2DStrokeStyle style
+);
+
+void d2d1_RenderTarget_DrawRoundedRectangleStyled(
+    D2DRenderTarget target,
+    D2DBrush brush,
+    float x, float y, float width, float height,
+    float radiusX, float radiusY,
     float strokeWidth,
     D2DStrokeStyle style
 );
