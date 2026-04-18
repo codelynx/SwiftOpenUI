@@ -2470,6 +2470,10 @@ extension ForegroundColorView: WinRenderable {
         let h = childRect.bottom - childRect.top
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
+        // Propagate expand flags from child
+        if shouldExpandWidth(child) { markExpandWidth(container) }
+        if shouldExpandHeight(child) { markExpandHeight(container) }
+
         let r = UInt8(color.red * 255)
         let g = UInt8(color.green * 255)
         let b = UInt8(color.blue * 255)
@@ -2674,6 +2678,11 @@ extension BackgroundView: WinRenderable {
         let w = childRect.right - childRect.left
         let h = childRect.bottom - childRect.top
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        // Propagate expand flags from child so parent layouts (VStack/HStack)
+        // know this background container should fill available space.
+        if shouldExpandWidth(child) { markExpandWidth(container) }
+        if shouldExpandHeight(child) { markExpandHeight(container) }
 
         guard let color = background as? Color else { return container }
         // Pre-multiply alpha against white to simulate transparency.
@@ -2940,6 +2949,9 @@ extension BorderView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
         SetWindowPos(child, nil, bw, bw, w - bw * 2, h - bw * 2, UINT(SWP_NOZORDER))
 
+        // Propagate expand flags from child
+        if shouldExpandWidth(child) { markExpandWidth(container) }
+        if shouldExpandHeight(child) { markExpandHeight(container) }
         // Pre-multiply alpha against white for GDI compatibility
         let a = color.alpha
         let r = UInt8((color.red * a + 1.0 * (1.0 - a)) * 255)
