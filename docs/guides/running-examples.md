@@ -16,6 +16,7 @@ swift run HelloWorld
 swift run Stopwatch
 swift run ColorMixer
 swift run SimplePaint
+swift run LayoutStress
 
 # Parity
 swift run ParityViewsBasic
@@ -83,6 +84,7 @@ swift run HelloWorld
 swift run Stopwatch
 swift run ColorMixer
 swift run SimplePaint
+swift run LayoutStress
 
 # Parity
 swift run ParityViewsBasic
@@ -152,6 +154,7 @@ See [android-setup.md](android-setup.md) for full setup instructions.
 | ColorMixer | `ColorMixer` | Sliders, color swatches, harmony, dark theme |
 | Calculator | `Calculator` | Grid/GridRow, .gridCellColumns, ZStack, @State |
 | SimplePaint | `SimplePaint` | Canvas, Path, .onDrag(), tools, color palette, undo/redo |
+| LayoutStress | `LayoutStress` | Settings rows, dashboard cards, sidebar/detail split, nested alignment, status bar |
 
 ### Parity
 

@@ -181,7 +181,7 @@ All migration phases are **complete**.
 - Legacy examples absorbed and removed: Showcase1, Showcase2, Counter, 02-TextStyles, 03-Buttons, 04-State, 05-Layout, BasicInteractive, FocusTest
 
 ### Phase 3: Wire up — Done
-- `Package.swift` — 14 targets (3 showcase + 11 parity), legacy targets removed
+- `Package.swift` — 17 targets (6 showcase + 11 parity)
 - `apple/Examples/project.yml` — 14 XcodeGen targets, legacy targets removed
 - `docs/architecture/swiftui-parity-matrix.md` — parity example references added per section
 - `CLAUDE.md` — examples list updated

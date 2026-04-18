@@ -93,7 +93,7 @@ swift run ColorMixer
 swift run ParityViewsBasic
 ```
 
-All 16 examples (5 Showcase + 11 Parity) work on Linux.
+All 17 examples (6 Showcase + 11 Parity) work on Linux.
 
 ### Notes
 
