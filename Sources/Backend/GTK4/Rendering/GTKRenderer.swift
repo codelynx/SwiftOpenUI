@@ -21,6 +21,18 @@ private func gtkVStackSpacing(_ spacing: Int) -> Int {
     spacing == stackDefaultSpacing ? 0 : resolveStackSpacing(spacing)
 }
 
+/// Convert a Double pixel dimension into an integer GTK size. GTK widgets
+/// use integer pixels, so plain `gint(x)` truncates — a 0.5pt divider
+/// collapses to 0 and becomes invisible. Round positive sub-pixel values
+/// up so that hairline dividers and similar sub-pixel shapes are at least
+/// one device pixel tall. Larger positive values keep their integer part
+/// so existing whole-pixel layouts are unchanged.
+@inline(__always)
+private func gtkPixelSize(_ value: Double) -> gint {
+    if value > 0 && value < 1 { return 1 }
+    return gint(value)
+}
+
 // MARK: - GTK rendering protocol
 
 /// Protocol that views implement (via extensions) to provide GTK widget creation.
@@ -1241,13 +1253,13 @@ extension FrameView: GTKRenderable, GTKDescribable {
         }
         gtk_widget_set_size_request(
             slot,
-            gint(layout.childPlacement.size.width),
-            gint(layout.childPlacement.size.height)
+            gtkPixelSize(layout.childPlacement.size.width),
+            gtkPixelSize(layout.childPlacement.size.height)
         )
         gtk_widget_set_size_request(
             wrapper,
-            gint(layout.containerSize.width),
-            gint(layout.containerSize.height)
+            gtkPixelSize(layout.containerSize.width),
+            gtkPixelSize(layout.containerSize.height)
         )
 
         if width != nil {
@@ -1327,8 +1339,8 @@ extension FrameView: GTKRenderable, GTKDescribable {
                 || (maxHeight == nil && childExpV)
             )
 
-        let requestWidth = widthMayGrowWithParent ? -1 : gint(layout.containerSize.width)
-        let requestHeight = heightMayGrowWithParent ? -1 : gint(layout.containerSize.height)
+        let requestWidth = widthMayGrowWithParent ? -1 : gtkPixelSize(layout.containerSize.width)
+        let requestHeight = heightMayGrowWithParent ? -1 : gtkPixelSize(layout.containerSize.height)
         gtk_widget_set_size_request(wrapper, requestWidth, requestHeight)
         if widthMayGrowWithParent {
             gtk_widget_set_hexpand(wrapper, 1)
@@ -1458,13 +1470,13 @@ extension FrameView: GTKRenderable, GTKDescribable {
 
         if constrainedWidth {
             // Width constrained, height flexible
-            gtk_widget_set_size_request(wrapper, gint(layout.containerSize.width), -1)
+            gtk_widget_set_size_request(wrapper, gtkPixelSize(layout.containerSize.width), -1)
             let hexp: gint = (maxWidth != nil && maxWidth == .infinity) ? 1 : 0
             gtk_widget_set_hexpand(wrapper, hexp)
             gtk_widget_set_vexpand(wrapper, 1)
         } else {
             // Height constrained, width flexible
-            gtk_widget_set_size_request(wrapper, -1, gint(layout.containerSize.height))
+            gtk_widget_set_size_request(wrapper, -1, gtkPixelSize(layout.containerSize.height))
             let vexp: gint = (maxHeight != nil && maxHeight == .infinity) ? 1 : 0
             gtk_widget_set_hexpand(wrapper, 1)
             gtk_widget_set_vexpand(wrapper, vexp)
@@ -1713,68 +1725,20 @@ extension LineLimitView: GTKRenderable {
                     if gtk_label_get_ellipsize(labelOp) == PANGO_ELLIPSIZE_NONE {
                         gtk_label_set_ellipsize(labelOp, PANGO_ELLIPSIZE_END)
                     }
-                    // A single-line truncating label in a flex horizontal
-                    // layout (HStack) needs hexpand=TRUE so GtkBox gives it
-                    // the remaining width after natural-sized siblings take
-                    // theirs. Without it, the label packs at its minimum —
-                    // which with ellipsize is just "…" — and adjacent
-                    // content sits flush against it. SwiftUI's behavior is
-                    // that single-line truncating Text fills available line
-                    // width. Setting hexpand on a standalone Text or inside
-                    // a VStack is a no-op for truncation and produces the
-                    // expected "text fills horizontally" SwiftUI behavior
-                    // anyway, so this is safe outside HStack too.
-                    gtk_widget_set_hexpand(label, 1)
-                    // Also force halign=FILL so the label actually
-                    // stretches to the parent's allocated width. VStack's
-                    // fallback renderer already does this when it sees
-                    // hexpand=1 on a child, but some stack paths (e.g.
-                    // the shared VStack when other children are at
-                    // natural width) or VStack wrappers from composite
-                    // views don't always propagate, leaving the label
-                    // at its natural/minimum request. Setting halign
-                    // here is idempotent and safe.
-                    gtk_widget_set_halign(label, GTK_ALIGN_FILL)
-                    // Free the label's natural-width hint from the
-                    // enclosing container's measurement cycle. Pango
-                    // uses `max-width-chars` as the natural-width
-                    // budget for ellipsizing labels; leaving it at the
-                    // default -1 makes the label request the FULL
-                    // text width as natural, which can force ancestor
-                    // containers to negotiate tight allocations and
-                    // send the label back its *minimum* — typically
-                    // just an ellipsis. Setting a generous but
-                    // finite cap (80 chars ≈ a long filesystem path)
-                    // keeps the natural-width request reasonable so
-                    // ancestors allocate space closer to the actual
-                    // desired display width, and Pango ellipsizes to
-                    // fit whatever final allocation lands — rather
-                    // than collapsing to `…`.
-                    // Pragmatic character-based sizing.
+                    // Leave hexpand/halign alone. SwiftUI semantics for
+                    // Text(...).lineLimit(1) is "draw at natural size;
+                    // ellipsize only if the parent allocates less than
+                    // natural." The label must not grab horizontal space
+                    // — a trailing `Text(value).lineLimit(1)` inside a
+                    // Spacer-packed HStack (e.g. a settings row) must
+                    // stay at natural width and let the Spacer fill the
+                    // gap so the value ends up right-aligned.
                     //
-                    // The ideal here would be "label takes whatever the
-                    // parent allocates, ellipsizes if text exceeds that"
-                    // — i.e. elastic width driven by `hexpand + halign
-                    // = FILL`. In practice, somewhere in the container
-                    // chain (VStack → padding → frame → background →
-                    // overlay → outer VStack → outer HStack → ...) the
-                    // hexpand signal is not propagated into a final
-                    // allocation wider than the label's natural request,
-                    // so with `width-chars = -1` the label gets its
-                    // MINIMUM (the ellipsis glyph) and degenerates to
-                    // rendering just "…".
-                    //
-                    // Until the propagation bug is tracked down and
-                    // fixed, we set a sensible character-based natural
-                    // request: ~40 characters. This gives Pango enough
-                    // budget to show meaningful start/end fragments
-                    // with middle-truncation on long file paths while
-                    // still allowing shorter text to display in full.
-                    // Labels with shorter natural widths are unaffected
-                    // (short text simply fits). Follow-up tracked as
-                    // "GTK hexpand propagation through BackgroundView /
-                    // OverlayView / nested-VStack chains".
-                    gtk_label_set_width_chars(labelOp, 40)
+                    // `max-width-chars = -1` keeps the natural request
+                    // at the full text width so short text displays in
+                    // full; ellipsize kicks in only when the allocation
+                    // is smaller than natural.
+                    gtk_label_set_width_chars(labelOp, -1)
                     gtk_label_set_max_width_chars(labelOp, -1)
                 } else {
                     gtk_label_set_wrap(labelOp, 1)

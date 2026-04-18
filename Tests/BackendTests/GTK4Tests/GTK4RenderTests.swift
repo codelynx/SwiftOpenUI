@@ -2084,6 +2084,130 @@ final class GTK4RenderTests: XCTestCase {
                        "ZStack frame(height: 100) must measure 100 tall.")
     }
 
+    /// Settings-row pattern: `HStack { Text; Spacer; Text }` inside a
+    /// `VStack(alignment: .leading)` with a Color background. The trailing
+    /// Text (value) must be pushed to the right edge of the allocated width,
+    /// not left-clustered with the label.
+    func testSettingsRowSpacerPushesValueToRightEdge() throws {
+        try requireGTK()
+
+        // Reproduce the exact LayoutStress SettingsSection: section header,
+        // multiple rows with divider siblings, all under a ScrollView-
+        // wrapped VStack(.leading, spacing: 16), which itself is under a
+        // top-level VStack(spacing: 0) with a title bar.
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            VStack(spacing: 0) {
+                Text("Layout Stress Test")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color(red: 0.1, green: 0.1, blue: 0.1))
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("1. Settings Rows").padding(.horizontal, 16)
+
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("GENERAL")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                            HStack {
+                                Text("Username")
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Text("kaz.yoshikawa")
+                                    .foregroundColor(.gray)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            Color.gray.frame(height: 0.5).padding(.leading, 16)
+                            HStack {
+                                Text("Email")
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Text("kaz@example.com")
+                                    .foregroundColor(.gray)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                        }
+                        .background(Color(red: 0.15, green: 0.15, blue: 0.15))
+                    }
+                    .padding(.vertical, 16)
+                }
+            }
+            .background(Color.black)
+        ))
+        // Use the backend's own helper so we match the real window bring-up.
+        gtkConfigureRootContentToFillWindow(wrapper)
+        allocate(widget: wrapper, size: ViewSize(width: 700, height: 600))
+
+        var allLabels: [UnsafeMutablePointer<GtkWidget>] = []
+        gtkCollectLabels(in: wrapper, into: &allLabels)
+        let textLabels = allLabels.filter { w in
+            let g = UnsafeMutableRawPointer(w).assumingMemoryBound(to: GObject.self)
+            return g_object_get_data(g, gtkSwiftSpacerMarker) == nil
+        }
+
+        // Dump every non-Spacer label with its position to see what's happening.
+        for label in textLabels {
+            let ptr = gtk_label_get_text(OpaquePointer(label))
+            let text = ptr.map { String(cString: $0) } ?? "?"
+            let origin = translatedChildOrigin(child: label, in: wrapper)
+            let size = allocatedSize(of: label)
+            fputs("DBG label '\(text)' at x=\(origin.x) w=\(size.width) right=\(origin.x + size.width)\n", stderr)
+        }
+
+        guard let valueLabel = textLabels.first(where: { w in
+            let ptr = gtk_label_get_text(OpaquePointer(w))
+            return ptr.map { String(cString: $0) } == "kaz.yoshikawa"
+        }) else {
+            XCTFail("Could not locate kaz.yoshikawa label")
+            return
+        }
+
+        let valueOrigin = translatedChildOrigin(child: valueLabel, in: wrapper)
+        let valueSize = allocatedSize(of: valueLabel)
+        let valueRightEdge = valueOrigin.x + valueSize.width
+
+        // Inner right edge = 700 (allocated) - 16 (row padding) = 684.
+        XCTAssertGreaterThan(
+            valueRightEdge,
+            670,
+            "Spacer must push the value to the right padding edge (~684), got right edge at \(valueRightEdge)."
+        )
+    }
+
+    /// A `.frame(height: 0.5)` (sub-pixel divider) must request at least
+    /// 1 device-pixel of height. Truncating via `gint()` collapses 0.5 to 0
+    /// and makes the divider invisible.
+    func testSubPixelHeightFrameRendersAtLeastOnePixel() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            Color.gray.frame(height: 0.5)
+        ))
+
+        var widthMin: Int32 = 0; var widthNat: Int32 = 0
+        var heightMin: Int32 = 0; var heightNat: Int32 = 0
+        gtk_swift_widget_measure(wrapper, GTK_ORIENTATION_HORIZONTAL, -1, &widthMin, &widthNat)
+        gtk_swift_widget_measure(wrapper, GTK_ORIENTATION_VERTICAL, -1, &heightMin, &heightNat)
+
+        XCTAssertGreaterThanOrEqual(
+            heightMin,
+            1,
+            "A 0.5pt divider's minimum height must be at least 1 device pixel, got \(heightMin)."
+        )
+        XCTAssertGreaterThanOrEqual(
+            heightNat,
+            1,
+            "A 0.5pt divider's natural height must be at least 1 device pixel, got \(heightNat)."
+        )
+    }
+
     /// Three ZStacks with identical `.frame(width: 120, height: 100)` placed
     /// in an HStack must all allocate the same 120×100 size — the
     /// LayoutStress "nested alignment stress" pattern. The middle box uses
