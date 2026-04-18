@@ -28,6 +28,12 @@ var targets: [Target] = [
         dependencies: [],
         path: "Tests/LayoutParityTests/Shared"
     ),
+    // Layout parity — comparison logic unit tests (platform-independent)
+    .testTarget(
+        name: "LayoutParityComparisonTests",
+        dependencies: ["LayoutParityShared"],
+        path: "Tests/LayoutParityTests/ComparisonTests"
+    ),
 
     // Bundled icon font resources for non-macOS backends. Ungated so
     // Windows / Web / Android backends can declare it as a dependency
@@ -123,6 +129,12 @@ targets += [
         name: "Win32RenderTests",
         dependencies: ["SwiftOpenUI", "BackendWin32"],
         path: "Tests/BackendTests/Win32Tests"
+    ),
+    // Layout parity — Win32 comparison against macOS reference
+    .testTarget(
+        name: "Win32LayoutParityTests",
+        dependencies: ["SwiftOpenUI", "BackendWin32", "CWin32", "CWin32Bridge", "LayoutParityShared"],
+        path: "Tests/LayoutParityTests/Win32Comparison"
     ),
 ]
 exampleDeps.append("BackendWin32")

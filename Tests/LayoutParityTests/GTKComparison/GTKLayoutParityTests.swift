@@ -33,11 +33,30 @@ final class GTKLayoutParityTests: XCTestCase {
 
     // MARK: - Compare All Scenarios
 
+    /// Scenarios with a known residual that the per-pair text-metric rule in
+    /// `compareLeaves` cannot absorb, where the drift is nevertheless a pure
+    /// font-metric cascade rather than a layout bug. Tracked so failures on
+    /// genuinely new scenarios still fail the suite loudly.
+    ///
+    /// - `sidebar-detail-split`: a 5-item VStack is vertically centered next
+    ///   to a detail pane. GTK's 18pt Pango line height (vs macOS 16pt)
+    ///   cumulates across the sidebar, shifting the centered origin by ~5pt
+    ///   while the adjacent Detail leaf adds its own 2pt height delta. The
+    ///   resulting 7pt gap drift is pure text metric but is not explainable
+    ///   from the two adjacent leaves alone. Broadening the rule to a
+    ///   cumulative-snapshot allowance was rejected in review as too easy to
+    ///   abuse. Left as a known residual to either fix via font matching or
+    ///   re-score under a future column-scoped rule.
+    static let knownStructuralResiduals: Set<String> = [
+        "sidebar-detail-split",
+    ]
+
     func testCompareAllScenariosAgainstReference() throws {
         try requireGTK()
 
-        var passed: [String] = []
+        var passed: [(String, LeafComparisonResult)] = []
         var failed: [(String, LeafComparisonResult)] = []
+        var knownResiduals: [(String, LeafComparisonResult)] = []
         var skipped: [String] = []
         var errors: [(String, Error)] = []
 
@@ -57,20 +76,16 @@ final class GTKLayoutParityTests: XCTestCase {
                     height: parityRootHeight
                 )
 
-                // Use leaf-based comparison (handles flat macOS vs nested GTK trees).
-                // Tolerances: 15pt for both position and size. Font metrics
-                // differ ~6-14pt between macOS SF and GTK Pango, and alignment-
-                // driven position offsets track the size difference (e.g.,
-                // bottom-trailing text shifts x by its width delta).
                 let result = compareLeaves(
                     reference: reference,
                     actual: actual,
-                    positionTolerance: 15.0,
-                    sizeTolerance: 15.0
+                    tolerances: ParityTolerances()
                 )
 
                 if result.passed {
-                    passed.append(name)
+                    passed.append((name, result))
+                } else if Self.knownStructuralResiduals.contains(name) {
+                    knownResiduals.append((name, result))
                 } else {
                     failed.append((name, result))
                 }
@@ -99,23 +114,48 @@ final class GTKLayoutParityTests: XCTestCase {
             }
         }
 
+        // Collect text-metric diffs from ALL scenarios (passed + failed + known residuals)
+        let allResults = passed + failed + knownResiduals
+        let totalStructuralFailures = failed.flatMap { $0.1.structuralDiffs }.count
+        let totalTextMetricInfo = allResults.flatMap { $0.1.textMetricDiffs }.count
+
         print("\n=== PARITY SUMMARY ===")
-        print("Passed:  \(passed.count)")
-        print("Failed:  \(failed.count)")
-        print("Skipped: \(skipped.count) (no reference fixture)")
-        print("Errors:  \(errors.count)")
+        print("Passed:         \(passed.count) (no structural failures)")
+        print("Failed:         \(failed.count) (structural layout bugs)")
+        print("Known residual: \(knownResiduals.count) (tracked, non-fatal)")
+        print("Skipped:        \(skipped.count) (no reference fixture)")
+        print("Errors:         \(errors.count)")
+        print("")
+        print("Structural failures: \(totalStructuralFailures) diffs across \(failed.count) scenarios")
+        print("Text-metric info:    \(totalTextMetricInfo) diffs across \(allResults.count) scenarios (expected, not bugs)")
 
         for (name, result) in failed {
             print("\nFAILED: \(name)")
+            print(result)
+        }
+        for (name, result) in knownResiduals {
+            print("\nKNOWN RESIDUAL: \(name)")
             print(result)
         }
         for (name, err) in errors {
             print("\nERROR: \(name): \(err)")
         }
 
-        // Don't hard-fail — we're establishing baselines and collecting data
-        if !failed.isEmpty || !errors.isEmpty {
-            print("\n⚠ \(failed.count) parity failures, \(errors.count) errors (non-fatal, baseline run)")
+        // A residual that unexpectedly passed should also fail the suite so
+        // the exemption gets removed instead of silently rotting.
+        let unexpectedlyPassing = passed
+            .map { $0.0 }
+            .filter { Self.knownStructuralResiduals.contains($0) }
+        for name in unexpectedlyPassing {
+            XCTFail("\(name): listed as knownStructuralResiduals but now passes — remove it from the set.")
+        }
+
+        // Hard-fail the test on structural failures or errors
+        for (name, result) in failed {
+            XCTFail("\(name): \(result.structuralDiffs.count) structural layout failure(s)")
+        }
+        for (name, err) in errors {
+            XCTFail("\(name): capture error: \(err)")
         }
     }
 
@@ -157,10 +197,19 @@ final class GTKLayoutParityTests: XCTestCase {
         XCTAssertGreaterThan(snapshot.root.children.count, 0)
     }
 
-    // MARK: - Dump All (no comparison, just captures)
+    // MARK: - Dump All (gated, not run by default)
 
+    /// Dumps all GTK snapshots to the fixtures directory for manual inspection.
+    /// Skipped unless DUMP_PARITY_SNAPSHOTS=1 is set — avoids dirtying the
+    /// working tree during normal test runs.
+    ///
+    /// Usage: DUMP_PARITY_SNAPSHOTS=1 swift test --filter testDumpAllGTKSnapshots
     func testDumpAllGTKSnapshots() throws {
         try requireGTK()
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["DUMP_PARITY_SNAPSHOTS"] == "1",
+            "Set DUMP_PARITY_SNAPSHOTS=1 to run snapshot dumps"
+        )
 
         for (name, view) in allLayoutScenarios {
             do {
@@ -174,7 +223,6 @@ final class GTKLayoutParityTests: XCTestCase {
                 print(snapshot.root)
                 print()
 
-                // Also write GTK snapshots for manual inspection
                 let url = fixturesDir.appendingPathComponent("gtk-\(name).json")
                 try writeSnapshot(snapshot, to: url)
             } catch {
@@ -270,11 +318,27 @@ func captureGTKWidgetTree(
     var children: [LayoutNode] = []
     var child = gtk_widget_get_first_child(widget)
     while let c = child {
-        children.append(captureGTKWidgetTree(widget: c, rootWidget: rootWidget))
+        let childGObject = UnsafeMutableRawPointer(c).assumingMemoryBound(to: GObject.self)
+        if g_object_get_data(childGObject, gtkSwiftLayoutHelperMarker) == nil {
+            children.append(captureGTKWidgetTree(widget: c, rootWidget: rootWidget))
+        }
         child = gtk_widget_get_next_sibling(c)
     }
 
     let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
+    if typeName == "GtkScrolledWindow",
+       let clippedLabel = gtkSingleLabelDescendant(in: widget) {
+        let tag = gtkIdentifyWidget(clippedLabel, typeName: "GtkLabel")
+        return LayoutNode(
+            tag: tag,
+            viewType: "GtkLabel",
+            x: origin.x,
+            y: origin.y,
+            width: size.width,
+            height: size.height,
+            children: []
+        )
+    }
     let tag = gtkIdentifyWidget(widget, typeName: typeName)
 
     // Map hosted node kinds to semantic view types for leaf extraction
@@ -299,6 +363,30 @@ func captureGTKWidgetTree(
         height: size.height,
         children: children
     )
+}
+
+private func gtkSingleLabelDescendant(
+    in widget: UnsafeMutablePointer<GtkWidget>
+) -> UnsafeMutablePointer<GtkWidget>? {
+    var labels: [UnsafeMutablePointer<GtkWidget>] = []
+    gtkCollectLabelDescendants(in: widget, into: &labels)
+    return labels.count == 1 ? labels[0] : nil
+}
+
+private func gtkCollectLabelDescendants(
+    in widget: UnsafeMutablePointer<GtkWidget>,
+    into labels: inout [UnsafeMutablePointer<GtkWidget>]
+) {
+    let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
+    if typeName == "GtkLabel" {
+        labels.append(widget)
+        return
+    }
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        gtkCollectLabelDescendants(in: c, into: &labels)
+        child = gtk_widget_get_next_sibling(c)
+    }
 }
 
 /// Identify a GTK widget with a human-readable tag.

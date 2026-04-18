@@ -1,5 +1,5 @@
 {
-  "capturedAt" : "2026-04-17T22:29:36Z",
+  "capturedAt" : "2026-04-17T22:29:38Z",
   "platform" : "macOS-SwiftUI",
   "root" : {
     "children" : [
@@ -10,19 +10,19 @@
         "height" : 16,
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
-        "width" : 74,
-        "x" : 113,
-        "y" : 67
+        "width" : 9,
+        "x" : 65.5,
+        "y" : 37
       }
     ],
-    "height" : 150,
+    "height" : 90,
     "tag" : "_TtGC7SwiftUI13NSHostingViewVS_7AnyView_",
     "viewType" : "NSViewBackingLayer",
-    "width" : 300,
+    "width" : 140,
     "x" : 0,
     "y" : 0
   },
   "rootHeight" : 600,
   "rootWidth" : 400,
-  "scenario" : "frame-min-max"
+  "scenario" : "frame-inside-padding"
 }

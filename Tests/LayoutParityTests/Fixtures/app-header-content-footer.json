@@ -1,5 +1,5 @@
 {
-  "capturedAt" : "2026-04-17T22:29:36Z",
+  "capturedAt" : "2026-04-17T22:29:37Z",
   "platform" : "macOS-SwiftUI",
   "root" : {
     "children" : [
@@ -10,9 +10,9 @@
         "height" : 16,
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
-        "width" : 24,
-        "x" : 0,
-        "y" : 0
+        "width" : 44.5,
+        "x" : 16,
+        "y" : 8
       },
       {
         "children" : [
@@ -21,12 +21,23 @@
         "height" : 16,
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
-        "width" : 32,
-        "x" : 368,
-        "y" : 0
+        "width" : 39,
+        "x" : 16,
+        "y" : 580
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 24,
+        "x" : 360,
+        "y" : 580
       }
     ],
-    "height" : 16,
+    "height" : 600,
     "tag" : "_TtGC7SwiftUI13NSHostingViewVS_7AnyView_",
     "viewType" : "NSViewBackingLayer",
     "width" : 400,
@@ -35,5 +46,5 @@
   },
   "rootHeight" : 600,
   "rootWidth" : 400,
-  "scenario" : "hstack-with-spacer"
+  "scenario" : "app-header-content-footer"
 }

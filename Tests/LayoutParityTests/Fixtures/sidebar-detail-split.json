@@ -7,56 +7,12 @@
         "children" : [
 
         ],
-        "height" : 44,
-        "tag" : "CALayer",
-        "viewType" : "CALayer",
-        "width" : 44,
-        "x" : 16,
-        "y" : 0
-      },
-      {
-        "children" : [
-
-        ],
         "height" : 16,
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
-        "width" : 26.5,
-        "x" : 72,
-        "y" : 4
-      },
-      {
-        "children" : [
-
-        ],
-        "height" : 16,
-        "tag" : "CGDrawingLayer",
-        "viewType" : "CGDrawingLayer",
-        "width" : 47,
-        "x" : 72,
-        "y" : 24
-      },
-      {
-        "children" : [
-
-        ],
-        "height" : 1,
-        "tag" : "CALayer",
-        "viewType" : "CALayer",
-        "width" : 400,
-        "x" : 0,
-        "y" : 60
-      },
-      {
-        "children" : [
-
-        ],
-        "height" : 44,
-        "tag" : "CALayer",
-        "viewType" : "CALayer",
-        "width" : 44,
-        "x" : 16,
-        "y" : 77
+        "width" : 36.5,
+        "x" : 41,
+        "y" : 252
       },
       {
         "children" : [
@@ -66,8 +22,8 @@
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
         "width" : 38,
-        "x" : 72,
-        "y" : 81
+        "x" : 41,
+        "y" : 272
       },
       {
         "children" : [
@@ -76,12 +32,56 @@
         "height" : 16,
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
-        "width" : 69.5,
-        "x" : 72,
-        "y" : 101
+        "width" : 38.5,
+        "x" : 41,
+        "y" : 292
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 38.5,
+        "x" : 41,
+        "y" : 312
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 38.5,
+        "x" : 41,
+        "y" : 332
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 600,
+        "tag" : "CALayer",
+        "viewType" : "CALayer",
+        "width" : 1,
+        "x" : 120,
+        "y" : 0
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 35,
+        "x" : 133,
+        "y" : 12
       }
     ],
-    "height" : 121,
+    "height" : 600,
     "tag" : "_TtGC7SwiftUI13NSHostingViewVS_7AnyView_",
     "viewType" : "NSViewBackingLayer",
     "width" : 400,
@@ -90,5 +90,5 @@
   },
   "rootHeight" : 600,
   "rootWidth" : 400,
-  "scenario" : "complex-nested"
+  "scenario" : "sidebar-detail-split"
 }

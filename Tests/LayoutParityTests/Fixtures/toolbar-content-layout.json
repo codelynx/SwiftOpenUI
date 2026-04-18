@@ -1,5 +1,5 @@
 {
-  "capturedAt" : "2026-04-17T22:29:36Z",
+  "capturedAt" : "2026-04-17T22:29:38Z",
   "platform" : "macOS-SwiftUI",
   "root" : {
     "children" : [
@@ -10,9 +10,9 @@
         "height" : 16,
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
-        "width" : 27,
-        "x" : 9.5,
-        "y" : 0
+        "width" : 30,
+        "x" : 8,
+        "y" : 8
       },
       {
         "children" : [
@@ -21,30 +21,41 @@
         "height" : 16,
         "tag" : "CGDrawingLayer",
         "viewType" : "CGDrawingLayer",
-        "width" : 46,
+        "width" : 26.5,
+        "x" : 186,
+        "y" : 8
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 16,
+        "tag" : "CGDrawingLayer",
+        "viewType" : "CGDrawingLayer",
+        "width" : 32,
+        "x" : 360,
+        "y" : 8
+      },
+      {
+        "children" : [
+
+        ],
+        "height" : 1,
+        "tag" : "CALayer",
+        "viewType" : "CALayer",
+        "width" : 400,
         "x" : 0,
-        "y" : 36
-      },
-      {
-        "children" : [
-
-        ],
-        "height" : 16,
-        "tag" : "CGDrawingLayer",
-        "viewType" : "CGDrawingLayer",
-        "width" : 31.5,
-        "x" : 7.5,
-        "y" : 72
+        "y" : 32
       }
     ],
-    "height" : 88,
+    "height" : 600,
     "tag" : "_TtGC7SwiftUI13NSHostingViewVS_7AnyView_",
     "viewType" : "NSViewBackingLayer",
-    "width" : 46,
+    "width" : 400,
     "x" : 0,
     "y" : 0
   },
   "rootHeight" : 600,
   "rootWidth" : 400,
-  "scenario" : "vstack-spacing-20"
+  "scenario" : "toolbar-content-layout"
 }

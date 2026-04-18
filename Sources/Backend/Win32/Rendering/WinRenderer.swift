@@ -472,6 +472,10 @@ extension Color: WinRenderable {
 
         // Mark as expandable so ZStack and other containers know to fill
         SetPropW(container, colorExpandPropName, HANDLE(bitPattern: 1))
+        // Also register with the generic expand system so VStack/HStack
+        // flex distribution detects Color as flexible alongside Spacers.
+        markExpandWidth(container)
+        markExpandHeight(container)
 
         let cr = Float(self.red)
         let cg = Float(self.green)
@@ -2299,12 +2303,17 @@ extension FrameView: WinRenderable {
         let h = Int32(result.containerSize.height)
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
-        // Propagate expand flags to the FrameView container when
-        // the FrameView has no explicit constraint on that axis.
-        // This lets parent layouts (VStack/HStack) know that this
-        // FrameView should fill available space on unconstrained axes.
-        if expandsWidth && width == nil && minWidth == nil { markExpandWidth(container) }
-        if expandsHeight && height == nil && minHeight == nil { markExpandHeight(container) }
+        // Propagate expand flags to the FrameView container.
+        // When maxWidth/maxHeight is .infinity, the frame itself should expand
+        // to fill available space — the child stays at natural size but the
+        // container grows. Also propagate when the child already expands and
+        // the frame has no explicit constraint on that axis.
+        if maxWidth == .infinity || (expandsWidth && width == nil && minWidth == nil) {
+            markExpandWidth(container)
+        }
+        if maxHeight == .infinity || (expandsHeight && height == nil && minHeight == nil) {
+            markExpandHeight(container)
+        }
 
         // Store info for resize-time recomputation via shared layout
         // (includes original constraints so resize reapplies min/max clamping)
