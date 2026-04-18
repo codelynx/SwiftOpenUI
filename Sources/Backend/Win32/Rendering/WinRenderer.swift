@@ -1981,6 +1981,14 @@ extension ZStack: WinRenderable {
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         let childHwnds = winRenderChildren(content, in: childContext)
 
+        // Propagate expansion from children
+        if childHwnds.contains(where: { shouldExpandWidth($0) }) {
+            markExpandWidth(container)
+        }
+        if childHwnds.contains(where: { shouldExpandHeight($0) }) {
+            markExpandHeight(container)
+        }
+
         let info = ZStackLayoutInfo(
             alignment: alignment,
             children: childHwnds
@@ -2685,6 +2693,18 @@ extension BackgroundView: WinRenderable {
         if shouldExpandHeight(child) { markExpandHeight(container) }
 
         guard let color = background as? Color else { return container }
+
+        // Color.clear (alpha=0) should not paint — skip the brush entirely
+        // so the container uses the inherited parent background. Without this,
+        // pre-multiplying alpha=0 produces white, covering child content.
+        guard color.alpha > 0 else {
+            let bgInfo = BackgroundInfo(child: child, colorRef: 0, brush: nil)
+            let infoPtr = Unmanaged.passRetained(bgInfo).toOpaque()
+            SetWindowSubclass(container, backgroundProc, 11, DWORD_PTR(UInt(bitPattern: infoPtr)))
+            SetWindowPos(child, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+            return container
+        }
+
         // Pre-multiply alpha against white to simulate transparency.
         // GDI brushes don't support alpha, so we blend manually.
         let a = color.alpha
@@ -2736,19 +2756,25 @@ let backgroundProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
         return 0
 
     case UINT(WM_ERASEBKGND):
-        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
-        var rect = RECT()
-        GetClientRect(hwnd, &rect)
         if let brush = info.brush {
+            let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+            var rect = RECT()
+            GetClientRect(hwnd, &rect)
             FillRect(hdc, &rect, brush)
+            return 1
         }
-        return 1
+        // No brush (Color.clear) — use inherited parent background
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetBkMode(hdc, TRANSPARENT)
         if let brush = info.brush {
             return LRESULT(Int(bitPattern: brush))
+        }
+        // No brush (Color.clear) — forward to parent for inherited background
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
         }
         return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
 
