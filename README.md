@@ -20,6 +20,14 @@ A cross-platform SwiftUI framework that renders natively on macOS, Linux, Window
 
 A MacPaint-class drawing app with pencil, eraser, line, rectangle, and ellipse tools. Demonstrates Canvas rendering, Path-based drawing, drag gestures, and undo/redo — all from a single `main.swift`.
 
+## Layout Stress Test — advanced composition patterns
+
+| macOS (SwiftUI) | Linux (GTK4) | Windows (Win32) |
+|:---:|:---:|:---:|
+| <img src="screenshots/macos/showcase-LayoutStress.png" width="220"> | <img src="screenshots/linux/showcase-LayoutStress.png" width="220"> | <img src="screenshots/windows/showcase-LayoutStress.png" width="220"> |
+
+Settings rows, dashboard cards, sidebar/detail split, nested frame alignment, and status bars — the composition patterns real apps use. Layout parity is verified by a [50-scenario test suite](Tests/LayoutParityTests/) that compares each platform's output against macOS SwiftUI reference fixtures.
+
 ## Platform Support
 
 | Platform | Backend | Status | Views | Modifiers |
@@ -60,6 +68,7 @@ swift run HelloWorld
 swift run Stopwatch
 swift run ColorMixer
 swift run SimplePaint
+swift run LayoutStress
 
 # Run on Linux (GTK4)
 sudo apt install libgtk-4-dev
@@ -99,6 +108,7 @@ Polished mini-apps demonstrating what you can build:
 | ColorMixer | `swift run ColorMixer` | Color picker with sliders, swatches, harmony |
 | Calculator | `swift run Calculator` | Grid/GridRow calculator with arithmetic logic |
 | SimplePaint | `swift run SimplePaint` | Drawing app with tools, color palette, undo/redo |
+| LayoutStress | `swift run LayoutStress` | Settings rows, dashboard cards, sidebar/detail, nested alignment, status bar |
 
 ### Parity
 
@@ -123,14 +133,14 @@ swift run ParityAppStructure      # App, Scene, WindowGroup, @ViewBuilder
 ### Views (44 of 45)
 Text, Button, TextField, Toggle, Slider, Image, Color, Spacer, Divider, VStack, HStack, ZStack, Group, ForEach, List, ScrollView, ScrollViewReader, AnyView, EmptyView, NavigationStack, NavigationLink, NavigationSplitView, SecureField, TextEditor, ProgressView, Stepper, Label, Link, TabView, Grid, GridRow, DisclosureGroup, OutlineGroup, Form, Section, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Picker, DatePicker, GeometryReader, ViewThatFits, Menu, ConfirmationDialog, Canvas, Path, Circle, Rectangle, RoundedRectangle, Capsule, Ellipse, LinearGradient, RadialGradient
 
-### Modifiers (40 of 42)
-.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .disabled(), .environmentObject(), .environment(), .navigationTitle(), .navigationDestination(), .focused(), .modifier(), withAnimation(), .clipShape(), .clipped(), .hidden(), .blur(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .buttonStyle(), .toggleStyle(), .textFieldStyle(), .onChange(), .contextMenu(), .position(), .layoutPriority(), .fixedSize(), .popover(), .id(), .tag(), .onSubmit(), .bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase(), .aspectRatio(), .scaledToFit(), .scaledToFill(), .fullScreenCover(), .pickerStyle(), .navigationSplitViewColumnWidth(), .ignoresSafeArea(), .safeAreaInset(), .lineLimit(), .truncationMode(), .lineSpacing(), .multilineTextAlignment(), .keyboardShortcut(), .focusedValue()
+### Modifiers (43+)
+.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .disabled(), .environmentObject(), .environment(), .navigationTitle(), .navigationDestination(), .focused(), .modifier(), withAnimation(), .clipShape(), .clipped(), .hidden(), .blur(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .buttonStyle(), .toggleStyle(), .textFieldStyle(), .onChange(), .contextMenu(), .position(), .layoutPriority(), .fixedSize(), .popover(), .id(), .tag(), .onSubmit(), .bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase(), .aspectRatio(), .scaledToFit(), .scaledToFill(), .fullScreenCover(), .pickerStyle(), .navigationSplitViewColumnWidth(), .ignoresSafeArea(), .safeAreaInset(), .lineLimit(), .truncationMode(), .lineSpacing(), .multilineTextAlignment(), .keyboardShortcut(), .focusedValue(), .help(), .resizable(), .labelsHidden()
 
 ### Scenes & App Structure
 WindowGroup, Window (GTK/Win32), OpenWindowAction, Commands (CommandGroup, CommandMenuItem — native menu bar on GTK/Win32), @SceneBuilder, @ViewBuilder
 
 ### State Management
-@State, @Binding, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @Environment, @FocusState, @FocusedValue (active-window scoped), @Observable, ObservableObject
+@State, @Binding, @Bindable, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @Environment, @FocusState, @FocusedValue (active-window scoped), @Observable, ObservableObject
 
 ## Architecture
 
