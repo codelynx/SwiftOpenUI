@@ -225,6 +225,12 @@ targets += [
         path: "Examples/Showcase/SimplePaint",
         linkerSettings: exampleLinkerSettings
     ),
+    .executableTarget(
+        name: "LayoutStress",
+        dependencies: exampleDeps,
+        path: "Examples/Showcase/LayoutStress",
+        linkerSettings: exampleLinkerSettings
+    ),
     // Parity
     .executableTarget(
         name: "ParityViewsBasic",
