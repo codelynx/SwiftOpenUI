@@ -2620,6 +2620,11 @@ let foregroundColorProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcla
                      rect.right - rect.left, rect.bottom - rect.top, UINT(SWP_NOZORDER))
         return 0
 
+    case UINT(WM_ERASEBKGND):
+        // Use inherited parent background instead of default COLOR_WINDOW,
+        // which would show as a visible white line on dark backgrounds.
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
+
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
         // Set the text color on the child control's HDC.
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
