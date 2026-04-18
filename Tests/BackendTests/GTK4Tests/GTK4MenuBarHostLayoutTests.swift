@@ -102,6 +102,41 @@ final class GTK4MenuBarHostLayoutTests: XCTestCase {
         XCTAssertEqual(gtk_widget_get_halign(contentWidget), GTK_ALIGN_FILL)
         XCTAssertEqual(gtk_widget_get_valign(contentWidget), GTK_ALIGN_FILL)
     }
+
+    func testAutomaticWindowGroupUsesDesktopDefaultSize() {
+        let scene = WindowGroup("Automatic") {
+            Text("Hello")
+        }
+
+        let resolved = scene.gtkResolvedDefaultWindowSize()
+
+        XCTAssertEqual(resolved?.width, defaultAutomaticWindowWidth)
+        XCTAssertEqual(resolved?.height, defaultAutomaticWindowHeight)
+    }
+
+    func testContentSizedWindowGroupDoesNotUseAutomaticDefault() {
+        let scene = WindowGroup("Content") {
+            Text("Hello")
+        }
+        .windowSizing(.content)
+
+        XCTAssertNil(
+            scene.gtkResolvedDefaultWindowSize(),
+            ".content sizing should stay content-driven unless the app declares a defaultWindowSize."
+        )
+    }
+
+    func testExplicitWindowGroupSizeOverridesAutomaticDefault() {
+        let scene = WindowGroup("Explicit") {
+            Text("Hello")
+        }
+        .defaultWindowSize(width: 320, height: 240)
+
+        let resolved = scene.gtkResolvedDefaultWindowSize()
+
+        XCTAssertEqual(resolved?.width, 320)
+        XCTAssertEqual(resolved?.height, 240)
+    }
 }
 
 private func requireGTK(

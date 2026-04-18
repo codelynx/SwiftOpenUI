@@ -10,6 +10,16 @@ public enum WindowSizing: Sendable {
     case size(width: Double, height: Double)
 }
 
+/// Default initial size for desktop windows that use `.automatic` sizing
+/// without an explicit `.defaultWindowSize(...)`.
+///
+/// Content-sized windows remain opt-in via `.windowSizing(.content)` or
+/// `.windowSizing(.contentFixed)`. The automatic default gives macOS-style
+/// ports a usable first launch size without requiring every content-heavy app
+/// to declare a size just to avoid tiny intrinsic windows.
+public let defaultAutomaticWindowWidth: Double = 800
+public let defaultAutomaticWindowHeight: Double = 600
+
 /// SwiftUI-compatible window resize policy.
 ///
 /// Current backend support:

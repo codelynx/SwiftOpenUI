@@ -8,7 +8,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 - `Sources/Backend/GTK4/` — Linux backend (GTK4): CGTK system module, CGTKBridge interop, Rendering
 - `Sources/Backend/Win32/` — Windows backend (Win32): CWin32, CWin32Bridge, Rendering + LayoutEngine
 - `Sources/Backend/Web/` — Web/Wasm backend (experimental): DOM rendering via JavaScriptKit
-- `Examples/Showcase/` — Polished demo apps (HelloWorld, Stopwatch, ColorMixer, Calculator, SimplePaint)
+- `Examples/Showcase/` — Polished demo apps (HelloWorld, Stopwatch, ColorMixer, Calculator, SimplePaint, LayoutStress)
 - `Examples/Parity/` — Matrix-backed coverage examples (11 parity targets)
 - `Tests/SwiftOpenUITests/` — Core tests (platform-independent)
 - `Tests/BackendTests/` — Platform-specific backend tests
@@ -62,7 +62,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 ```bash
 # macOS (uses real SwiftUI for examples)
 swift build
-swift test                   # ~628 macOS / ~636 Linux
+swift test                   # ~628 macOS / ~701 Linux
 
 # WebAssembly (requires open-source Swift toolchain, not Xcode's)
 source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
@@ -73,6 +73,7 @@ swift run HelloWorld
 swift run Stopwatch
 swift run ColorMixer
 swift run SimplePaint
+swift run LayoutStress
 swift run ParityViewsBasic
 
 # Run in browser (Wasm)
@@ -150,7 +151,7 @@ NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigatio
 
 ## Examples
 
-- Showcase: HelloWorld, Stopwatch, ColorMixer, Calculator, SimplePaint (in `Examples/Showcase/`)
+- Showcase: HelloWorld, Stopwatch, ColorMixer, Calculator, SimplePaint, LayoutStress (in `Examples/Showcase/`)
 - Parity: ParityViewsBasic, ParityViewsLayout, ParityViewsContainers, ParityModifiers, ParityStateData, ParityNavigation, ParityEnvironment, ParityGestures, ParityAnimation, ParityFocus, ParityAppStructure (in `Examples/Parity/`)
 - Plan: `docs/guides/examples-plan.md` — two-track Showcase + Parity design
 - **Rules**: single `main.swift` per example, compiles and runs on all platforms (Android exception: uses flat views in JNIBridge.swift due to import conflict — see `docs/guides/examples-plan.md`), platform limitations labeled inline with fallback text (never build errors)

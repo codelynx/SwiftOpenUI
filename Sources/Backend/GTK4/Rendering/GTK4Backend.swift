@@ -73,6 +73,28 @@ func gtkConfigureRootContentToFillWindow(_ contentWidget: UnsafeMutablePointer<G
 }
 
 extension WindowGroup: GTKWindowRenderable {
+    func gtkResolvedDefaultWindowSize() -> (width: Double, height: Double)? {
+        switch windowSizing ?? .automatic {
+        case .automatic:
+            return (
+                defaultWindowWidth ?? defaultAutomaticWindowWidth,
+                defaultWindowHeight ?? defaultAutomaticWindowHeight
+            )
+        case .content:
+            guard let width = defaultWindowWidth, let height = defaultWindowHeight else {
+                return nil
+            }
+            return (width, height)
+        case .contentFixed:
+            guard let width = defaultWindowWidth, let height = defaultWindowHeight else {
+                return nil
+            }
+            return (width, height)
+        case .size(let width, let height):
+            return (width, height)
+        }
+    }
+
     func gtkRender(app: OpaquePointer) {
         let window = gtk_application_window_new(gtkApplicationPointer(app))!
         let winPtr = windowPointer(window)
@@ -96,18 +118,21 @@ extension WindowGroup: GTKWindowRenderable {
             gtk_widget_set_size_request(contentWidget, minReqW, minReqH)
         }
 
+        if let defaultSize = gtkResolvedDefaultWindowSize() {
+            gtk_window_set_default_size(
+                winPtr,
+                gint(defaultSize.width),
+                gint(defaultSize.height)
+            )
+        }
+
         switch windowSizing ?? .automatic {
         case .automatic, .content:
-            if let w = defaultWindowWidth, let h = defaultWindowHeight {
-                gtk_window_set_default_size(winPtr, gint(w), gint(h))
-            }
+            break
         case .contentFixed:
-            if let w = defaultWindowWidth, let h = defaultWindowHeight {
-                gtk_window_set_default_size(winPtr, gint(w), gint(h))
-            }
             gtk_window_set_resizable(winPtr, 0)
-        case .size(let width, let height):
-            gtk_window_set_default_size(winPtr, gint(width), gint(height))
+        case .size:
+            break
         }
 
         switch windowResizeBehavior ?? .automatic {
