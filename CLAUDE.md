@@ -62,7 +62,7 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 ```bash
 # macOS (uses real SwiftUI for examples)
 swift build
-swift test                   # ~628 macOS / ~701 Linux
+swift test                   # ~628 macOS / ~707 Linux
 
 # WebAssembly (requires open-source Swift toolchain, not Xcode's)
 source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
