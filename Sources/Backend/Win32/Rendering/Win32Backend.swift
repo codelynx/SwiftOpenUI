@@ -39,6 +39,13 @@ private final class MainWindowState {
     let minClientHeight: Int32?
     let maxClientWidth: Int32?
     let maxClientHeight: Int32?
+    /// Whether the root content wants to expand on each axis.
+    /// When false, the content is centered at its natural size (SwiftUI behavior).
+    let expandsWidth: Bool
+    let expandsHeight: Bool
+    /// Natural (intrinsic) size of the root content, used for centering.
+    let naturalContentW: Int32
+    let naturalContentH: Int32
 
     init(
         contentHwnd: HWND,
@@ -46,12 +53,20 @@ private final class MainWindowState {
         minClientWidth: Int32?,
         minClientHeight: Int32?,
         maxClientWidth: Int32?,
-        maxClientHeight: Int32?
+        maxClientHeight: Int32?,
+        expandsWidth: Bool = true,
+        expandsHeight: Bool = true,
+        naturalContentW: Int32 = 0,
+        naturalContentH: Int32 = 0
     ) {
         self.contentHwnd = contentHwnd
         self.style = style
         self.minClientWidth = minClientWidth
         self.minClientHeight = minClientHeight
+        self.expandsWidth = expandsWidth
+        self.expandsHeight = expandsHeight
+        self.naturalContentW = naturalContentW
+        self.naturalContentH = naturalContentH
         self.maxClientWidth = maxClientWidth
         self.maxClientHeight = maxClientHeight
     }
@@ -189,14 +204,23 @@ extension WindowGroup: Win32WindowRenderable {
                          windowSize.1,
                          UINT(SWP_NOMOVE | SWP_NOZORDER))
 
-            // Size content to fill client area
-            var clientRect = RECT()
-            GetClientRect(hwnd, &clientRect)
+            // SwiftUI's WindowGroup centers intrinsically-sized root content
+            // (e.g. a plain Text) and stretches fill-semantic roots (e.g. a
+            // VStack with Spacer). Mirror that by checking expand flags.
+            let wantsFillW = shouldExpandWidth(contentHwnd)
+            let wantsFillH = shouldExpandHeight(contentHwnd)
+            var actualClientRect = RECT()
+            GetClientRect(hwnd, &actualClientRect)
+            let actualW = Int32(actualClientRect.right - actualClientRect.left)
+            let actualH = Int32(actualClientRect.bottom - actualClientRect.top)
+            let contentW: Int32 = wantsFillW ? actualW : min(naturalContentW, actualW)
+            let contentH: Int32 = wantsFillH ? actualH : min(naturalContentH, actualH)
+            let contentX: Int32 = wantsFillW ? 0 : (actualW - contentW) / 2
+            let contentY: Int32 = wantsFillH ? 0 : (actualH - contentH) / 2
             SetWindowPos(
                 contentHwnd, nil,
-                0, 0,
-                clientRect.right - clientRect.left,
-                clientRect.bottom - clientRect.top,
+                contentX, contentY,
+                contentW, contentH,
                 UINT(SWP_NOZORDER)
             )
             let state = MainWindowState(
@@ -205,7 +229,11 @@ extension WindowGroup: Win32WindowRenderable {
                 minClientWidth: minWindowWidth.map { Int32($0) },
                 minClientHeight: minWindowHeight.map { Int32($0) },
                 maxClientWidth: maxWindowWidth.map { Int32($0) },
-                maxClientHeight: maxWindowHeight.map { Int32($0) }
+                maxClientHeight: maxWindowHeight.map { Int32($0) },
+                expandsWidth: wantsFillW,
+                expandsHeight: wantsFillH,
+                naturalContentW: naturalContentW,
+                naturalContentH: naturalContentH
             )
             let retained = Unmanaged.passRetained(state).toOpaque()
             win32_SetWindowLongPtrW(hwnd, GWLP_USERDATA, LONG_PTR(Int(bitPattern: retained)))
@@ -242,9 +270,12 @@ private let mainWindowProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
             let clientW = clientRect.right - clientRect.left
             let clientH = clientRect.bottom - clientRect.top
 
-            // Content fills the window — centering happens within stacks
-            // via cross-axis alignment (default .center).
-            SetWindowPos(state.contentHwnd, nil, 0, 0, clientW, clientH, UINT(SWP_NOZORDER))
+            // Center intrinsic content; fill expanding content.
+            let cw = state.expandsWidth ? clientW : min(state.naturalContentW, clientW)
+            let ch = state.expandsHeight ? clientH : min(state.naturalContentH, clientH)
+            let cx = state.expandsWidth ? Int32(0) : (clientW - cw) / 2
+            let cy = state.expandsHeight ? Int32(0) : (clientH - ch) / 2
+            SetWindowPos(state.contentHwnd, nil, cx, cy, cw, ch, UINT(SWP_NOZORDER))
         }
         return 0
 
