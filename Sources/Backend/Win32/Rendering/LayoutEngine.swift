@@ -303,8 +303,12 @@ func performZStackLayout(container: HWND, info: ZStackLayoutInfo) {
 
         var childRect = RECT()
         GetWindowRect(child, &childRect)
-        let childW = childRect.right - childRect.left
-        let childH = childRect.bottom - childRect.top
+        let naturalW = childRect.right - childRect.left
+        let naturalH = childRect.bottom - childRect.top
+
+        // Expand children that have expand flags (e.g. frame(maxWidth: .infinity))
+        let childW = shouldExpandWidth(child) ? containerW : naturalW
+        let childH = shouldExpandHeight(child) ? containerH : naturalH
 
         let x: Int32
         let y: Int32
