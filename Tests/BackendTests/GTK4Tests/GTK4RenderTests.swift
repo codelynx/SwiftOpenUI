@@ -1982,6 +1982,289 @@ final class GTK4RenderTests: XCTestCase {
             "Middle-truncated text clipped by a fixed-width frame must render a single label inside the scroll clip."
         )
     }
+
+    // MARK: - LayoutStress regressions (2026-04-17)
+
+    /// Two VStacks wrapped in `.frame(maxWidth: .infinity)` inside an HStack
+    /// must split the available width evenly — the LayoutStress "dashboard
+    /// cards" pattern.
+    func testTwoInfinityFramesInHStackSplitWidthEvenly() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            HStack(spacing: 12) {
+                Text("A")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+
+                Text("B")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+        ))
+        gtk_widget_set_halign(wrapper, GTK_ALIGN_FILL)
+        gtk_widget_set_hexpand(wrapper, 1)
+        allocate(widget: wrapper, size: ViewSize(width: 400, height: 80))
+
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+        let firstSize = allocatedSize(of: first)
+        let secondSize = allocatedSize(of: second)
+
+        // Expected: (400 - 12 gap) / 2 ≈ 194 each.
+        XCTAssertEqual(firstSize.width, 194, accuracy: 3,
+                       "First card should take half the HStack width.")
+        XCTAssertEqual(secondSize.width, 194, accuracy: 3,
+                       "Second card should take half the HStack width.")
+    }
+
+    /// A fixed-width frame wrapping `HStack { Text; Spacer; Text }` must
+    /// allocate both Text children's natural widths — the LayoutStress
+    /// "sidebar item" pattern.
+    func testFixedWidthFrameAllocatesBothTextsInInternalHStack() throws {
+        try requireGTK()
+
+        // Mirrors the LayoutStress sidebarItem layout: fixed-width outer
+        // VStack containing an HStack { Text; Spacer; Text } wrapped in
+        // padding + background.
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Inbox")
+                    Spacer()
+                    Text("12")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.clear)
+            }
+            .frame(width: 140)
+        ))
+        gtk_widget_set_halign(wrapper, GTK_ALIGN_FILL)
+        gtk_widget_set_hexpand(wrapper, 1)
+        allocate(widget: wrapper, size: ViewSize(width: 140, height: 40))
+
+        // Walk descendants, collect Text labels (excluding Spacer-marked ones).
+        var allLabels: [UnsafeMutablePointer<GtkWidget>] = []
+        gtkCollectLabels(in: wrapper, into: &allLabels)
+        let textLabels = allLabels.filter { w in
+            let g = UnsafeMutableRawPointer(w).assumingMemoryBound(to: GObject.self)
+            return g_object_get_data(g, gtkSwiftSpacerMarker) == nil
+        }
+
+        XCTAssertEqual(textLabels.count, 2,
+                       "Both 'Inbox' and '12' labels must appear.")
+        for label in textLabels {
+            let size = allocatedSize(of: label)
+            XCTAssertGreaterThan(size.width, 0,
+                                 "Label must receive non-zero width inside a fixed-width HStack parent.")
+        }
+    }
+
+    /// A ZStack with `.frame(width: 120, height: 100)` must report exactly
+    /// that allocated size — the LayoutStress "nested alignment" pattern.
+    func testZStackWithFixedFrameReportsRequestedSize() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            ZStack {
+                Color.red
+                Text("TL")
+                    .frame(width: 80, height: 60, alignment: .bottomTrailing)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .frame(width: 120, height: 100)
+        ))
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+
+        XCTAssertEqual(wrapperSize.width, 120, accuracy: 1,
+                       "ZStack frame(width: 120) must measure 120 wide.")
+        XCTAssertEqual(wrapperSize.height, 100, accuracy: 1,
+                       "ZStack frame(height: 100) must measure 100 tall.")
+    }
+
+    /// Settings-row pattern: `HStack { Text; Spacer; Text }` inside a
+    /// `VStack(alignment: .leading)` with a Color background. The trailing
+    /// Text (value) must be pushed to the right edge of the allocated width,
+    /// not left-clustered with the label.
+    func testSettingsRowSpacerPushesValueToRightEdge() throws {
+        try requireGTK()
+
+        // Reproduce the exact LayoutStress SettingsSection: section header,
+        // multiple rows with divider siblings, all under a ScrollView-
+        // wrapped VStack(.leading, spacing: 16), which itself is under a
+        // top-level VStack(spacing: 0) with a title bar.
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            VStack(spacing: 0) {
+                Text("Layout Stress Test")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color(red: 0.1, green: 0.1, blue: 0.1))
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("1. Settings Rows").padding(.horizontal, 16)
+
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("GENERAL")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                            HStack {
+                                Text("Username")
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Text("kaz.yoshikawa")
+                                    .foregroundColor(.gray)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            Color.gray.frame(height: 0.5).padding(.leading, 16)
+                            HStack {
+                                Text("Email")
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Text("kaz@example.com")
+                                    .foregroundColor(.gray)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                        }
+                        .background(Color(red: 0.15, green: 0.15, blue: 0.15))
+                    }
+                    .padding(.vertical, 16)
+                }
+            }
+            .background(Color.black)
+        ))
+        // Use the backend's own helper so we match the real window bring-up.
+        gtkConfigureRootContentToFillWindow(wrapper)
+        allocate(widget: wrapper, size: ViewSize(width: 700, height: 600))
+
+        var allLabels: [UnsafeMutablePointer<GtkWidget>] = []
+        gtkCollectLabels(in: wrapper, into: &allLabels)
+        let textLabels = allLabels.filter { w in
+            let g = UnsafeMutableRawPointer(w).assumingMemoryBound(to: GObject.self)
+            return g_object_get_data(g, gtkSwiftSpacerMarker) == nil
+        }
+
+        // Dump every non-Spacer label with its position to see what's happening.
+        for label in textLabels {
+            let ptr = gtk_label_get_text(OpaquePointer(label))
+            let text = ptr.map { String(cString: $0) } ?? "?"
+            let origin = translatedChildOrigin(child: label, in: wrapper)
+            let size = allocatedSize(of: label)
+            fputs("DBG label '\(text)' at x=\(origin.x) w=\(size.width) right=\(origin.x + size.width)\n", stderr)
+        }
+
+        guard let valueLabel = textLabels.first(where: { w in
+            let ptr = gtk_label_get_text(OpaquePointer(w))
+            return ptr.map { String(cString: $0) } == "kaz.yoshikawa"
+        }) else {
+            XCTFail("Could not locate kaz.yoshikawa label")
+            return
+        }
+
+        let valueOrigin = translatedChildOrigin(child: valueLabel, in: wrapper)
+        let valueSize = allocatedSize(of: valueLabel)
+        let valueRightEdge = valueOrigin.x + valueSize.width
+
+        // Inner right edge = 700 (allocated) - 16 (row padding) = 684.
+        XCTAssertGreaterThan(
+            valueRightEdge,
+            670,
+            "Spacer must push the value to the right padding edge (~684), got right edge at \(valueRightEdge)."
+        )
+    }
+
+    /// A `.frame(height: 0.5)` (sub-pixel divider) must request at least
+    /// 1 device-pixel of height. Truncating via `gint()` collapses 0.5 to 0
+    /// and makes the divider invisible.
+    func testSubPixelHeightFrameRendersAtLeastOnePixel() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            Color.gray.frame(height: 0.5)
+        ))
+
+        var widthMin: Int32 = 0; var widthNat: Int32 = 0
+        var heightMin: Int32 = 0; var heightNat: Int32 = 0
+        gtk_swift_widget_measure(wrapper, GTK_ORIENTATION_HORIZONTAL, -1, &widthMin, &widthNat)
+        gtk_swift_widget_measure(wrapper, GTK_ORIENTATION_VERTICAL, -1, &heightMin, &heightNat)
+
+        XCTAssertGreaterThanOrEqual(
+            heightMin,
+            1,
+            "A 0.5pt divider's minimum height must be at least 1 device pixel, got \(heightMin)."
+        )
+        XCTAssertGreaterThanOrEqual(
+            heightNat,
+            1,
+            "A 0.5pt divider's natural height must be at least 1 device pixel, got \(heightNat)."
+        )
+    }
+
+    /// Three ZStacks with identical `.frame(width: 120, height: 100)` placed
+    /// in an HStack must all allocate the same 120×100 size — the
+    /// LayoutStress "nested alignment stress" pattern. The middle box uses
+    /// a VStack with different-width children, which previously caused its
+    /// ZStack to measure narrower than its siblings.
+    func testThreeFramedZStacksInHStackAllReportSameSize() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            HStack(spacing: 12) {
+                ZStack {
+                    Color.red
+                    Text("TL")
+                }
+                .frame(width: 120, height: 100)
+
+                ZStack {
+                    Color.green
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("A")
+                        Text("BB")
+                        Text("CCC")
+                    }
+                }
+                .frame(width: 120, height: 100)
+
+                ZStack {
+                    Color.blue
+                    Text("BR")
+                }
+                .frame(width: 120, height: 100)
+            }
+        ))
+        gtk_widget_set_halign(wrapper, GTK_ALIGN_START)
+        allocate(widget: wrapper, size: ViewSize(width: 400, height: 100))
+
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+        let third = try unwrapNextSibling(of: second)
+
+        let firstSize = allocatedSize(of: first)
+        let secondSize = allocatedSize(of: second)
+        let thirdSize = allocatedSize(of: third)
+
+        XCTAssertEqual(firstSize.width, 120, accuracy: 1,
+                       "Red ZStack must be 120 wide.")
+        XCTAssertEqual(secondSize.width, 120, accuracy: 1,
+                       "Green ZStack must be 120 wide.")
+        XCTAssertEqual(thirdSize.width, 120, accuracy: 1,
+                       "Blue ZStack must be 120 wide.")
+        XCTAssertEqual(firstSize.height, 100, accuracy: 1,
+                       "Red ZStack must be 100 tall.")
+        XCTAssertEqual(secondSize.height, 100, accuracy: 1,
+                       "Green ZStack must be 100 tall.")
+        XCTAssertEqual(thirdSize.height, 100, accuracy: 1,
+                       "Blue ZStack must be 100 tall.")
+    }
 }
 
 // MARK: - Deferred callback environment test fixtures
