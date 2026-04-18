@@ -2307,8 +2307,11 @@ extension FrameView: WinRenderable {
             expandsToFillHeight: expandsHeight
         )
 
-        let w = Int32(result.containerSize.width)
-        let h = Int32(result.containerSize.height)
+        // Use ceil so sub-pixel frame dimensions (e.g. frame(height: 0.5)
+        // for thin dividers) round up to at least 1 pixel instead of
+        // truncating to 0 and becoming invisible.
+        let w = Int32(ceil(result.containerSize.width))
+        let h = Int32(ceil(result.containerSize.height))
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         // Propagate expand flags to the FrameView container.
