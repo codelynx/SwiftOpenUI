@@ -171,8 +171,14 @@ extension WindowGroup: Win32WindowRenderable {
 
             let defaultClientW = defaultWindowWidth.map { Int32($0) }
             let defaultClientH = defaultWindowHeight.map { Int32($0) }
-            let unclampedW = defaultClientW ?? desiredClientSize.0
-            let unclampedH = defaultClientH ?? desiredClientSize.1
+            let automaticDefaultClientSize: (Int32?, Int32?) = {
+                if case .automatic = windowSizing ?? .automatic {
+                    return (Int32(defaultAutomaticWindowWidth), Int32(defaultAutomaticWindowHeight))
+                }
+                return (nil, nil)
+            }()
+            let unclampedW = defaultClientW ?? automaticDefaultClientSize.0 ?? desiredClientSize.0
+            let unclampedH = defaultClientH ?? automaticDefaultClientSize.1 ?? desiredClientSize.1
             let clientW = max(minClientW, min(unclampedW, maxClientW))
             let clientH = max(minClientH, min(unclampedH, maxClientH))
 
