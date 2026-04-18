@@ -1121,12 +1121,17 @@ extension PaddedView: GTKRenderable, GTKDescribable {
     public func gtkCreateWidget() -> OpaquePointer {
         let child = widgetFromOpaque(gtkRenderView(content))
         let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        applyCSSToWidget(wrapper, properties: """
-            padding-top: \(top)px;
-            padding-bottom: \(bottom)px;
-            padding-left: \(leading)px;
-            padding-right: \(trailing)px;
-            """)
+        // Use GTK widget margins (not CSS padding) for the spacing. CSS
+        // padding-X in GTK4 interacts poorly with hexpand-distributed
+        // GtkBox allocations: children that inherit expand through a
+        // CSS-padded wrapper end up shrunk by the padding amount during
+        // natural-size distribution, producing an unfilled gap in HStacks
+        // like the LayoutStress dashboard cards. Margins on the inner
+        // child are respected by measurement and don't hit that path.
+        gtk_widget_set_margin_top(child, gint(top))
+        gtk_widget_set_margin_bottom(child, gint(bottom))
+        gtk_widget_set_margin_start(child, gint(leading))
+        gtk_widget_set_margin_end(child, gint(trailing))
         if gtk_widget_get_hexpand(child) != 0 { gtk_widget_set_hexpand(wrapper, 1) }
         if gtk_widget_get_vexpand(child) != 0 { gtk_widget_set_vexpand(wrapper, 1) }
         gtkMarkHostedNodeKind(wrapper, kind: .padding)

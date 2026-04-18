@@ -1982,6 +1982,165 @@ final class GTK4RenderTests: XCTestCase {
             "Middle-truncated text clipped by a fixed-width frame must render a single label inside the scroll clip."
         )
     }
+
+    // MARK: - LayoutStress regressions (2026-04-17)
+
+    /// Two VStacks wrapped in `.frame(maxWidth: .infinity)` inside an HStack
+    /// must split the available width evenly — the LayoutStress "dashboard
+    /// cards" pattern.
+    func testTwoInfinityFramesInHStackSplitWidthEvenly() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            HStack(spacing: 12) {
+                Text("A")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+
+                Text("B")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+        ))
+        gtk_widget_set_halign(wrapper, GTK_ALIGN_FILL)
+        gtk_widget_set_hexpand(wrapper, 1)
+        allocate(widget: wrapper, size: ViewSize(width: 400, height: 80))
+
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+        let firstSize = allocatedSize(of: first)
+        let secondSize = allocatedSize(of: second)
+
+        // Expected: (400 - 12 gap) / 2 ≈ 194 each.
+        XCTAssertEqual(firstSize.width, 194, accuracy: 3,
+                       "First card should take half the HStack width.")
+        XCTAssertEqual(secondSize.width, 194, accuracy: 3,
+                       "Second card should take half the HStack width.")
+    }
+
+    /// A fixed-width frame wrapping `HStack { Text; Spacer; Text }` must
+    /// allocate both Text children's natural widths — the LayoutStress
+    /// "sidebar item" pattern.
+    func testFixedWidthFrameAllocatesBothTextsInInternalHStack() throws {
+        try requireGTK()
+
+        // Mirrors the LayoutStress sidebarItem layout: fixed-width outer
+        // VStack containing an HStack { Text; Spacer; Text } wrapped in
+        // padding + background.
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Inbox")
+                    Spacer()
+                    Text("12")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.clear)
+            }
+            .frame(width: 140)
+        ))
+        gtk_widget_set_halign(wrapper, GTK_ALIGN_FILL)
+        gtk_widget_set_hexpand(wrapper, 1)
+        allocate(widget: wrapper, size: ViewSize(width: 140, height: 40))
+
+        // Walk descendants, collect Text labels (excluding Spacer-marked ones).
+        var allLabels: [UnsafeMutablePointer<GtkWidget>] = []
+        gtkCollectLabels(in: wrapper, into: &allLabels)
+        let textLabels = allLabels.filter { w in
+            let g = UnsafeMutableRawPointer(w).assumingMemoryBound(to: GObject.self)
+            return g_object_get_data(g, gtkSwiftSpacerMarker) == nil
+        }
+
+        XCTAssertEqual(textLabels.count, 2,
+                       "Both 'Inbox' and '12' labels must appear.")
+        for label in textLabels {
+            let size = allocatedSize(of: label)
+            XCTAssertGreaterThan(size.width, 0,
+                                 "Label must receive non-zero width inside a fixed-width HStack parent.")
+        }
+    }
+
+    /// A ZStack with `.frame(width: 120, height: 100)` must report exactly
+    /// that allocated size — the LayoutStress "nested alignment" pattern.
+    func testZStackWithFixedFrameReportsRequestedSize() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            ZStack {
+                Color.red
+                Text("TL")
+                    .frame(width: 80, height: 60, alignment: .bottomTrailing)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .frame(width: 120, height: 100)
+        ))
+        let wrapperSize = measuredSize(of: wrapper)
+        allocate(widget: wrapper, size: wrapperSize)
+
+        XCTAssertEqual(wrapperSize.width, 120, accuracy: 1,
+                       "ZStack frame(width: 120) must measure 120 wide.")
+        XCTAssertEqual(wrapperSize.height, 100, accuracy: 1,
+                       "ZStack frame(height: 100) must measure 100 tall.")
+    }
+
+    /// Three ZStacks with identical `.frame(width: 120, height: 100)` placed
+    /// in an HStack must all allocate the same 120×100 size — the
+    /// LayoutStress "nested alignment stress" pattern. The middle box uses
+    /// a VStack with different-width children, which previously caused its
+    /// ZStack to measure narrower than its siblings.
+    func testThreeFramedZStacksInHStackAllReportSameSize() throws {
+        try requireGTK()
+
+        let wrapper = widgetFromOpaque(gtkRenderView(
+            HStack(spacing: 12) {
+                ZStack {
+                    Color.red
+                    Text("TL")
+                }
+                .frame(width: 120, height: 100)
+
+                ZStack {
+                    Color.green
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("A")
+                        Text("BB")
+                        Text("CCC")
+                    }
+                }
+                .frame(width: 120, height: 100)
+
+                ZStack {
+                    Color.blue
+                    Text("BR")
+                }
+                .frame(width: 120, height: 100)
+            }
+        ))
+        gtk_widget_set_halign(wrapper, GTK_ALIGN_START)
+        allocate(widget: wrapper, size: ViewSize(width: 400, height: 100))
+
+        let first = try unwrapFirstChild(of: wrapper)
+        let second = try unwrapNextSibling(of: first)
+        let third = try unwrapNextSibling(of: second)
+
+        let firstSize = allocatedSize(of: first)
+        let secondSize = allocatedSize(of: second)
+        let thirdSize = allocatedSize(of: third)
+
+        XCTAssertEqual(firstSize.width, 120, accuracy: 1,
+                       "Red ZStack must be 120 wide.")
+        XCTAssertEqual(secondSize.width, 120, accuracy: 1,
+                       "Green ZStack must be 120 wide.")
+        XCTAssertEqual(thirdSize.width, 120, accuracy: 1,
+                       "Blue ZStack must be 120 wide.")
+        XCTAssertEqual(firstSize.height, 100, accuracy: 1,
+                       "Red ZStack must be 100 tall.")
+        XCTAssertEqual(secondSize.height, 100, accuracy: 1,
+                       "Green ZStack must be 100 tall.")
+        XCTAssertEqual(thirdSize.height, 100, accuracy: 1,
+                       "Blue ZStack must be 100 tall.")
+    }
 }
 
 // MARK: - Deferred callback environment test fixtures
