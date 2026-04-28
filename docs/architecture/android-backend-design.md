@@ -268,11 +268,18 @@ State changes from Swift produce new JSON, which updates a `mutableStateOf(json)
 - `Text` → `Text()`
 - `Button` → `Button()` (Material3)
 - `TextField` → `BasicTextField` with `TextFieldValue` (preserves cursor/selection/IME)
+- `SecureField` → `BasicTextField` (Password)
+- `TextEditor` → `BasicTextField` (Multiline)
+- `Toggle` → `Switch()`
+- `Slider` → `Slider()`
+- `ProgressView` → `LinearProgressIndicator()`
 - `VStack` → `Column`
 - `HStack` → `Row`
 - `ZStack` → `Box`
 - `Spacer` → `Spacer` with `Modifier.weight(1f)` in Row/Column scope
-- `Divider` → `Divider()`
+- `Divider` → `HorizontalDivider()`
+- `List` → `LazyColumn`
+- `ScrollView` → `Modifier.verticalScroll / horizontalScroll`
 - `Color` → `Box` with `Modifier.background`
 - `Group` → `Column`
 - `EmptyView` → no-op
@@ -309,8 +316,9 @@ However, Android differs at the **host boundary**: GTK4/Win32/Web render directl
 Batched diff operations (the design above) are deferred. When implemented, they should be built as a **cross-platform diff engine** in `Sources/SwiftOpenUI/` core, with each backend consuming diff ops. This avoids architectural divergence from doing Android-only diffs. Trigger: TextField input performance, IME jank, or visible rebuild flicker.
 
 ### Not in Phase 1 (Cross-Platform Future Work)
-- Navigation (`NavigationStack`, `NavigationLink`)
-- Gestures beyond button tap (`onTapGesture`, `onLongPressGesture`, `DragGesture`)
+- TabView, Grid, Canvas, Shapes (Circle, Rectangle, etc.)
+- Presentations beyond Navigation (.sheet, .alert)
+- Images (Image(systemName:), Image(material:))
 - Animations (`withAnimation`, `.animation()` modifier)
 
 ## Project Structure

@@ -19,8 +19,8 @@ Last updated: 2026-04-13
 | Text | Y | Y | Y | Y | Y | Y | |
 | Button | Y | Y | Y | Y | Y | Y | Generic Label view supported |
 | TextField | Y | Y | Y | Y | Y | Y | Single-line; Binding<String> |
-| Toggle | Y | Y | Y | Y | Y | - | GtkCheckButton / Win32 checkbox / Web checkbox |
-| Slider | Y | Y | Y | Y | Y | - | Debounced on GTK4; container subclass on Win32; Web range input |
+| Toggle | Y | Y | Y | Y | Y | Y | GtkCheckButton / Win32 checkbox / Web checkbox |
+| Slider | Y | Y | Y | Y | Y | Y | Debounced on GTK4; container subclass on Win32; Web range input |
 | Image | Y | Y | Y | Y | ~ | - | GTK icon theme + file; Win32: WIC; Web: img tag (systemName as text placeholder) |
 | Color | Y | Y | Y | Y | Y | Y | RGBA, hex, HSB constructors |
 | Spacer | Y | Y | Y | Y | Y | Y | |
@@ -30,8 +30,8 @@ Last updated: 2026-04-13
 | ZStack | Y | Y | Y | Y | Y | Y | |
 | Group | Y | Y | Y | Y | Y | Y | |
 | ForEach | Y | Y | Y | Y | Y | Y | Identifiable, keyPath, Range |
-| List | Y | Y | Y | Y | Y | - | Content-based; no selection yet |
-| ScrollView | Y | Y | Y | Y | Y | - | Axis OptionSet; Web: CSS overflow |
+| List | Y | Y | Y | Y | Y | Y | Content-based; no selection yet |
+| ScrollView | Y | Y | Y | Y | Y | Y | Axis OptionSet; Web: CSS overflow |
 | ScrollViewReader | Y | Y | Y | Y | Y | - | ScrollViewProxy + .id() modifier; GTK: grab_focus; Win32: WM_VSCROLL; Web: scrollIntoView |
 | LinearGradient | Y | Y | Y | ~ | Y | - | GTK4: CSS linear-gradient; Web: CSS; Win32: solid first-stop (D2D deferred) |
 | RadialGradient | Y | Y | Y | ~ | Y | - | GTK4: CSS radial-gradient; Web: CSS (radii ignored); Win32: solid first-stop |
@@ -39,9 +39,9 @@ Last updated: 2026-04-13
 | EmptyView | Y | Y | Y | Y | Y | Y | |
 | NavigationStack | Y | Y | Y | Y | Y | Y | GtkStack / Win32 HWND stack / DOM stack |
 | NavigationLink | Y | Y | Y | Y | Y | Y | String and custom ViewBuilder labels |
-| SecureField | Y | Y | Y | Y | Y | - | GTK: PasswordEntry; Win32: EDIT+ES_PASSWORD; Web: password input |
-| TextEditor | Y | Y | Y | Y | Y | - | GTK: TextView+ScrolledWindow; Win32: EDIT+ES_MULTILINE; Web: textarea |
-| ProgressView | Y | Y | Y | Y | Y | - | GTK: GtkProgressBar; Win32: msctls_progress32; Web: progress element |
+| SecureField | Y | Y | Y | Y | Y | Y | GTK: PasswordEntry; Win32: EDIT+ES_PASSWORD; Web: password input |
+| TextEditor | Y | Y | Y | Y | Y | Y | GTK: TextView+ScrolledWindow; Win32: EDIT+ES_MULTILINE; Web: textarea |
+| ProgressView | Y | Y | Y | Y | Y | Y | GTK: GtkProgressBar; Win32: msctls_progress32; Web: progress element |
 | Stepper | Y | Y | Y | Y | Y | - | GTK: SpinButton; Win32: label+buttons; Web: -/+ buttons |
 | Label | Y | Y | Y | Y | Y | - | GTK: icon+text; Win32/Web: text with icon placeholder |
 | Link | Y | Y | Y | Y | Y | - | GTK: LinkButton; Win32: ShellExecuteW; Web: anchor tag |
