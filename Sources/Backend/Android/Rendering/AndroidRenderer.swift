@@ -1,5 +1,56 @@
 import SwiftOpenUI
 
+// MARK: - Layout measurement
+
+/// Estimator for child view sizes on Android.
+/// Since we don't have direct access to Android's measurement APIs during the
+/// Swift render pass, we use standard metrics for primitive views.
+private struct AndroidLayoutMeasureContext: LayoutMeasureContext {
+    let children: [RenderNode]
+
+    func measure(_ subview: LayoutSubview, proposal: ProposedViewSize) -> LayoutMeasurement {
+        let node = children[subview.index]
+        var size = ViewSize.zero
+        var expandsW = false
+        var expandsH = false
+
+        switch node.type {
+        case "text":
+            // Estimate based on standard system font (17pt)
+            let content = node.props["content"] ?? ""
+            size = ViewSize(width: Double(content.count) * 9.0, height: 22.0)
+        case "button":
+            // Material3 button standard min size
+            size = ViewSize(width: 100.0, height: 48.0)
+        case "textfield", "securefield":
+            size = ViewSize(width: proposal.width ?? 200.0, height: 56.0)
+        case "toggle":
+            size = ViewSize(width: proposal.width ?? 200.0, height: 48.0)
+        case "spacer":
+            expandsW = true
+            expandsH = true
+        case "divider":
+            size = ViewSize(width: proposal.width ?? 1.0, height: 1.0)
+        case "color":
+            expandsW = true
+            expandsH = true
+        case "vstack", "hstack", "zstack", "group", "padding", "frame":
+            // Nested containers take the proposed size if available
+            size = ViewSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+            expandsW = true
+            expandsH = true
+        default:
+            size = ViewSize(width: 0, height: 0)
+        }
+
+        return LayoutMeasurement(
+            size: size,
+            expandsToFillWidth: expandsW,
+            expandsToFillHeight: expandsH
+        )
+    }
+}
+
 // MARK: - Rendering protocol
 
 /// Protocol that views implement (via extensions) to produce RenderNodes.
@@ -219,12 +270,31 @@ extension SwiftOpenUI.Color: AndroidRenderable {
 
 // MARK: - Container views
 
+private func androidCanUsePrecisionLayout(_ children: [RenderNode]) -> Bool {
+    // Only use precision layout if all children have reliable intrinsic measurement estimations.
+    // If any child is expanding (Spacer, Color) or unknown, fall back to Compose.
+    let allowlist: Set<String> = ["text", "button", "divider"]
+    for node in children {
+        if !allowlist.contains(node.type) {
+            return false
+        }
+    }
+    return true
+}
+
 extension VStack: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let node = RenderNode(type: "vstack")
-        node.props["spacing"] = "\(resolveStackSpacing(spacing))"
+        let spacingValue = resolveStackSpacing(spacing)
+        node.props["spacing"] = "\(spacingValue)"
         node.props["alignment"] = "\(alignment)"
         node.children = androidRenderChildren(content)
+
+        // Precision Layout: compute absolute positions for children if safe
+        if androidCanUsePrecisionLayout(node.children) {
+            applyPrecisionVStackLayout(node: node, spacing: Double(spacingValue), alignment: alignment)
+        }
+
         return node
     }
 }
@@ -232,10 +302,63 @@ extension VStack: AndroidRenderable {
 extension HStack: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let node = RenderNode(type: "hstack")
-        node.props["spacing"] = "\(resolveStackSpacing(spacing))"
+        let spacingValue = resolveStackSpacing(spacing)
+        node.props["spacing"] = "\(spacingValue)"
         node.props["alignment"] = "\(alignment)"
         node.children = androidRenderChildren(content)
+
+        // Precision Layout: compute absolute positions for children if safe
+        if androidCanUsePrecisionLayout(node.children) {
+            applyPrecisionHStackLayout(node: node, spacing: Double(spacingValue), alignment: alignment)
+        }
+
         return node
+    }
+}
+
+private func applyPrecisionVStackLayout(node: RenderNode, spacing: Double, alignment: HorizontalAlignment) {
+    let context = AndroidLayoutMeasureContext(children: node.children)
+    let result = computeVStackLayout(
+        subviews: node.children.indices.map(LayoutSubview.init(index:)),
+        context: context,
+        spacing: spacing,
+        alignment: alignment
+    )
+    
+    // Set container size
+    node.layout = ["width": result.containerSize.width, "height": result.containerSize.height]
+    
+    // Set child absolute offsets
+    for (child, placement) in zip(node.children, result.childPlacements) {
+        child.layout = [
+            "x": placement.origin.x,
+            "y": placement.origin.y,
+            "width": placement.size.width,
+            "height": placement.size.height
+        ]
+    }
+}
+
+private func applyPrecisionHStackLayout(node: RenderNode, spacing: Double, alignment: VerticalAlignment) {
+    let context = AndroidLayoutMeasureContext(children: node.children)
+    let result = computeHStackLayout(
+        subviews: node.children.indices.map(LayoutSubview.init(index:)),
+        context: context,
+        spacing: spacing,
+        alignment: alignment
+    )
+    
+    // Set container size
+    node.layout = ["width": result.containerSize.width, "height": result.containerSize.height]
+    
+    // Set child absolute offsets
+    for (child, placement) in zip(node.children, result.childPlacements) {
+        child.layout = [
+            "x": placement.origin.x,
+            "y": placement.origin.y,
+            "width": placement.size.width,
+            "height": placement.size.height
+        ]
     }
 }
 

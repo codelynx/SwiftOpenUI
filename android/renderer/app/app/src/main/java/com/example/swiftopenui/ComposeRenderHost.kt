@@ -118,7 +118,26 @@ object ComposeRenderHost {
             }
         } else Modifier
 
-        Box(modifier = dragModifier) {
+        // Layout handling (Swift-driven absolute positioning)
+        val layout = if (node.has("layout")) node.getJSONObject("layout") else null
+        var layoutModifier = Modifier as Modifier
+        if (layout != null) {
+            val lx = layout.optDouble("x", Double.NaN)
+            val ly = layout.optDouble("y", Double.NaN)
+            val lw = layout.optDouble("width", Double.NaN)
+            val lh = layout.optDouble("height", Double.NaN)
+            if (!lx.isNaN() && !ly.isNaN()) {
+                layoutModifier = layoutModifier.absoluteOffset(lx.dp, ly.dp)
+            }
+            if (!lw.isNaN()) {
+                layoutModifier = layoutModifier.width(lw.dp)
+            }
+            if (!lh.isNaN()) {
+                layoutModifier = layoutModifier.height(lh.dp)
+            }
+        }
+
+        Box(modifier = dragModifier.then(layoutModifier)) {
             when (type) {
                 "window" -> {
                     RenderContainer(children, onNewJson)
@@ -134,8 +153,8 @@ object ComposeRenderHost {
                 "texteditor" -> RenderTextEditor(nodeId, props, focusModifier, onNewJson)
                 "toggle" -> RenderToggle(nodeId, props, onNewJson)
                 "slider" -> RenderSlider(nodeId, props, onNewJson)
-                "vstack" -> RenderVStack(props, children, onNewJson)
-                "hstack" -> RenderHStack(props, children, onNewJson)
+                "vstack" -> RenderVStack(node, props, children, onNewJson)
+                "hstack" -> RenderHStack(node, props, children, onNewJson)
                 "zstack" -> RenderZStack(children, onNewJson)
                 "scrollview" -> RenderScrollView(props, children, onNewJson)
                 "list" -> RenderList(children, onNewJson)
@@ -436,51 +455,68 @@ object ComposeRenderHost {
     }
 
     @Composable
-    private fun RenderVStack(props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
-        val spacing = props.optInt("spacing", 0)
-        val alignment = props.optString("alignment", "center")
+    private fun RenderVStack(node: JSONObject, props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
+        if (node.has("layout")) {
+            // Precision Layout: Swift-driven absolute positions.
+            // Using a Box allows children to use absoluteOffset.
+            Box(modifier = Modifier.fillMaxWidth()) {
+                RenderChildren(children, onNewJson)
+            }
+        } else {
+            // Fallback: Compose-driven layout
+            val spacing = props.optInt("spacing", 0)
+            val alignment = props.optString("alignment", "center")
 
-        val hAlign = when {
-            alignment.contains("leading") -> Alignment.Start
-            alignment.contains("trailing") -> Alignment.End
-            else -> Alignment.CenterHorizontally
-        }
+            val hAlign = when {
+                alignment.contains("leading") -> Alignment.Start
+                alignment.contains("trailing") -> Alignment.End
+                else -> Alignment.CenterHorizontally
+            }
 
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(spacing.dp),
-            horizontalAlignment = hAlign
-        ) {
-            RenderChildren(children, onNewJson)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(spacing.dp),
+                horizontalAlignment = hAlign
+            ) {
+                RenderChildren(children, onNewJson)
+            }
         }
     }
 
     @Composable
-    private fun RenderHStack(props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
-        val spacing = props.optInt("spacing", 0)
-        val alignment = props.optString("alignment", "center")
-
-        val vAlign = when {
-            alignment.contains("top") -> Alignment.Top
-            alignment.contains("bottom") -> Alignment.Bottom
-            else -> Alignment.CenterVertically
-        }
-
-        // Center if no Spacer children (SwiftUI HStack centers content by default).
-        // If Spacers are present, they handle distribution via Modifier.weight.
-        val hasSpacer = (0 until children.length()).any { children.getJSONObject(it).getString("type") == "spacer" }
-        val arrangement = if (hasSpacer) {
-            Arrangement.spacedBy(spacing.dp)
+    private fun RenderHStack(node: JSONObject, props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
+        if (node.has("layout")) {
+            // Precision Layout
+            Box(modifier = Modifier.fillMaxWidth()) {
+                RenderChildren(children, onNewJson)
+            }
         } else {
-            Arrangement.spacedBy(spacing.dp, Alignment.CenterHorizontally)
-        }
+            // Fallback: Compose-driven layout
+            val spacing = props.optInt("spacing", 0)
+            val alignment = props.optString("alignment", "center")
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = arrangement,
-            verticalAlignment = vAlign
-        ) {
-            RenderChildren(children, onNewJson)
+            val vAlign = when {
+                alignment.contains("top") -> Alignment.Top
+                alignment.contains("bottom") -> Alignment.Bottom
+                else -> Alignment.CenterVertically
+            }
+
+            // Center if no Spacer children (SwiftUI HStack centers content by default).
+            // If Spacers are present, they handle distribution via Modifier.weight.
+            val hasSpacer = (0 until children.length()).any { children.getJSONObject(it).getString("type") == "spacer" }
+            val arrangement = if (hasSpacer) {
+                Arrangement.spacedBy(spacing.dp)
+            } else {
+                Arrangement.spacedBy(spacing.dp, Alignment.CenterHorizontally)
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = arrangement,
+                verticalAlignment = vAlign
+            ) {
+                RenderChildren(children, onNewJson)
+            }
         }
     }
 
@@ -686,6 +722,13 @@ object ComposeRenderHost {
             }
         }) {
             Text(label)
+        }
+    }
+
+    @Composable
+    private fun RenderChildren(children: JSONArray, onNewJson: (String) -> Unit) {
+        for (i in 0 until children.length()) {
+            RenderNode(children.getJSONObject(i), onNewJson)
         }
     }
 

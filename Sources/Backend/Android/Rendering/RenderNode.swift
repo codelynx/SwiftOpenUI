@@ -8,6 +8,7 @@ public class RenderNode {
     /// Stable structural identity — Int64 hash of the node's position in the view tree.
     public var id: Int64 = 0
     public var props: [String: String] = [:]
+    public var layout: [String: Double]? = nil
     public var children: [RenderNode] = []
 
     public init(type: String) {
@@ -23,6 +24,9 @@ public class RenderNode {
         }
         if !props.isEmpty {
             dict["props"] = props
+        }
+        if let layout = layout {
+            dict["layout"] = layout
         }
         if !children.isEmpty {
             dict["children"] = children.map { $0.toDict() }

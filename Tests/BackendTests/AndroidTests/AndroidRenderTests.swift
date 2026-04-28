@@ -444,6 +444,56 @@ final class AndroidRenderTests: XCTestCase {
         XCTAssertEqual(node.children[1].type, "text")
     }
 
+    func testVStackPrecisionLayout() {
+        let view = VStack(spacing: 10) {
+            Text("Line 1")
+            Text("Line 2")
+        }
+        let node = androidRenderView(view)
+        
+        // Root vstack should have container size
+        XCTAssertNotNil(node.layout)
+        XCTAssertGreaterThan(node.layout?["width"] ?? 0, 0)
+        XCTAssertGreaterThan(node.layout?["height"] ?? 0, 0)
+
+        // Children should have absolute offsets
+        XCTAssertEqual(node.children.count, 2)
+        
+        let child1 = node.children[0]
+        let child2 = node.children[1]
+        
+        XCTAssertEqual(child1.layout?["x"], 0)
+        XCTAssertEqual(child1.layout?["y"], 0)
+        
+        XCTAssertEqual(child2.layout?["x"], 0)
+        // Y offset should be child1 height + spacing
+        let child1H = child1.layout?["height"] ?? 0
+        XCTAssertEqual(child2.layout?["y"], child1H + 10.0)
+    }
+
+    func testVStackLayoutFallback() {
+        // Stacks containing Spacers or non-allowlisted views should NOT have layout info
+        let viewWithSpacer = VStack {
+            Text("A")
+            Spacer()
+        }
+        let node1 = androidRenderView(viewWithSpacer)
+        XCTAssertNil(node1.layout, "VStack with Spacer should use Compose fallback")
+
+        let viewWithSlider = VStack {
+            Text("A")
+            Slider(value: .constant(0.5))
+        }
+        let node2 = androidRenderView(viewWithSlider)
+        XCTAssertNil(node2.layout, "VStack with Slider should use Compose fallback")
+
+        let viewWithPadding = VStack {
+            Text("A").padding()
+        }
+        let node3 = androidRenderView(viewWithPadding)
+        XCTAssertNil(node3.layout, "VStack with padded child should use Compose fallback")
+    }
+
     func testHStackRendersChildren() {
         let view = HStack {
             Text("L")
