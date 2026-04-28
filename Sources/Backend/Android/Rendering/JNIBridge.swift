@@ -134,6 +134,72 @@ public func jniOnTextInput(
     return nil
 }
 
+/// Handle a toggle change event. Updates the Toggle's @Binding<Bool>.
+/// Returns new JSON if the tree was rebuilt, or null if no state changed.
+///
+/// Called from Kotlin: `RenderBridge.nativeOnToggleChange(nodeId, isOn)`
+@_cdecl("Java_com_example_swiftopenui_RenderBridge_nativeOnToggleChange")
+public func jniOnToggleChange(
+    env: UnsafeMutableRawPointer?,
+    thisObj: UnsafeMutableRawPointer?,
+    nodeId: Int64,
+    isOn: UInt8
+) -> UnsafeMutableRawPointer? {
+    guard let env = env, let session = currentSession else { return nil }
+
+    session.host.pendingJSON = nil
+    session.host.needsRebuild = false
+
+    if let binding = androidToggleBindings[nodeId] {
+        binding.wrappedValue = (isOn != 0)
+    }
+
+    if session.host.needsRebuild {
+        session.host.needsRebuild = false
+        session.host.rebuild()
+    }
+
+    if let json = session.host.pendingJSON {
+        session.host.pendingJSON = nil
+        return jniNewString(env: env, string: json)
+    }
+
+    return nil
+}
+
+/// Handle a slider change event. Updates the Slider's @Binding<Double>.
+/// Returns new JSON if the tree was rebuilt, or null if no state changed.
+///
+/// Called from Kotlin: `RenderBridge.nativeOnSliderChange(nodeId, value)`
+@_cdecl("Java_com_example_swiftopenui_RenderBridge_nativeOnSliderChange")
+public func jniOnSliderChange(
+    env: UnsafeMutableRawPointer?,
+    thisObj: UnsafeMutableRawPointer?,
+    nodeId: Int64,
+    value: Double
+) -> UnsafeMutableRawPointer? {
+    guard let env = env, let session = currentSession else { return nil }
+
+    session.host.pendingJSON = nil
+    session.host.needsRebuild = false
+
+    if let binding = androidSliderBindings[nodeId] {
+        binding.wrappedValue = value
+    }
+
+    if session.host.needsRebuild {
+        session.host.needsRebuild = false
+        session.host.rebuild()
+    }
+
+    if let json = session.host.pendingJSON {
+        session.host.pendingJSON = nil
+        return jniNewString(env: env, string: json)
+    }
+
+    return nil
+}
+
 /// Handle a drag gesture event from Kotlin.
 /// Called continuously during drag (onChanged) and once at end (onEnded).
 /// Drag events do NOT trigger rebuilds — the callback updates @State which does.

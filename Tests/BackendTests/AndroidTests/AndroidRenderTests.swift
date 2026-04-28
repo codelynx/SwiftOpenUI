@@ -97,15 +97,174 @@ final class AndroidRenderTests: XCTestCase {
     }
 
     func testBeginRenderPassClearsRegistries() {
-        let state = State<String>(wrappedValue: "")
+        let textState = State<String>(wrappedValue: "")
+        let boolState = State<Bool>(wrappedValue: false)
+        let doubleState = State<Double>(wrappedValue: 0.0)
+        
         _ = androidRenderView(Button("B") { })
-        _ = androidRenderView(TextField("", text: state.projectedValue))
+        _ = androidRenderView(TextField("", text: textState.projectedValue))
+        _ = androidRenderView(SecureField("", text: textState.projectedValue))
+        _ = androidRenderView(TextEditor(text: textState.projectedValue))
+        _ = androidRenderView(Toggle("T", isOn: boolState.projectedValue))
+        _ = androidRenderView(Slider(value: doubleState.projectedValue))
+        
         XCTAssertFalse(androidButtonActions.isEmpty)
         XCTAssertFalse(androidTextBindings.isEmpty)
+        XCTAssertEqual(androidTextBindings.count, 3) // TextField, SecureField, TextEditor
+        XCTAssertFalse(androidToggleBindings.isEmpty)
+        XCTAssertFalse(androidSliderBindings.isEmpty)
 
         androidBeginRenderPass()
         XCTAssertTrue(androidButtonActions.isEmpty)
         XCTAssertTrue(androidTextBindings.isEmpty)
+        XCTAssertTrue(androidToggleBindings.isEmpty)
+        XCTAssertTrue(androidSliderBindings.isEmpty)
+    }
+
+    // MARK: - SecureField, TextEditor, ProgressView Tests
+
+    func testSecureFieldRenders() {
+        let state = State<String>(wrappedValue: "secret")
+        let field = SecureField("Password", text: state.projectedValue)
+        let node = androidRenderView(field)
+
+        XCTAssertEqual(node.type, "securefield")
+        XCTAssertEqual(node.props["placeholder"], "Password")
+        XCTAssertEqual(node.props["text"], "secret")
+    }
+
+    func testTextEditorRenders() {
+        let state = State<String>(wrappedValue: "body")
+        let editor = TextEditor(text: state.projectedValue)
+        let node = androidRenderView(editor)
+
+        XCTAssertEqual(node.type, "texteditor")
+        XCTAssertEqual(node.props["text"], "body")
+    }
+
+    func testProgressViewDeterminateRenders() {
+        let view = ProgressView(value: 0.5, total: 2.0)
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.type, "progressview")
+        XCTAssertEqual(node.props["progress"], "0.25")
+    }
+
+    func testProgressViewIndeterminateRenders() {
+        let view = ProgressView()
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.type, "progressview")
+        XCTAssertNil(node.props["progress"])
+    }
+
+    // MARK: - Toggle and Slider Tests
+
+    func testToggleRenders() {
+        let state = State<Bool>(wrappedValue: true)
+        let toggle = Toggle("Wi-Fi", isOn: state.projectedValue)
+        let node = androidRenderView(toggle)
+
+        XCTAssertEqual(node.type, "toggle")
+        XCTAssertEqual(node.props["label"], "Wi-Fi")
+        XCTAssertEqual(node.props["isOn"], "true")
+    }
+
+    func testToggleRegistersBinding() {
+        let state = State<Bool>(wrappedValue: false)
+        let toggle = Toggle("", isOn: state.projectedValue)
+
+        XCTAssertTrue(androidToggleBindings.isEmpty)
+        _ = androidRenderView(toggle)
+        XCTAssertEqual(androidToggleBindings.count, 1)
+    }
+
+    func testToggleBindingUpdatesState() {
+        let state = State<Bool>(wrappedValue: false)
+        let toggle = Toggle("", isOn: state.projectedValue)
+        _ = androidRenderView(toggle)
+
+        guard let (_, binding) = androidToggleBindings.first else {
+            XCTFail("No toggle binding registered")
+            return
+        }
+        binding.wrappedValue = true
+        XCTAssertEqual(state.wrappedValue, true)
+    }
+
+    func testSliderRendersWithStep() {
+        let state = State<Double>(wrappedValue: 0.5)
+        let slider = Slider(value: state.projectedValue, in: 0...1, step: 0.1)
+        let node = androidRenderView(slider)
+
+        XCTAssertEqual(node.type, "slider")
+        XCTAssertEqual(node.props["value"], "0.5")
+        XCTAssertEqual(node.props["min"], "0.0")
+        XCTAssertEqual(node.props["max"], "1.0")
+        XCTAssertEqual(node.props["step"], "0.1")
+    }
+
+    func testSliderRegistersBinding() {
+        let state = State<Double>(wrappedValue: 0.0)
+        let slider = Slider(value: state.projectedValue)
+
+        XCTAssertTrue(androidSliderBindings.isEmpty)
+        _ = androidRenderView(slider)
+        XCTAssertEqual(androidSliderBindings.count, 1)
+    }
+
+    func testSliderBindingUpdatesState() {
+        let state = State<Double>(wrappedValue: 0.0)
+        let slider = Slider(value: state.projectedValue)
+        _ = androidRenderView(slider)
+
+        guard let (_, binding) = androidSliderBindings.first else {
+            XCTFail("No slider binding registered")
+            return
+        }
+        binding.wrappedValue = 0.75
+        XCTAssertEqual(state.wrappedValue, 0.75)
+    }
+
+    // MARK: - ScrollView Tests
+
+    func testScrollViewRendersVertical() {
+        let view = ScrollView(.vertical) { Text("Scroll") }
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.type, "scrollview")
+        XCTAssertEqual(node.props["axis"], "vertical")
+        XCTAssertEqual(node.children.count, 1)
+    }
+
+    func testScrollViewRendersHorizontal() {
+        let view = ScrollView(.horizontal) { Text("Scroll") }
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.type, "scrollview")
+        XCTAssertEqual(node.props["axis"], "horizontal")
+        XCTAssertEqual(node.children.count, 1)
+    }
+
+    func testScrollViewRendersBothAxes() {
+        let view = ScrollView([.horizontal, .vertical]) { Text("Scroll") }
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.type, "scrollview")
+        XCTAssertEqual(node.props["axis"], "both")
+        XCTAssertEqual(node.children.count, 1)
+    }
+
+    // MARK: - List Tests
+
+    func testListRenders() {
+        let view = List { Text("Row 1"); Text("Row 2") }
+        let node = androidRenderView(view)
+
+        XCTAssertEqual(node.type, "list")
+        XCTAssertEqual(node.children.count, 2)
+        XCTAssertEqual(node.children[0].type, "text")
+        XCTAssertEqual(node.children[1].type, "text")
     }
 
     // MARK: - Stable node IDs

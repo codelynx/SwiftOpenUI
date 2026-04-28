@@ -3,14 +3,25 @@ package com.example.swiftopenui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material3.Button
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Slider
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.runtime.*
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -37,6 +48,12 @@ object ComposeRenderHost {
 
     /// Callback invoked when text input changes. Set by MainActivity.
     var onTextInput: ((Long, String) -> String?)? = null
+
+    /// Callback invoked when toggle changes. Set by MainActivity.
+    var onToggleChange: ((Long, Boolean) -> String?)? = null
+
+    /// Callback invoked when slider changes. Set by MainActivity.
+    var onSliderChange: ((Long, Double) -> String?)? = null
 
     /// Callback invoked when focus changes. Set by MainActivity.
     var onFocusChange: ((Long, Boolean) -> Unit)? = null
@@ -113,11 +130,18 @@ object ComposeRenderHost {
                 "text" -> RenderText(props)
                 "button" -> RenderButton(nodeId, props, children, onNewJson)
                 "textfield" -> RenderTextField(nodeId, props, focusModifier, onNewJson)
+                "securefield" -> RenderSecureField(nodeId, props, focusModifier, onNewJson)
+                "texteditor" -> RenderTextEditor(nodeId, props, focusModifier, onNewJson)
+                "toggle" -> RenderToggle(nodeId, props, onNewJson)
+                "slider" -> RenderSlider(nodeId, props, onNewJson)
                 "vstack" -> RenderVStack(props, children, onNewJson)
                 "hstack" -> RenderHStack(props, children, onNewJson)
                 "zstack" -> RenderZStack(children, onNewJson)
+                "scrollview" -> RenderScrollView(props, children, onNewJson)
+                "list" -> RenderList(children, onNewJson)
+                "progressview" -> RenderProgressView(props)
                 "spacer" -> Spacer(modifier = Modifier.height(0.dp))
-                "divider" -> Divider(color = Color(0xFFCCCCCC), thickness = 1.dp)
+                "divider" -> HorizontalDivider(color = Color(0xFFCCCCCC), thickness = 1.dp)
                 "color" -> RenderColor(props)
                 "empty" -> {}
                 "group" -> RenderContainer(children, onNewJson)
@@ -142,6 +166,100 @@ object ComposeRenderHost {
         if (focusedProp == "true") {
             LaunchedEffect(Unit) {
                 focusRequester.requestFocus()
+            }
+        }
+    }
+
+    @Composable
+    private fun RenderToggle(nodeId: Long, props: JSONObject, onNewJson: (String) -> Unit) {
+        val label = props.optString("label", "")
+        val isOn = props.optString("isOn", "false") == "true"
+        
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
+        ) {
+            if (label.isNotEmpty()) {
+                Text(label)
+            }
+            Switch(
+                checked = isOn,
+                onCheckedChange = { checked ->
+                    if (nodeId != 0L) {
+                        val newJson = onToggleChange?.invoke(nodeId, checked)
+                        if (newJson != null) onNewJson(newJson)
+                    }
+                }
+            )
+        }
+    }
+
+    @Composable
+    private fun RenderSlider(nodeId: Long, props: JSONObject, onNewJson: (String) -> Unit) {
+        val value = props.optDouble("value", 0.0).toFloat()
+        val min = props.optDouble("min", 0.0).toFloat()
+        val max = props.optDouble("max", 1.0).toFloat()
+        val step = props.optDouble("step", 0.0).toFloat()
+        val steps = if (step > 0.0f) Math.max(0, ((max - min) / step).roundToInt() - 1) else 0
+
+        Slider(
+            value = value,
+            onValueChange = { newValue ->
+                if (nodeId != 0L) {
+                    val newJson = onSliderChange?.invoke(nodeId, newValue.toDouble())
+                    if (newJson != null) onNewJson(newJson)
+                }
+            },
+            valueRange = min..max,
+            steps = steps,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+        )
+    }
+
+    @Composable
+    private fun RenderScrollView(props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
+        val axis = props.optString("axis", "vertical")
+        
+        when (axis) {
+            "horizontal" -> {
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    RenderChildren(children, onNewJson)
+                }
+            }
+            "both" -> {
+                Box(modifier = Modifier.verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState())) {
+                    Column {
+                        RenderChildren(children, onNewJson)
+                    }
+                }
+            }
+            else -> {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    RenderChildren(children, onNewJson)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun RenderList(children: JSONArray, onNewJson: (String) -> Unit) {
+        val itemCount = children.length()
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(itemCount) { index ->
+                val child = children.getJSONObject(index)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        RenderNode(child, onNewJson)
+                    }
+                    if (index < itemCount - 1) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 16.dp),
+                            color = Color(0xFFCCCCCC),
+                            thickness = 0.5.dp
+                        )
+                    }
+                }
             }
         }
     }
@@ -201,6 +319,7 @@ object ComposeRenderHost {
                     if (newJson != null) onNewJson(newJson)
                 }
             },
+            singleLine = true,
             modifier = focusModifier
                 .fillMaxWidth()
                 .border(1.dp, Color.Gray)
@@ -215,6 +334,105 @@ object ComposeRenderHost {
                 }
             }
         )
+    }
+
+    @Composable
+    private fun RenderSecureField(nodeId: Long, props: JSONObject, focusModifier: Modifier, onNewJson: (String) -> Unit) {
+        val placeholder = props.optString("placeholder", "")
+        val text = props.optString("text", "")
+
+        var tfValue by remember {
+            mutableStateOf(TextFieldValue(text, TextRange(text.length)))
+        }
+
+        LaunchedEffect(text) {
+            if (text != tfValue.text) {
+                tfValue = tfValue.copy(
+                    text = text,
+                    selection = TextRange(text.length.coerceAtMost(tfValue.selection.start),
+                                          text.length.coerceAtMost(tfValue.selection.end))
+                )
+            }
+        }
+
+        BasicTextField(
+            value = tfValue,
+            onValueChange = { newValue ->
+                tfValue = newValue
+                if (nodeId != 0L && newValue.text != text) {
+                    val newJson = onTextInput?.invoke(nodeId, newValue.text)
+                    if (newJson != null) onNewJson(newJson)
+                }
+            },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = focusModifier
+                .fillMaxWidth()
+                .border(1.dp, Color.Gray)
+                .padding(8.dp),
+            textStyle = TextStyle(fontSize = 16.sp),
+            decorationBox = { innerTextField ->
+                Box {
+                    if (tfValue.text.isEmpty()) {
+                        Text(placeholder, color = Color.Gray, fontSize = 16.sp)
+                    }
+                    innerTextField()
+                }
+            }
+        )
+    }
+
+    @Composable
+    private fun RenderTextEditor(nodeId: Long, props: JSONObject, focusModifier: Modifier, onNewJson: (String) -> Unit) {
+        val text = props.optString("text", "")
+
+        var tfValue by remember {
+            mutableStateOf(TextFieldValue(text, TextRange(text.length)))
+        }
+
+        LaunchedEffect(text) {
+            if (text != tfValue.text) {
+                tfValue = tfValue.copy(
+                    text = text,
+                    selection = TextRange(text.length.coerceAtMost(tfValue.selection.start),
+                                          text.length.coerceAtMost(tfValue.selection.end))
+                )
+            }
+        }
+
+        BasicTextField(
+            value = tfValue,
+            onValueChange = { newValue ->
+                tfValue = newValue
+                if (nodeId != 0L && newValue.text != text) {
+                    val newJson = onTextInput?.invoke(nodeId, newValue.text)
+                    if (newJson != null) onNewJson(newJson)
+                }
+            },
+            singleLine = false,
+            modifier = focusModifier
+                .fillMaxWidth()
+                .border(1.dp, Color.Gray)
+                .padding(8.dp)
+                .heightIn(min = 100.dp),
+            textStyle = TextStyle(fontSize = 16.sp)
+        )
+    }
+
+    @Composable
+    private fun RenderProgressView(props: JSONObject) {
+        if (props.has("progress")) {
+            val progressVal = props.optDouble("progress", 0.0).toFloat()
+            LinearProgressIndicator(
+                progress = { progressVal },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+            )
+        } else {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+            )
+        }
     }
 
     @Composable

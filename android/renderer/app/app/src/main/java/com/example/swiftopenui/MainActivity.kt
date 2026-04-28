@@ -44,6 +44,14 @@ class MainActivity : ComponentActivity() {
             bridge?.nativeOnTextInput(nodeId, text)
         }
 
+        ComposeRenderHost.onToggleChange = { nodeId, isOn ->
+            bridge?.nativeOnToggleChange(nodeId, isOn)
+        }
+
+        ComposeRenderHost.onSliderChange = { nodeId, value ->
+            bridge?.nativeOnSliderChange(nodeId, value)
+        }
+
         ComposeRenderHost.onFocusChange = { nodeId, hasFocus ->
             bridge?.nativeOnFocusChange(nodeId, hasFocus)
         }

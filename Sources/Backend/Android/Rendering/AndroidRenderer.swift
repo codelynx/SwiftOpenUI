@@ -149,6 +149,63 @@ extension SwiftOpenUI.TextField: AndroidRenderable {
     }
 }
 
+extension SecureField: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "securefield")
+        node.props["placeholder"] = placeholder
+        node.props["text"] = text.wrappedValue
+        let nodeId = androidCurrentNodeId()
+        androidTextBindings[nodeId] = text
+        return node
+    }
+}
+
+extension TextEditor: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "texteditor")
+        node.props["text"] = text.wrappedValue
+        let nodeId = androidCurrentNodeId()
+        androidTextBindings[nodeId] = text
+        return node
+    }
+}
+
+// TODO: Support inherited environment .disabled()
+extension Toggle: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "toggle")
+        node.props["label"] = label
+        node.props["isOn"] = isOn.wrappedValue ? "true" : "false"
+        let nodeId = androidCurrentNodeId()
+        androidToggleBindings[nodeId] = isOn
+        return node
+    }
+}
+
+extension Slider: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "slider")
+        node.props["value"] = "\(value.wrappedValue)"
+        node.props["min"] = "\(range.lowerBound)"
+        node.props["max"] = "\(range.upperBound)"
+        node.props["step"] = "\(step)"
+        let nodeId = androidCurrentNodeId()
+        androidSliderBindings[nodeId] = value
+        return node
+    }
+}
+
+extension ProgressView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "progressview")
+        if let val = value {
+            let progress = max(0.0, min(1.0, val / total))
+            node.props["progress"] = "\(progress)"
+        }
+        return node
+    }
+}
+
 extension SwiftOpenUI.Color: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {
         let node = RenderNode(type: "color")
@@ -214,6 +271,27 @@ extension ForEach: AndroidRenderable, AndroidMultiChildRenderable {
             let view = content(item)
             return androidRenderView(view)
         }
+    }
+}
+
+extension ScrollView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "scrollview")
+        if axes == [.horizontal, .vertical] {
+            node.props["axis"] = "both"
+        } else {
+            node.props["axis"] = axes.contains(.horizontal) ? "horizontal" : "vertical"
+        }
+        node.children = [androidRenderView(content)]
+        return node
+    }
+}
+
+extension List: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "list")
+        node.children = androidRenderChildren(content)
+        return node
     }
 }
 

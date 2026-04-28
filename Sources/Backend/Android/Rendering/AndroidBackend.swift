@@ -23,6 +23,14 @@ public var androidButtonActions: [Int64: () -> Void] = [:]
 /// Cleared at the start of each render pass, populated during rendering.
 public var androidTextBindings: [Int64: Binding<String>] = [:]
 
+/// Maps stable node IDs (Int64) to toggle bindings.
+/// Cleared at the start of each render pass, populated during rendering.
+public var androidToggleBindings: [Int64: Binding<Bool>] = [:]
+
+/// Maps stable node IDs (Int64) to slider bindings.
+/// Cleared at the start of each render pass, populated during rendering.
+public var androidSliderBindings: [Int64: Binding<Double>] = [:]
+
 /// Maps stable node IDs (Int64) to drag gesture handlers.
 /// Cleared at the start of each render pass, populated during rendering.
 public var androidDragHandlers: [Int64: AndroidDragHandler] = [:]
@@ -63,6 +71,8 @@ private var _idChildCounters: [Int] = [0]
 public func androidBeginRenderPass() {
     androidButtonActions.removeAll()
     androidTextBindings.removeAll()
+    androidToggleBindings.removeAll()
+    androidSliderBindings.removeAll()
     androidDragHandlers.removeAll()
     androidFocusHandlers.removeAll()
     _idPathStack = [0]
