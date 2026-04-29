@@ -200,12 +200,16 @@ private func _discoverMainBundle() -> AppBundle? {
 /// `Package.swift`, then use that directory as a pseudo-bundle root.
 /// Resources are resolved from `<packageRoot>/Resources/`.
 private func _discoverDevelopmentBundle() -> AppBundle? {
+    let execPath: String
     #if canImport(Darwin)
-    guard let execPath = Bundle.main.executablePath else { return nil }
-    #elseif canImport(Glibc)
-    guard let execPath = _resolveExecutablePath() else { return nil }
+    guard let path = Bundle.main.executablePath else { return nil }
+    execPath = path
+    #elseif canImport(Glibc) || os(Android)
+    guard let path = _resolveExecutablePath() else { return nil }
+    execPath = path
     #elseif canImport(WinSDK)
-    guard let execPath = _resolveWindowsExecutablePath() else { return nil }
+    guard let path = _resolveWindowsExecutablePath() else { return nil }
+    execPath = path
     #else
     return nil
     #endif
@@ -309,8 +313,12 @@ private func _discoverMacOSBundle() -> AppBundle? {
 }
 #endif
 
+#if canImport(Glibc) || os(Android)
 #if canImport(Glibc)
 import Glibc
+#elseif canImport(Android)
+import Android
+#endif
 
 /// Resolve the running executable path via `/proc/self/exe`.
 /// Exposed internally for testing.
