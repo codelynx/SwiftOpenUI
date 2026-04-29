@@ -2,7 +2,7 @@
 
 Comparison of SwiftUI features and their SwiftOpenUI implementation status across backends.
 
-Last updated: 2026-04-13
+Last updated: 2026-04-28
 
 ## Legend
 
@@ -63,11 +63,11 @@ Last updated: 2026-04-13
 | Menu | Y | Y | Y | Y | Y | - | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu; Web: dropdown div |
 | ConfirmationDialog | Y | Y | Y | Y | Y | - | GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay |
 | Canvas | Y | Y | Y | ~ | Y | - | GTK: Cairo; Win32: D2D subset; Web: Canvas 2D API |
-| Circle | Y | Y | Y | Y | Y | - | Shape protocol + path(in:); GTK: Cairo; Win32: D2D; Web: SVG |
-| Rectangle | Y | Y | Y | Y | Y | - | |
-| RoundedRectangle | Y | Y | Y | Y | Y | - | cornerRadius + RoundedCornerStyle |
-| Capsule | Y | Y | Y | Y | Y | - | |
-| Ellipse | Y | Y | Y | Y | Y | - | |
+| Circle | Y | Y | Y | Y | Y | Y | Shape protocol + path(in:); GTK: Cairo; Win32: D2D; Web: SVG |
+| Rectangle | Y | Y | Y | Y | Y | Y | |
+| RoundedRectangle | Y | Y | Y | Y | Y | Y | cornerRadius + RoundedCornerStyle |
+| Capsule | Y | Y | Y | Y | Y | Y | |
+| Ellipse | Y | Y | Y | Y | Y | Y | |
 | Map | Y | - | - | - | - | - | No core type defined; needs external map library |
 
 ## Modifiers
@@ -98,7 +98,7 @@ Last updated: 2026-04-13
 | .focused() | Y | Y | Y | Y | Y | Y | Web: DOM focus/blur + FocusState binding |
 | .modifier() | Y | Y | Y | Y | Y | Y | Custom ViewModifier |
 | withAnimation() | Y | Y | Y | Y | Y | ~ | Android: partial |
-| .clipShape() | Y | Y | Y | Y | Y | - | GTK: CSS border-radius + overflow; Win32: SetWindowRgn; Web: CSS clip-path |
+| .clipShape() | Y | Y | Y | Y | Y | Y | GTK: CSS border-radius + overflow; Win32: SetWindowRgn; Web: CSS clip-path |
 | .clipped() | Y | Y | Y | Y | Y | - | GTK/Web: overflow hidden; Win32: CreateRectRgn |
 | .hidden() | Y | Y | Y | Y | Y | - | GTK: wrapper with opacity 0 + interaction disabled; Win32: ShowWindow(SW_HIDE); Web: visibility hidden + pointer-events none |
 | .blur() | Y | Y | Y | ~ | Y | - | GTK/Web: CSS filter blur; Win32: pass-through (known limitation) |
@@ -110,8 +110,8 @@ Last updated: 2026-04-13
 | .multilineTextAlignment() | Y | Y | Y | Y | Y | - | GTK: justify + xalign; Win32: SS_LEFT/CENTER/RIGHT; Web: text-align |
 | .rotationEffect() | Y | Y | Y | Y | Y | - | GTK/Web: CSS transform; Win32: D2D SetTransform |
 | .overlay() | Y | Y | Y | Y | Y | - | GTK: GtkOverlay; Win32: container; Web: absolute positioning |
-| .sheet() | Y | Y | Y | Y | Y | - | Batch A: `isPresented`, `item`, and `onDismiss` families on GTK/Win32/Web. GTK: modal window; Win32: popup; Web: modal overlay. |
-| .alert() | Y | ~ | ~ | ~ | ~ | - | Batch B: title + `isPresented` + actions/message + error families via simplified `AlertButton[]` + `String` API. GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay. |
+| .sheet() | Y | Y | Y | Y | Y | Y | Batch A: `isPresented`, `item`, and `onDismiss` families on GTK/Win32/Web. GTK: modal window; Win32: popup; Web: modal overlay. Android: ModalBottomSheet. |
+| .alert() | Y | ~ | ~ | ~ | ~ | Y | Batch B: title + `isPresented` + actions/message + error families via simplified `AlertButton[]` + `String` API. GTK: modal dialog; Win32: MessageBoxW; Web: modal overlay. |
 | .confirmationDialog() | Y | Y | ~ | ~ | ~ | - | Batch D fallback on GTK/Win32/Web: `titleVisibility == .hidden`, `message`, and `dismissalConfirmationDialog(_:shouldPresent:actions:)` are supported; `.automatic` currently behaves like `.visible`. `dismissalConfirmationDialog` now intercepts user-triggered sheet dismiss for `sheet(isPresented:)` and `sheet(item:)`; broader presenter interception remains deferred. GTK: vertical modal; Win32: MessageBoxW; Web: inline overlay. |
 | .onAppear() | Y | Y | Y | Y | ~ | - | GTK: map signal; Win32: deferred; Web: fires on every render (host-level) |
 | .onDisappear() | Y | Y | Y | ~ | - | - | GTK: unmap; Win32: WM_NCDESTROY (limited) |

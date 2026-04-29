@@ -36,7 +36,7 @@ Settings rows, dashboard cards, sidebar/detail split, nested frame alignment, an
 | Linux | GTK4 | Stable | 44/45 | 38/40 |
 | Windows | Win32 + D2D | Stable | 43/45 | 38/40 |
 | Web | Wasm + DOM | Near-parity | 42/45 | 36/40 |
-| Android | Compose | Suspended | 21/45 | 22/40 |
+| Android | Compose | Suspended | 27/45 | 23/40 |
 
 ## Feature Parity
 

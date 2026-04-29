@@ -50,6 +50,19 @@ ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/29.0.14206865 \
 
 Expected output: `setup-android-sdk.sh: success: ndk-sysroot linked to Android NDK at ...`
 
+### 4.1 Troubleshooting: aarch64 Swift module resolution
+In some development environments (macOS arm64), the Swift SDK may incorrectly default to `x86_64` resource paths, causing `error: could not find module 'Foundation'` during cross-compilation.
+
+To fix this, manually configure the resource path to point at the `aarch64` directory:
+
+```bash
+SDK_PATH=~/Library/org.swift.swiftpm/swift-sdks/swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android.artifactbundle
+swift sdk configure \
+  --swift-resources-path "$SDK_PATH/swift-android/swift-resources/usr/lib/swift-aarch64" \
+  swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android \
+  aarch64-unknown-linux-android28
+```
+
 ### 5. Verify: build SwiftOpenUI core for Android
 
 ```bash
