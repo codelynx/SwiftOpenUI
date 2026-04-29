@@ -268,6 +268,56 @@ SwiftOpenUI's `WebBackend` creates DOM elements (`<div>`, `<input>`, `<button>`,
 
 ---
 
+## Android (Compose)
+
+SwiftOpenUI uses Jetpack Compose for Android rendering, bridged via JNI. Tested on macOS with ARM64 Android emulator (Pixel 9, API 36).
+
+### Prerequisites
+
+1. **Swift toolchain (6.3 snapshot)**
+
+   Install the specific version needed for Android SDK support via [swiftly](https://github.com/swiftlang/swiftly):
+   ```bash
+   swiftly install 6.3-snapshot-2026-03-05
+   ```
+
+2. **Swift Android SDK**
+
+   Install the SDK artifact bundle:
+   ```bash
+   swift sdk install https://download.swift.org/swift-6.3-branch/android-sdk/swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a/swift-6.3-DEVELOPMENT-SNAPSHOT-2026-03-05-a_android.artifactbundle.tar.gz
+   ```
+
+3. **Android Studio and NDK**
+   - Install **Android Studio** (Hedgehog or later)
+   - Via SDK Manager: Install **NDK (Side by side)** version 28 or 29.
+   - Run the setup script to link the NDK sysroot:
+     ```bash
+     ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/<version> \
+     ~/Library/org.swift.swiftpm/swift-sdks/<sdk-name>/swift-android/scripts/setup-android-sdk.sh
+     ```
+
+### Build and Run
+
+1. **Build the Swift shared library**
+   ```bash
+   ./android/renderer/build-so.sh
+   ```
+   This compiles the Swift backend and copies `.so` files to the Android project.
+
+2. **Run in Emulator**
+   - Open `android/renderer/app/` in Android Studio.
+   - Launch an ARM64 emulator (Pixel 8/9 recommended).
+   - Press **Run** (Triangle icon) or use `./gradlew installDebug`.
+
+### Notes
+
+- **Precision Layout**: Fixed-size stacks (Text, Button, Divider) use Swift-side measurement for absolute positioning.
+- **Flexible Layout**: Stacks with Spacers or Sliders fall back to native Compose `Column`/`Row` distribution.
+- **Interactions**: Toggles, Sliders, and Text input are synchronized to Swift via JNI bindings.
+
+---
+
 ## Toolchain Switching
 
 If you develop for both macOS (Xcode) and Web (Wasm), you'll switch between toolchains:
