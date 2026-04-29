@@ -8,12 +8,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Text
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Slider
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.*
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,6 +37,7 @@ import org.json.JSONObject
 
 /// Compose-based renderer: JSON render tree → @Composable tree.
 /// Replaces the imperative RenderHost for Compose-based rendering.
+@OptIn(ExperimentalMaterial3Api::class)
 object ComposeRenderHost {
 
     /// Callback invoked when a button is clicked. Set by MainActivity.
@@ -163,6 +159,8 @@ object ComposeRenderHost {
                 "filledShape" -> RenderFilledShape(props)
                 "strokedShape" -> RenderStrokedShape(props)
                 "clipShape" -> RenderClipShape(props, children, onNewJson)
+                "sheet" -> RenderSheet(nodeId, children, onNewJson)
+                "alert" -> RenderAlert(nodeId, props, children, onNewJson)
                 "spacer" -> Spacer(modifier = Modifier.height(0.dp))
                 "divider" -> HorizontalDivider(color = Color(0xFFCCCCCC), thickness = 1.dp)
                 "color" -> RenderColor(props)
@@ -180,6 +178,15 @@ object ComposeRenderHost {
                 "navigationStack" -> RenderNavigationStack(props, children, onNewJson)
                 "navigationLink" -> RenderNavigationLink(nodeId, props, onNewJson)
                 else -> Text("[$type]")
+            }
+
+            // Global pass for modal children (sheets, alerts).
+            // This ensures they are rendered even by leaf views that ignore children.
+            for (i in 0 until children.length()) {
+                val child = children.getJSONObject(i)
+                if (isModalType(child.optString("type", ""))) {
+                    RenderNode(child, onNewJson)
+                }
             }
         }
 
@@ -267,10 +274,22 @@ object ComposeRenderHost {
 
     @Composable
     private fun RenderList(children: JSONArray, onNewJson: (String) -> Unit) {
-        val itemCount = children.length()
+        // Filter out modal children for correct count and divider placement
+        val filteredChildren = remember(children) {
+            val list = mutableListOf<JSONObject>()
+            for (i in 0 until children.length()) {
+                val child = children.getJSONObject(i)
+                if (!isModalType(child.optString("type", ""))) {
+                    list.add(child)
+                }
+            }
+            list
+        }
+        val itemCount = filteredChildren.size
+
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(itemCount) { index ->
-                val child = children.getJSONObject(index)
+                val child = filteredChildren[index]
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         RenderNode(child, onNewJson)
@@ -310,6 +329,77 @@ object ComposeRenderHost {
                 RenderNode(children.getJSONObject(0), onNewJson)
             }
         }
+    }
+
+    @Composable
+    private fun RenderSheet(nodeId: Long, children: JSONArray, onNewJson: (String) -> Unit) {
+        if (children.length() > 0) {
+            val content = children.getJSONObject(0)
+            ModalBottomSheet(
+                onDismissRequest = {
+                    if (nodeId != 0L) {
+                        val nj = onButtonClick?.invoke(nodeId)
+                        if (nj != null) onNewJson(nj)
+                    }
+                }
+            ) {
+                Box(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
+                    RenderNode(content, onNewJson)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun RenderAlert(nodeId: Long, props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
+        AlertDialog(
+            onDismissRequest = {
+                if (nodeId != 0L) {
+                    val nj = onButtonClick?.invoke(nodeId)
+                    if (nj != null) onNewJson(nj)
+                }
+            },
+            title = { Text(props.optString("title", "Alert")) },
+            text = { Text(props.optString("message", "")) },
+            confirmButton = {
+                // If there are buttons, render them. Otherwise default to OK.
+                if (children.length() > 0) {
+                    Row {
+                        for (i in 0 until children.length()) {
+                            val btn = children.getJSONObject(i)
+                            val btnProps = btn.getJSONObject("props")
+                            val btnId = btn.optString("id", "0").toLongOrNull() ?: 0L
+                            val role = btnProps.optString("role", "default")
+                            
+                            TextButton(
+                                onClick = {
+                                    if (btnId != 0L) {
+                                        val nj = onButtonClick?.invoke(btnId)
+                                        if (nj != null) onNewJson(nj)
+                                    }
+                                },
+                                colors = if (role == "destructive") {
+                                    ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                                } else {
+                                    ButtonDefaults.textButtonColors()
+                                }
+                            ) {
+                                Text(btnProps.optString("label", "OK"))
+                            }
+                        }
+                    }
+                } else {
+                    TextButton(onClick = {
+                        if (nodeId != 0L) {
+                            val nj = onButtonClick?.invoke(nodeId)
+                            if (nj != null) onNewJson(nj)
+                        }
+                    }) {
+                        Text("OK")
+                    }
+                }
+            }
+        )
     }
 
     @Composable
@@ -555,6 +645,8 @@ object ComposeRenderHost {
             for (i in 0 until children.length()) {
                 val child = children.getJSONObject(i)
                 val childType = child.getString("type")
+                if (isModalType(childType)) continue
+
                 if (childType == "color") {
                     Box(modifier = Modifier.matchParentSize()) {
                         RenderNode(child, onNewJson)
@@ -734,7 +826,10 @@ object ComposeRenderHost {
             }
             // Content — Swift already resolved which view to show
             for (i in 0 until children.length()) {
-                RenderNode(children.getJSONObject(i), onNewJson)
+                val child = children.getJSONObject(i)
+                if (!isModalType(child.optString("type", ""))) {
+                    RenderNode(child, onNewJson)
+                }
             }
         }
     }
@@ -757,7 +852,10 @@ object ComposeRenderHost {
     @Composable
     private fun RenderChildren(children: JSONArray, onNewJson: (String) -> Unit) {
         for (i in 0 until children.length()) {
-            RenderNode(children.getJSONObject(i), onNewJson)
+            val child = children.getJSONObject(i)
+            if (!isModalType(child.optString("type", ""))) {
+                RenderNode(child, onNewJson)
+            }
         }
     }
 
@@ -765,9 +863,10 @@ object ComposeRenderHost {
     private fun ColumnScope.RenderChildren(children: JSONArray, onNewJson: (String) -> Unit) {
         for (i in 0 until children.length()) {
             val child = children.getJSONObject(i)
-            if (child.getString("type") == "spacer") {
+            val type = child.optString("type", "")
+            if (type == "spacer") {
                 Spacer(modifier = Modifier.weight(1f))
-            } else {
+            } else if (!isModalType(type)) {
                 RenderNode(child, onNewJson)
             }
         }
@@ -777,15 +876,20 @@ object ComposeRenderHost {
     private fun RowScope.RenderChildren(children: JSONArray, onNewJson: (String) -> Unit) {
         for (i in 0 until children.length()) {
             val child = children.getJSONObject(i)
-            if (child.getString("type") == "spacer") {
+            val type = child.optString("type", "")
+            if (type == "spacer") {
                 Spacer(modifier = Modifier.weight(1f))
-            } else {
+            } else if (!isModalType(type)) {
                 RenderNode(child, onNewJson)
             }
         }
     }
 
     // MARK: - Helpers
+
+    private fun isModalType(type: String): Boolean {
+        return type == "sheet" || type == "alert"
+    }
 
     /// A true inscribed circle shape for SwiftUI "Circle" semantics.
     /// Unlike CircleShape (which is an oval/pill), this always stays circular.

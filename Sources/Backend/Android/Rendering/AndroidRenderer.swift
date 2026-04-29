@@ -739,6 +739,103 @@ extension NavigationDestinationModifier: AndroidRenderable {
     }
 }
 
+// MARK: - Presentation modifier views
+
+extension SheetModifierView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = androidRenderView(content)
+        
+        if isPresented.wrappedValue {
+            let sheetNode = RenderNode(type: "sheet")
+            let nodeId = androidPushChild(typeTag: "sheet")
+            sheetNode.id = nodeId
+            sheetNode.children = [androidRenderView(sheetContent)]
+            androidPopChild()
+            
+            // Register a dismissal action
+            let binding = isPresented
+            let userDismiss = onDismiss
+            androidButtonActions[nodeId] = {
+                binding.wrappedValue = false
+                userDismiss?()
+            }
+            
+            node.children.append(sheetNode)
+        }
+        
+        return node
+    }
+}
+
+extension ItemSheetModifierView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = androidRenderView(content)
+        
+        if let val = item.wrappedValue {
+            let sheetNode = RenderNode(type: "sheet")
+            let nodeId = androidPushChild(typeTag: "sheet")
+            sheetNode.id = nodeId
+            sheetNode.children = [androidRenderView(sheetContent(val))]
+            androidPopChild()
+            
+            let binding = item
+            let userDismiss = onDismiss
+            androidButtonActions[nodeId] = {
+                binding.wrappedValue = nil
+                userDismiss?()
+            }
+            
+            node.children.append(sheetNode)
+        }
+        
+        return node
+    }
+}
+
+extension AlertModifierView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = androidRenderView(content)
+        
+        if isPresented.wrappedValue {
+            let alertNode = RenderNode(type: "alert")
+            let nodeId = androidPushChild(typeTag: "alert")
+            alertNode.id = nodeId
+            alertNode.props["title"] = title
+            alertNode.props["message"] = message
+            
+            // Register dismissal action for clicking outside
+            let binding = isPresented
+            androidButtonActions[nodeId] = {
+                binding.wrappedValue = false
+            }
+            
+            // Serialize buttons
+            for (index, button) in buttons.enumerated() {
+                let btnNode = RenderNode(type: "alertButton")
+                let btnId = androidPushChild(typeTag: "alertBtn\(index)")
+                btnNode.id = btnId
+                btnNode.props["label"] = button.label
+                btnNode.props["role"] = "\(button.role)"
+                
+                // Register button action (includes dismissal)
+                let action = button.action
+                androidButtonActions[btnId] = {
+                    binding.wrappedValue = false
+                    action()
+                }
+                
+                alertNode.children.append(btnNode)
+                androidPopChild()
+            }
+            
+            androidPopChild()
+            node.children.append(alertNode)
+        }
+        
+        return node
+    }
+}
+
 // MARK: - Gesture views
 
 // MARK: - Shape rendering

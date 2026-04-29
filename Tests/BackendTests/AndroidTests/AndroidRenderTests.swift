@@ -795,6 +795,83 @@ final class AndroidRenderTests: XCTestCase {
         XCTAssertEqual(node.children[0].type, "text")
     }
 
+    // MARK: - Presentation Tests
+
+    func testSheetModifierRenders() {
+        let isPresented = State(wrappedValue: true)
+        let view = Text("Main").sheet(isPresented: isPresented.projectedValue) {
+            Text("Sheet Content")
+        }
+        
+        let node = androidRenderView(view)
+        XCTAssertEqual(node.type, "text")
+        XCTAssertEqual(node.children.count, 1)
+        
+        let sheetNode = node.children[0]
+        XCTAssertEqual(sheetNode.type, "sheet")
+        XCTAssertEqual(sheetNode.children.count, 1)
+        XCTAssertEqual(sheetNode.children[0].type, "text")
+        XCTAssertEqual(sheetNode.children[0].props["content"], "Sheet Content")
+        
+        // Verify dismissal action is registered
+        XCTAssertNotNil(androidButtonActions[sheetNode.id])
+        androidButtonActions[sheetNode.id]?()
+        XCTAssertFalse(isPresented.wrappedValue)
+    }
+
+    func testAlertModifierRenders() {
+        let isPresented = State(wrappedValue: true)
+        let view = Text("Main").alert("Title", isPresented: isPresented.projectedValue, actions: [AlertButton("OK") { }], message: "Message")
+        
+        let node = androidRenderView(view)
+        XCTAssertEqual(node.type, "text")
+        XCTAssertEqual(node.children.count, 1)
+        
+        let alertNode = node.children[0]
+        XCTAssertEqual(alertNode.type, "alert")
+        XCTAssertEqual(alertNode.props["title"], "Title")
+        XCTAssertEqual(alertNode.props["message"], "Message")
+        XCTAssertEqual(alertNode.children.count, 1)
+        
+        let btnNode = alertNode.children[0]
+        XCTAssertEqual(btnNode.type, "alertButton")
+        XCTAssertEqual(btnNode.props["label"], "OK")
+        
+        // Verify button action is registered and dismisses
+        XCTAssertNotNil(androidButtonActions[btnNode.id])
+        androidButtonActions[btnNode.id]?()
+        XCTAssertFalse(isPresented.wrappedValue)
+    }
+
+    func testAlertButtonDestructiveRole() {
+        let isPresented = State(wrappedValue: true)
+        let view = Text("Main").alert("Delete?", isPresented: isPresented.projectedValue, actions: [
+            AlertButton("Delete", role: .destructive) { }
+        ])
+        
+        let node = androidRenderView(view)
+        let alertNode = node.children[0]
+        let btnNode = alertNode.children[0]
+        XCTAssertEqual(btnNode.props["role"], "destructive")
+    }
+
+    func testListWithSheetModifier() {
+        let isPresented = State(wrappedValue: true)
+        let view = List {
+            Text("Row 1")
+        }.sheet(isPresented: isPresented.projectedValue) {
+            Text("Sheet")
+        }
+        
+        let node = androidRenderView(view)
+        // Root should be List
+        XCTAssertEqual(node.type, "list")
+        // Child 0 is the Row, Child 1 is the Sheet (appended)
+        XCTAssertEqual(node.children.count, 2)
+        XCTAssertEqual(node.children[0].type, "text")
+        XCTAssertEqual(node.children[1].type, "sheet")
+    }
+
     /// Helper to find a node by type in the render tree.
     private func findNode(_ node: RenderNode, type: String) -> RenderNode? {
         if node.type == type { return node }
