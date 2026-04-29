@@ -34,6 +34,9 @@ private struct AndroidLayoutMeasureContext: LayoutMeasureContext {
         case "color":
             expandsW = true
             expandsH = true
+        case "filledShape", "strokedShape":
+            expandsW = true
+            expandsH = true
         case "vstack", "hstack", "zstack", "group", "padding", "frame":
             // Nested containers take the proposed size if available
             size = ViewSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
@@ -49,6 +52,18 @@ private struct AndroidLayoutMeasureContext: LayoutMeasureContext {
             expandsToFillHeight: expandsH
         )
     }
+}
+
+/// Backend-local state for tracking foreground color during the render pass.
+/// Used by bare shapes (no .fill()/.stroke()) to determine their color.
+private var _androidCurrentForegroundColor: Color?
+
+func androidGetCurrentForegroundColor() -> Color {
+    _androidCurrentForegroundColor ?? Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0)
+}
+
+func androidSetCurrentForegroundColor(_ color: Color?) {
+    _androidCurrentForegroundColor = color
 }
 
 // MARK: - Rendering protocol
@@ -449,7 +464,12 @@ extension ForegroundColorView: AndroidRenderable {
         node.props["g"] = "\(color.green)"
         node.props["b"] = "\(color.blue)"
         node.props["a"] = "\(color.alpha)"
+        
+        let prev = _androidCurrentForegroundColor
+        androidSetCurrentForegroundColor(color)
         node.children = [androidRenderView(content)]
+        androidSetCurrentForegroundColor(prev)
+        
         return node
     }
 }
@@ -720,6 +740,88 @@ extension NavigationDestinationModifier: AndroidRenderable {
 }
 
 // MARK: - Gesture views
+
+// MARK: - Shape rendering
+
+private func androidRenderBareShape<S: Shape>(_ shape: S) -> RenderNode {
+    let fg = androidGetCurrentForegroundColor()
+    let node = RenderNode(type: "filledShape")
+    node.props["r"] = "\(fg.red)"
+    node.props["g"] = "\(fg.green)"
+    node.props["b"] = "\(fg.blue)"
+    node.props["a"] = "\(fg.alpha)"
+    androidDescribeShape(shape, into: node)
+    return node
+}
+
+private func androidDescribeShape<S: Shape>(_ shape: S, into node: RenderNode) {
+    if shape is Circle {
+        node.props["shapeType"] = "circle"
+    } else if shape is Rectangle {
+        node.props["shapeType"] = "rectangle"
+    } else if let rr = shape as? RoundedRectangle {
+        node.props["shapeType"] = "roundedRectangle"
+        node.props["cornerRadius"] = "\(rr.cornerRadius)"
+    } else if shape is Capsule {
+        node.props["shapeType"] = "capsule"
+    } else if shape is Ellipse {
+        node.props["shapeType"] = "ellipse"
+    }
+}
+
+extension Circle: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode { androidRenderBareShape(self) }
+}
+
+extension Rectangle: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode { androidRenderBareShape(self) }
+}
+
+extension RoundedRectangle: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode { androidRenderBareShape(self) }
+}
+
+extension Capsule: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode { androidRenderBareShape(self) }
+}
+
+extension Ellipse: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode { androidRenderBareShape(self) }
+}
+
+extension FilledShape: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "filledShape")
+        node.props["r"] = "\(color.red)"
+        node.props["g"] = "\(color.green)"
+        node.props["b"] = "\(color.blue)"
+        node.props["a"] = "\(color.alpha)"
+        androidDescribeShape(shape, into: node)
+        return node
+    }
+}
+
+extension StrokedShape: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "strokedShape")
+        node.props["r"] = "\(color.red)"
+        node.props["g"] = "\(color.green)"
+        node.props["b"] = "\(color.blue)"
+        node.props["a"] = "\(color.alpha)"
+        node.props["lineWidth"] = "\(style.lineWidth)"
+        androidDescribeShape(shape, into: node)
+        return node
+    }
+}
+
+extension ClipShapeView: AndroidRenderable {
+    public func androidCreateNode() -> RenderNode {
+        let node = RenderNode(type: "clipShape")
+        androidDescribeShape(shape, into: node)
+        node.children = [androidRenderView(content)]
+        return node
+    }
+}
 
 extension TapGestureView: AndroidRenderable {
     public func androidCreateNode() -> RenderNode {

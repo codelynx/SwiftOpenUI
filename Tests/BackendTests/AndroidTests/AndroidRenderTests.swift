@@ -745,6 +745,56 @@ final class AndroidRenderTests: XCTestCase {
         XCTAssertEqual(node.children[1].props["content"], "Hello")
     }
 
+    // MARK: - Shape Tests
+
+    func testCircleRenders() {
+        let node = androidRenderView(Circle().foregroundColor(.red))
+        XCTAssertEqual(node.type, "foregroundColor")
+        let shapeNode = node.children[0]
+        XCTAssertEqual(shapeNode.type, "filledShape")
+        XCTAssertEqual(shapeNode.props["shapeType"], "circle")
+        XCTAssertEqual(shapeNode.props["r"], "1.0")
+    }
+
+    func testRoundedRectangleRenders() {
+        let node = androidRenderView(RoundedRectangle(cornerRadius: 12).fill(.blue))
+        XCTAssertEqual(node.type, "filledShape")
+        XCTAssertEqual(node.props["shapeType"], "roundedRectangle")
+        XCTAssertEqual(node.props["cornerRadius"], "12.0")
+        XCTAssertEqual(node.props["b"], "1.0")
+    }
+
+    func testStrokedShapeRenders() {
+        let node = androidRenderView(Rectangle().stroke(.green, lineWidth: 4))
+        XCTAssertEqual(node.type, "strokedShape")
+        XCTAssertEqual(node.props["shapeType"], "rectangle")
+        XCTAssertEqual(node.props["lineWidth"], "4.0")
+        XCTAssertEqual(node.props["g"], "0.667")
+    }
+
+    func testEllipseRenders() {
+        let node = androidRenderView(Ellipse().fill(.blue))
+        XCTAssertEqual(node.type, "filledShape")
+        XCTAssertEqual(node.props["shapeType"], "ellipse")
+        XCTAssertEqual(node.props["b"], "1.0")
+    }
+
+    func testCapsuleRenders() {
+        let node = androidRenderView(Capsule().fill(.orange))
+        XCTAssertEqual(node.type, "filledShape")
+        XCTAssertEqual(node.props["shapeType"], "capsule")
+        XCTAssertEqual(node.props["r"], "1.0")
+        XCTAssertEqual(node.props["g"], "0.533")
+    }
+
+    func testClipShapeModifier() {
+        let node = androidRenderView(Text("A").clipShape(Circle()))
+        XCTAssertEqual(node.type, "clipShape")
+        XCTAssertEqual(node.props["shapeType"], "circle")
+        XCTAssertEqual(node.children.count, 1)
+        XCTAssertEqual(node.children[0].type, "text")
+    }
+
     /// Helper to find a node by type in the render tree.
     private func findNode(_ node: RenderNode, type: String) -> RenderNode? {
         if node.type == type { return node }

@@ -30,6 +30,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
@@ -159,6 +160,9 @@ object ComposeRenderHost {
                 "scrollview" -> RenderScrollView(props, children, onNewJson)
                 "list" -> RenderList(children, onNewJson)
                 "progressview" -> RenderProgressView(props)
+                "filledShape" -> RenderFilledShape(props)
+                "strokedShape" -> RenderStrokedShape(props)
+                "clipShape" -> RenderClipShape(props, children, onNewJson)
                 "spacer" -> Spacer(modifier = Modifier.height(0.dp))
                 "divider" -> HorizontalDivider(color = Color(0xFFCCCCCC), thickness = 1.dp)
                 "color" -> RenderColor(props)
@@ -279,6 +283,31 @@ object ComposeRenderHost {
                         )
                     }
                 }
+            }
+        }
+    }
+
+    @Composable
+    private fun RenderFilledShape(props: JSONObject) {
+        val shape = propsToShape(props)
+        val color = propsToColor(props)
+        Box(modifier = Modifier.fillMaxSize().background(color, shape))
+    }
+
+    @Composable
+    private fun RenderStrokedShape(props: JSONObject) {
+        val shape = propsToShape(props)
+        val color = propsToColor(props)
+        val width = props.optDouble("lineWidth", 1.0).toFloat()
+        Box(modifier = Modifier.fillMaxSize().border(width.dp, color, shape))
+    }
+
+    @Composable
+    private fun RenderClipShape(props: JSONObject, children: JSONArray, onNewJson: (String) -> Unit) {
+        val shape = propsToShape(props)
+        Box(modifier = Modifier.clip(shape)) {
+            if (children.length() > 0) {
+                RenderNode(children.getJSONObject(0), onNewJson)
             }
         }
     }
@@ -757,6 +786,40 @@ object ComposeRenderHost {
     }
 
     // MARK: - Helpers
+
+    /// A true inscribed circle shape for SwiftUI "Circle" semantics.
+    /// Unlike CircleShape (which is an oval/pill), this always stays circular.
+    private val TrueCircleShape = object : androidx.compose.ui.graphics.Shape {
+        override fun createOutline(
+            size: androidx.compose.ui.geometry.Size,
+            layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+            density: androidx.compose.ui.unit.Density
+        ): androidx.compose.ui.graphics.Outline {
+            val minDim = kotlin.math.min(size.width, size.height)
+            val rect = androidx.compose.ui.geometry.Rect(
+                left = (size.width - minDim) / 2f,
+                top = (size.height - minDim) / 2f,
+                right = (size.width + minDim) / 2f,
+                bottom = (size.height + minDim) / 2f
+            )
+            val path = androidx.compose.ui.graphics.Path()
+            path.addOval(rect)
+            return androidx.compose.ui.graphics.Outline.Generic(path)
+        }
+    }
+
+    private fun propsToShape(props: JSONObject): androidx.compose.ui.graphics.Shape {
+        val type = props.optString("shapeType", "rectangle")
+        return when (type) {
+            "circle" -> TrueCircleShape
+            "capsule", "ellipse" -> androidx.compose.foundation.shape.CircleShape
+            "roundedRectangle" -> {
+                val radius = props.optDouble("cornerRadius", 0.0).toFloat()
+                androidx.compose.foundation.shape.RoundedCornerShape(radius.dp)
+            }
+            else -> androidx.compose.ui.graphics.RectangleShape
+        }
+    }
 
     private fun propsToColor(props: JSONObject): Color {
         val r = props.optDouble("r", 0.0).toFloat()
