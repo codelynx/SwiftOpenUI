@@ -59,11 +59,9 @@
 ### Backends
 - Web: release build optimization (reduce from 59MB debug)
 - Web: serve workflow (dev server with hot reload)
-- Android: core library cross-compiles; Phase 1 core views (`Text`, `Button`, `TextField`, `Toggle`, `Slider`, `List`, `ScrollView`, `VStack`, `HStack`, `ZStack`) implemented and verified.
+- Android: core library cross-compiles; Phase 1 core views (`Text`, `Button`, `TextField`, `Toggle`, `Slider`, `List`, `ScrollView`, `VStack`, `HStack`, `ZStack`), **Shapes**, and **Presentations** (`.sheet`, `.alert`) implemented and verified.
   - **Alignment Backlog:**
     - **Precision Layout:** Infrastructure complete (absolute child positioning). Pending a real Kotlin → Swift measurement bridge to replace current intrinsic estimations.
-    - **Shapes & Clipping:** Implement `Circle`, `Rectangle`, `RoundedRectangle`, and `.clipShape()`.
-    - **Presentations:** Implement modal support for `.sheet()` and `.alert()`.
     - **Iconography:** Bridge `Image(systemName:)` to Android Material Icons or the shared symbols font.
     - **Automated Parity:** Integrate with `capture-android.sh` for standard layout parity testing.
 
