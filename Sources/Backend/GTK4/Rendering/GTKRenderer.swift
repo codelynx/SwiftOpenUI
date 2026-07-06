@@ -413,6 +413,13 @@ extension Button: GTKRenderable, GTKDescribable {
     public func gtkCreateWidget() -> OpaquePointer {
         let button: UnsafeMutablePointer<GtkWidget>
 
+        // Track whether the custom label wants to fill its width so the button
+        // can honor it. A SwiftUI `Button { X.frame(maxWidth:.infinity) }` fills
+        // width; without propagating the label's horizontal expand flag, the
+        // button stays shrink-to-fit and a parent VStack can't tell the row
+        // wants full width — it then falls back to fixed/centered placement.
+        var childWantsHExpand = false
+
         if let textLabel = label as? Text {
             // Simple text label — use native label button
             button = gtk_button_new_with_label(textLabel.content)!
@@ -420,6 +427,7 @@ extension Button: GTKRenderable, GTKDescribable {
             // Custom label view — render it and set as button child
             button = gtk_button_new()!
             let childWidget = widgetFromOpaque(gtkRenderView(label))
+            childWantsHExpand = gtk_widget_get_hexpand(childWidget) != 0
             let btnPtr = UnsafeMutableRawPointer(button).assumingMemoryBound(to: GtkButton.self)
             gtk_button_set_child(btnPtr, childWidget)
             // Remove GTK default button border/padding so custom-styled
@@ -433,8 +441,8 @@ extension Button: GTKRenderable, GTKDescribable {
                 """)
         }
 
-        gtk_widget_set_hexpand(button, 0)
-        gtk_widget_set_halign(button, GTK_ALIGN_START)
+        gtk_widget_set_hexpand(button, childWantsHExpand ? 1 : 0)
+        gtk_widget_set_halign(button, childWantsHExpand ? GTK_ALIGN_FILL : GTK_ALIGN_START)
 
         // Apply button style from environment
         let buttonStyleType = getCurrentEnvironment().buttonStyle
