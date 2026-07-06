@@ -1968,14 +1968,27 @@ extension LinearGradient: GTKRenderable {
         let div = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
         gtk_widget_set_hexpand(div, 1)
         gtk_widget_set_vexpand(div, 1)
-        let sx = Int(startPoint.x * 100)
-        let sy = Int(startPoint.y * 100)
-        let ex = Int(endPoint.x * 100)
-        let ey = Int(endPoint.y * 100)
+        // GTK/CSS `linear-gradient()` takes an angle (or `to <side>`), NOT the
+        // `from X% Y% to X% Y%` point syntax — that is invalid and GTK silently
+        // drops the whole declaration (nothing renders).
+        let angle = gtkLinearGradientAngle(from: startPoint, to: endPoint)
         let stops = gtkGradientStopsCSS(gradient.stops)
-        applyCSSToWidget(div, properties: "background: linear-gradient(from \(sx)% \(sy)% to \(ex)% \(ey)%, \(stops)); min-height: 20px;")
+        applyCSSToWidget(div, properties: "background: linear-gradient(\(angle)deg, \(stops)); min-height: 20px;")
         return opaqueFromWidget(div)
     }
+}
+
+/// CSS `linear-gradient` angle (degrees; 0 = up, increasing clockwise) for a
+/// start→end direction expressed in UnitPoint space (x right, y **down**). CSS
+/// gradient angles are clockwise from "to top", so the direction `(dx, dy)` maps
+/// to `atan2(dx, -dy)`. Examples: leading→trailing = 90 (to right),
+/// topLeading→bottomTrailing = 135, top→bottom = 180.
+func gtkLinearGradientAngle(from start: UnitPoint, to end: UnitPoint) -> Int {
+    let dx = end.x - start.x
+    let dy = end.y - start.y
+    var degrees = (atan2(dx, -dy) * 180 / Double.pi).rounded()
+    if degrees < 0 { degrees += 360 }
+    return Int(degrees)
 }
 
 extension RadialGradient: GTKRenderable {
