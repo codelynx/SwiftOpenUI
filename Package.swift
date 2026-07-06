@@ -94,12 +94,21 @@ targets += [
         dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK", "CGTKBridge", "LayoutParityShared"],
         path: "Tests/LayoutParityTests/GTKComparison"
     ),
-    // Desktop viewer spike (Gate 2, Linux-only — raw CGTK/Cairo via GTKRenderable,
-    // PDFium added in Step B). Experimental branch only.
+    // Desktop viewer spike (Gate 2, Linux-only — raw CGTK/Cairo via GTKRenderable
+    // + PDFium page rendering). Experimental branch only.
+    .systemLibrary(
+        name: "CPDFium",
+        path: "Examples/DesktopViewerSpike/CPDFium"
+    ),
     .executableTarget(
         name: "DesktopViewerSpike",
-        dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK"],
-        path: "Examples/DesktopViewerSpike"
+        dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK", "CPDFium"],
+        path: "Examples/DesktopViewerSpike",
+        exclude: ["CPDFium"],
+        linkerSettings: [
+            // PDFium install prefix (matches librano's setup-pdfium.sh --system).
+            .unsafeFlags(["-L/usr/local/lib"]),
+        ]
     ),
 ]
 exampleDeps.append("BackendGTK4")
