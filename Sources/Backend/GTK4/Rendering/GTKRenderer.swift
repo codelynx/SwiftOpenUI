@@ -4110,6 +4110,33 @@ extension Image: GTKRenderable {
 
         case .materialSymbol(let name):
             return opaqueFromWidget(gtkRenderMaterialSymbolLabel(name, scale: scale))
+
+        case .decoded(let pixels, let width, let height, let format):
+            // In-memory pixels -> GdkTexture -> GtkPicture (same widget/scaling
+            // semantics as .filePath). g_bytes_new inside the shim copies, so the
+            // buffer need only be valid for this call.
+            let gdkFormat: GdkMemoryFormat = (format == .bgra8) ? GDK_MEMORY_B8G8R8A8 : GDK_MEMORY_R8G8B8A8
+            let stride = Int32(width * 4)
+            let picture: UnsafeMutablePointer<GtkWidget> = pixels.withUnsafeBytes { raw in
+                gtk_swift_picture_new_for_pixels(
+                    raw.bindMemory(to: UInt8.self).baseAddress,
+                    gsize(raw.count),
+                    Int32(width), Int32(height), stride,
+                    gdkFormat
+                )
+            }
+            if isResizable {
+                gtk_swift_picture_set_content_fit(picture, GTK_CONTENT_FIT_FILL)
+                gtk_swift_picture_set_can_shrink(picture, 1)
+                gtk_widget_set_hexpand(picture, 1)
+                gtk_widget_set_vexpand(picture, 1)
+                gtk_widget_set_halign(picture, GTK_ALIGN_FILL)
+                gtk_widget_set_valign(picture, GTK_ALIGN_FILL)
+            } else {
+                gtk_swift_picture_set_content_fit(picture, GTK_CONTENT_FIT_CONTAIN)
+                gtk_swift_picture_set_can_shrink(picture, 0)
+            }
+            return opaqueFromWidget(picture)
         }
     }
 }

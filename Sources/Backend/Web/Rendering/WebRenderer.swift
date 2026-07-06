@@ -2463,6 +2463,14 @@ extension SwiftOpenUI.Image: WebRenderable {
             span.textContent = .string("[\(name)]")
             span.style = .string("font-size: \(size)px; color: #888;")
             return span
+        case .decoded(_, let width, let height, _):
+            // TODO(Image-decoded, Web): render via a <canvas> + ImageData
+            // (canvas is RGBA — swizzle from .bgra8). Placeholder until the Web
+            // backend gets a platform pass; GTK4 is the verified reference.
+            let span = document.createElement("span")
+            span.textContent = .string("[decoded \(width)×\(height)]")
+            span.style = .string("font-size: \(size)px; color: #888;")
+            return span
         }
     }
 }

@@ -204,6 +204,7 @@ Last updated: 2026-04-28
 | .dropDestination(for:) | Y | Y | URL payloads. GTK4: GtkDropTarget; Win32: OLE IDropTarget. M3 |
 | Image(systemName:) | Y | ~ | macOS: native SF Symbols via SwiftUI. GTK4: bundled Material Symbols font loads process-locally (M-Symbols-1, packaging only); SF→Material name mapping phased (M-Symbols-3). Win32/Web/Android packaging deferred. See `docs/architecture/icon-symbols.md` |
 | Image(material:) | N/A (SwiftOpenUI-specific) | ~ | Direct Material Symbols name rendering on non-macOS. API shipped; GTK4 renders glyphs via Pango + SwiftOpenUISymbols font. Win32/Web/Android render text placeholder pending per-backend font adoption. macOS renders placeholder — use `Image(systemName:)` instead. M-Symbols-2 |
+| Image(decoded:) | - (use SwiftUI `Image(decorative: cgImage)`) | ~ | In-memory pixel buffer (rgba8/bgra8), for runtime-rendered content (PDF pages, generated bitmaps). **GTK4: implemented + runtime-verified** (GdkMemoryTexture → GtkPicture; honors `.resizable()`). Win32/Web: API present but **placeholder glyph** pending a platform pass (Win32: WIC/DIB bitmap; Web: `<canvas>` + ImageData). macOS: not bridged (real SwiftUI has its own CGImage init). |
 
 ## Layout System
 <!-- Parity: Examples/Parity/ViewsLayout (Alignment, Edge, EdgeInsets, ProposedViewSize) -->

@@ -250,6 +250,22 @@ gtk_swift_picture_new_for_filename(const char *filename) {
     return gtk_picture_new_for_filename(filename);
 }
 
+// Build a GtkPicture from an in-memory pixel buffer (for Image(decoded:)).
+// Copies `pixels` into a GdkTexture (via GBytes), wraps it in a GtkPicture.
+// The GDK_PAINTABLE cast and GdkMemoryFormat live here because Swift can't
+// express the type-cast macros. `pixels` need not outlive this call.
+static inline GtkWidget *
+gtk_swift_picture_new_for_pixels(const unsigned char *pixels, gsize length,
+                                 int width, int height, int stride,
+                                 GdkMemoryFormat format) {
+    GBytes *bytes = g_bytes_new(pixels, length);
+    GdkTexture *texture = gdk_memory_texture_new(width, height, format, bytes, (gsize)stride);
+    g_bytes_unref(bytes);
+    GtkWidget *picture = gtk_picture_new_for_paintable(GDK_PAINTABLE(texture));
+    g_object_unref(texture);  // GtkPicture holds its own ref
+    return picture;
+}
+
 static inline void
 gtk_swift_picture_set_content_fit(GtkWidget *picture, GtkContentFit fit) {
     gtk_picture_set_content_fit(GTK_PICTURE(picture), fit);

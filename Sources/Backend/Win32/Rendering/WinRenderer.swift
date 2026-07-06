@@ -3931,6 +3931,12 @@ extension Image: WinRenderable {
             return winCreateFileImage(path: path, in: context)
         case .materialSymbol(let name):
             return winCreateMaterialSymbol(name: name, scale: scale, in: context)
+        case .decoded:
+            // TODO(Image-decoded, Win32): build a WIC/DIB bitmap from the pixel
+            // buffer and paint it (see winCreateFileImage). Placeholder glyph
+            // until the Win32 backend gets a platform pass; GTK4 is the verified
+            // reference.
+            return winCreateMaterialSymbol(name: "broken_image", scale: scale, in: context)
         }
     }
 

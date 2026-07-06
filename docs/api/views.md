@@ -45,6 +45,7 @@ All view structs live in `Sources/SwiftOpenUI/Views/` and `Sources/SwiftOpenUI/N
 |------|-------------|
 | `Image(systemName:)` | Displays an icon from the platform icon theme (GTK icon names on Linux, SF Symbols on macOS). |
 | `Image(filePath:)` | Displays an image from a file path. |
+| `Image(decoded:width:height:format:)` | Displays an already-decoded in-memory pixel buffer (rgba8/bgra8) — e.g. a PDF page or generated bitmap. GTK4 implemented; Win32/Web placeholder pending a platform pass. |
 
 `ImageScale` enum (`.small` 14pt, `.medium` 20pt, `.large` 24pt) controls size via `.imageScale()` modifier.
 

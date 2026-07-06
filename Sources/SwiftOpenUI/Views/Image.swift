@@ -1,3 +1,5 @@
+import Foundation
+
 /// Scale for system images.
 public enum ImageScale {
     case small
@@ -13,7 +15,18 @@ public enum ImageScale {
     }
 }
 
-/// A view that displays an image from an icon name or file path.
+/// Byte layout of an in-memory pixel buffer passed to `Image(decoded:)`.
+/// 8 bits per channel, straight (non-premultiplied) alpha, row-major, tightly
+/// packed at `width * 4` bytes per row.
+public enum ImagePixelFormat: Sendable {
+    /// R, G, B, A byte order (common for decoded PNG/RGBA sources).
+    case rgba8
+    /// B, G, R, A byte order — matches PDFium `FPDFBitmap` and Cairo `ARGB32`
+    /// on little-endian hosts, so page renders can be handed over without a swizzle.
+    case bgra8
+}
+
+/// A view that displays an image from an icon name, file path, or in-memory pixels.
 public struct Image: View {
     public typealias Body = Never
 
@@ -26,6 +39,11 @@ public struct Image: View {
         /// DirectWrite / equivalent text shaping with OpenType ligature
         /// substitution.
         case materialSymbol(String)
+        /// An already-decoded, in-memory pixel buffer (no file, no network).
+        /// The primary use is displaying frames rendered at runtime — PDF pages,
+        /// procedurally generated bitmaps, decoded thumbnails — that never touch
+        /// disk. `pixels` is `width * height * 4` bytes in `format`'s layout.
+        case decoded(pixels: Data, width: Int, height: Int, format: ImagePixelFormat)
     }
 
     public let source: Source
@@ -86,6 +104,18 @@ public struct Image: View {
     /// `docs/architecture/icon-symbols.md`).
     public init(material name: String) {
         self.source = .materialSymbol(name)
+    }
+
+    /// Create an image from an already-decoded, in-memory pixel buffer.
+    ///
+    /// `pixels` must be exactly `width * height * 4` bytes, row-major and tightly
+    /// packed (`width * 4` bytes per row), in `format`'s channel order. This is the
+    /// in-memory counterpart to `Image(filePath:)`: nothing is read from disk, so
+    /// it suits runtime-rendered content (PDF pages, generated bitmaps).
+    ///
+    /// Pair with `.resizable()` to have the image fill a surrounding `.frame`.
+    public init(decoded pixels: Data, width: Int, height: Int, format: ImagePixelFormat = .rgba8) {
+        self.source = .decoded(pixels: pixels, width: width, height: height, format: format)
     }
 
     /// Set the scale of the image.
