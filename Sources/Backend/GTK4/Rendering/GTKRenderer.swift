@@ -1968,14 +1968,19 @@ extension LinearGradient: GTKRenderable {
         let div = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
         gtk_widget_set_hexpand(div, 1)
         gtk_widget_set_vexpand(div, 1)
-        // GTK/CSS `linear-gradient()` takes an angle (or `to <side>`), NOT the
-        // `from X% Y% to X% Y%` point syntax — that is invalid and GTK silently
-        // drops the whole declaration (nothing renders).
-        let angle = gtkLinearGradientAngle(from: startPoint, to: endPoint)
-        let stops = gtkGradientStopsCSS(gradient.stops)
-        applyCSSToWidget(div, properties: "background: linear-gradient(\(angle)deg, \(stops)); min-height: 20px;")
+        applyCSSToWidget(div, properties: "background: \(gtkLinearGradientCSS(self)); min-height: 20px;")
         return opaqueFromWidget(div)
     }
+}
+
+/// The CSS `linear-gradient(…)` value for a LinearGradient — a real CSS angle +
+/// stops. GTK/CSS `linear-gradient()` takes an angle (or `to <side>`), NOT the
+/// `from X% Y% to X% Y%` point syntax the old code emitted, which GTK rejects and
+/// silently drops (nothing renders). Factored out so a test can assert the string
+/// parses as valid GTK CSS.
+func gtkLinearGradientCSS(_ g: LinearGradient) -> String {
+    let angle = gtkLinearGradientAngle(from: g.startPoint, to: g.endPoint)
+    return "linear-gradient(\(angle)deg, \(gtkGradientStopsCSS(g.gradient.stops)))"
 }
 
 /// CSS `linear-gradient` angle (degrees; 0 = up, increasing clockwise) for a
@@ -1991,15 +1996,20 @@ func gtkLinearGradientAngle(from start: UnitPoint, to end: UnitPoint) -> Int {
     return Int(degrees)
 }
 
+/// The CSS `radial-gradient(…)` value for a RadialGradient. Factored out so a
+/// test can assert it parses as valid GTK CSS (same class of guard as linear).
+func gtkRadialGradientCSS(_ g: RadialGradient) -> String {
+    let cx = Int(g.center.x * 100)
+    let cy = Int(g.center.y * 100)
+    return "radial-gradient(circle at \(cx)% \(cy)%, \(gtkGradientStopsCSS(g.gradient.stops)))"
+}
+
 extension RadialGradient: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let div = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
         gtk_widget_set_hexpand(div, 1)
         gtk_widget_set_vexpand(div, 1)
-        let cx = Int(center.x * 100)
-        let cy = Int(center.y * 100)
-        let stops = gtkGradientStopsCSS(gradient.stops)
-        applyCSSToWidget(div, properties: "background: radial-gradient(circle at \(cx)% \(cy)%, \(stops)); min-height: 20px;")
+        applyCSSToWidget(div, properties: "background: \(gtkRadialGradientCSS(self)); min-height: 20px;")
         return opaqueFromWidget(div)
     }
 }

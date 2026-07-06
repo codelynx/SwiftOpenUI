@@ -196,6 +196,12 @@ var exampleLinkerSettings: [LinkerSetting] = [
 // Examples — thin runners that wire Examples views to platform entry points
 targets += [
     .executableTarget(
+        name: "GradientDemo",
+        dependencies: exampleDeps,
+        path: "Examples/Showcase/GradientDemo",
+        linkerSettings: exampleLinkerSettings
+    ),
+    .executableTarget(
         name: "HelloWorld",
         dependencies: exampleDeps,
         path: "Examples/Showcase/HelloWorld",
