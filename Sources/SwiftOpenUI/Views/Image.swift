@@ -16,14 +16,20 @@ public enum ImageScale {
 }
 
 /// Byte layout of an in-memory pixel buffer passed to `Image(decoded:)`.
-/// 8 bits per channel, straight (non-premultiplied) alpha, row-major, tightly
-/// packed at `width * 4` bytes per row.
+/// 8 bits per channel, row-major, tightly packed at `width * 4` bytes per row.
+/// Alpha handling (straight vs premultiplied) is explicit — pick the variant that
+/// matches your source, since a mismatch renders alpha-blended pixels incorrectly.
 public enum ImagePixelFormat: Sendable {
-    /// R, G, B, A byte order (common for decoded PNG/RGBA sources).
+    /// R, G, B, A, straight (non-premultiplied) alpha — decoded PNG/RGBA.
     case rgba8
-    /// B, G, R, A byte order — matches PDFium `FPDFBitmap` and Cairo `ARGB32`
-    /// on little-endian hosts, so page renders can be handed over without a swizzle.
+    /// B, G, R, A, straight alpha — matches PDFium `FPDFBitmap` (non-premultiplied).
     case bgra8
+    /// R, G, B, A, **premultiplied** alpha.
+    case rgba8Premultiplied
+    /// B, G, R, A, **premultiplied** alpha — matches Cairo `ARGB32` on little-endian
+    /// hosts (Cairo surfaces are premultiplied), so a Cairo surface's data can be
+    /// handed over without a swizzle *or* an un-premultiply.
+    case bgra8Premultiplied
 }
 
 /// A view that displays an image from an icon name, file path, or in-memory pixels.
@@ -108,10 +114,13 @@ public struct Image: View {
 
     /// Create an image from an already-decoded, in-memory pixel buffer.
     ///
-    /// `pixels` must be exactly `width * height * 4` bytes, row-major and tightly
+    /// `pixels` must be at least `width * height * 4` bytes, row-major and tightly
     /// packed (`width * 4` bytes per row), in `format`'s channel order. This is the
     /// in-memory counterpart to `Image(filePath:)`: nothing is read from disk, so
     /// it suits runtime-rendered content (PDF pages, generated bitmaps).
+    ///
+    /// Backends validate before use: a too-small buffer or non-positive/oversized
+    /// dimensions render an empty image rather than crashing or reading out of bounds.
     ///
     /// Pair with `.resizable()` to have the image fill a surrounding `.frame`.
     public init(decoded pixels: Data, width: Int, height: Int, format: ImagePixelFormat = .rgba8) {

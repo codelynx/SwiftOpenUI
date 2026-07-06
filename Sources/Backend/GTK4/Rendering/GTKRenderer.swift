@@ -4115,8 +4115,29 @@ extension Image: GTKRenderable {
             // In-memory pixels -> GdkTexture -> GtkPicture (same widget/scaling
             // semantics as .filePath). g_bytes_new inside the shim copies, so the
             // buffer need only be valid for this call.
-            let gdkFormat: GdkMemoryFormat = (format == .bgra8) ? GDK_MEMORY_B8G8R8A8 : GDK_MEMORY_R8G8B8A8
-            let stride = Int32(width * 4)
+            //
+            // Validate before touching the buffer: a short buffer, non-positive
+            // dimensions, or a size that would overflow the C int stride/width would
+            // otherwise produce an inconsistent texture or read out of bounds.
+            // Invalid input renders an empty box rather than crashing.
+            let bytesPerRow = width &* 4
+            let required = width &* height &* 4
+            guard width > 0, height > 0, width <= (1 << 15), height <= (1 << 15),
+                  pixels.count >= required else {
+                #if DEBUG
+                FileHandle.standardError.write(Data(
+                    "[SwiftOpenUI] Image(decoded:): invalid buffer (\(pixels.count) bytes for \(width)x\(height), need \(required)); rendering empty\n".utf8))
+                #endif
+                return opaqueFromWidget(gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!)
+            }
+            let gdkFormat: GdkMemoryFormat
+            switch format {
+            case .rgba8: gdkFormat = GDK_MEMORY_R8G8B8A8
+            case .bgra8: gdkFormat = GDK_MEMORY_B8G8R8A8
+            case .rgba8Premultiplied: gdkFormat = GDK_MEMORY_R8G8B8A8_PREMULTIPLIED
+            case .bgra8Premultiplied: gdkFormat = GDK_MEMORY_B8G8R8A8_PREMULTIPLIED
+            }
+            let stride = Int32(bytesPerRow)
             let picture: UnsafeMutablePointer<GtkWidget> = pixels.withUnsafeBytes { raw in
                 gtk_swift_picture_new_for_pixels(
                     raw.bindMemory(to: UInt8.self).baseAddress,

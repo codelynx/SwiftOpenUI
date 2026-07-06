@@ -53,7 +53,7 @@ Summary: 89 total, 54 implemented, 0 partial, 35 missing.
 | Feature | Seen In | SwiftUI Availability | SwiftUI Status | SwiftOpenUI | Evidence | Notes |
 |---|---|---|---|---|---|---|
 | `AsyncImage` | Both | iOS, macOS 12, watchOS 8, tvOS 15, visionOS 1 | Current | Missing | `-` | - |
-| `Image` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Image.swift` | GTK icon theme + file; Win32: WIC; Web: img tag (systemName as text placeholder) |
+| `Image` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Image.swift` | Sources: systemName / filePath / material / **decoded (in-memory pixels)**. GTK4: icon+file+decoded (GdkMemoryTexture) all functional; Win32: WIC file, decoded placeholder pending; Web: img tag, decoded placeholder pending. See `Image(decoded:)` in the parity matrix. |
 | `PhotosPicker` | Curated only | iOS, macOS 13, watchOS 9, visionOS 1 (PhotosUI) | Current | Missing | `-` | - |
 | `SpriteView` | Curated only | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 (SpriteKit) | Current | Missing | `-` | - |
 | `VideoPlayer` | Curated only | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 (AVKit) | Current | Missing | `-` | - |

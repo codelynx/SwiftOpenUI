@@ -36,4 +36,16 @@ final class GTK4ImageDecodedTests: XCTestCase {
         )
         XCTAssertEqual(String(cString: gtk_widget_get_css_name(widget)), "picture")
     }
+
+    /// A too-small buffer / bad dimensions renders an empty box, not a crash.
+    func testImageDecodedInvalidBufferRendersEmpty() throws {
+        try XCTSkipUnless(gtk_is_initialized() != 0, "GTK not available (headless)")
+        // Claims 4x4 (needs 64 bytes) but supplies 4.
+        let short = Data([1, 2, 3, 4])
+        let widget = widgetFromOpaque(
+            Image(decoded: short, width: 4, height: 4, format: .rgba8).gtkCreateWidget()
+        )
+        XCTAssertEqual(String(cString: gtk_widget_get_css_name(widget)), "box",
+                       "invalid Image(decoded:) buffer should render an empty box, not crash")
+    }
 }
