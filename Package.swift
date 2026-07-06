@@ -94,6 +94,13 @@ targets += [
         dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK", "CGTKBridge", "LayoutParityShared"],
         path: "Tests/LayoutParityTests/GTKComparison"
     ),
+    // Desktop viewer spike (Gate 2, Linux-only — raw CGTK/Cairo via GTKRenderable,
+    // PDFium added in Step B). Experimental branch only.
+    .executableTarget(
+        name: "DesktopViewerSpike",
+        dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK"],
+        path: "Examples/DesktopViewerSpike"
+    ),
 ]
 exampleDeps.append("BackendGTK4")
 #endif
