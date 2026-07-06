@@ -48,7 +48,7 @@ public struct Image: View {
         /// An already-decoded, in-memory pixel buffer (no file, no network).
         /// The primary use is displaying frames rendered at runtime — PDF pages,
         /// procedurally generated bitmaps, decoded thumbnails — that never touch
-        /// disk. `pixels` is `width * height * 4` bytes in `format`'s layout.
+        /// disk. `pixels` is at least `width * height * 4` bytes in `format`'s layout.
         case decoded(pixels: Data, width: Int, height: Int, format: ImagePixelFormat)
     }
 
