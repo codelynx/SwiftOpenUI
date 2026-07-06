@@ -108,35 +108,56 @@ func runBench(_ pdf: PDFDoc) {
 
     print("[bench] pages=\(pdf.pageCount) longEdge=\(longEdge)px turns=\(turns)")
     print("[bench] renderer path: GSK_RENDERER=\(ProcessInfo.processInfo.environment["GSK_RENDERER"] ?? "<default>") (PDFium raster is CPU; GTK compositing not exercised in bench)")
+
+    // --- Timing + memory: 50 page turns at ~4K-class bitmaps ---
     let rss0 = rssMB()
     var times: [Double] = []
-    let dumpPages = Set([0, 15, 30, 59])
-
+    var rssSamples: [Double] = []
     for turn in 0..<turns {
         let i = turn % pdf.pageCount
         let (wPx, hPx) = fitPixels(pagePts: pdf.pageSizePts(i), longEdgePx: longEdge)
         let t0 = Date()
-        guard let (px, stride) = pdf.renderBGRA(i, wPx, hPx) else { print("[bench] render failed page \(i)"); continue }
-        let ms = Date().timeIntervalSince(t0) * 1000
-        times.append(ms)
-        if turn < pdf.pageCount, dumpPages.contains(i) {
-            writePNG(px, w: wPx, h: hPx, stride: stride, to: "\(outDir)/page-\(i)-\(wPx)x\(hPx).png")
-            // plus a 1080-wide fit-to-width for the "legible at 1080p" criterion
-            let (w2, h2) = fitPixels(pagePts: pdf.pageSizePts(i), longEdgePx: 1080)
-            if let (px2, s2) = pdf.renderBGRA(i, w2, h2) {
-                writePNG(px2, w: w2, h: h2, stride: s2, to: "\(outDir)/page-\(i)-fitwidth1080.png")
-            }
-        }
+        guard pdf.renderBGRA(i, wPx, hPx) != nil else { print("[bench] render failed page \(i)"); continue }
+        times.append(Date().timeIntervalSince(t0) * 1000)
+        if turn % 10 == 9 { rssSamples.append(rssMB()) }
     }
     let rss1 = rssMB()
     let sorted = times.sorted()
-    let median = sorted[sorted.count / 2]
     let under500 = times.filter { $0 < 500 }.count
     print(String(format: "[bench] render ms: min=%.1f median=%.1f max=%.1f  under-500ms=%d/%d",
-                 sorted.first ?? 0, median, sorted.last ?? 0, under500, times.count))
-    print(String(format: "[bench] RSS: start=%.0fMB end=%.0fMB delta=%+.0fMB (memory stability over %d turns)",
-                 rss0, rss1, rss1 - rss0, turns))
-    print("[bench] fidelity PNGs -> \(outDir)")
+                 sorted.first ?? 0, sorted[sorted.count / 2], sorted.last ?? 0, under500, times.count))
+    print(String(format: "[bench] RSS: start=%.0fMB end=%.0fMB delta=%+.0fMB  samples@10/20/30/40/50=%@ (bounded ~= one in-flight bitmap => no leak)",
+                 rss0, rss1, rss1 - rss0, rssSamples.map { String(format: "%.0f", $0) }.joined(separator: "/")))
+
+    // --- Fidelity dumps: dedicated pass (independent of the timing loop, so
+    //     page 59 is actually produced — prior bug: loop only visited 0..49). ---
+    for i in [0, 15, 30, 59] where i < pdf.pageCount {
+        let (wPx, hPx) = fitPixels(pagePts: pdf.pageSizePts(i), longEdgePx: longEdge)
+        if let (px, stride) = pdf.renderBGRA(i, wPx, hPx) {
+            writePNG(px, w: wPx, h: hPx, stride: stride, to: "\(outDir)/page-\(i)-\(wPx)x\(hPx).png")
+        }
+        let (w2, h2) = fitPixels(pagePts: pdf.pageSizePts(i), longEdgePx: 1080)
+        if let (px2, s2) = pdf.renderBGRA(i, w2, h2) {
+            writePNG(px2, w: w2, h: h2, stride: s2, to: "\(outDir)/page-\(i)-fitwidth1080.png")
+        }
+    }
+
+    // --- Resize + high-DPI proxy: render the SAME page at several widths
+    //     (== window-resize reflow) and at 2x (== GDK_SCALE=2 / hi-DPI), so the
+    //     "resize + one high-DPI factor without artifacts" bullet has evidence
+    //     at the render path. Eyeball the PNGs for artifacts. ---
+    print("[bench] resize/hi-DPI render sweep (page 15):")
+    for longW in [640, 1000, 1600, 2160] {  // 2160 == 1080 @ 2x device pixels
+        let (wPx, hPx) = fitPixels(pagePts: pdf.pageSizePts(15), longEdgePx: longW)
+        let t0 = Date()
+        if let (px, stride) = pdf.renderBGRA(15, wPx, hPx) {
+            let ms = Date().timeIntervalSince(t0) * 1000
+            let tag = longW == 2160 ? "hidpi2x" : "w\(longW)"
+            writePNG(px, w: wPx, h: hPx, stride: stride, to: "\(outDir)/resize-\(tag)-\(wPx)x\(hPx).png")
+            print(String(format: "  %@ -> %dx%d in %.0fms", tag, wPx, hPx, ms))
+        }
+    }
+    print("[bench] fidelity + resize/hi-DPI PNGs -> \(outDir)")
 }
 
 // MARK: - GUI mode — real PDFium page through the escape hatch
@@ -167,38 +188,39 @@ struct PDFPageCanvas: View, GTKRenderable {
             Unmanaged<PageContext>.fromOpaque(ud!).release()
         }
         let areaPtr = UnsafeMutableRawPointer(area).assumingMemoryBound(to: GtkDrawingArea.self)
-        gtk_drawing_area_set_draw_func(areaPtr, { _, cr, width, height, ud in
+        gtk_drawing_area_set_draw_func(areaPtr, { areaArg, cr, width, height, ud in
             guard let cr, let ud else { return }
             let ctx = Unmanaged<PageContext>.fromOpaque(ud).takeUnretainedValue()
-            Self.draw(cr: cr, width: Int(width), height: Int(height), ctx: ctx)
+            // Device scale factor drives crisp hi-DPI (GDK_SCALE / monitor scale).
+            var deviceScale = 1
+            if let areaArg {
+                deviceScale = Int(gtk_widget_get_scale_factor(
+                    UnsafeMutableRawPointer(areaArg).assumingMemoryBound(to: GtkWidget.self)))
+            }
+            Self.draw(cr: cr, width: Int(width), height: Int(height), deviceScale: max(1, deviceScale), ctx: ctx)
         }, ctxPtr, nil)
         return OpaquePointer(area)
     }
 
-    private static func draw(cr: OpaquePointer, width: Int, height: Int, ctx: PageContext) {
-        // neutral backdrop
+    private static func draw(cr: OpaquePointer, width: Int, height: Int, deviceScale: Int, ctx: PageContext) {
         cairo_set_source_rgb(cr, 0.15, 0.15, 0.17); cairo_paint(cr)
         guard width > 4, height > 4 else { return }
-        let pts = ctx.pdf.pageSizePts(ctx.page)
-        // fit-to-width * zoom, capped to a sane device pixel budget
-        let targetLong = min(Int(Double(width) * ctx.zoom * (pts.h / pts.w > 1 ? pts.h / pts.w : 1)), 4000)
-        let (wPx, hPx) = fitPixels(pagePts: pts, longEdgePx: max(targetLong, 200))
+        // The drawing area is framed to the page size (zoom applied by the frame),
+        // and lives inside a ScrollView that provides pan. Render at device
+        // resolution (alloc * scale factor) so hi-DPI stays crisp, then map back.
+        let wPx = width * deviceScale, hPx = height * deviceScale
         let t0 = Date()
         guard let rendered = ctx.pdf.renderBGRA(ctx.page, wPx, hPx) else { return }
         var px = rendered.data
         let stride = rendered.stride
         ctx.lastRenderMs = Date().timeIntervalSince(t0) * 1000
-        FileHandle.standardError.write(Data("[spike] draw page \(ctx.page + 1) -> \(wPx)x\(hPx) in \(String(format: "%.0f", ctx.lastRenderMs))ms\n".utf8))
+        FileHandle.standardError.write(Data("[spike] draw page \(ctx.page + 1) alloc \(width)x\(height) @\(deviceScale)x -> render \(wPx)x\(hPx) in \(String(format: "%.0f", ctx.lastRenderMs))ms\n".utf8))
         px.withUnsafeMutableBytes { raw in
             guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
             let surf = cairo_image_surface_create_for_data(base, CAIRO_FORMAT_ARGB32, Int32(wPx), Int32(hPx), Int32(stride))
             defer { cairo_surface_destroy(surf) }
-            // center, scale to fit the viewport width
-            let scale = Double(width) / Double(wPx)
-            let drawW = Double(wPx) * scale, drawH = Double(hPx) * scale
             cairo_save(cr)
-            cairo_translate(cr, (Double(width) - drawW) / 2, max(0, (Double(height) - drawH) / 2))
-            cairo_scale(cr, scale, scale)
+            cairo_scale(cr, 1.0 / Double(deviceScale), 1.0 / Double(deviceScale))  // device px -> logical
             cairo_set_source_surface(cr, surf, 0, 0)
             cairo_paint(cr)
             cairo_restore(cr)
@@ -212,11 +234,20 @@ struct SpikeReaderView: View {
     @State private var zoom = 1.0
 
     var body: some View {
-        VStack(spacing: 0) {
+        // Frame the page canvas to its rendered size (base width * zoom, page
+        // aspect). The enclosing ScrollView then provides pan on both axes when
+        // the zoomed page exceeds the viewport.
+        let pts = pdf.pageSizePts(page)
+        let renderW = 700.0 * zoom
+        let renderH = renderW * (pts.h / pts.w)
+        return VStack(spacing: 0) {
             Text("GDM_May_2012 — page \(page + 1)/\(pdf.pageCount)  ·  zoom \(String(format: "%.1fx", zoom))")
                 .padding(8)
-            PDFPageCanvas(pdf: pdf, page: page, zoom: zoom)
-                .frame(minWidth: 500, minHeight: 600)
+            ScrollView([.horizontal, .vertical]) {
+                PDFPageCanvas(pdf: pdf, page: page, zoom: zoom)
+                    .frame(width: renderW, height: renderH)
+            }
+            .frame(minWidth: 500, minHeight: 600)
             HStack {
                 Button("◀ Prev") { if page > 0 { page -= 1 } }
                 Button("Next ▶") { if page < pdf.pageCount - 1 { page += 1 } }
