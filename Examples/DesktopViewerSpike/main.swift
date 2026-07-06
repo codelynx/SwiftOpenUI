@@ -257,6 +257,14 @@ struct SpikeReaderView: View {
             .padding(8)
         }
         .frame(minWidth: 700, minHeight: 800)
+        .onAppear {
+            // Wayland blocks external input injection, so allow the manual-pass
+            // capture to start on a given page/zoom (proves those states render
+            // live in the window without a click).
+            let env = ProcessInfo.processInfo.environment
+            if let p = Int(env["SPIKE_PAGE"] ?? "") { page = max(0, min(pdf.pageCount - 1, p - 1)) }
+            if let z = Double(env["SPIKE_ZOOM"] ?? "") { zoom = z }
+        }
     }
 }
 
