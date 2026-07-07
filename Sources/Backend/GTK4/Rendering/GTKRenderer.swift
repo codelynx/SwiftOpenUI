@@ -15,6 +15,9 @@ let gtkSwiftLayoutHelperMarker = "gtk-swift-layout-helper"
 private func gtkMarkLayoutHelper(_ widget: UnsafeMutablePointer<GtkWidget>) {
     let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
     g_object_set_data(gobject, gtkSwiftLayoutHelperMarker, UnsafeMutableRawPointer(bitPattern: 1))
+    // Alignment spacers are pure layout — never pointer targets (SwiftUI
+    // parity: empty regions don't hit-test). See gtkMarkLayoutTransparent.
+    gtk_widget_set_can_target(widget, 0)
 }
 
 private func gtkVStackSpacing(_ spacing: Int) -> Int {
@@ -1160,6 +1163,21 @@ extension PaddedView: GTKRenderable, GTKDescribable {
     }
 }
 
+
+/// Mark a pure-layout container (frame wrapper / alignment spacer) as
+/// hit-transparent. SwiftUI parity: a frame's empty region does not hit-test
+/// (the classic `.contentShape(Rectangle())` gotcha) — but a GtkBox targets
+/// pointer events across its whole allocation by default, so a
+/// `.frame(maxWidth:.infinity)` overlay layer swallows clicks/scrolls/gestures
+/// meant for widgets beneath it (e.g. a paging chevron layered over a scroll
+/// view blocked the scroll view's zoom/pan controllers entirely).
+/// `can_target = false` skips the container itself during picking; its
+/// children remain targetable. Gesture modifiers that attach controllers
+/// re-enable targeting on their own widget (see TapGestureView).
+private func gtkMarkLayoutTransparent(_ widget: UnsafeMutablePointer<GtkWidget>) {
+    gtk_widget_set_can_target(widget, 0)
+}
+
 extension FrameView: GTKRenderable, GTKDescribable {
     public func gtkDescribeNode() -> GTK4DescriptorNode {
         GTK4DescriptorNode(
@@ -1335,6 +1353,7 @@ extension FrameView: GTKRenderable, GTKDescribable {
         )
 
         let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtkMarkLayoutTransparent(wrapper)
 
         let widthMayGrowWithParent = width == nil
             && (
@@ -1475,6 +1494,7 @@ extension FrameView: GTKRenderable, GTKDescribable {
         // Use GtkBox as wrapper — child fills the flexible axis via expand.
         let orientation = constrainedWidth ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL
         let wrapper = gtk_box_new(orientation, 0)!
+        gtkMarkLayoutTransparent(wrapper)
 
         if constrainedWidth {
             // Width constrained, height flexible
@@ -2459,6 +2479,10 @@ extension TapGestureView: GTKRenderable, GTKDescribable {
 
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
+        // The rendered content may be a hit-transparent layout wrapper
+        // (gtkMarkLayoutTransparent); an attached gesture needs its widget
+        // to be a pointer target again (approximates SwiftUI .contentShape).
+        gtk_widget_set_can_target(widget, 1)
         let gesture = gtk_gesture_click_new()!
 
         let boundAction = bindActionToCurrentEnvironment(action)
@@ -2487,6 +2511,7 @@ extension TapGestureView: GTKRenderable, GTKDescribable {
 extension LongPressGestureView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_can_target(widget, 1)  // see TapGestureView note
         let gesture = gtk_gesture_long_press_new()!
 
         // Set delay threshold
@@ -2535,6 +2560,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
 
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_can_target(widget, 1)  // see TapGestureView note
         let gesture = gtk_gesture_drag_new()!
 
         let dragState = GTKDragState()
