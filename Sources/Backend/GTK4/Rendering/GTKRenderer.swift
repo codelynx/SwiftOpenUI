@@ -3598,7 +3598,15 @@ extension ProgressView: GTKRenderable {
         }
         // TODO: indeterminate mode (pulse) when value is nil
         gtk_widget_set_hexpand(bar, 1)
-        return opaqueFromWidget(bar)
+        guard let title else { return opaqueFromWidget(bar) }
+        // Titled form (ProgressView("Loading…")): label above the indicator,
+        // centered — matching SwiftUI's default layout.
+        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6)!
+        let label = gtk_label_new(title)!
+        gtk_widget_set_halign(label, GTK_ALIGN_CENTER)
+        gtk_box_append(boxPointer(box), label)
+        gtk_box_append(boxPointer(box), bar)
+        return opaqueFromWidget(box)
     }
 }
 
@@ -4806,6 +4814,17 @@ extension Form: GTKRenderable {
     }
 }
 
+// MARK: - MonospacedDigitView GTK extension
+
+extension MonospacedDigitView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // Tabular figures via Pango font features.
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        applyCSSToWidget(widget, properties: "font-feature-settings: \"tnum\";")
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - Section GTK extension
 
 extension Section: GTKRenderable {
@@ -4813,7 +4832,11 @@ extension Section: GTKRenderable {
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4)!
         let boxPtr = boxPointer(box)
 
-        if let header = header {
+        if let headerView {
+            // View-typed header (Section { } header: { }) takes precedence.
+            let headerWidget = widgetFromOpaque(gtkRenderAnyView(headerView))
+            gtk_box_append(boxPtr, headerWidget)
+        } else if let header = header {
             let label = gtk_label_new(nil)!
             let escaped = header
                 .replacingOccurrences(of: "&", with: "&amp;")
