@@ -46,6 +46,32 @@ public protocol GTKMultiChildRenderable {
     func gtkRenderChildren() -> [OpaquePointer]
 }
 
+/// Append children to a container box while keeping the box transparent to
+/// layout: propagate the children's expand flags to the box (and let expanding
+/// children fill their axis). Without this, content that asked to fill (e.g.
+/// `.frame(maxWidth: .infinity)` rows inside a Group/ForEach/tuple) is trapped
+/// in a hexpand=0 wrapper, and an enclosing `.center`-aligned frame centers
+/// the whole narrow block at natural size instead of letting it span the
+/// window (the centered issue-list bug). See GTK4GroupFillTests /
+/// GTK4ForEachFillTests.
+func gtkAppendChildrenPropagatingExpand(
+    to box: UnsafeMutablePointer<GtkWidget>,
+    widgets: [UnsafeMutablePointer<GtkWidget>]
+) {
+    var needsHExpand = false
+    var needsVExpand = false
+    for widget in widgets {
+        if gtk_widget_get_hexpand(widget) != 0 {
+            needsHExpand = true
+            gtk_widget_set_halign(widget, GTK_ALIGN_FILL)
+        }
+        if gtk_widget_get_vexpand(widget) != 0 { needsVExpand = true }
+        gtk_box_append(boxPointer(box), widget)
+    }
+    if needsHExpand { gtk_widget_set_hexpand(box, 1) }
+    if needsVExpand { gtk_widget_set_vexpand(box, 1) }
+}
+
 // MARK: - Rendering dispatch
 
 /// Render any SwiftOpenUI View into a GTK widget pointer.
@@ -60,10 +86,10 @@ public func gtkRenderView<V: View>(_ view: V) -> OpaquePointer {
     // because these types have Body = Never.
     if let multi = view as? MultiChildView {
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        for child in multi.children {
-            let widget = widgetFromOpaque(gtkRenderAnyView(child))
-            gtk_box_append(boxPointer(box), widget)
-        }
+        gtkAppendChildrenPropagatingExpand(
+            to: box,
+            widgets: multi.children.map { widgetFromOpaque(gtkRenderAnyView($0)) }
+        )
         return opaqueFromWidget(box)
     }
 
@@ -778,54 +804,24 @@ extension VStack: GTKRenderable, GTKDescribable {
     public func gtkCreateWidget() -> OpaquePointer {
         let effectiveSpacing = gtkVStackSpacing(spacing)
         let children = gtkRenderChildren(content).map(widgetFromOpaque)
-        if gtkCanUseSharedVStackLayout(children) {
-            return gtkRenderSharedVStack(children, spacing: effectiveSpacing, alignment: alignment)
-        }
-
+        // A VStack of ordinary, non-overlapping vertical children is naturally a
+        // GtkBox. The former GtkFixed-based "shared" path placed children at the
+        // layout engine's computed coordinates, but GtkFixed measures to *contain*
+        // its children and reports that as a non-negotiable MINIMUM — so a single
+        // wide child (e.g. a long wrapped label) pinned the whole stack, and the
+        // window, to that natural width and never renegotiated (Bug 2). A GtkBox
+        // reports each child's own negotiable minimum, letting wrappable content
+        // shrink into its allocation — matching SwiftLinuxUI and SwiftUI proposal
+        // semantics. See GTK4VStackWidthTests.
+        //
+        // Trade-off (recorded per review): GTK4 VStack realization no longer
+        // consults the shared `computeVStackLayout` engine — GtkBox does the
+        // vertical stacking natively, with child `halign` carrying the alignment.
+        // The engine remains the source of truth for the Win32 and Android
+        // backends and the core layout tests; only GTK4's concrete container
+        // changed. LayoutParityTests is the arbiter that this stays correct.
         return gtkRenderFallbackVStack(children, spacing: effectiveSpacing, alignment: alignment)
     }
-}
-
-private func gtkCanUseSharedVStackLayout(_ children: [UnsafeMutablePointer<GtkWidget>]) -> Bool {
-    for widget in children {
-        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
-        if g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil {
-            return false
-        }
-        if gtk_widget_get_hexpand(widget) != 0 || gtk_widget_get_vexpand(widget) != 0 {
-            return false
-        }
-    }
-    return true
-}
-
-private func gtkRenderSharedVStack(
-    _ children: [UnsafeMutablePointer<GtkWidget>],
-    spacing: Int,
-    alignment: HorizontalAlignment
-) -> OpaquePointer {
-    let wrapper = gtk_swift_fixed_new()!
-    let context = GTKLayoutMeasureContext(widgets: children)
-    let layout = computeVStackLayout(
-        subviews: children.indices.map(LayoutSubview.init(index:)),
-        context: context,
-        spacing: Double(spacing),
-        alignment: alignment
-    )
-
-    gtk_widget_set_size_request(
-        wrapper,
-        gint(layout.containerSize.width),
-        gint(layout.containerSize.height)
-    )
-
-    for (widget, placement) in zip(children, layout.childPlacements) {
-        gtk_widget_set_halign(widget, GTK_ALIGN_START)
-        gtk_widget_set_valign(widget, GTK_ALIGN_START)
-        gtk_swift_fixed_put(wrapper, widget, placement.origin.x, placement.origin.y)
-    }
-
-    return opaqueFromWidget(wrapper)
 }
 
 private func gtkRenderFallbackVStack(
@@ -1083,22 +1079,26 @@ private func gtkRenderFallbackZStack(
 
 extension Group: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
+        // Transparent to layout — see gtkAppendChildrenPropagatingExpand.
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        for child in gtkRenderChildren(content) {
-            gtk_box_append(boxPointer(box), widgetFromOpaque(child))
-        }
+        gtkAppendChildrenPropagatingExpand(
+            to: box,
+            widgets: gtkRenderChildren(content).map(widgetFromOpaque)
+        )
         return opaqueFromWidget(box)
     }
 }
 
 extension ForEach: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
+        // ForEach wraps its rows in its own GtkBox that then sits as a single
+        // child of the surrounding stack. It must be transparent to layout —
+        // see gtkAppendChildrenPropagatingExpand and GTK4ForEachFillTests.
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        for item in data {
-            let childView = content(item)
-            let widget = widgetFromOpaque(gtkRenderView(childView))
-            gtk_box_append(boxPointer(box), widget)
-        }
+        gtkAppendChildrenPropagatingExpand(
+            to: box,
+            widgets: data.map { widgetFromOpaque(gtkRenderView(content($0))) }
+        )
         return opaqueFromWidget(box)
     }
 }
