@@ -6327,6 +6327,25 @@ extension StrokedShape: GTKRenderable {
 // MARK: - Stateful view rendering
 
 private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {
+    // Positional state reconciliation: when a parent host's rebuild
+    // re-constructs this view, its @State storages are brand new. Restore
+    // the previous pass's values (matched by render position + type) so
+    // nested state survives parent rebuilds — SwiftUI structural-identity
+    // semantics. Without this, e.g. TaskModifierView's `hasStarted` guard
+    // resets on every parent rebuild and `.task` re-fires in a loop.
+    if let parentHost = GTKViewHost.getCurrentRebuilding() {
+        let key = parentHost.nextChildStateKey(type: String(describing: V.self))
+        let providers = Mirror(reflecting: view).children.compactMap {
+            $0.value as? AnyStateStorageProvider
+        }
+        if let cached = parentHost.childStateCache[key], cached.count == providers.count {
+            for (provider, old) in zip(providers, cached) {
+                provider.anyStorage.restoreValue(from: old)
+            }
+        }
+        parentHost.childStateCache[key] = providers.map { $0.anyStorage }
+    }
+
     let host = GTKViewHost(buildBody: {
         gtkRenderView(view.body)
     })
