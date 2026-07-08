@@ -15,6 +15,9 @@ let gtkSwiftLayoutHelperMarker = "gtk-swift-layout-helper"
 private func gtkMarkLayoutHelper(_ widget: UnsafeMutablePointer<GtkWidget>) {
     let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
     g_object_set_data(gobject, gtkSwiftLayoutHelperMarker, UnsafeMutableRawPointer(bitPattern: 1))
+    // Alignment spacers are pure layout — never pointer targets (SwiftUI
+    // parity: empty regions don't hit-test). See gtkMarkLayoutTransparent.
+    gtk_widget_set_can_target(widget, 0)
 }
 
 private func gtkVStackSpacing(_ spacing: Int) -> Int {
@@ -1160,6 +1163,21 @@ extension PaddedView: GTKRenderable, GTKDescribable {
     }
 }
 
+
+/// Mark a pure-layout container (frame wrapper / alignment spacer) as
+/// hit-transparent. SwiftUI parity: a frame's empty region does not hit-test
+/// (the classic `.contentShape(Rectangle())` gotcha) — but a GtkBox targets
+/// pointer events across its whole allocation by default, so a
+/// `.frame(maxWidth:.infinity)` overlay layer swallows clicks/scrolls/gestures
+/// meant for widgets beneath it (e.g. a paging chevron layered over a scroll
+/// view blocked the scroll view's zoom/pan controllers entirely).
+/// `can_target = false` skips the container itself during picking; its
+/// children remain targetable. Gesture modifiers that attach controllers
+/// re-enable targeting on their own widget (see TapGestureView).
+private func gtkMarkLayoutTransparent(_ widget: UnsafeMutablePointer<GtkWidget>) {
+    gtk_widget_set_can_target(widget, 0)
+}
+
 extension FrameView: GTKRenderable, GTKDescribable {
     public func gtkDescribeNode() -> GTK4DescriptorNode {
         GTK4DescriptorNode(
@@ -1335,6 +1353,7 @@ extension FrameView: GTKRenderable, GTKDescribable {
         )
 
         let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+        gtkMarkLayoutTransparent(wrapper)
 
         let widthMayGrowWithParent = width == nil
             && (
@@ -1475,6 +1494,7 @@ extension FrameView: GTKRenderable, GTKDescribable {
         // Use GtkBox as wrapper — child fills the flexible axis via expand.
         let orientation = constrainedWidth ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL
         let wrapper = gtk_box_new(orientation, 0)!
+        gtkMarkLayoutTransparent(wrapper)
 
         if constrainedWidth {
             // Width constrained, height flexible
@@ -2459,6 +2479,10 @@ extension TapGestureView: GTKRenderable, GTKDescribable {
 
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
+        // The rendered content may be a hit-transparent layout wrapper
+        // (gtkMarkLayoutTransparent); an attached gesture needs its widget
+        // to be a pointer target again (approximates SwiftUI .contentShape).
+        gtk_widget_set_can_target(widget, 1)
         let gesture = gtk_gesture_click_new()!
 
         let boundAction = bindActionToCurrentEnvironment(action)
@@ -2487,6 +2511,7 @@ extension TapGestureView: GTKRenderable, GTKDescribable {
 extension LongPressGestureView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_can_target(widget, 1)  // see TapGestureView note
         let gesture = gtk_gesture_long_press_new()!
 
         // Set delay threshold
@@ -2535,6 +2560,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
 
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_widget_set_can_target(widget, 1)  // see TapGestureView note
         let gesture = gtk_gesture_drag_new()!
 
         let dragState = GTKDragState()
@@ -3572,7 +3598,15 @@ extension ProgressView: GTKRenderable {
         }
         // TODO: indeterminate mode (pulse) when value is nil
         gtk_widget_set_hexpand(bar, 1)
-        return opaqueFromWidget(bar)
+        guard let title else { return opaqueFromWidget(bar) }
+        // Titled form (ProgressView("Loading…")): label above the indicator,
+        // centered — matching SwiftUI's default layout.
+        let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6)!
+        let label = gtk_label_new(title)!
+        gtk_widget_set_halign(label, GTK_ALIGN_CENTER)
+        gtk_box_append(boxPointer(box), label)
+        gtk_box_append(boxPointer(box), bar)
+        return opaqueFromWidget(box)
     }
 }
 
@@ -4780,6 +4814,17 @@ extension Form: GTKRenderable {
     }
 }
 
+// MARK: - MonospacedDigitView GTK extension
+
+extension MonospacedDigitView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // Tabular figures via Pango font features.
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        applyCSSToWidget(widget, properties: "font-feature-settings: \"tnum\";")
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - Section GTK extension
 
 extension Section: GTKRenderable {
@@ -4787,7 +4832,11 @@ extension Section: GTKRenderable {
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4)!
         let boxPtr = boxPointer(box)
 
-        if let header = header {
+        if let headerView {
+            // View-typed header (Section { } header: { }) takes precedence.
+            let headerWidget = widgetFromOpaque(gtkRenderAnyView(headerView))
+            gtk_box_append(boxPtr, headerWidget)
+        } else if let header = header {
             let label = gtk_label_new(nil)!
             let escaped = header
                 .replacingOccurrences(of: "&", with: "&amp;")
@@ -6301,6 +6350,25 @@ extension StrokedShape: GTKRenderable {
 // MARK: - Stateful view rendering
 
 private func gtkRenderStatefulView<V: View>(_ view: V) -> OpaquePointer {
+    // Positional state reconciliation: when a parent host's rebuild
+    // re-constructs this view, its @State storages are brand new. Restore
+    // the previous pass's values (matched by render position + type) so
+    // nested state survives parent rebuilds — SwiftUI structural-identity
+    // semantics. Without this, e.g. TaskModifierView's `hasStarted` guard
+    // resets on every parent rebuild and `.task` re-fires in a loop.
+    if let parentHost = GTKViewHost.getCurrentRebuilding() {
+        let key = parentHost.nextChildStateKey(type: String(describing: V.self))
+        let providers = Mirror(reflecting: view).children.compactMap {
+            $0.value as? AnyStateStorageProvider
+        }
+        if let cached = parentHost.childStateCache[key], cached.count == providers.count {
+            for (provider, old) in zip(providers, cached) {
+                provider.anyStorage.restoreValue(from: old)
+            }
+        }
+        parentHost.childStateCache[key] = providers.map { $0.anyStorage }
+    }
+
     let host = GTKViewHost(buildBody: {
         gtkRenderView(view.body)
     })

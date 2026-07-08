@@ -102,6 +102,10 @@ public struct Color: Equatable, View, PrimitiveView {
 
     public static let primary = Color.black
     public static let secondary = Color.gray
+    /// Hierarchical shades (SwiftUI: HierarchicalShapeStyle; approximated as
+    /// flat colors — `.foregroundStyle(.tertiary)` resolves here).
+    public static let tertiary = Color(red: 0.60, green: 0.60, blue: 0.62)
+    public static let quaternary = Color(red: 0.92, green: 0.92, blue: 0.94)
 
     // MARK: - Helpers
 

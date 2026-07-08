@@ -44,6 +44,27 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
     private var observationDidFire = false
     var capturedEnvironment: EnvironmentValues
 
+    /// Positional cache of nested stateful children's @State storages.
+    /// When this host rebuilds, body re-evaluation constructs child view
+    /// structs fresh — including brand-new StateStorage boxes. Without
+    /// reconciliation, a nested stateful view (e.g. TaskModifierView's
+    /// `hasStarted` guard) loses all state on every parent rebuild, which
+    /// can re-fire `.task`/`.onAppear` work in a rebuild→refire loop.
+    /// Keyed by "<render-order index>:<view type>" within one body pass —
+    /// positional identity, the same approximation SwiftUI uses for
+    /// unnamed structural state (and the same scheme AndroidRenderer's
+    /// state cache uses). Mismatched type or storage count skips restore.
+    var childStateCache: [String: [AnyStateStorage]] = [:]
+    private var childStatefulCounter = 0
+
+    /// Next positional key for a nested stateful child encountered during
+    /// the current body pass. Called by `gtkRenderStatefulView` in render
+    /// order; the counter resets at the start of each body evaluation.
+    func nextChildStateKey(type: String) -> String {
+        defer { childStatefulCounter += 1 }
+        return "\(childStatefulCounter):\(type)"
+    }
+
     /// Objects read by body via `@Environment(Type.self)` during the
     /// last successful render. Re-pushed into the environment before
     /// each rebuild so body's lookups find the same objects even when
@@ -165,6 +186,9 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
     /// accessed during rendering are automatically tracked; when they change,
     /// scheduleRebuild() fires and the next rebuild re-registers tracking.
     func buildBodyWithTracking() -> OpaquePointer {
+        // Positional keys for nested stateful children restart each pass.
+        childStatefulCounter = 0
+
         // Track `@Environment(Type.self)` reads so we can re-push the
         // same objects into env on rebuild even if the pushing
         // modifier lives below us in the render tree. Pairs with
