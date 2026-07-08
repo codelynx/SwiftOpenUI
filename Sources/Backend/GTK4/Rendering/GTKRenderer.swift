@@ -781,6 +781,9 @@ extension DropDestinationView: GTKRenderable {
         // so gtk_widget_add_controller accepts it directly; dropTarget is
         // already OpaquePointer from gtk_swift_drop_target_new_for_file_list().
         gtk_widget_add_controller(widgetPtr, dropTarget)
+        // A drop destination is a pointer target — keep it visible to the
+        // frame wrappers' interactive-subtree scan (see gtkMarkInteractive).
+        gtkMarkInteractive(widgetPtr)
 
         return widget
     }
@@ -1164,6 +1167,40 @@ extension PaddedView: GTKRenderable, GTKDescribable {
 }
 
 
+/// GObject data marker: this widget carries a SwiftOpenUI-attached gesture
+/// controller and must stay reachable by picking. Set by the gesture
+/// modifiers via `gtkMarkInteractive`; consulted by the frame wrappers'
+/// interactive-subtree scan. (Raw controller COUNTS are useless as a
+/// signal — even a plain GtkLabel ships one internal controller.)
+let gtkSwiftInteractiveMarker = "gtk-swift-interactive"
+
+/// Mark a widget as an input target: pickable, and visible to the
+/// interactive-subtree scan of enclosing layout wrappers.
+func gtkMarkInteractive(_ widget: UnsafeMutablePointer<GtkWidget>) {
+    gtk_widget_set_can_target(widget, 1)
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    g_object_set_data(gobject, gtkSwiftInteractiveMarker, UnsafeMutableRawPointer(bitPattern: 1))
+}
+
+/// True if the subtree rooted at `widget` contains anything that receives
+/// input: a focusable widget (Button, Entry, Scale, Switch, …), a widget
+/// our gesture modifiers marked interactive, or a scrolled window (its
+/// scroll/zoom controllers are not focusable but very much interactive).
+private func gtkSubtreeContainsInteractive(_ widget: UnsafeMutablePointer<GtkWidget>) -> Bool {
+    if gtk_widget_get_focusable(widget) != 0 { return true }
+    let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+    if g_object_get_data(gobject, gtkSwiftInteractiveMarker) != nil { return true }
+    if String(cString: g_type_name(gtk_swift_get_widget_type(widget))) == "GtkScrolledWindow" {
+        return true
+    }
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        if gtkSubtreeContainsInteractive(c) { return true }
+        child = gtk_widget_get_next_sibling(c)
+    }
+    return false
+}
+
 /// Mark a pure-layout container (frame wrapper / alignment spacer) as
 /// hit-transparent. SwiftUI parity: a frame's empty region does not hit-test
 /// (the classic `.contentShape(Rectangle())` gotcha) — but a GtkBox targets
@@ -1171,10 +1208,25 @@ extension PaddedView: GTKRenderable, GTKDescribable {
 /// `.frame(maxWidth:.infinity)` overlay layer swallows clicks/scrolls/gestures
 /// meant for widgets beneath it (e.g. a paging chevron layered over a scroll
 /// view blocked the scroll view's zoom/pan controllers entirely).
-/// `can_target = false` skips the container itself during picking; its
-/// children remain targetable. Gesture modifiers that attach controllers
-/// re-enable targeting on their own widget (see TapGestureView).
-private func gtkMarkLayoutTransparent(_ widget: UnsafeMutablePointer<GtkWidget>) {
+///
+/// IMPORTANT: `can_target = false` prunes the ENTIRE subtree from GTK
+/// picking, children included (empirically verified with gtk_widget_pick —
+/// a Button inside a pruned box is pointer-dead). So the wrapper is only
+/// made transparent when its subtree contains nothing interactive.
+/// Documented deviation when it does: the wrapper's whole allocation then
+/// hit-tests like a plain GtkBox (a superset of SwiftUI semantics, same
+/// class of deviation as the gesture-modifier re-enable in TapGestureView).
+/// Exact SwiftUI semantics (self-transparent, children pickable) needs a
+/// custom widget class overriding GtkWidget.contains() — tracked follow-up.
+///
+/// `content` is passed explicitly because both call sites mark the wrapper
+/// BEFORE appending the child, so scanning the wrapper itself would always
+/// see an empty box (the bug the pick-based tests exist to catch).
+private func gtkMarkLayoutTransparent(
+    _ widget: UnsafeMutablePointer<GtkWidget>,
+    content: UnsafeMutablePointer<GtkWidget>
+) {
+    if gtkSubtreeContainsInteractive(content) { return }
     gtk_widget_set_can_target(widget, 0)
 }
 
@@ -1353,7 +1405,7 @@ extension FrameView: GTKRenderable, GTKDescribable {
         )
 
         let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
-        gtkMarkLayoutTransparent(wrapper)
+        gtkMarkLayoutTransparent(wrapper, content: child)
 
         let widthMayGrowWithParent = width == nil
             && (
@@ -1494,7 +1546,7 @@ extension FrameView: GTKRenderable, GTKDescribable {
         // Use GtkBox as wrapper — child fills the flexible axis via expand.
         let orientation = constrainedWidth ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL
         let wrapper = gtk_box_new(orientation, 0)!
-        gtkMarkLayoutTransparent(wrapper)
+        gtkMarkLayoutTransparent(wrapper, content: child)
 
         if constrainedWidth {
             // Width constrained, height flexible
@@ -2358,6 +2410,9 @@ extension ContextMenuView: GTKRenderable {
             GConnectFlags(rawValue: 0)
         )
         gtk_swift_add_gesture(widget, gesture)
+        // The right-click affordance is a pointer target — keep it visible
+        // to the frame wrappers' interactive-subtree scan.
+        gtkMarkInteractive(widget)
 
         return opaqueFromWidget(widget)
     }
@@ -2482,7 +2537,7 @@ extension TapGestureView: GTKRenderable, GTKDescribable {
         // The rendered content may be a hit-transparent layout wrapper
         // (gtkMarkLayoutTransparent); an attached gesture needs its widget
         // to be a pointer target again (approximates SwiftUI .contentShape).
-        gtk_widget_set_can_target(widget, 1)
+        gtkMarkInteractive(widget)
         let gesture = gtk_gesture_click_new()!
 
         let boundAction = bindActionToCurrentEnvironment(action)
@@ -2511,7 +2566,7 @@ extension TapGestureView: GTKRenderable, GTKDescribable {
 extension LongPressGestureView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
-        gtk_widget_set_can_target(widget, 1)  // see TapGestureView note
+        gtkMarkInteractive(widget)  // see TapGestureView note
         let gesture = gtk_gesture_long_press_new()!
 
         // Set delay threshold
@@ -2560,7 +2615,7 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
 
     public func gtkCreateWidget() -> OpaquePointer {
         let widget = widgetFromOpaque(gtkRenderView(content))
-        gtk_widget_set_can_target(widget, 1)  // see TapGestureView note
+        gtkMarkInteractive(widget)  // see TapGestureView note
         let gesture = gtk_gesture_drag_new()!
 
         let dragState = GTKDragState()
@@ -3968,6 +4023,10 @@ extension Toggle: GTKRenderable {
             GConnectFlags(rawValue: 0)
         )
         gtk_swift_add_gesture(lbl, gesture)
+        // The click-to-toggle label is a pointer target (the sibling switch
+        // is focusable, but mark the label too — uniform rule: every
+        // framework pointer-gesture attach site marks its widget).
+        gtkMarkInteractive(lbl)
 
         // Apply enabled state to the whole wrapper so label dims too
         gtkApplyEnabledState(to: hbox)
