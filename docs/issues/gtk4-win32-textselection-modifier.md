@@ -1,0 +1,30 @@
+# GTK4/Win32: `.textSelection(.enabled)` not available
+
+## Summary
+
+`.textSelection(.enabled)` is macOS-only, so shared code that wants
+user-selectable label text must guard it with `#if os(macOS)`. On
+GTK4, selectable text maps naturally to `gtk_label_set_selectable`;
+Win32 needs a read-only selectable control or equivalent.
+
+Unlike the cosmetic-modifier cluster, this one is mildly *functional* —
+without it, Linux/Windows users cannot select/copy path and summary
+text — so a real implementation (not just a no-op) is the goal, though a
+no-op signature would already remove the guards.
+
+## Synca call sites (parity drivers)
+
+- `apple/Synca/Synca/Views/CompareResultView.swift` — L571 (sync summary status line), L1069 (path label)
+
+## Proposed resolution
+
+Declare `.textSelection(_:)` on the shared view protocol. GTK4:
+`gtk_label_set_selectable(true)` on `.enabled`. Win32: read-only
+selectable static/edit control (or defer to no-op with signature
+present).
+
+## Acceptance
+
+- Synca CRV drops both `#if os(macOS)` guards around `.textSelection`.
+- GTK4 label text is selectable at runtime (verified on real hardware — Linux-side agent).
+- `Examples/Parity` entry with a selectable Text on all backends.
