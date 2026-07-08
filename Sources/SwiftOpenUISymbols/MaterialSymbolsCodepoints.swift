@@ -90,8 +90,10 @@ public enum MaterialSymbolsCodepoints {
         "person":              0xE7FD,
 
         // UI primitives
+        "apartment":           0xEA40,
         "bookmark":            0xE866,
         "calendar_today":      0xE935,
+        "library_books":       0xE02F,
         "favorite":            0xE87D,
         "favorite_border":     0xE87E,
         "home":                0xE88A,

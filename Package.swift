@@ -85,7 +85,10 @@ targets += [
     ),
     .testTarget(
         name: "GTK4RenderTests",
-        dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK", "CGTKBridge"],
+        // SwiftOpenUISymbols is a DIRECT dependency: the symbol-mapping
+        // tests import it (declared, not leaked transitively — see the
+        // librano NIOFoundationCompat cold-build lesson).
+        dependencies: ["SwiftOpenUI", "BackendGTK4", "CGTK", "CGTKBridge", "SwiftOpenUISymbols"],
         path: "Tests/BackendTests/GTK4Tests"
     ),
     // Layout parity — GTK comparison against macOS reference
