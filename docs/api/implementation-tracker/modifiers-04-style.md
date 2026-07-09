@@ -18,7 +18,7 @@ Summary: 20 total, 4 implemented, 0 partial, 16 missing.
 | `indexViewStyle` | Both | iOS 14 / watchOS 8 / tvOS 14 / visionOS 1 | Current | Missing | `-` | - |
 | `labelStyle` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Missing | `-` | - |
 | `listStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Missing | `-` | - |
-| `menuStyle` | Both | iOS 16 / macOS 13 / tvOS 17 / visionOS 1 | Current | Missing | `-` | - |
+| `menuStyle` | Both | iOS 16 / macOS 13 / tvOS 17 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/ControlStyleModifiers.swift` | `.automatic`/`.borderlessButton` env value; GTK4: menu-button has-frame |
 | `navigationSplitViewStyle` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `pickerStyle` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Picker.swift` | .automatic (select), .segmented (button row), .palette (alias) |
 | `presentedWindowStyle` | Both | macOS 13 / visionOS 1 | Current | Missing | `-` | - |

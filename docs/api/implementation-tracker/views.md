@@ -27,7 +27,7 @@ Summary: 89 total, 54 implemented, 0 partial, 35 missing.
 | `DatePicker` | Both | iOS, macOS 10.15, watchOS 10, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/DatePicker.swift` | GTK: GtkCalendar; Win32: SysDateTimePick32; Web: date input |
 | `EditButton` | Both | iOS, visionOS 1 | Current | Missing | `-` | - |
 | `Link` | Both | iOS, macOS 11, watchOS 7, tvOS 14, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Link.swift` | GTK: LinkButton; Win32: ShellExecuteW; Web: anchor tag |
-| `Menu` | Both | iOS, macOS 11, tvOS 17, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Menu.swift` | GTK: GMenu+PopoverMenu; Win32: TrackPopupMenu; Web: dropdown div |
+| `Menu` | Both | iOS, macOS 11, tvOS 17, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Menu.swift` | SwiftUI-shaped generic `Menu<Label,Content>`. GTK4: GtkMenuButton(view label)+popover(view items). Win32/Web: minimal (label trigger). Reconcile of dynamic label: see gtk4-win32-menu-menustyle |
 | `MultiDatePicker` | Both | iOS, visionOS 1 | Current | Missing | `-` | - |
 | `PasteButton` | Both | iOS, macOS 10.15, visionOS 1 | Current | Missing | `-` | - |
 | `Picker` | Both | iOS, macOS 10.15, watchOS 6, tvOS 13, visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Views/Picker.swift` | GTK: dropdown/segmented; Win32: ComboBox; Web: select |
