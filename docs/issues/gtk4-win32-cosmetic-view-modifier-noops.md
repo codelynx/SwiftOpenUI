@@ -42,3 +42,26 @@ requirement for `#if os(macOS)`, not perfect fidelity on day one.
 - Synca's shared layer compiles on GTK4/Win32 with the listed `#if os(macOS)` guards removed.
 - A `Examples/Parity` entry exercises `.controlSize`/`.listStyle` on all three backends.
 - macOS reference behavior unchanged (owned by the macOS-side agent).
+
+## Resolution (Linux-side, GTK4-verified)
+
+Mostly a no-op-was-already-there discovery: **4 of the 5 modifiers
+already existed** with SwiftUI-matching call forms, so the Synca guards
+were stale, not blocked on missing primitives:
+
+- `.controlSize(_:)` — `ControlSize` enum (`.mini/.small/.regular/.large/.extraLarge`) in `Modifiers/TypographyModifiers.swift`
+- `.monospacedDigit()` — `Modifiers/TypographyModifiers.swift`
+- `.listStyle(.plain)` — `Modifiers/ListStyleModifier.swift`
+- `.textFieldStyle(.plain)` — `TextFieldStyleType.plain` in `Modifiers/ControlStyleModifiers.swift`
+
+Only `.accessibilityIdentifier(_:)` was missing — **added** as a
+pass-through in `Modifiers/AccessibilityModifiers.swift`.
+
+Synca guards removed (GTK4 build green): `.controlSize` ×4,
+`.listStyle(.plain)`, `.monospacedDigit()`, `.accessibilityIdentifier`,
+and `.textFieldStyle(.plain)` pulled out of its guard (its sibling
+`.onExitCommand` stays guarded pending
+[[gtk4-onexitcommand-esc-handling]]).
+
+**Remaining for full close (macOS-side):** `Examples/Parity` entry +
+macOS-reference verification. The GTK4 build side is done.
