@@ -6734,6 +6734,20 @@ private func gtkCreateShapeWidget(box: ShapeDrawBox) -> OpaquePointer {
     gtk_widget_set_hexpand(area, 1)
     gtk_widget_set_vexpand(area, 1)
 
+    // A stroked shape's interior is hit-transparent in SwiftUI — only the
+    // stroke line is a solid hit region — so a `.strokeBorder` used as an
+    // `.overlay` must let pointer events reach the content beneath it. A
+    // GtkDrawingArea targets its whole allocation by default, which would
+    // otherwise swallow those clicks (e.g. a bordered TextField becomes
+    // unfocusable and untypeable). Drawing areas have no children, so
+    // pruning them from picking is safe; fill shapes keep default
+    // targeting because a filled overlay IS a solid hit region in SwiftUI.
+    // A gesture modifier on the shape re-enables targeting (same path as
+    // TapGestureView), so intentionally-tappable strokes still work.
+    if case .stroke = box.mode {
+        gtk_widget_set_can_target(area, 0)
+    }
+
     let retained = Unmanaged.passRetained(box).toOpaque()
 
     gtk_swift_drawing_area_set_draw_func(
