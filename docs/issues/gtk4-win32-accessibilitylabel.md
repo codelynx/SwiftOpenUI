@@ -55,10 +55,10 @@ macOS-reference `Examples/Parity` entry.
 
 ## Known limitations (from review)
 
-1. **Dynamic labels on fast-path reconcile — RESOLVED.** The label is now
+1. **Dynamic labels going stale on reconcile — RESOLVED.** The label is now
    represented in the GTK4 descriptor tree (kind `.widgetProperty`), so a
-   *changed* label is re-applied on the narrow in-place mutation path, not
-   only on the create path. Fixed alongside `.textSelection` in
+   *changed* label is no longer silently reused: it forces a full rebuild
+   whose create path re-applies it. Fixed alongside `.textSelection` in
    [[gtk4-passthrough-modifier-reconcile-safety]].
 2. **Possible double-announce.** Setting the label on the container widget
    does not suppress child a11y nodes on GTK4, so a screen reader may read

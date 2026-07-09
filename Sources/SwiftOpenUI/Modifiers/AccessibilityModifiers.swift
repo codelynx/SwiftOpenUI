@@ -19,8 +19,8 @@ extension View {
 ///   matrix note) — inert until a backend implements it.
 ///
 /// Reconcile-safe: the label is represented in the GTK4 descriptor tree
-/// (kind `.widgetProperty`), so a *changed* label is re-applied on the
-/// fast-path reconcile, not only on the create path.
+/// (kind `.widgetProperty`), so a *changed* label is not silently reused —
+/// it forces a full rebuild whose create path re-applies the new label.
 public struct AccessibilityLabelView<Content: View>: View {
     public let content: Content
     public let label: String

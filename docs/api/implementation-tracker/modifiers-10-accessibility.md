@@ -20,7 +20,7 @@ Summary: 25 total, 0 implemented, 0 partial, 25 missing.
 | `accessibilityHint` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Missing | `-` | - |
 | `accessibilityIdentifier` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AccessibilityModifiers.swift` | Pass-through (parity); no automation-id wiring yet |
 | `accessibilityInputLabels` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Missing | `-` | - |
-| `accessibilityLabel` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AccessibilityModifiers.swift` | GTK4: GTK_ACCESSIBLE_PROPERTY_LABEL (reconcile-safe via `.widgetProperty` descriptor); Win32/Web: body pass-through (deferred) |
+| `accessibilityLabel` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/AccessibilityModifiers.swift` | GTK4: GTK_ACCESSIBLE_PROPERTY_LABEL (reconcile-safe: value change forces rebuild via `.widgetProperty` descriptor); Win32/Web: body pass-through (deferred) |
 | `accessibilityRemoveTraits` | Both | iOS 14 / macOS 11 / watchOS 7 / tvOS 14 / visionOS 1 | Current | Missing | `-` | - |
 | `accessibilityRepresentation` | Both | iOS 15 / macOS 12 / watchOS 8 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |
 | `accessibilityRespondsToUserInteraction` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | - |

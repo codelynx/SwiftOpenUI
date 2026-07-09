@@ -1771,7 +1771,7 @@ extension BorderView: GTKRenderable, GTKDescribable {
 /// Collect all GtkLabel descendants in a widget subtree via DFS.
 /// Text modifiers apply to every label in the subtree, not just the first,
 /// so that container-level modifiers like VStack { ... }.lineLimit(1) work.
-func findAllGtkLabels(in widget: UnsafeMutablePointer<GtkWidget>) -> [UnsafeMutablePointer<GtkWidget>] {
+private func findAllGtkLabels(in widget: UnsafeMutablePointer<GtkWidget>) -> [UnsafeMutablePointer<GtkWidget>] {
     var result: [UnsafeMutablePointer<GtkWidget>] = []
     collectGtkLabels(in: widget, into: &result)
     return result
@@ -4889,8 +4889,9 @@ extension MonospacedDigitView: GTKRenderable {
 extension TextSelectionView: GTKRenderable, GTKDescribable {
     public func gtkDescribeNode() -> GTK4DescriptorNode {
         // Represent the selectability in the descriptor tree so a *changed*
-        // value is re-applied on a fast-path reconcile (not only on the
-        // create path). See gtk4-passthrough-modifier-reconcile-safety.
+        // value is no longer silently reused: it plans an .update, which is
+        // rejected by the narrow-path gate and re-applied by full rebuild
+        // (create path). See gtk4-passthrough-modifier-reconcile-safety.
         GTK4DescriptorNode(
             kind: .widgetProperty, typeName: "TextSelectionView",
             props: .widgetProperty(GTK4WidgetPropertyDescriptor(
@@ -4918,8 +4919,9 @@ extension TextSelectionView: GTKRenderable, GTKDescribable {
 
 extension AccessibilityLabelView: GTKRenderable, GTKDescribable {
     public func gtkDescribeNode() -> GTK4DescriptorNode {
-        // Represent the label in the descriptor tree so a *changed* label
-        // is re-applied on a fast-path reconcile (not only on the create
+        // Represent the label in the descriptor tree so a *changed* label is
+        // no longer silently reused: it plans an .update, which is rejected
+        // by the narrow-path gate and re-applied by full rebuild (create
         // path). See gtk4-passthrough-modifier-reconcile-safety.
         GTK4DescriptorNode(
             kind: .widgetProperty, typeName: "AccessibilityLabelView",

@@ -66,33 +66,47 @@ existing plan/execute pipeline.
 - Regression test in the GTK4 reconcile suite covering a value change
   under the fast mutation path.
 
-## Resolution (option 1 — descriptor integration)
+## Resolution (option 1 — descriptor visibility, rebuild-backed)
 
-Implemented the generalized mechanism (one path, both modifiers):
+The fix makes the value **visible in the descriptor tree** so a change is
+no longer silently reused; correctness comes from the resulting **full
+rebuild** re-applying the value, not a narrow in-place mutation. (An
+earlier revision added narrow-path machinery, but `.widgetProperty` has no
+native slot of its own — it applies in-place to the content's, often
+already-hosted, widget — so the narrow path could never engage. That dead
+machinery was removed; see review below.)
 
 - New descriptor **kind `.widgetProperty`** + **prop `GTK4WidgetPropertyDescriptor`**
   carrying a `GTK4WidgetPropertyValue` (`.textSelectable(Bool)` /
   `.accessibilityLabel(String)`).
 - `TextSelectionView` / `AccessibilityLabelView` are now `GTKDescribable`
-  and emit a `.widgetProperty` node carrying their value, with the content
-  as the single child (mirrors `OpacityView`). Create path unchanged
-  (`gtkCreateWidget` still applies the effect).
-- New update intent **`.widgetPropertyUpdate`**, derived from the kind,
-  added to both fast-path gates (`gtkCanApplyTextColorHostMutation` and
-  `gtkAllSlotsValid`).
-- New hook **`gtkWidgetPropertyHook`** → **`gtkSetWidgetProperty(slotID:descriptor:)`**,
-  which resolves the slot to the widget and re-applies the effect
-  (`gtk_swift_label_set_selectable` on subtree labels / `gtk_swift_accessible_set_label`).
-  Mirrors `gtkSetPadding` (the existing wrapper-with-in-place-effect on
-  the fast path).
+  and emit a `.widgetProperty` node carrying their value, content as the
+  single child (mirrors `OpacityView`). Create path unchanged —
+  `gtkCreateWidget` still applies the effect, and is what re-applies on
+  rebuild.
+- A value change now plans a `.widgetPropertyUpdate` (kind→intent
+  derivation). This intent is **deliberately not** narrow-path-eligible:
+  `gtkCanApplyTextColorHostMutation` rejects it, forcing a full rebuild.
 
-So a value change now plans a `.widgetPropertyUpdate` that stays on the
-narrow path and re-applies — verified by 7 tests in `GTK4DescriptorTests`
-(plan intent, fast-path eligibility, no-change reuse, hook dispatch,
-describe-integration from the real modifiers, and a badge-like mixed
-text+color+label change staying on the fast path). Suite 758 pass / 3
-skip / 0 fail.
+So: changed value → `.update` (not silent reuse) → narrow path rejected →
+full rebuild → create path re-applies. Unchanged value → `.reuse` (no
+needless rebuild). Verified by 6 tests in `GTK4DescriptorTests` (update +
+not-eligible for both modifiers, no-change reuse, describe-integration
+from the real modifiers, and the badge-like mixed change forcing rebuild).
+Suite 751 → 757, 0 failures.
+
+### Why not the narrow path (marker collision)
+
+`.widgetProperty` can't get a `nativeSlotID` the way `padding` does:
+`PaddingView` creates and marks its *own* wrapper widget
+(`gtkMarkHostedNodeKind(_, .padding)`), whereas `.widgetProperty` has no
+widget of its own and applies to the content's top widget — which is
+frequently already a hosted node (e.g. a `.text` label). A widget holds a
+single hosted-kind marker, so it can't be marked `.widgetProperty` without
+clobbering its `.text` marking. Making the narrow path work (option 2)
+would need a secondary marker or child-slot inheritance in
+`gtkAssignNativeSlots` — deferred until there's a broader need for
+fast-path passthroughs; the rebuild is cheap for these infrequent effects.
 
 **Not addressed here:** actual screen-reader double-announce (a11y-tree
-shape, see [[gtk4-win32-accessibilitylabel]]) and Win32 pass-through —
-both out of scope for reconcile-safety.
+shape, see [[gtk4-win32-accessibilitylabel]]) and Win32 pass-through.

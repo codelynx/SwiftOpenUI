@@ -15,8 +15,8 @@ public enum TextSelectability: Sendable, Equatable {
 /// unchanged except where a backend provides selectable-text support.
 ///
 /// Reconcile-safe: the value is represented in the GTK4 descriptor tree
-/// (kind `.widgetProperty`), so a *changed* selectability is re-applied on
-/// the fast-path reconcile, not only on the create path.
+/// (kind `.widgetProperty`), so a *changed* selectability is not silently
+/// reused — it forces a full rebuild whose create path re-applies it.
 public struct TextSelectionView<Content: View>: View {
     public let content: Content
     public let selectability: TextSelectability

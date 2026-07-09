@@ -560,8 +560,12 @@ final class GTK4DescriptorTests: XCTestCase {
     }
 
     // MARK: - Value-carrying passthrough modifiers (reconcile-safety)
-    // gtk4-passthrough-modifier-reconcile-safety: a *changed* value must be
-    // re-applied on the fast path, not ignored (stale) or forced to rebuild.
+    // gtk4-passthrough-modifier-reconcile-safety: making the value visible in
+    // the descriptor tree means a *changed* value is no longer silently
+    // reused (stale) — it plans an .update that the narrow-path gate rejects,
+    // forcing a full rebuild whose create path re-applies the new value.
+    // (`.widgetProperty` has no slot of its own, so it can't ride the narrow
+    // path; correctness comes from the rebuild, not a fast-path mutation.)
 
     private func widgetPropertyNode(_ value: GTK4WidgetPropertyValue,
                                     typeName: String = "AccessibilityLabelView") -> GTK4DescriptorNode {
@@ -572,27 +576,29 @@ final class GTK4DescriptorTests: XCTestCase {
                                           props: .text(GTK4TextDescriptor(content: "x")))])
     }
 
-    func testPlanAccessibilityLabelChangeStaysOnFastPath() {
+    func testAccessibilityLabelChangePlansUpdateAndForcesRebuild() {
         let plan = gtkPlanDescriptorTree(
             old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(widgetPropertyNode(.accessibilityLabel("A")))),
             new: gtkIdentifyDescriptorTree(widgetPropertyNode(.accessibilityLabel("B"))))
+        // Visible as an .update (not a silent reuse — this is the fix)...
         XCTAssertEqual(plan.kind, .update)
         XCTAssertEqual(plan.updateIntent, .widgetPropertyUpdate)
-        // The core guarantee: the changed value is re-applied on the narrow
-        // path instead of going stale (the pre-fix bug) or forcing rebuild.
-        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+        // ...and deliberately NOT narrow-path-eligible, so it forces a full
+        // rebuild that re-applies the new label via the create path.
+        XCTAssertFalse(gtkCanApplyTextColorHostMutation(plan: plan))
     }
 
-    func testPlanTextSelectableChangeStaysOnFastPath() {
+    func testTextSelectableChangePlansUpdateAndForcesRebuild() {
         let plan = gtkPlanDescriptorTree(
             old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(widgetPropertyNode(.textSelectable(true), typeName: "TextSelectionView"))),
             new: gtkIdentifyDescriptorTree(widgetPropertyNode(.textSelectable(false), typeName: "TextSelectionView")))
         XCTAssertEqual(plan.kind, .update)
         XCTAssertEqual(plan.updateIntent, .widgetPropertyUpdate)
-        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+        XCTAssertFalse(gtkCanApplyTextColorHostMutation(plan: plan))
     }
 
     func testWidgetPropertyNoChangeReuses() {
+        // Unchanged value must NOT force a needless rebuild.
         let node = widgetPropertyNode(.accessibilityLabel("Same"))
         let plan = gtkPlanDescriptorTree(
             old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(node)),
@@ -601,19 +607,9 @@ final class GTK4DescriptorTests: XCTestCase {
         XCTAssertEqual(plan.updateIntent, .none)
     }
 
-    func testHookWidgetPropertyDispatches() {
-        let oldId = gtkIdentifyDescriptorTree(widgetPropertyNode(.accessibilityLabel("A")))
-        let newId = gtkIdentifyDescriptorTree(widgetPropertyNode(.accessibilityLabel("B")))
-        let executor = gtkMakeExecutorTree(from: oldId)
-        let plan = gtkPlanDescriptorTree(old: gtkRetainDescriptorTree(oldId), new: newId)
-        let action = gtkExecuteDescriptorPlan(old: executor, plan: plan)
-        let result = gtkApplyHook(action: action)
-        XCTAssertEqual(result.updateIntent, .widgetPropertyUpdate)
-    }
-
     func testDescribeAccessibilityLabelProducesWidgetProperty() {
         // The real modifier (what a @State-driven label change produces),
-        // not a hand-built descriptor.
+        // not a hand-built descriptor — this is what makes the change visible.
         let node = gtkDescribeView(Text("Copy").accessibilityLabel("Copy to destination"))
         XCTAssertEqual(node.kind, .widgetProperty)
         guard case let .widgetProperty(desc) = node.props else {
@@ -631,10 +627,11 @@ final class GTK4DescriptorTests: XCTestCase {
         XCTAssertEqual(desc.value, .textSelectable(true))
     }
 
-    func testBadgeLikeMixedChangeStaysOnFastPath() {
+    func testBadgeLikeLabelChangeForcesRebuild() {
         // Models Synca's ActionBadge on an Update↔Mirror flip: symbol text,
-        // fill color, and accessibility label all change at once — the whole
-        // plan must stay on the fast path, not fall to full rebuild.
+        // fill color, and accessibility label all change. Because the label is
+        // a `.widgetProperty` (no slot), the whole subtree drops off the narrow
+        // path and rebuilds — the honest cost of the reconcile-safe fix.
         func badge(symbol: String, red: Double, label: String) -> GTK4DescriptorNode {
             GTK4DescriptorNode(kind: .vStack, typeName: "VStack", children: [
                 GTK4DescriptorNode(kind: .text, typeName: "Text", props: .text(GTK4TextDescriptor(content: symbol))),
@@ -647,6 +644,6 @@ final class GTK4DescriptorTests: XCTestCase {
         let plan = gtkPlanDescriptorTree(
             old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(badge(symbol: "arrow", red: 1, label: "Copy to destination"))),
             new: gtkIdentifyDescriptorTree(badge(symbol: "trash", red: 0, label: "Delete from destination")))
-        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+        XCTAssertFalse(gtkCanApplyTextColorHostMutation(plan: plan))
     }
 }

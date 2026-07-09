@@ -797,8 +797,12 @@ public func gtkCanApplyTextColorHostMutation(plan: GTK4DescriptorPlan) -> Bool {
         guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill
                 || plan.updateIntent == .canvasContent
                 || plan.updateIntent == .sliderValue
-                || plan.updateIntent == .paddingLayout
-                || plan.updateIntent == .widgetPropertyUpdate else {
+                || plan.updateIntent == .paddingLayout else {
+            // .widgetPropertyUpdate is deliberately NOT here: `.widgetProperty`
+            // applies in-place to the content's (often already-hosted) widget
+            // and has no slot of its own, so it can't ride the narrow path.
+            // Rejecting here forces a full rebuild, whose create path
+            // re-applies the effect with the new value.
             return false
         }
         return plan.children.allSatisfy(gtkCanApplyTextColorHostMutation)
@@ -832,12 +836,13 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
         return gtkSliderValueHook(action: action, performMutation: performMutation)
     case .paddingLayout:
         return gtkPaddingLayoutHook(action: action, performMutation: performMutation)
-    case .widgetPropertyUpdate:
-        return gtkWidgetPropertyHook(action: action, performMutation: performMutation)
     case .animatedTiming, .backgroundColor, .borderStyle, .fontStyle, .frameLayout, .foregroundColor,
          .disabledState, .hStackLayout, .offsetTransform, .opacityValue, .rotationTransform, .scaleTransform,
          .safeAreaInsetLayout, .safeAreaPaddingLayout, .searchableLayout, .sliderConfiguration,
-         .vStackLayout, .zStackLayout, .none:
+         .vStackLayout, .zStackLayout, .widgetPropertyUpdate, .none:
+        // .widgetPropertyUpdate is descriptive only: it makes a value change
+        // visible in the descriptor tree (so it isn't silently reused), but it
+        // is rejected by the narrow-path gate and re-applied by full rebuild.
         // Descriptive only — no real mutation for these intents yet
         return gtkUpdatedHookResult(action: action, intent: action.updateIntent,
                                      performMutation: performMutation)
@@ -885,21 +890,6 @@ private func gtkColorFillHook(action: GTK4ExecutorAction,
         mutationSucceeded = false
     }
     return gtkUpdatedHookResult(action: action, intent: .colorFill,
-                                 performMutation: performMutation,
-                                 mutationSucceeded: mutationSucceeded)
-}
-
-private func gtkWidgetPropertyHook(action: GTK4ExecutorAction,
-                                   performMutation: Bool) -> GTK4HookResult {
-    var mutationSucceeded = true
-    if performMutation,
-       case let .widgetProperty(desc) = action.currentDescriptor.props,
-       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
-        mutationSucceeded = gtkSetWidgetProperty(slotID: slotID, descriptor: desc)
-    } else if performMutation {
-        mutationSucceeded = false
-    }
-    return gtkUpdatedHookResult(action: action, intent: .widgetPropertyUpdate,
                                  performMutation: performMutation,
                                  mutationSucceeded: mutationSucceeded)
 }
@@ -1206,8 +1196,7 @@ public func gtkAllSlotsValid(action: GTK4ExecutorAction) -> Bool {
         if action.updateIntent == .textContent || action.updateIntent == .colorFill
             || action.updateIntent == .canvasContent
             || action.updateIntent == .sliderValue
-            || action.updateIntent == .paddingLayout
-            || action.updateIntent == .widgetPropertyUpdate {
+            || action.updateIntent == .paddingLayout {
             guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
                   let widget = gtkWidgetFromSlotID(slotID),
                   gtk_swift_is_widget(widget) != 0 else {
@@ -1234,24 +1223,6 @@ public func gtkSetTextContent(slotID: Int, text: String) -> Bool {
 /// Uses a single replaceable CSS provider stored on the widget,
 /// avoiding CSS provider accumulation from repeated applyCSSToWidget calls.
 private let gtkColorProviderKey = "gtk-swift-color-provider"
-
-/// Re-applies a value-carrying passthrough modifier's effect to the
-/// widget behind `slotID`. Mirrors the create-path effect in
-/// `TextSelectionView`/`AccessibilityLabelView`.gtkCreateWidget so a
-/// changed value survives a fast-path reconcile.
-public func gtkSetWidgetProperty(slotID: Int, descriptor: GTK4WidgetPropertyDescriptor) -> Bool {
-    guard let widget = gtkWidgetFromSlotID(slotID) else { return false }
-    guard gtk_swift_is_widget(widget) != 0 else { return false }
-    switch descriptor.value {
-    case let .textSelectable(on):
-        for label in findAllGtkLabels(in: widget) {
-            gtk_swift_label_set_selectable(label, on ? 1 : 0)
-        }
-    case let .accessibilityLabel(label):
-        gtk_swift_accessible_set_label(widget, label)
-    }
-    return true
-}
 
 public func gtkSetColorFill(slotID: Int, color: GTK4ColorDescriptor) -> Bool {
     guard let widget = gtkWidgetFromSlotID(slotID) else { return false }
