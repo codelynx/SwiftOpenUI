@@ -28,3 +28,27 @@ present).
 - Synca CRV drops both `#if os(macOS)` guards around `.textSelection`.
 - GTK4 label text is selectable at runtime (verified on real hardware — Linux-side agent).
 - `Examples/Parity` entry with a selectable Text on all backends.
+
+## Resolution (GTK4 implemented, Linux-side)
+
+Implemented `.textSelection(_:)` with a real GTK4 backing (not a no-op):
+
+- **Core** (`Modifiers/TextSelectionModifier.swift`): `TextSelectability`
+  enum (`.enabled`/`.disabled`) + `TextSelectionView<Content>` wrapper +
+  `View.textSelection(_:)`. Mirrors the `MonospacedDigitView` pattern —
+  `body: some View { content }`, so backends without an override pass
+  through automatically.
+- **GTK4** (`GTKRenderer.swift` + `shim.h`): `TextSelectionView`
+  `GTKRenderable` extension renders the wrapped content and calls a new
+  `gtk_swift_label_set_selectable` shim (`GTK_IS_LABEL`-guarded, safe
+  no-op if the wrapped widget isn't a label) → `gtk_label_set_selectable`.
+- **Win32**: no code needed — falls back to the `body` pass-through
+  (same as `MonospacedDigitView`), so the modifier compiles and is inert
+  there until a Win32 selectable-control impl lands.
+
+Synca guards removed (CRV status line + path row); GTK4 build green,
+SwiftOpenUI test suite green.
+
+**Remaining for full close:** runtime confirmation that a GTK4 label is
+actually mouse-selectable (needs an interactive session, not just a
+build), plus the macOS-reference `Examples/Parity` entry.

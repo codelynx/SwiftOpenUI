@@ -69,6 +69,16 @@ gtk_swift_label_get_use_markup(GtkWidget *label) {
     return gtk_label_get_use_markup(GTK_LABEL(label));
 }
 
+/// Make a label's text user-selectable. Guarded with GTK_IS_LABEL so it
+/// is a safe no-op when the wrapped widget isn't a GtkLabel (e.g. a Text
+/// whose modifiers rendered to a container).
+static inline void
+gtk_swift_label_set_selectable(GtkWidget *label, gboolean selectable) {
+    if (GTK_IS_LABEL(label)) {
+        gtk_label_set_selectable(GTK_LABEL(label), selectable);
+    }
+}
+
 // --- Widget type shims ---
 
 static inline gboolean

@@ -4884,6 +4884,18 @@ extension MonospacedDigitView: GTKRenderable {
     }
 }
 
+// MARK: - TextSelectionView GTK extension
+
+extension TextSelectionView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // `.textSelection(.enabled)` → gtk_label_set_selectable on the
+        // wrapped Text's GtkLabel (no-op if it rendered to a non-label).
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_swift_label_set_selectable(widget, selectability == .enabled ? 1 : 0)
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - Section GTK extension
 
 extension Section: GTKRenderable {
