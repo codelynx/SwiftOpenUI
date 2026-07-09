@@ -5915,7 +5915,14 @@ private func gtkConnectButtonsToPopdown(in widget: UnsafeMutablePointer<GtkWidge
     collectGtkButtons(in: widget, into: &buttons)
     for btn in buttons {
         let box = Unmanaged.passRetained(ClosureBox {
-            gtk_swift_popover_popdown(popover)
+            // Liveness guard: an item tap can change state and trigger a
+            // synchronous rebuild that disposes this menu and frees its
+            // popover before this act-then-dismiss handler runs. Skip the
+            // popdown if the popover is no longer a live widget. (The shim
+            // also GTK_IS_POPOVER-guards as belt-and-suspenders.)
+            if gtk_swift_is_widget(popover) != 0 {
+                gtk_swift_popover_popdown(popover)
+            }
         }).toOpaque()
         g_signal_connect_data(
             gpointer(btn), "clicked",

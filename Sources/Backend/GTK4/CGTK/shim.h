@@ -789,7 +789,12 @@ gtk_swift_popover_set_child(GtkWidget *popover, GtkWidget *child) {
 
 static inline void
 gtk_swift_popover_popdown(GtkWidget *popover) {
-    gtk_popover_popdown(GTK_POPOVER(popover));
+    // GTK_IS_POPOVER guards against a stale pointer (e.g. a menu-item tap
+    // that triggers a synchronous rebuild freeing the popover before the
+    // deferred popdown handler runs).
+    if (GTK_IS_POPOVER(popover)) {
+        gtk_popover_popdown(GTK_POPOVER(popover));
+    }
 }
 
 // --- GtkWindow shims ---

@@ -64,18 +64,41 @@ GMenuModel) already existed; the gap was the **view-shaped** SwiftUI API.
   deleted; the merge-resolution control is one shared `Menu` on all
   platforms. GTK4 + Synca build green; suite 757 pass / 3 skip / 0 fail.
 
-### Open items (for review)
+### Reconcile (§5) — resolved as rebuild-on-change
 
-1. **Reconcile (§5 of the design write-up).** `Menu` is a `Body = Never`
-   primitive rendered only in `gtkCreateWidget` — describe-opaque, like the
-   pre-existing `Menu`. Synca's trigger (`ActionBadge`) is *dynamic* (it
-   reflects the current resolution), so a value change could go stale on a
-   narrow reconcile — the same class as `gtk4-passthrough-modifier-reconcile-safety`,
-   but harder because the popover content lives in a **detached surface**
-   (not the button's normal child tree), so describing children for
-   reconcile may not slot-match. Deferred pending a decision: describe
-   through the popover surface, or accept rebuild-on-change. **This is the
-   riskiest unknown and wants the reviewer's read.**
-2. Item dismissal correctness (act-then-dismiss) needs an interactive check.
-3. Win32/Web view-shaped popup parity (currently minimal).
-4. `Examples/Parity` entry (macOS-reference side).
+`Menu` stays a `Body = Never` primitive with no `gtkDescribeNode`, so it
+describes as a **childless `.composite`**. `gtkCanApplyTextColorHostMutation`
+rejects childless opaque composites (`kind == .composite && children.isEmpty
+→ false`), so any reconcile touching the Menu is forced to **full rebuild**
+rather than a narrow reuse — which re-runs `gtkCreateWidget` and re-renders
+the (dynamic) trigger. So the trigger is *not* stale; correctness comes
+from rebuild-on-change, not a narrow mutation. We deliberately did **not**
+describe through the detached popover surface (would desync slot-capture).
+
+A future optimization — describe the **trigger label only** so a dynamic
+trigger narrow-mutates in place without rebuilding the whole menu — is
+possible but gated on a runtime probe of whether the popover's item
+widgets are reachable in slot-capture (if they are, count-mismatch forces
+rebuild anyway). Deferred; dynamic popover *items* are not reconcile-safe
+either way (Synca's items are static).
+
+### Dismissal UAF guard (§2) — fixed
+
+Because a trigger change forces rebuild (above), an item tap can free the
+popover mid-`clicked` before the act-then-dismiss `popdown` handler runs.
+Guarded on both sides: the Swift closure checks `gtk_swift_is_widget(popover)`
+and the `gtk_swift_popover_popdown` shim checks `GTK_IS_POPOVER`. (These
+mitigate a stale pointer; a fully-freed-then-reused address is still a
+theoretical hole — the complete fix is the label-only narrow-mutation
+above, deferred.)
+
+### Remaining open items
+
+1. **Windows regression (§3):** the old `Menu` rendered a working
+   `TrackPopupMenu` string menu; the view-shaped items can't bridge to it,
+   so Win32 now renders the label trigger only — **no working popup on
+   Windows** until the view-popup rework. Documented, owner-accepted as
+   part of "minimal Win32." Not runtime-validated.
+2. Interactive GTK checks: popover opens, items fire + dismiss, borderless
+   renders, and the rebuild-on-change trigger updates correctly.
+3. `Examples/Parity` entry (macOS-reference side).
