@@ -3506,14 +3506,17 @@ extension Menu: WebRenderable {
         let container = document.createElement("div")
         container.style = "position: relative; display: inline-block;"
 
+        // View-shaped trigger: render the `label` view into the button.
         let btn = document.createElement("button")
-        btn.textContent = .string(title)
         btn.style = "padding: 6px 12px; cursor: pointer; font-size: 14px;"
+        _ = btn.appendChild(webRenderView(label))
 
         let dropdown = document.createElement("div")
         dropdown.style = "display: none; position: absolute; top: 100%; left: 0; min-width: 160px; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; z-index: 9999; padding: 4px 0;"
 
-        webRenderMenuElements(elements, into: dropdown)
+        // View-shaped items: the `content` views (Buttons) render natively
+        // with their own onclick actions.
+        _ = dropdown.appendChild(webRenderView(content))
 
         let toggleHandler = webMakeClosure { _ in
             let current = dropdown.style.object?.display.string ?? "none"

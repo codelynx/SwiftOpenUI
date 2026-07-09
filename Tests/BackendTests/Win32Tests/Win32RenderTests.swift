@@ -101,9 +101,9 @@ private struct DelayedEnvironmentDestinationView: View {
 private struct DelayedEnvironmentMenuHostView: View {
     @Environment(DelayedEnvironmentModel.self) var model
 
-    var menu: Menu {
+    var menu: some View {
         Menu("Actions") {
-            MenuItem("Increment") { model.count += 1 }
+            Button("Increment") { model.count += 1 }
         }
     }
 

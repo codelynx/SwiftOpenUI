@@ -469,6 +469,20 @@ gtk_swift_menu_button_set_label(GtkWidget *button, const char *label) {
     gtk_menu_button_set_label(GTK_MENU_BUTTON(button), label);
 }
 
+/// Set an arbitrary widget as the menu button's trigger (SwiftUI's
+/// `Menu { } label: { <view> }`), instead of a string label.
+static inline void
+gtk_swift_menu_button_set_child(GtkWidget *button, GtkWidget *child) {
+    gtk_menu_button_set_child(GTK_MENU_BUTTON(button), child);
+}
+
+/// Show/hide the menu button's frame (chrome). `false` →
+/// `.menuStyle(.borderlessButton)`.
+static inline void
+gtk_swift_menu_button_set_has_frame(GtkWidget *button, gboolean has_frame) {
+    gtk_menu_button_set_has_frame(GTK_MENU_BUTTON(button), has_frame);
+}
+
 // --- GtkListView / GtkListItem / GtkStringObject shims ---
 
 static inline gpointer

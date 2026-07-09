@@ -5722,26 +5722,12 @@ private let viewThatFitsResizeProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam
 
 extension Menu: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        let menuElements = elements
-        let action = bindActionToCurrentEnvironment {
-            guard let hMenu = CreatePopupMenu() else { return }
-            var menuID: UINT = 50000
-            var menuActions: [UINT: () -> Void] = [:]
-            winPopulateMenu(hMenu, elements: menuElements, nextMenuID: &menuID, actions: &menuActions)
-
-            var pt = POINT()
-            GetCursorPos(&pt)
-            let root = findRootWindow(from: context.parent)
-            for (id, action) in menuActions {
-                registerCommandHandler(controlID: WORD(id), action: action)
-            }
-            _ = TrackPopupMenu(hMenu, 0, pt.x, pt.y, 0, root, nil)
-            DestroyMenu(hMenu)
-            for id in menuActions.keys {
-                unregisterCommandHandler(controlID: WORD(id))
-            }
-        }
-        return createNativeButton(title: "☰ \(title)", action: action, context: context)
+        // MINIMAL, not yet validated on Windows: render the view-shaped
+        // `label` as the trigger. The view-shaped popup (items are Views,
+        // not the old string MenuElements that TrackPopupMenu needs) is a
+        // follow-up the Windows-side owner picks up — this keeps the port
+        // compiling with the trigger visible. Tracked in the Menu issue.
+        return winRenderView(label, in: context)
     }
 }
 

@@ -5877,29 +5877,72 @@ private class MenuActionBox {
 extension Menu: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let button = gtk_menu_button_new()!
-        gtk_swift_menu_button_set_label(button, title)
 
-        let actionGroup = g_simple_action_group_new()!
-        let menuModel = gtk_swift_menu_new()!
-        let actionBox = MenuActionBox()
-        var actionIndex = 0
+        // View-shaped trigger: the rendered `label` becomes the button's
+        // child (SwiftUI's `Menu { } label: { <view> }`).
+        let labelWidget = widgetFromOpaque(gtkRenderView(label))
+        gtk_swift_menu_button_set_child(button, labelWidget)
 
-        gtkBuildMenuModel(elements: elements, menu: menuModel,
-                          actionGroup: actionGroup, actionBox: actionBox,
-                          actionIndex: &actionIndex)
+        // .menuStyle(.borderlessButton) → drop the frame/chrome.
+        if getCurrentEnvironment().menuStyle == .borderlessButton {
+            gtk_swift_menu_button_set_has_frame(button, 0)
+        }
 
-        let popover = gtk_swift_popover_menu_new_from_model(menuModel)!
+        // View-shaped items in a custom popover. Items are ordinary views
+        // (Buttons), so their actions + env capture already work via the
+        // normal Button render path.
+        let popover = gtk_popover_new()!
+        let contentWidget = widgetFromOpaque(gtkRenderView(content))
+        gtk_swift_popover_set_child(popover, contentWidget)
         gtk_swift_menu_button_set_popover(button, popover)
 
-        gtk_swift_widget_insert_action_group(button, "menu", gpointer(actionGroup))
-
-        // Attach actionBox to button for lifetime management
-        let retained = Unmanaged.passRetained(actionBox).toOpaque()
-        let gobject = UnsafeMutableRawPointer(button).assumingMemoryBound(to: GObject.self)
-        g_object_set_data_full(gobject, "gtk-swift-menu-actions", retained,
-            { userData in Unmanaged<MenuActionBox>.fromOpaque(userData!).release() })
+        // A custom (non-model) popover doesn't auto-close on item tap, so
+        // dismiss after each item button fires. Act-then-dismiss is safe:
+        // `@State` lives in the view model, not the widget, so hiding the
+        // popover can't drop the mutation (the button's own `clicked`
+        // handler is connected first, so it runs before this popdown).
+        gtkConnectButtonsToPopdown(in: contentWidget, popover: popover)
 
         return opaqueFromWidget(button)
+    }
+}
+
+/// Connects every descendant `GtkButton` of a menu popover's content to
+/// pop the popover down after it fires (menu-item dismissal).
+private func gtkConnectButtonsToPopdown(in widget: UnsafeMutablePointer<GtkWidget>,
+                                         popover: UnsafeMutablePointer<GtkWidget>) {
+    var buttons: [UnsafeMutablePointer<GtkWidget>] = []
+    collectGtkButtons(in: widget, into: &buttons)
+    for btn in buttons {
+        let box = Unmanaged.passRetained(ClosureBox {
+            gtk_swift_popover_popdown(popover)
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(btn), "clicked",
+            unsafeBitCast({ (_: gpointer?, ud: gpointer?) in
+                guard let ud else { return }
+                Unmanaged<ClosureBox>.fromOpaque(ud).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            box,
+            { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                if let data { Unmanaged<ClosureBox>.fromOpaque(data).release() }
+            },
+            GConnectFlags(rawValue: 0))
+    }
+}
+
+private func collectGtkButtons(in widget: UnsafeMutablePointer<GtkWidget>,
+                                into result: inout [UnsafeMutablePointer<GtkWidget>]) {
+    guard gtk_swift_is_widget(widget) != 0 else { return }
+    let typeName = String(cString: g_type_name(gtk_swift_get_widget_type(widget)))
+    if typeName == "GtkButton" {
+        result.append(widget)
+        return
+    }
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        collectGtkButtons(in: c, into: &result)
+        child = gtk_widget_get_next_sibling(c)
     }
 }
 

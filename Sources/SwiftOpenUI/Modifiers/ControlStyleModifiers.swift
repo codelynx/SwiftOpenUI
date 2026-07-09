@@ -69,6 +69,34 @@ extension EnvironmentValues {
     }
 }
 
+// MARK: - Menu Style
+
+/// Built-in menu style variants.
+public enum MenuStyleType: Equatable {
+    /// Platform default.
+    case automatic
+    /// A borderless button trigger (no frame/chrome around the label).
+    case borderlessButton
+}
+
+struct MenuStyleKey: EnvironmentKey {
+    static let defaultValue: MenuStyleType = .automatic
+}
+
+extension EnvironmentValues {
+    public var menuStyle: MenuStyleType {
+        get { self[MenuStyleKey.self] }
+        set { self[MenuStyleKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Sets the style for menus within this view.
+    public func menuStyle(_ style: MenuStyleType) -> some View {
+        environment(\.menuStyle, style)
+    }
+}
+
 // MARK: - Style Modifier Views
 
 /// Sets the button style for descendant buttons.

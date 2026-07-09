@@ -374,30 +374,23 @@ final class Phase4FViewTests: XCTestCase {
 
     // MARK: - Menu
 
-    func testMenuConstruction() {
+    func testMenuTitleConstruction() {
+        // SwiftUI-shaped Menu with a text label.
         let menu = Menu("Actions") {
-            MenuItem("Copy") { }
-            MenuItem("Paste") { }
+            Button("Copy") { }
+            Button("Paste") { }
         }
-        XCTAssertEqual(menu.title, "Actions")
-        XCTAssertEqual(menu.elements.count, 2)
+        XCTAssertEqual(menu.label.content, "Actions")
     }
 
-    func testMenuWithSubmenu() {
-        let menu = Menu("Edit") {
-            MenuItem("Cut") { }
-            SubMenu("Format") {
-                MenuItem("Bold") { }
-                MenuItem("Italic") { }
-            }
+    func testMenuWithViewLabel() {
+        // The view-label init: Menu { items } label: { <view> }.
+        let menu = Menu {
+            Button("Cut") { }
+        } label: {
+            Text("Edit")
         }
-        XCTAssertEqual(menu.elements.count, 2)
-        if case .submenu(let label, let children) = menu.elements[1] {
-            XCTAssertEqual(label, "Format")
-            XCTAssertEqual(children.count, 2)
-        } else {
-            XCTFail("Expected submenu")
-        }
+        XCTAssertEqual(menu.label.content, "Edit")
     }
 
     // MARK: - Toolbar

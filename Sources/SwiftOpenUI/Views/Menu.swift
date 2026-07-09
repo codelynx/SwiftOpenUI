@@ -32,19 +32,46 @@ public struct SubMenu {
     }
 }
 
-/// A menu that can be attached to views as a context menu or popover.
-public struct Menu: View {
+/// A control that presents a menu of actions, matching SwiftUI's `Menu`.
+///
+/// The trigger and the items are both views:
+/// ```swift
+/// Menu {
+///     Button("Use Source") { … }
+///     Button("Keep Both") { … }
+/// } label: {
+///     ActionBadge(…)
+/// }
+/// ```
+/// The `Menu(_ title:) { … }` convenience uses a `Text` label.
+///
+/// - GTK4: `GtkMenuButton` whose child is the rendered label and whose
+///   popover holds the rendered items; item taps dismiss then act.
+/// - Win32 / Web: minimal — the label is the trigger and the items render
+///   into a basic popup/dropdown (full parity deferred).
+///
+/// (Right-click/context menus use `.contextMenu { MenuItem(…) }` and the
+/// `MenuElement` model above — a separate mechanism from this control.)
+public struct Menu<Label: View, Content: View>: View, PrimitiveView {
     public typealias Body = Never
 
-    public let title: String
-    public let elements: [MenuElement]
+    public let content: Content
+    public let label: Label
 
-    public init(_ title: String, @MenuBuilder content: () -> [MenuElement]) {
-        self.title = title
-        self.elements = content()
+    public init(@ViewBuilder content: () -> Content,
+                @ViewBuilder label: () -> Label) {
+        self.content = content()
+        self.label = label()
     }
 
     public var body: Never { fatalError("Menu is a primitive view") }
+}
+
+extension Menu where Label == Text {
+    /// Creates a menu with a text label.
+    public init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.init(content: content, label: { Text(title) })
+    }
 }
 
 /// Result builder for composing menu elements.

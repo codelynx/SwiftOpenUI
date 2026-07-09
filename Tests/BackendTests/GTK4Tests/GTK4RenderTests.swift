@@ -2342,7 +2342,7 @@ private struct GTKDelayedEnvMenuView: View {
 
     var body: some View {
         Menu("Actions") {
-            MenuItem("Increment") { model.count += 1 }
+            Button("Increment") { model.count += 1 }
         }
     }
 }
