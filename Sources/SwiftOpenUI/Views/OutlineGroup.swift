@@ -6,10 +6,13 @@
 /// nested `DisclosureGroup` views.
 public struct OutlineGroup<Data, ID, RowContent>: View
 where Data: RandomAccessCollection, ID: Hashable, RowContent: View {
-    let items: [Data.Element]
-    let idKeyPath: KeyPath<Data.Element, ID>
-    let childrenKeyPath: KeyPath<Data.Element, Data?>
-    let rowContent: (Data.Element) -> RowContent
+    // Public so backend modules (e.g. BackendGTK4) can read the tree
+    // structure to build a lazily-realized native tree widget instead
+    // of eagerly lowering through `body`. Mirrors `LazyVStack.items`.
+    public let items: [Data.Element]
+    public let idKeyPath: KeyPath<Data.Element, ID>
+    public let childrenKeyPath: KeyPath<Data.Element, Data?>
+    public let rowContent: (Data.Element) -> RowContent
 
     public init(
         _ data: Data,

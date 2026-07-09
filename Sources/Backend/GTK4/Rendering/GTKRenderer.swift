@@ -4365,8 +4365,28 @@ private func ensureListCSS(_ widget: UnsafeMutablePointer<GtkWidget>) {
     g_object_unref(gpointer(provider))
 }
 
+/// Content that renders itself as a complete, self-scrolling, greedy
+/// widget — e.g. `OutlineGroup`'s virtualized `GtkListView` tree. When
+/// such a view is the sole content of a `List`, the List must NOT wrap
+/// it in its own `GtkListBox` + `GtkScrolledWindow`: a `GtkListBox`
+/// sizes each row to natural height and never hands a single child the
+/// full area, so the self-scrolling widget would be trapped at one
+/// row's height. Instead the List yields its whole area to the widget
+/// (which is exactly SwiftUI's `List { OutlineGroup(...) }` semantics —
+/// the outline rows *are* the list's rows).
+protocol GTKSelfScrollingContent {
+    func gtkSelfScrollingWidget() -> OpaquePointer
+}
+
 extension List: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
+        // If the list's content is itself a self-scrolling widget (a
+        // virtualized OutlineGroup tree), render it directly as the
+        // list's body rather than nesting it in a one-row-tall listbox.
+        if let selfScrolling = content as? GTKSelfScrollingContent {
+            return selfScrolling.gtkSelfScrollingWidget()
+        }
+
         let listBox = gtk_list_box_new()!
         let listBoxOp = OpaquePointer(listBox)
         gtk_widget_set_hexpand(listBox, 1)
@@ -5162,6 +5182,231 @@ extension LazyHStack: GTKRenderable {
         gtkCreateLazyListWidget(items: items, contentBuilder: contentBuilder,
                                 orientation: GTK_ORIENTATION_HORIZONTAL)
     }
+}
+
+// MARK: - OutlineGroup lazy tree (GtkTreeListModel + GtkTreeExpander)
+//
+// `OutlineGroup` renders as nested `DisclosureGroup`s through its Swift
+// `body` on backends without a native tree widget. On GTK4 we instead
+// back it with `GtkTreeListModel` + `GtkTreeExpander` + `GtkListView`,
+// the idiomatic lazy tree: only rows scrolled into view — and only the
+// children of rows the user has actually expanded — are ever realized.
+// This is what lets a many-thousand-node diff render without the eager
+// O(total) `GtkExpander` explosion that froze the UI.
+
+/// Holds the flattened tree structure and the row-render closure shared
+/// by the tree factory + create-model callbacks. Building it walks the
+/// whole tree once (cheap: plain Swift references, no widgets), but the
+/// widget realization it drives stays lazy.
+private final class LazyTreeContext {
+    /// Positional keys ("0", "1", …) of the root-level nodes.
+    let rootKeys: [String]
+    /// key → child keys, present only for nodes that have children.
+    private let childKeysByKey: [String: [String]]
+    /// key → freshly-rendered row widget (built lazily, on bind).
+    private let renderRow: (String) -> UnsafeMutablePointer<GtkWidget>
+
+    init<Coll: RandomAccessCollection, Row: View>(
+        items: [Coll.Element],
+        childrenKeyPath: KeyPath<Coll.Element, Coll?>,
+        rowContent: @escaping (Coll.Element) -> Row
+    ) {
+        var nodesByKey: [String: Coll.Element] = [:]
+        var childKeys: [String: [String]] = [:]
+        var counter = 0
+
+        // Positional (not id-based) keying: each node — root or
+        // descendant — gets a unique, stable "N" key in a depth-first
+        // walk. Keying positionally means two nodes that happen to
+        // share an ID in different subtrees can never collide.
+        func assign(_ element: Coll.Element) -> String {
+            let key = String(counter)
+            counter += 1
+            nodesByKey[key] = element
+            if let kids = element[keyPath: childrenKeyPath], !kids.isEmpty {
+                childKeys[key] = kids.map { assign($0) }
+            }
+            return key
+        }
+        self.rootKeys = items.map { assign($0) }
+        self.childKeysByKey = childKeys
+        self.renderRow = { key in
+            guard let element = nodesByKey[key] else {
+                return widgetFromOpaque(
+                    opaqueFromWidget(gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!))
+            }
+            return widgetFromOpaque(gtkRenderView(rowContent(element)))
+        }
+    }
+
+    func childKeys(of key: String) -> [String]? { childKeysByKey[key] }
+    func render(_ key: String) -> UnsafeMutablePointer<GtkWidget> { renderRow(key) }
+}
+
+/// Builds a `GtkStringList` of the given positional keys. Used for both
+/// the root model and, lazily, each expanded row's child model.
+private func gtkTreeKeyListModel(_ keys: [String]) -> gpointer {
+    let list = gtk_swift_string_list_new()!
+    for key in keys {
+        gtk_swift_string_list_append(list, key)
+    }
+    return list
+}
+
+/// GtkTreeListModel create-model callback. Invoked lazily — once per
+/// row, the first time it is expanded — with the row's *item* (a
+/// GtkStringObject holding the positional key). Returns a child
+/// `GListModel` (transfer full) or NULL for a leaf, which is how the
+/// expander decides a row is not expandable.
+private let treeCreateModelCallback: @convention(c) (
+    gpointer?, gpointer?
+) -> gpointer? = { item, userData in
+    guard let item = item, let userData = userData,
+          let cStr = gtk_swift_string_object_get_string(item) else { return nil }
+    let key = String(cString: cStr)
+    let context = Unmanaged<LazyTreeContext>.fromOpaque(userData).takeUnretainedValue()
+    guard let childKeys = context.childKeys(of: key), !childKeys.isEmpty else {
+        return nil
+    }
+    return gtkTreeKeyListModel(childKeys)
+}
+
+private let treeSetupCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { _, listItem, _ in
+    guard let listItem = listItem else { return }
+    let expander = gtk_swift_tree_expander_new()!
+    let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+    gtk_widget_set_hexpand(box, 1)
+    gtk_swift_tree_expander_set_child(expander, box)
+    gtk_swift_list_item_set_child(listItem, expander)
+}
+
+private let treeBindCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { factoryPtr, listItem, _ in
+    guard let factoryPtr = factoryPtr, let listItem = listItem,
+          let expander = gtk_swift_list_item_get_child(listItem) else { return }
+
+    // With passthrough=FALSE the list item's object is a GtkTreeListRow;
+    // binding it to the expander wires up the disclosure triangle and
+    // per-depth indentation, and drives lazy expansion.
+    guard let treeRow = gtk_swift_list_item_get_item(listItem) else {
+        treeClearExpanderChild(expander); return
+    }
+    gtk_swift_tree_expander_set_list_row(expander, treeRow)
+
+    guard let stringObject = gtk_swift_tree_list_row_get_item(treeRow),
+          let cStr = gtk_swift_string_object_get_string(stringObject) else {
+        treeClearExpanderChild(expander); return
+    }
+    let key = String(cString: cStr)
+
+    guard let contextPtr = g_object_get_data(
+        factoryPtr.assumingMemoryBound(to: GObject.self),
+        "gtk-swift-lazy-tree-context"
+    ) else { return }
+    let context = Unmanaged<LazyTreeContext>.fromOpaque(contextPtr).takeUnretainedValue()
+
+    guard let box = gtk_swift_tree_expander_get_child(expander) else { return }
+    while let child = gtk_widget_get_first_child(box) {
+        gtk_box_remove(boxPointer(box), child)
+    }
+    gtk_box_append(boxPointer(box), context.render(key))
+}
+
+private let treeUnbindCallback: @convention(c) (
+    gpointer?, gpointer?, gpointer?
+) -> Void = { _, listItem, _ in
+    guard let listItem = listItem,
+          let expander = gtk_swift_list_item_get_child(listItem) else { return }
+    gtk_swift_tree_expander_set_list_row(expander, nil)
+    treeClearExpanderChild(expander)
+}
+
+private func treeClearExpanderChild(_ expander: UnsafeMutablePointer<GtkWidget>) {
+    guard let box = gtk_swift_tree_expander_get_child(expander) else { return }
+    while let child = gtk_widget_get_first_child(box) {
+        gtk_box_remove(boxPointer(box), child)
+    }
+}
+
+/// Creates the GtkListView-backed lazy tree widget for an OutlineGroup.
+private func gtkCreateLazyTreeWidget(_ context: LazyTreeContext) -> OpaquePointer {
+    let rootModel = gtkTreeKeyListModel(context.rootKeys)
+
+    // A single retained reference to the context, owned by the factory
+    // (freed via set_data_full below). The tree model borrows the same
+    // pointer as create-callback user_data; factory and model share the
+    // list view's lifetime, and create-callbacks only fire while it is
+    // alive, so single ownership on the factory is safe.
+    let contextPtr = Unmanaged.passRetained(context).toOpaque()
+
+    let treeModel = gtk_swift_tree_list_model_new(
+        rootModel,
+        unsafeBitCast(treeCreateModelCallback, to: UnsafeMutableRawPointer.self),
+        contextPtr
+    )!
+
+    let noSelection = gtk_swift_no_selection_new(treeModel)
+    let factory = gtk_swift_signal_list_item_factory_new()!
+
+    g_object_set_data_full(
+        factory.assumingMemoryBound(to: GObject.self),
+        "gtk-swift-lazy-tree-context",
+        contextPtr,
+        { userData in Unmanaged<LazyTreeContext>.fromOpaque(userData!).release() }
+    )
+
+    g_signal_connect_data(factory, "setup",
+        unsafeBitCast(treeSetupCallback, to: GCallback.self),
+        nil, nil, GConnectFlags(rawValue: 0))
+    g_signal_connect_data(factory, "bind",
+        unsafeBitCast(treeBindCallback, to: GCallback.self),
+        nil, nil, GConnectFlags(rawValue: 0))
+    g_signal_connect_data(factory, "unbind",
+        unsafeBitCast(treeUnbindCallback, to: GCallback.self),
+        nil, nil, GConnectFlags(rawValue: 0))
+
+    let listView = gtk_swift_list_view_new(noSelection, factory)!
+
+    // Transparent background so the parent shows through (matches lazy list).
+    applyCSSToWidget(listView, properties: "background-color: transparent;")
+    let rowCSS = "listview.gtk-swift-lazy-transparent row { background-color: transparent; }"
+    let rowProvider = gtk_css_provider_new()!
+    gtk_css_provider_load_from_string(rowProvider, rowCSS)
+    gtk_swift_add_css_provider_to_display(
+        gtk_widget_get_display(listView),
+        rowProvider,
+        UInt32(GTK_STYLE_PROVIDER_PRIORITY_USER)
+    )
+    g_object_unref(gpointer(rowProvider))
+    gtk_widget_add_css_class(listView, "gtk-swift-lazy-transparent")
+
+    let scrolled = gtk_scrolled_window_new()!
+    gtk_scrolled_window_set_policy(OpaquePointer(scrolled),
+        GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC)
+    gtk_scrolled_window_set_child(OpaquePointer(scrolled), listView)
+    gtk_widget_set_vexpand(scrolled, 1)
+    gtk_widget_set_hexpand(scrolled, 1)
+    applyCSSToWidget(scrolled, properties: "background-color: transparent;")
+
+    return opaqueFromWidget(scrolled)
+}
+
+extension OutlineGroup: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        let context = LazyTreeContext(
+            items: items,
+            childrenKeyPath: childrenKeyPath,
+            rowContent: rowContent
+        )
+        return gtkCreateLazyTreeWidget(context)
+    }
+}
+
+extension OutlineGroup: GTKSelfScrollingContent {
+    func gtkSelfScrollingWidget() -> OpaquePointer { gtkCreateWidget() }
 }
 
 // MARK: - LazyVGrid / LazyHGrid GTK extensions

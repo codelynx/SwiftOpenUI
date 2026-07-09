@@ -531,6 +531,61 @@ gtk_swift_string_object_get_string(gpointer string_object) {
     return gtk_string_object_get_string(GTK_STRING_OBJECT(string_object));
 }
 
+// --- GtkTreeListModel / GtkTreeListRow / GtkTreeExpander shims ---
+//
+// These back a lazily-realized tree (used by `OutlineGroup`): only the
+// rows currently scrolled into view — and only the children of rows the
+// user has actually expanded — are ever realized as widgets.
+//
+// `create_func` has GTK's `GtkTreeListModelCreateModelFunc` signature
+// `GListModel *(*)(gpointer item, gpointer user_data)`. It is passed as
+// an opaque `gpointer` (the Swift side bit-casts a @convention(c)
+// function) and cast back here. GtkTreeListModel calls it lazily — once
+// per row, only when that row is first expanded — to obtain the child
+// model (or NULL for a leaf). The returned model is consumed with
+// transfer-full, and `gtk_tree_list_model_new` also takes ownership of
+// `root_model` (transfer full), matching how the Swift caller creates
+// both models with a floating/owned reference it does not itself sink.
+
+static inline gpointer
+gtk_swift_tree_list_model_new(gpointer root_model, gpointer create_func, gpointer user_data) {
+    return (gpointer)gtk_tree_list_model_new(
+        G_LIST_MODEL(root_model),
+        FALSE, // passthrough: list items are GtkTreeListRow wrappers
+        FALSE, // autoexpand: keep everything collapsed initially
+        (GtkTreeListModelCreateModelFunc)create_func,
+        user_data,
+        NULL);
+}
+
+// The underlying user item (a GtkStringObject in our usage) wrapped by a
+// GtkTreeListRow. Returns a borrowed reference.
+static inline gpointer
+gtk_swift_tree_list_row_get_item(gpointer row) {
+    return (gpointer)gtk_tree_list_row_get_item(GTK_TREE_LIST_ROW(row));
+}
+
+static inline GtkWidget *
+gtk_swift_tree_expander_new(void) {
+    return gtk_tree_expander_new();
+}
+
+static inline void
+gtk_swift_tree_expander_set_list_row(GtkWidget *expander, gpointer row) {
+    gtk_tree_expander_set_list_row(GTK_TREE_EXPANDER(expander),
+                                   row ? GTK_TREE_LIST_ROW(row) : NULL);
+}
+
+static inline void
+gtk_swift_tree_expander_set_child(GtkWidget *expander, GtkWidget *child) {
+    gtk_tree_expander_set_child(GTK_TREE_EXPANDER(expander), child);
+}
+
+static inline GtkWidget *
+gtk_swift_tree_expander_get_child(GtkWidget *expander) {
+    return gtk_tree_expander_get_child(GTK_TREE_EXPANDER(expander));
+}
+
 // --- GtkGridView shims ---
 
 static inline GtkWidget *
