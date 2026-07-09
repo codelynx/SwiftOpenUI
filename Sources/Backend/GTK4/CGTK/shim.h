@@ -79,6 +79,20 @@ gtk_swift_label_set_selectable(GtkWidget *label, gboolean selectable) {
     }
 }
 
+/// Set the accessible label (GTK_ACCESSIBLE_PROPERTY_LABEL) on a widget,
+/// so screen readers announce this text instead of the widget's raw
+/// contents. Wraps the variadic gtk_accessible_update_property, which
+/// can't be called from Swift directly. Every GtkWidget is a
+/// GtkAccessible in GTK4; the guard is defensive.
+static inline void
+gtk_swift_accessible_set_label(GtkWidget *widget, const char *label) {
+    if (GTK_IS_ACCESSIBLE(widget)) {
+        gtk_accessible_update_property(GTK_ACCESSIBLE(widget),
+                                       GTK_ACCESSIBLE_PROPERTY_LABEL, label,
+                                       -1);
+    }
+}
+
 // --- Widget type shims ---
 
 static inline gboolean

@@ -25,3 +25,30 @@ start, since the label string already exists in shared code).
 - Synca CRV drops the `#if os(macOS)` around `.accessibilityLabel`.
 - Orca (GTK4) reads the action-badge label instead of the icon name (verified on real hardware — Linux-side agent).
 - `Examples/Parity` entry with an accessibility-labeled control.
+
+## Resolution (GTK4 implemented, Linux-side)
+
+First real GTK4 accessibility wiring in the framework (prior
+`accessibilityIdentifier` was a pure pass-through).
+
+- **Core** (`Modifiers/AccessibilityModifiers.swift`): `AccessibilityLabelView<Content>`
+  + `View.accessibilityLabel(_ label: String)`, body-passthrough model
+  (like `TextSelectionView`) → Win32/other backends compile and stay
+  inert with no extra code.
+- **GTK4** (`GTKRenderer.swift` + `shim.h`): `AccessibilityLabelView`
+  `GTKRenderable` sets the accessible label on the content's top widget
+  via a new `gtk_swift_accessible_set_label` shim → `GTK_ACCESSIBLE_PROPERTY_LABEL`.
+  The shim wraps `gtk_accessible_update_property`, which is **variadic**
+  and therefore not callable from Swift directly (`GTK_IS_ACCESSIBLE`
+  guard is defensive — every GtkWidget is a GtkAccessible in GTK4).
+- **Win32**: no code — `body` pass-through; a future pass maps to the
+  UI Automation `Name` property.
+
+Applied to the wrapped content's **top widget** (the view's accessibility
+element), matching SwiftUI semantics — for Synca's action badge that's
+the badge container announcing the label instead of the icon's symbol
+name. Synca CRV guard removed; GTK4 build green, test suite green.
+
+**Remaining for full close:** runtime confirmation with a screen reader
+(Orca) that the badge announces the label (interactive session), plus the
+macOS-reference `Examples/Parity` entry.

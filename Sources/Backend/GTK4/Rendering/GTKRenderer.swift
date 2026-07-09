@@ -4903,6 +4903,19 @@ extension TextSelectionView: GTKRenderable {
     }
 }
 
+// MARK: - accessibilityLabel GTK extension
+
+extension AccessibilityLabelView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // Attach the label to the content's accessibility element so a
+        // screen reader announces it instead of the raw contents (e.g. an
+        // icon's symbol name).
+        let widget = widgetFromOpaque(gtkRenderView(content))
+        gtk_swift_accessible_set_label(widget, label)
+        return opaqueFromWidget(widget)
+    }
+}
+
 // MARK: - onExitCommand GTK extension
 
 extension OnExitCommandView: GTKRenderable {

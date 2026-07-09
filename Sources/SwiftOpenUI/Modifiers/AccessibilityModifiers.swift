@@ -7,3 +7,26 @@
 extension View {
     public func accessibilityIdentifier(_ identifier: String) -> Self { self }
 }
+
+/// Wrapper produced by `.accessibilityLabel(_:)`. Renders its content
+/// unchanged; a backend may attach the label to the content's
+/// accessibility element.
+///
+/// - GTK4: sets `GTK_ACCESSIBLE_PROPERTY_LABEL` on the content's widget
+///   so screen readers announce the label instead of the raw contents
+///   (e.g. an icon's symbol name).
+/// - Win32 / other backends: currently pass through via `body` (parity
+///   matrix note) — inert until a backend implements it.
+public struct AccessibilityLabelView<Content: View>: View {
+    public let content: Content
+    public let label: String
+
+    public var body: some View { content }
+}
+
+extension View {
+    /// Sets a label a screen reader uses to describe this view.
+    public func accessibilityLabel(_ label: String) -> AccessibilityLabelView<Self> {
+        AccessibilityLabelView(content: self, label: label)
+    }
+}
