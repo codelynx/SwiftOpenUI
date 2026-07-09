@@ -61,10 +61,13 @@ existing plan/execute pipeline.
 
 ## Acceptance
 
-- A dynamic `.accessibilityLabel` / `.textSelection` value updates the
-  GTK4 widget after a fast-path reconcile (not just on rebuild).
-- Regression test in the GTK4 reconcile suite covering a value change
-  under the fast mutation path.
+- A dynamic `.accessibilityLabel` / `.textSelection` value change is no
+  longer silently reused: it is visible in the descriptor tree and the
+  GTK4 widget ends up with the new value (via full rebuild — see
+  Resolution for why the narrow path can't apply here).
+- Regression tests in the GTK4 reconcile suite: a value change plans an
+  `.update` that is *not* narrow-path-eligible (forces rebuild), and an
+  unchanged value still `.reuse`s (no needless rebuild).
 
 ## Resolution (option 1 — descriptor visibility, rebuild-backed)
 

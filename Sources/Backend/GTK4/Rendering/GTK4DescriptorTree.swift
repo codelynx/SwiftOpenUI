@@ -44,7 +44,9 @@ public struct GTK4DisabledDescriptor: Equatable {
 }
 
 /// The value carried by a `.widgetProperty` node — a passthrough modifier
-/// effect that a fast-path reconcile must re-apply to the reused widget.
+/// effect. Making it visible in the descriptor tree means a *changed*
+/// value plans an `.update` instead of a silent reuse, forcing a full
+/// rebuild whose create path re-applies the effect.
 public enum GTK4WidgetPropertyValue: Equatable {
     case textSelectable(Bool)
     case accessibilityLabel(String)
