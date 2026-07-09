@@ -33,10 +33,26 @@ public enum GTK4DescriptorKind: Equatable {
     case spacer
     case vStack
     case zStack
+    /// A value-carrying passthrough modifier (`.textSelection` /
+    /// `.accessibilityLabel`) whose effect is applied in `gtkCreateWidget`
+    /// but must also be re-applied when its value changes on reconcile.
+    case widgetProperty
 }
 
 public struct GTK4DisabledDescriptor: Equatable {
     public let isDisabled: Bool
+}
+
+/// The value carried by a `.widgetProperty` node — a passthrough modifier
+/// effect that a fast-path reconcile must re-apply to the reused widget.
+public enum GTK4WidgetPropertyValue: Equatable {
+    case textSelectable(Bool)
+    case accessibilityLabel(String)
+}
+
+public struct GTK4WidgetPropertyDescriptor: Equatable {
+    public let value: GTK4WidgetPropertyValue
+    public init(value: GTK4WidgetPropertyValue) { self.value = value }
 }
 
 public struct GTK4OpacityDescriptor: Equatable {
@@ -219,6 +235,7 @@ public enum GTK4DescriptorProps: Equatable {
     case safeAreaPadding(GTK4SafeAreaPaddingDescriptor)
     case searchable(GTK4SearchableDescriptor)
     case zStack(GTK4ZStackDescriptor)
+    case widgetProperty(GTK4WidgetPropertyDescriptor)
 }
 
 public struct GTK4DescriptorNode: Equatable {
@@ -365,6 +382,7 @@ public enum GTK4DescriptorUpdateIntent: Equatable {
     case textContent
     case vStackLayout
     case zStackLayout
+    case widgetPropertyUpdate
 }
 
 public struct GTK4DescriptorPlan: Equatable {
@@ -685,6 +703,7 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
     case .safeAreaInset:   return .safeAreaInsetLayout
     case .safeAreaPadding: return .safeAreaPaddingLayout
     case .searchable:      return .searchableLayout
+    case .widgetProperty:  return .widgetPropertyUpdate
     }
 }
 
@@ -778,7 +797,8 @@ public func gtkCanApplyTextColorHostMutation(plan: GTK4DescriptorPlan) -> Bool {
         guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill
                 || plan.updateIntent == .canvasContent
                 || plan.updateIntent == .sliderValue
-                || plan.updateIntent == .paddingLayout else {
+                || plan.updateIntent == .paddingLayout
+                || plan.updateIntent == .widgetPropertyUpdate else {
             return false
         }
         return plan.children.allSatisfy(gtkCanApplyTextColorHostMutation)
@@ -812,6 +832,8 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
         return gtkSliderValueHook(action: action, performMutation: performMutation)
     case .paddingLayout:
         return gtkPaddingLayoutHook(action: action, performMutation: performMutation)
+    case .widgetPropertyUpdate:
+        return gtkWidgetPropertyHook(action: action, performMutation: performMutation)
     case .animatedTiming, .backgroundColor, .borderStyle, .fontStyle, .frameLayout, .foregroundColor,
          .disabledState, .hStackLayout, .offsetTransform, .opacityValue, .rotationTransform, .scaleTransform,
          .safeAreaInsetLayout, .safeAreaPaddingLayout, .searchableLayout, .sliderConfiguration,
@@ -863,6 +885,21 @@ private func gtkColorFillHook(action: GTK4ExecutorAction,
         mutationSucceeded = false
     }
     return gtkUpdatedHookResult(action: action, intent: .colorFill,
+                                 performMutation: performMutation,
+                                 mutationSucceeded: mutationSucceeded)
+}
+
+private func gtkWidgetPropertyHook(action: GTK4ExecutorAction,
+                                   performMutation: Bool) -> GTK4HookResult {
+    var mutationSucceeded = true
+    if performMutation,
+       case let .widgetProperty(desc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = gtkSetWidgetProperty(slotID: slotID, descriptor: desc)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
+    return gtkUpdatedHookResult(action: action, intent: .widgetPropertyUpdate,
                                  performMutation: performMutation,
                                  mutationSucceeded: mutationSucceeded)
 }
@@ -1169,7 +1206,8 @@ public func gtkAllSlotsValid(action: GTK4ExecutorAction) -> Bool {
         if action.updateIntent == .textContent || action.updateIntent == .colorFill
             || action.updateIntent == .canvasContent
             || action.updateIntent == .sliderValue
-            || action.updateIntent == .paddingLayout {
+            || action.updateIntent == .paddingLayout
+            || action.updateIntent == .widgetPropertyUpdate {
             guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
                   let widget = gtkWidgetFromSlotID(slotID),
                   gtk_swift_is_widget(widget) != 0 else {
@@ -1196,6 +1234,24 @@ public func gtkSetTextContent(slotID: Int, text: String) -> Bool {
 /// Uses a single replaceable CSS provider stored on the widget,
 /// avoiding CSS provider accumulation from repeated applyCSSToWidget calls.
 private let gtkColorProviderKey = "gtk-swift-color-provider"
+
+/// Re-applies a value-carrying passthrough modifier's effect to the
+/// widget behind `slotID`. Mirrors the create-path effect in
+/// `TextSelectionView`/`AccessibilityLabelView`.gtkCreateWidget so a
+/// changed value survives a fast-path reconcile.
+public func gtkSetWidgetProperty(slotID: Int, descriptor: GTK4WidgetPropertyDescriptor) -> Bool {
+    guard let widget = gtkWidgetFromSlotID(slotID) else { return false }
+    guard gtk_swift_is_widget(widget) != 0 else { return false }
+    switch descriptor.value {
+    case let .textSelectable(on):
+        for label in findAllGtkLabels(in: widget) {
+            gtk_swift_label_set_selectable(label, on ? 1 : 0)
+        }
+    case let .accessibilityLabel(label):
+        gtk_swift_accessible_set_label(widget, label)
+    }
+    return true
+}
 
 public func gtkSetColorFill(slotID: Int, color: GTK4ColorDescriptor) -> Bool {
     guard let widget = gtkWidgetFromSlotID(slotID) else { return false }

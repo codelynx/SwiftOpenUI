@@ -1,5 +1,7 @@
 # GTK4: value-carrying passthrough modifiers can go stale on fast-path reconcile
 
+**Status: RESOLVED** (descriptor-integration, option 1) — see Resolution.
+
 ## Summary
 
 A class of GTK4 modifiers apply their effect as a **side effect in
@@ -63,3 +65,34 @@ existing plan/execute pipeline.
   GTK4 widget after a fast-path reconcile (not just on rebuild).
 - Regression test in the GTK4 reconcile suite covering a value change
   under the fast mutation path.
+
+## Resolution (option 1 — descriptor integration)
+
+Implemented the generalized mechanism (one path, both modifiers):
+
+- New descriptor **kind `.widgetProperty`** + **prop `GTK4WidgetPropertyDescriptor`**
+  carrying a `GTK4WidgetPropertyValue` (`.textSelectable(Bool)` /
+  `.accessibilityLabel(String)`).
+- `TextSelectionView` / `AccessibilityLabelView` are now `GTKDescribable`
+  and emit a `.widgetProperty` node carrying their value, with the content
+  as the single child (mirrors `OpacityView`). Create path unchanged
+  (`gtkCreateWidget` still applies the effect).
+- New update intent **`.widgetPropertyUpdate`**, derived from the kind,
+  added to both fast-path gates (`gtkCanApplyTextColorHostMutation` and
+  `gtkAllSlotsValid`).
+- New hook **`gtkWidgetPropertyHook`** → **`gtkSetWidgetProperty(slotID:descriptor:)`**,
+  which resolves the slot to the widget and re-applies the effect
+  (`gtk_swift_label_set_selectable` on subtree labels / `gtk_swift_accessible_set_label`).
+  Mirrors `gtkSetPadding` (the existing wrapper-with-in-place-effect on
+  the fast path).
+
+So a value change now plans a `.widgetPropertyUpdate` that stays on the
+narrow path and re-applies — verified by 7 tests in `GTK4DescriptorTests`
+(plan intent, fast-path eligibility, no-change reuse, hook dispatch,
+describe-integration from the real modifiers, and a badge-like mixed
+text+color+label change staying on the fast path). Suite 758 pass / 3
+skip / 0 fail.
+
+**Not addressed here:** actual screen-reader double-announce (a11y-tree
+shape, see [[gtk4-win32-accessibilitylabel]]) and Win32 pass-through —
+both out of scope for reconcile-safety.

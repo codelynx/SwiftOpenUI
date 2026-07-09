@@ -1771,7 +1771,7 @@ extension BorderView: GTKRenderable, GTKDescribable {
 /// Collect all GtkLabel descendants in a widget subtree via DFS.
 /// Text modifiers apply to every label in the subtree, not just the first,
 /// so that container-level modifiers like VStack { ... }.lineLimit(1) work.
-private func findAllGtkLabels(in widget: UnsafeMutablePointer<GtkWidget>) -> [UnsafeMutablePointer<GtkWidget>] {
+func findAllGtkLabels(in widget: UnsafeMutablePointer<GtkWidget>) -> [UnsafeMutablePointer<GtkWidget>] {
     var result: [UnsafeMutablePointer<GtkWidget>] = []
     collectGtkLabels(in: widget, into: &result)
     return result
@@ -4886,7 +4886,18 @@ extension MonospacedDigitView: GTKRenderable {
 
 // MARK: - TextSelectionView GTK extension
 
-extension TextSelectionView: GTKRenderable {
+extension TextSelectionView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        // Represent the selectability in the descriptor tree so a *changed*
+        // value is re-applied on a fast-path reconcile (not only on the
+        // create path). See gtk4-passthrough-modifier-reconcile-safety.
+        GTK4DescriptorNode(
+            kind: .widgetProperty, typeName: "TextSelectionView",
+            props: .widgetProperty(GTK4WidgetPropertyDescriptor(
+                value: .textSelectable(selectability == .enabled))),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         // `.textSelection(_:)` → gtk_label_set_selectable on every GtkLabel
         // in the wrapped content, mirroring how LineLimitView/
@@ -4905,7 +4916,18 @@ extension TextSelectionView: GTKRenderable {
 
 // MARK: - accessibilityLabel GTK extension
 
-extension AccessibilityLabelView: GTKRenderable {
+extension AccessibilityLabelView: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        // Represent the label in the descriptor tree so a *changed* label
+        // is re-applied on a fast-path reconcile (not only on the create
+        // path). See gtk4-passthrough-modifier-reconcile-safety.
+        GTK4DescriptorNode(
+            kind: .widgetProperty, typeName: "AccessibilityLabelView",
+            props: .widgetProperty(GTK4WidgetPropertyDescriptor(
+                value: .accessibilityLabel(label))),
+            children: [gtkDescribeView(content)])
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         // Attach the label to the content's accessibility element so a
         // screen reader announces it instead of the raw contents (e.g. an

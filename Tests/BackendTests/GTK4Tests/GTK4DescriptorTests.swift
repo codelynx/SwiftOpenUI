@@ -558,4 +558,95 @@ final class GTK4DescriptorTests: XCTestCase {
 
         XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
     }
+
+    // MARK: - Value-carrying passthrough modifiers (reconcile-safety)
+    // gtk4-passthrough-modifier-reconcile-safety: a *changed* value must be
+    // re-applied on the fast path, not ignored (stale) or forced to rebuild.
+
+    private func widgetPropertyNode(_ value: GTK4WidgetPropertyValue,
+                                    typeName: String = "AccessibilityLabelView") -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .widgetProperty, typeName: typeName,
+            props: .widgetProperty(GTK4WidgetPropertyDescriptor(value: value)),
+            children: [GTK4DescriptorNode(kind: .text, typeName: "Text",
+                                          props: .text(GTK4TextDescriptor(content: "x")))])
+    }
+
+    func testPlanAccessibilityLabelChangeStaysOnFastPath() {
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(widgetPropertyNode(.accessibilityLabel("A")))),
+            new: gtkIdentifyDescriptorTree(widgetPropertyNode(.accessibilityLabel("B"))))
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .widgetPropertyUpdate)
+        // The core guarantee: the changed value is re-applied on the narrow
+        // path instead of going stale (the pre-fix bug) or forcing rebuild.
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testPlanTextSelectableChangeStaysOnFastPath() {
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(widgetPropertyNode(.textSelectable(true), typeName: "TextSelectionView"))),
+            new: gtkIdentifyDescriptorTree(widgetPropertyNode(.textSelectable(false), typeName: "TextSelectionView")))
+        XCTAssertEqual(plan.kind, .update)
+        XCTAssertEqual(plan.updateIntent, .widgetPropertyUpdate)
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
+
+    func testWidgetPropertyNoChangeReuses() {
+        let node = widgetPropertyNode(.accessibilityLabel("Same"))
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(node)),
+            new: gtkIdentifyDescriptorTree(node))
+        XCTAssertEqual(plan.kind, .reuse)
+        XCTAssertEqual(plan.updateIntent, .none)
+    }
+
+    func testHookWidgetPropertyDispatches() {
+        let oldId = gtkIdentifyDescriptorTree(widgetPropertyNode(.accessibilityLabel("A")))
+        let newId = gtkIdentifyDescriptorTree(widgetPropertyNode(.accessibilityLabel("B")))
+        let executor = gtkMakeExecutorTree(from: oldId)
+        let plan = gtkPlanDescriptorTree(old: gtkRetainDescriptorTree(oldId), new: newId)
+        let action = gtkExecuteDescriptorPlan(old: executor, plan: plan)
+        let result = gtkApplyHook(action: action)
+        XCTAssertEqual(result.updateIntent, .widgetPropertyUpdate)
+    }
+
+    func testDescribeAccessibilityLabelProducesWidgetProperty() {
+        // The real modifier (what a @State-driven label change produces),
+        // not a hand-built descriptor.
+        let node = gtkDescribeView(Text("Copy").accessibilityLabel("Copy to destination"))
+        XCTAssertEqual(node.kind, .widgetProperty)
+        guard case let .widgetProperty(desc) = node.props else {
+            return XCTFail("expected widgetProperty props")
+        }
+        XCTAssertEqual(desc.value, .accessibilityLabel("Copy to destination"))
+    }
+
+    func testDescribeTextSelectionProducesWidgetProperty() {
+        let node = gtkDescribeView(Text("x").textSelection(.enabled))
+        XCTAssertEqual(node.kind, .widgetProperty)
+        guard case let .widgetProperty(desc) = node.props else {
+            return XCTFail("expected widgetProperty props")
+        }
+        XCTAssertEqual(desc.value, .textSelectable(true))
+    }
+
+    func testBadgeLikeMixedChangeStaysOnFastPath() {
+        // Models Synca's ActionBadge on an Update↔Mirror flip: symbol text,
+        // fill color, and accessibility label all change at once — the whole
+        // plan must stay on the fast path, not fall to full rebuild.
+        func badge(symbol: String, red: Double, label: String) -> GTK4DescriptorNode {
+            GTK4DescriptorNode(kind: .vStack, typeName: "VStack", children: [
+                GTK4DescriptorNode(kind: .text, typeName: "Text", props: .text(GTK4TextDescriptor(content: symbol))),
+                GTK4DescriptorNode(kind: .color, typeName: "Color", props: .color(GTK4ColorDescriptor(red: red, green: 0, blue: 0, opacity: 1))),
+                GTK4DescriptorNode(kind: .widgetProperty, typeName: "AccessibilityLabelView",
+                    props: .widgetProperty(GTK4WidgetPropertyDescriptor(value: .accessibilityLabel(label))),
+                    children: [GTK4DescriptorNode(kind: .text, typeName: "Text", props: .text(GTK4TextDescriptor(content: symbol)))]),
+            ])
+        }
+        let plan = gtkPlanDescriptorTree(
+            old: gtkRetainDescriptorTree(gtkIdentifyDescriptorTree(badge(symbol: "arrow", red: 1, label: "Copy to destination"))),
+            new: gtkIdentifyDescriptorTree(badge(symbol: "trash", red: 0, label: "Delete from destination")))
+        XCTAssertTrue(gtkCanApplyTextColorHostMutation(plan: plan))
+    }
 }
