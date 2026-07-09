@@ -100,6 +100,11 @@ gtk_swift_is_widget(GtkWidget *widget) {
     return widget != NULL && GTK_IS_WIDGET(widget);
 }
 
+static inline gboolean
+gtk_swift_is_label(GtkWidget *widget) {
+    return widget != NULL && GTK_IS_LABEL(widget);
+}
+
 static inline GType
 gtk_swift_get_widget_type(GtkWidget *widget) {
     return G_OBJECT_TYPE(widget);

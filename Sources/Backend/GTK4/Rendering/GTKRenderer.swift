@@ -1440,8 +1440,21 @@ extension FrameView: GTKRenderable, GTKDescribable {
             gtk_widget_set_vexpand(wrapper, 0)
         }
 
+        // A `.lineLimit(1)` (ellipsizing) label wrapped in
+        // `.frame(maxWidth: .infinity)` should fill its allocation and
+        // ellipsize within it — SwiftUI semantics. By default a bare
+        // GtkLabel has hexpand=0, so it neither fills nor ellipsizes: it
+        // sits at its full natural width. Inside a width-limited zone that
+        // overflows/clips, and inside a `maxWidth:.infinity` HStack it
+        // inflates that zone's natural width, so two sibling zones (each
+        // `.frame(maxWidth:.infinity)`) end up unequal. Treat such a label
+        // as horizontally-filling so it fills and ellipsizes instead.
+        let childFillsWidthAsLabel = widthMayGrowWithParent
+            && gtk_swift_is_label(child) != 0
+            && gtk_label_get_ellipsize(OpaquePointer(child)) != PANGO_ELLIPSIZE_NONE
+
         let horizontalAlign: GtkAlign
-        if childExpH {
+        if childExpH || childFillsWidthAsLabel {
             horizontalAlign = GTK_ALIGN_FILL
             gtk_widget_set_hexpand(child, 1)
         } else {
