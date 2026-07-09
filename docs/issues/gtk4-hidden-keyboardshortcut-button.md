@@ -62,6 +62,31 @@ Linux (the right convention). Resolution was **pure Synca guard removal**
 and the `findShortcutHook` definition) dropped. GTK4 build green, no
 unused-symbol warnings.
 
+### Reconcile-safety note (general rule, not Synca-specific)
+
+Why the registration *survives* a reconcile is subtler than "same as
+`.onExitCommand`", and the reason is a reusable gotcha:
+
+- `Button` is `GTKDescribable`, and its `gtkDescribeNode()` is **lossy** —
+  it returns a bare `.button` node carrying *neither the action nor the
+  keyboardShortcut*. A Button reconciled *through the descriptor tree*
+  would silently lose its shortcut registration (the exact silent-no-op
+  class we worry about).
+- `HiddenView` shields it: it's a `PrimitiveView` with `Body = Never`, so
+  the describe pipeline emits an **opaque, childless `.composite` node**
+  and never walks the Button into the descriptor tree. That stable node
+  is reused on narrow-mutation reconciles (widget kept → `destroy` never
+  fires → registration persists); on a full teardown, rebuild goes
+  through the create path (`gtkRenderView(body)`) → Button re-created →
+  re-registers. Either branch preserves the shortcut.
+
+**General rule:** a view that has a side effect in `gtkCreateWidget`
+(registering into a store) *and* a lossy `gtkDescribeNode` is only
+reconcile-safe behind a `Body = Never` shield like `HiddenView`. Placing
+a `.keyboardShortcut` Button **directly** under a reconciling host
+without such a shield could drop its registration on a describe-path
+replace. Not a bug here — just the trap to avoid in future slices.
+
 **Remaining for full close:** runtime confirmation that Ctrl+F focuses
 the GTK4 filter field (interactive session), plus the macOS-reference
 `Examples/Parity` entry.
