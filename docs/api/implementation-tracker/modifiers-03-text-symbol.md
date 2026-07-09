@@ -40,7 +40,7 @@ Summary: 37 total, 12 implemented, 0 partial, 25 missing.
 | `textInputAutocapitalization` | Both | iOS 15 / tvOS 15 / visionOS 1 | Current | Missing | `-` | - |
 | `textInputSuggestions` | Both | iOS 18 / macOS 15 / visionOS 2 | Current | Missing | `-` | New iOS 18 |
 | `textScale` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | New iOS 17 |
-| `textSelection` | Both | iOS 15 / macOS 12 / visionOS 1 | Current | Missing | `-` | - |
+| `textSelection` | Both | iOS 15 / macOS 12 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/TextSelectionModifier.swift` | GTK4: gtk_label_set_selectable on subtree labels; Win32/Web: body pass-through (deferred) |
 | `tracking` | Both | iOS 16 / macOS 13 / watchOS 9 / tvOS 16 / visionOS 1 | Current | Missing | `-` | - |
 | `truncationMode` | Both | iOS 13 / macOS 10.15 / watchOS 6 / tvOS 13 / visionOS 1 | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/TextModifiers.swift` | GTK4: Pango ellipsize; Win32: SS_ENDELLIPSIS/PATHELLIPSIS (head→tail fallback); Web: text-overflow ellipsis (middle→tail fallback) |
 | `typesettingLanguage` | Both | iOS 17 / macOS 14 / watchOS 10 / tvOS 17 / visionOS 1 | Current | Missing | `-` | New iOS 17 |

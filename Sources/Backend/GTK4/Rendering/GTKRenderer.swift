@@ -4888,10 +4888,17 @@ extension MonospacedDigitView: GTKRenderable {
 
 extension TextSelectionView: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        // `.textSelection(.enabled)` → gtk_label_set_selectable on the
-        // wrapped Text's GtkLabel (no-op if it rendered to a non-label).
+        // `.textSelection(_:)` → gtk_label_set_selectable on every GtkLabel
+        // in the wrapped content, mirroring how LineLimitView/
+        // TruncationModeView reach labels. Walking the subtree (rather than
+        // touching only the top widget) keeps this robust when a Text's
+        // modifiers render to a container, and matches SwiftUI's
+        // subtree-propagating semantics.
         let widget = widgetFromOpaque(gtkRenderView(content))
-        gtk_swift_label_set_selectable(widget, selectability == .enabled ? 1 : 0)
+        let selectable: gboolean = selectability == .enabled ? 1 : 0
+        for label in findAllGtkLabels(in: widget) {
+            gtk_swift_label_set_selectable(label, selectable)
+        }
         return opaqueFromWidget(widget)
     }
 }

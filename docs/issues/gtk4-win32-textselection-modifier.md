@@ -39,9 +39,12 @@ Implemented `.textSelection(_:)` with a real GTK4 backing (not a no-op):
   `body: some View { content }`, so backends without an override pass
   through automatically.
 - **GTK4** (`GTKRenderer.swift` + `shim.h`): `TextSelectionView`
-  `GTKRenderable` extension renders the wrapped content and calls a new
-  `gtk_swift_label_set_selectable` shim (`GTK_IS_LABEL`-guarded, safe
-  no-op if the wrapped widget isn't a label) → `gtk_label_set_selectable`.
+  `GTKRenderable` extension renders the wrapped content, then walks the
+  subtree with `findAllGtkLabels` (same helper `LineLimitView` uses) and
+  calls a new `gtk_swift_label_set_selectable` shim (`GTK_IS_LABEL`-guarded)
+  → `gtk_label_set_selectable` on each. Walking the subtree — rather than
+  the top widget only — means it stays correct even if a Text's modifiers
+  render to a container, and gives subtree-propagating semantics.
 - **Win32**: no code needed — falls back to the `body` pass-through
   (same as `MonospacedDigitView`), so the modifier compiles and is inert
   there until a Win32 selectable-control impl lands.
@@ -51,4 +54,10 @@ SwiftOpenUI test suite green.
 
 **Remaining for full close:** runtime confirmation that a GTK4 label is
 actually mouse-selectable (needs an interactive session, not just a
-build), plus the macOS-reference `Examples/Parity` entry.
+build), plus the macOS-reference `Examples/Parity` entry. When verifying,
+drag-select the **truncated** status-line / path text specifically —
+that's the ellipsized case, and the only place a container-wrapping
+regression could hide. (Structurally de-risked: `LineLimitView` /
+`TruncationModeView` set ellipsize as label properties and return the
+same `GtkLabel`, and this modifier now walks the subtree for labels
+anyway — but the interactive check is the definitive confirmation.)
