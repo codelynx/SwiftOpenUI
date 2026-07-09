@@ -5258,9 +5258,12 @@ private func gtkTreeKeyListModel(_ keys: [String]) -> gpointer {
 /// GtkStringObject holding the positional key). Returns a child
 /// `GListModel` (transfer full) or NULL for a leaf, which is how the
 /// expander decides a row is not expandable.
+// Returns OpaquePointer? to match GTK's imported GtkTreeListModelCreateModelFunc
+// (whose GListModel* return imports as OpaquePointer?). The child model
+// pointer is a plain data-pointer conversion — not a function-pointer cast.
 private let treeCreateModelCallback: @convention(c) (
     gpointer?, gpointer?
-) -> gpointer? = { item, userData in
+) -> OpaquePointer? = { item, userData in
     guard let item = item, let userData = userData,
           let cStr = gtk_swift_string_object_get_string(item) else { return nil }
     let key = String(cString: cStr)
@@ -5268,7 +5271,7 @@ private let treeCreateModelCallback: @convention(c) (
     guard let childKeys = context.childKeys(of: key), !childKeys.isEmpty else {
         return nil
     }
-    return gtkTreeKeyListModel(childKeys)
+    return OpaquePointer(gtkTreeKeyListModel(childKeys))
 }
 
 private let treeSetupCallback: @convention(c) (
@@ -5296,8 +5299,14 @@ private let treeBindCallback: @convention(c) (
     }
     gtk_swift_tree_expander_set_list_row(expander, treeRow)
 
-    guard let stringObject = gtk_swift_tree_list_row_get_item(treeRow),
-          let cStr = gtk_swift_string_object_get_string(stringObject) else {
+    // gtk_tree_list_row_get_item is transfer-full: it hands back a new
+    // ref we must release, else every bind/rebind (e.g. every scroll)
+    // leaks a GtkStringObject.
+    guard let stringObject = gtk_swift_tree_list_row_get_item(treeRow) else {
+        treeClearExpanderChild(expander); return
+    }
+    defer { g_object_unref(stringObject) }
+    guard let cStr = gtk_swift_string_object_get_string(stringObject) else {
         treeClearExpanderChild(expander); return
     }
     let key = String(cString: cStr)
@@ -5331,31 +5340,38 @@ private func treeClearExpanderChild(_ expander: UnsafeMutablePointer<GtkWidget>)
     }
 }
 
+/// Releases a retained `LazyTreeContext`. Used as a GDestroyNotify for
+/// both the tree model's create-func data and the factory's bind data.
+private let lazyTreeContextRelease: @convention(c) (gpointer?) -> Void = { userData in
+    guard let userData = userData else { return }
+    Unmanaged<LazyTreeContext>.fromOpaque(userData).release()
+}
+
 /// Creates the GtkListView-backed lazy tree widget for an OutlineGroup.
 private func gtkCreateLazyTreeWidget(_ context: LazyTreeContext) -> OpaquePointer {
     let rootModel = gtkTreeKeyListModel(context.rootKeys)
 
-    // A single retained reference to the context, owned by the factory
-    // (freed via set_data_full below). The tree model borrows the same
-    // pointer as create-callback user_data; factory and model share the
-    // list view's lifetime, and create-callbacks only fire while it is
-    // alive, so single ownership on the factory is safe.
-    let contextPtr = Unmanaged.passRetained(context).toOpaque()
-
+    // Two independent retains, each with its own destroy notify: one owned
+    // by the tree model (create-func data) and one by the factory (bind
+    // data). This avoids relying on the unspecified factory-vs-model
+    // teardown order inside GtkListView — each owner releases its own ref.
+    let modelContextPtr = Unmanaged.passRetained(context).toOpaque()
     let treeModel = gtk_swift_tree_list_model_new(
         rootModel,
-        unsafeBitCast(treeCreateModelCallback, to: UnsafeMutableRawPointer.self),
-        contextPtr
+        treeCreateModelCallback,
+        modelContextPtr,
+        lazyTreeContextRelease
     )!
 
     let noSelection = gtk_swift_no_selection_new(treeModel)
     let factory = gtk_swift_signal_list_item_factory_new()!
 
+    let factoryContextPtr = Unmanaged.passRetained(context).toOpaque()
     g_object_set_data_full(
         factory.assumingMemoryBound(to: GObject.self),
         "gtk-swift-lazy-tree-context",
-        contextPtr,
-        { userData in Unmanaged<LazyTreeContext>.fromOpaque(userData!).release() }
+        factoryContextPtr,
+        lazyTreeContextRelease
     )
 
     g_signal_connect_data(factory, "setup",

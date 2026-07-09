@@ -537,29 +537,37 @@ gtk_swift_string_object_get_string(gpointer string_object) {
 // rows currently scrolled into view — and only the children of rows the
 // user has actually expanded — are ever realized as widgets.
 //
-// `create_func` has GTK's `GtkTreeListModelCreateModelFunc` signature
-// `GListModel *(*)(gpointer item, gpointer user_data)`. It is passed as
-// an opaque `gpointer` (the Swift side bit-casts a @convention(c)
-// function) and cast back here. GtkTreeListModel calls it lazily — once
-// per row, only when that row is first expanded — to obtain the child
-// model (or NULL for a leaf). The returned model is consumed with
-// transfer-full, and `gtk_tree_list_model_new` also takes ownership of
-// `root_model` (transfer full), matching how the Swift caller creates
-// both models with a floating/owned reference it does not itself sink.
+// `create_func` uses GTK's `GtkTreeListModelCreateModelFunc` signature
+// `GListModel *(*)(gpointer item, gpointer user_data)` and is passed
+// through as that exact typed function pointer (no bit-cast). GtkTreeListModel
+// calls it lazily — once per row, only when that row is first expanded —
+// to obtain the child model (or NULL for a leaf). The returned model is
+// consumed with transfer-full, and `gtk_tree_list_model_new` also takes
+// ownership of `root_model` (transfer full).
+//
+// `user_data` / `user_destroy` are GTK's own notified-lifetime hooks for
+// the create-func data: the Swift side retains a `LazyTreeContext` and
+// passes a destroy notify that releases it when the tree model is
+// finalized, so the model owns its callback data independently of the
+// factory (no reliance on factory-vs-model teardown order).
 
 static inline gpointer
-gtk_swift_tree_list_model_new(gpointer root_model, gpointer create_func, gpointer user_data) {
+gtk_swift_tree_list_model_new(gpointer root_model,
+                              GtkTreeListModelCreateModelFunc create_func,
+                              gpointer user_data,
+                              GDestroyNotify user_destroy) {
     return (gpointer)gtk_tree_list_model_new(
         G_LIST_MODEL(root_model),
         FALSE, // passthrough: list items are GtkTreeListRow wrappers
         FALSE, // autoexpand: keep everything collapsed initially
-        (GtkTreeListModelCreateModelFunc)create_func,
+        create_func,
         user_data,
-        NULL);
+        user_destroy);
 }
 
 // The underlying user item (a GtkStringObject in our usage) wrapped by a
-// GtkTreeListRow. Returns a borrowed reference.
+// GtkTreeListRow. Returns a NEW reference (transfer-full per the GTK
+// annotation) — the caller must g_object_unref it after use.
 static inline gpointer
 gtk_swift_tree_list_row_get_item(gpointer row) {
     return (gpointer)gtk_tree_list_row_get_item(GTK_TREE_LIST_ROW(row));
