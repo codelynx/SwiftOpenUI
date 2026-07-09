@@ -4903,6 +4903,46 @@ extension TextSelectionView: GTKRenderable {
     }
 }
 
+// MARK: - onExitCommand GTK extension
+
+extension OnExitCommandView: GTKRenderable {
+    public func gtkCreateWidget() -> OpaquePointer {
+        // `.onExitCommand` = an Escape handler. Register it as a
+        // modifier-less Escape shortcut in the window-scoped registry; the
+        // window's key controller (gtkAttachKeyboardShortcutController)
+        // already dispatches Escape to it. Unregister on widget destroy,
+        // mirroring FocusedValueView's lifecycle.
+        let windowID = getCurrentEnvironment().windowID
+        let boundAction = bindActionToCurrentEnvironment(action)
+        let regID = KeyboardShortcutRegistry.shared.register(
+            KeyboardShortcut(.escape, modifiers: []),
+            windowID: windowID,
+            action: boundAction
+        )
+
+        let widget = gtkRenderView(content)
+
+        let destroyBox = Unmanaged.passRetained(ClosureBox {
+            KeyboardShortcutRegistry.shared.unregister(id: regID)
+        }).toOpaque()
+        let widgetPtr = widgetFromOpaque(widget)
+        g_signal_connect_data(
+            gpointer(widgetPtr), "destroy",
+            unsafeBitCast({ (_: gpointer?, userData: gpointer?) in
+                guard let userData else { return }
+                Unmanaged<ClosureBox>.fromOpaque(userData).takeUnretainedValue().closure()
+            } as @convention(c) (gpointer?, gpointer?) -> Void, to: GCallback.self),
+            destroyBox,
+            { (data: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                if let data { Unmanaged<ClosureBox>.fromOpaque(data).release() }
+            },
+            GConnectFlags(rawValue: 0)
+        )
+
+        return widget
+    }
+}
+
 // MARK: - Section GTK extension
 
 extension Section: GTKRenderable {

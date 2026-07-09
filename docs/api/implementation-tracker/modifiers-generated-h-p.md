@@ -36,7 +36,7 @@ Summary: 50 total, 1 implemented, 0 partial, 49 missing.
 | `onCopyCommand` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Missing | `-` | - |
 | `onCutCommand` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Missing | `-` | - |
 | `onDeleteCommand` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Missing | `-` | - |
-| `onExitCommand` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Missing | `-` | - |
+| `onExitCommand` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Implemented | `Sources/SwiftOpenUI/Modifiers/OnExitCommandModifier.swift` | GTK4: Escape via window KeyboardShortcutRegistry; Win32/Web: body pass-through (deferred) |
 | `onLongTouchGesture` | Generated only | iOS 16+, macOS 13+, tvOS 16+, watchOS 6+ | Current | Missing | `-` | - |
 | `onMoveCommand` | Generated only | iOS 18+, macOS 10.15+, tvOS 13+, watchOS 9+, visionOS 2+ | Current | Missing | `-` | - |
 | `onPasteCommand` | Generated only | iOS 13+, macOS 10.15+, tvOS 13+, watchOS 6+, visionOS 1+, macCatalyst 13+ | Current | Missing | `-` | Provide UTTypes as the supportedContentTypes instead.; Some overloads deprecated |
