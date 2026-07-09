@@ -13,6 +13,11 @@ public enum TextSelectability: Sendable, Equatable {
 
 /// Wrapper produced by `.textSelection(_:)`. Renders its content
 /// unchanged except where a backend provides selectable-text support.
+///
+/// Known limitation: a *dynamic* selectability value may not re-apply on
+/// a fast-path GTK4 reconcile (the value isn't in the descriptor tree);
+/// full rebuilds are fine. Tracked in
+/// `docs/issues/gtk4-passthrough-modifier-reconcile-safety`.
 public struct TextSelectionView<Content: View>: View {
     public let content: Content
     public let selectability: TextSelectability

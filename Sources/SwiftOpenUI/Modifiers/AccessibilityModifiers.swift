@@ -17,6 +17,10 @@ extension View {
 ///   (e.g. an icon's symbol name).
 /// - Win32 / other backends: currently pass through via `body` (parity
 ///   matrix note) — inert until a backend implements it.
+///
+/// Known limitation: a *dynamic* label may not re-apply on a fast-path
+/// GTK4 reconcile (the value isn't in the descriptor tree); full rebuilds
+/// are fine. Tracked in `docs/issues/gtk4-passthrough-modifier-reconcile-safety`.
 public struct AccessibilityLabelView<Content: View>: View {
     public let content: Content
     public let label: String
