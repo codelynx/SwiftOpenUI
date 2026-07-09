@@ -1,6 +1,8 @@
 // Parity: KeyboardShortcut
-// Owner: .keyboardShortcut()
+// Owner: .keyboardShortcut(), .onExitCommand(), hidden window-scoped shortcut
 // See: docs/architecture/swiftui-parity-matrix.md § Modifiers
+//      docs/issues/gtk4-onexitcommand-esc-handling.md
+//      docs/issues/gtk4-hidden-keyboardshortcut-button.md
 
 #if os(macOS)
 import SwiftUI
@@ -23,8 +25,12 @@ import BackendWeb
 struct ParityKeyboardShortcutView: View {
 	#if os(macOS)
 	@State private var log: [String] = []
+	@State private var filterText = ""
+	@FocusState private var filterFocused: Bool
 	#else
 	@SwiftOpenUI.State private var log: [String] = []
+	@SwiftOpenUI.State private var filterText = ""
+	@SwiftOpenUI.FocusState private var filterFocused: Bool
 	#endif
 
 	var body: some View {
@@ -48,6 +54,31 @@ struct ParityKeyboardShortcutView: View {
 				Button("OK") { log.append("OK (Return)") }
 					.keyboardShortcut(.defaultAction)
 			}
+
+			// MARK: - .onExitCommand + hidden window-scoped shortcut
+			//
+			// ESC inside the field clears + defocuses (.onExitCommand).
+			// ⌘F focuses the field via a shortcut with NO visible control —
+			// a hidden Button, mirroring Synca's filter-field pattern.
+			VStack(alignment: .leading, spacing: 4) {
+				Text("⌘F focuses (no visible control) · ESC clears + defocuses")
+					.font(.caption)
+				TextField("Filter", text: $filterText)
+					.focused($filterFocused)
+					.onSubmit { log.append("submit: \(filterText)") }
+					.onExitCommand {
+						filterText = ""
+						filterFocused = false
+						log.append("ESC: cleared + defocused")
+					}
+			}
+
+			Button("Find") {
+				filterFocused = true
+				log.append("⌘F: focus filter")
+			}
+			.keyboardShortcut("f", modifiers: .command)
+			.hidden()
 
 			Text("Log:")
 				.font(.subheadline)

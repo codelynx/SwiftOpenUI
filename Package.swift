@@ -260,6 +260,24 @@ targets += [
         linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(
+        name: "ParityCosmeticModifiers",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/CosmeticModifiers",
+        linkerSettings: exampleLinkerSettings
+    ),
+    .executableTarget(
+        name: "ParityAccessibility",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/Accessibility",
+        linkerSettings: exampleLinkerSettings
+    ),
+    .executableTarget(
+        name: "ParityMenu",
+        dependencies: exampleDeps,
+        path: "Examples/Parity/Menu",
+        linkerSettings: exampleLinkerSettings
+    ),
+    .executableTarget(
         name: "ParityStateData",
         dependencies: exampleDeps,
         path: "Examples/Parity/StateData",
