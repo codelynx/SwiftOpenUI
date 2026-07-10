@@ -6085,18 +6085,74 @@ extension DisclosureGroup: WinRenderable {
             context.parent, nil, context.hInstance, nil
         )!
 
-        // Toggle button
-        let arrow = isExpanded ? "▼" : "▶"
-        let btnText = "\(arrow) \(title)"
         let controlID = nextControlID()
-        let measured = measureText(btnText, hwnd: context.parent)
+        let arrow = isExpanded ? "▼" : "▶"
 
-        _ = btnText.withCString(encodedAs: UTF16.self) { wstr in
-            win32_CreateChildWindow(
-                win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
-                0, 0, measured.width + 16, measured.height + 8,
-                container, HMENU(bitPattern: UInt(controlID)), context.hInstance
-            )
+        // Header. Two shapes depending on how the DisclosureGroup was built:
+        //
+        //  - String form (`labelView == nil`) → one push button whose text
+        //    is "arrow + title". Legacy behavior, unchanged.
+        //
+        //  - Label-view form (`labelView != nil`, used by `OutlineGroup`'s
+        //    `DisclosureGroup(content:label:)`) → a compact arrow toggle
+        //    button followed by the *rendered label view*. Previously this
+        //    path fell through to the string form with an empty `title`, so
+        //    every label-view row collapsed to a bare "▶" and lost its
+        //    badge / icon / name. Rendering `labelView` restores the row.
+        var headerW: Int32
+        var headerH: Int32
+
+        if let labelView {
+            let arrowMeasured = measureText(arrow, hwnd: context.parent)
+            let arrowW = arrowMeasured.width + 14
+            let arrowH = arrowMeasured.height + 8
+
+            let arrowHwnd = arrow.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
+                    0, 0, arrowW, arrowH,
+                    container, HMENU(bitPattern: UInt(controlID)), context.hInstance
+                )
+            }
+
+            // Render the label view beside the arrow.
+            let labelContext = RenderContext(parent: container, hInstance: context.hInstance)
+            var labelW: Int32 = 0
+            var labelH: Int32 = arrowH
+            let labelHwnd = winRenderAnyView(labelView, in: labelContext)
+            if let labelHwnd {
+                var lr = RECT()
+                GetWindowRect(labelHwnd, &lr)
+                labelW = lr.right - lr.left
+                labelH = lr.bottom - lr.top
+            }
+
+            // Vertically center both the arrow and the label within the row,
+            // so the arrow doesn't sit top-aligned next to a taller label
+            // (badge + icon + text is normally taller than the bare arrow).
+            let rowH = max(arrowH, labelH)
+            if let arrowHwnd {
+                SetWindowPos(arrowHwnd, nil, 0, max(0, (rowH - arrowH) / 2),
+                             arrowW, arrowH, UINT(SWP_NOZORDER))
+            }
+            if let labelHwnd {
+                SetWindowPos(labelHwnd, nil, arrowW + 4, max(0, (rowH - labelH) / 2),
+                             labelW, labelH, UINT(SWP_NOZORDER))
+            }
+            headerH = rowH
+            headerW = arrowW + 4 + labelW
+        } else {
+            let btnText = "\(arrow) \(title)"
+            let measured = measureText(btnText, hwnd: context.parent)
+            _ = btnText.withCString(encodedAs: UTF16.self) { wstr in
+                win32_CreateChildWindow(
+                    win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
+                    0, 0, measured.width + 16, measured.height + 8,
+                    container, HMENU(bitPattern: UInt(controlID)), context.hInstance
+                )
+            }
+            headerH = measured.height + 8
+            headerW = measured.width + 20
         }
 
         let expandCallback = onExpandedChange.map(bindActionToCurrentEnvironment)
@@ -6106,7 +6162,7 @@ extension DisclosureGroup: WinRenderable {
         }
 
         // Content (shown only if expanded)
-        var totalH = measured.height + 12
+        var totalH = headerH + 4
         if isExpanded {
             let childContext = RenderContext(parent: container, hInstance: context.hInstance)
             if let childHwnd = winRenderView(content, in: childContext) {
@@ -6119,7 +6175,7 @@ extension DisclosureGroup: WinRenderable {
             }
         }
 
-        SetWindowPos(container, nil, 0, 0, max(measured.width + 20, 200), totalH,
+        SetWindowPos(container, nil, 0, 0, max(headerW, 200), totalH,
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         return container
