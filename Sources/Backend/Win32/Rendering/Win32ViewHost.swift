@@ -52,6 +52,15 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
     /// Single-use: consumed during the next rebuild, then cleared.
     private var pendingAnimation: Animation?
 
+    /// Set by `withObservationTracking`'s onChange callback. When true,
+    /// the next rebuild was triggered by an @Observable mutation and
+    /// MUST skip the narrow text/color path and the Phase 7 input-
+    /// snapshot skip. Both paths return without re-running body under
+    /// `withObservationTracking`, which would leave @Observable
+    /// subscriptions dead after the first change. Mirrors GTK4's
+    /// `observationDidFire` flag in `GTKViewHost.swift`.
+    private var observationDidFire = false
+
     private let lock = NSLock()
     private var scheduled = false
     private var isContainerAlive = true
@@ -104,6 +113,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
     public func addChild(_ child: HWND) {
         currentChild = child
         SetParent(child, container)
+        syncExpandFlagsFromChild()
 
         var childRect = RECT()
         GetWindowRect(child, &childRect)
@@ -201,7 +211,11 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
             withObservationTracking {
                 result = buildBody(context)
             } onChange: { [weak self] in
-                self?.scheduleRebuild()
+                guard let self else { return }
+                self.lock.lock()
+                self.observationDidFire = true
+                self.lock.unlock()
+                self.scheduleRebuild()
             }
             if let reads = endEnvironmentReadTracking() {
                 capturedInjectedObjects = reads
@@ -267,13 +281,23 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
         }
         let shouldSuppressFocus = suppressFocusRestoreOnce
         suppressFocusRestoreOnce = false
+        let fromObservation = observationDidFire
+        observationDidFire = false
         lock.unlock()
 
         // Phase 7: skip rebuild entirely if no tracked inputs changed.
         // This avoids body evaluation, HWND destruction, and repainting
         // when the state change that triggered this rebuild didn't affect
         // any storage read during the last body evaluation.
-        if let snapshot = lastInputSnapshot,
+        //
+        // Skipped when withObservationTracking's onChange fired — that
+        // callback only runs once, and re-subscribing requires running
+        // body through buildBodyWithTracking again. inputsUnchanged only
+        // tracks @State / @Published generations, so it can't detect
+        // @Observable mutations and would wrongly report "unchanged"
+        // here, leaving observation dead.
+        if !fromObservation,
+           let snapshot = lastInputSnapshot,
            inputsUnchanged(snapshot: snapshot) {
             return
         }
@@ -309,7 +333,13 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
                          UINT(RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN))
         }
 
-        if tryTextColorMutationRebuild() {
+        // Narrow mutation path: try text/color in-place update.
+        // Skipped when withObservationTracking's onChange fired — the
+        // narrow path returns without re-running body under
+        // withObservationTracking, which would leave @Observable
+        // subscriptions dead after the first change. Fall through to
+        // the full rebuild so observation re-registers.
+        if !fromObservation, tryTextColorMutationRebuild() {
             return
         }
 
@@ -332,6 +362,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
 
         if let newChild = newChild {
             currentChild = newChild
+            syncExpandFlagsFromChild()
             layoutChild()
             captureRetainedDescriptorState()
         } else {
@@ -341,6 +372,23 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
     }
 
     /// Layout the current child to fill the container.
+    /// Mirror the hosted child's expand flags onto the stable container.
+    /// Parent stack layouts and the top-level window sizer read the
+    /// container HWND (not the child inside it), so without this a host
+    /// wrapping an expanding view (e.g. a root `.frame(maxWidth: .infinity)`)
+    /// would report as intrinsically sized and never fill/stretch.
+    ///
+    /// Clear-then-set: the container is stable across rebuilds, so if a rebuild
+    /// swaps in a child that no longer expands, the stale flag must be dropped —
+    /// otherwise parents keep treating the subtree as flexible forever.
+    private func syncExpandFlagsFromChild() {
+        RemovePropW(container, expandWidthPropName)
+        RemovePropW(container, expandHeightPropName)
+        guard let child = currentChild else { return }
+        if shouldExpandWidth(child) { markExpandWidth(container) }
+        if shouldExpandHeight(child) { markExpandHeight(container) }
+    }
+
     func layoutChild() {
         guard let child = currentChild else { return }
         var rect = RECT()

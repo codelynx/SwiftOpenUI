@@ -2318,11 +2318,15 @@ extension FrameView: WinRenderable {
         // When maxWidth/maxHeight is .infinity, the frame itself should expand
         // to fill available space — the child stays at natural size but the
         // container grows. Also propagate when the child already expands and
-        // the frame has no explicit constraint on that axis.
-        if maxWidth == .infinity || (expandsWidth && width == nil && minWidth == nil) {
+        // the frame doesn't cap that axis. A `minWidth`/`minHeight` sets only a
+        // floor and must NOT cancel the child's expansion (e.g. the common root
+        // `.frame(maxWidth: .infinity).frame(minWidth: 600)` — the outer min
+        // frame must still report as expanding, or the window won't fill). Only
+        // a fixed `width`/`height` or a finite `maxWidth`/`maxHeight` caps it.
+        if maxWidth == .infinity || (expandsWidth && width == nil && maxWidth == nil) {
             markExpandWidth(container)
         }
-        if maxHeight == .infinity || (expandsHeight && height == nil && minHeight == nil) {
+        if maxHeight == .infinity || (expandsHeight && height == nil && maxHeight == nil) {
             markExpandHeight(container)
         }
 
@@ -2418,6 +2422,31 @@ let frameLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, 
             let info = Unmanaged<FrameLayoutInfo>.fromOpaque(
                 UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
             ).takeUnretainedValue()
+
+            // Enforce maxWidth/maxHeight constraints. A parent layout
+            // (HStack/VStack) may resize us beyond our frame constraints
+            // if expand flags propagated through a wrapper (e.g.
+            // BackgroundView ZStack). SwiftUI and GTK4 prevent this
+            // via size proposals / gtk_widget_set_size_request; Win32
+            // requires explicit clamping here.
+            var rect = RECT()
+            GetClientRect(hwnd!, &rect)
+            var w = rect.right - rect.left
+            var h = rect.bottom - rect.top
+            var needsClamp = false
+            if let maxW = info.frameMaxWidth, maxW != .infinity, Double(w) > ceil(maxW) {
+                w = Int32(ceil(maxW)); needsClamp = true
+            }
+            if let maxH = info.frameMaxHeight, maxH != .infinity, Double(h) > ceil(maxH) {
+                h = Int32(ceil(maxH)); needsClamp = true
+            }
+            if needsClamp {
+                // Clamp triggers another WM_SIZE at the constrained
+                // size, which will call layoutFrameChild below.
+                SetWindowPos(hwnd!, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
+                return 0
+            }
+
             layoutFrameChild(in: hwnd!, info: info)
         }
         return 0
@@ -2667,69 +2696,145 @@ let foregroundColorProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcla
 
 extension BackgroundView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        if (background as? Color) == nil {
-            return winRenderView(ZStack(alignment: alignment) {
-                self.background
-                content
-            }, in: context)
+        // Solid-fill backgrounds — a plain Color, or a Shape filled with a color
+        // (the overwhelmingly common case, e.g. `RoundedRectangle().fill(...)`) —
+        // are painted directly on the container which then hands its brush to
+        // descendants. This is resize-safe: unlike a separate D2D shape child
+        // (which the opaque content occludes, so it never repaints and loses its
+        // fill on resize), the container always repaints its own erase.
+        if let color = background as? Color {
+            return solidFillBackground(content: content, color: color, in: context)
+        }
+        if let filled = background as? FilledShape<RoundedRectangle> {
+            return solidFillBackground(content: content, color: filled.color, in: context)
+        }
+        if let filled = background as? FilledShape<Rectangle> {
+            return solidFillBackground(content: content, color: filled.color, in: context)
         }
 
+        // Fallback for other backgrounds (gradients, images, arbitrary views):
+        // compose the background behind the content, content-driven so only the
+        // content's expand flags propagate (a `.background` must be sized to its
+        // primary content and must not make the composite flexible; shapes carry
+        // an expand flag that would otherwise leak up through the layout).
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
-        // Create a container that paints itself with the background color
         let container = CreateWindowExW(
             0, stackContainerClassName, nil,
-            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+            DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS),
             0, 0, 0, 0,
             context.parent, nil, context.hInstance, nil
         )!
         markHostedNodeKind(container, .background)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+
+        // Background first so it sits behind the content (Win32 places each
+        // newly created child at the top of the Z-order).
+        let bgHwnd = winRenderView(background, in: childContext)
+
         guard let child = winRenderView(content, in: childContext) else { return container }
 
-        // Size container to child
         var childRect = RECT()
         GetWindowRect(child, &childRect)
         let w = childRect.right - childRect.left
         let h = childRect.bottom - childRect.top
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
-        // Propagate expand flags from child so parent layouts (VStack/HStack)
-        // know this background container should fill available space.
+        // Propagate expand flags from the CONTENT only, not the background.
         if shouldExpandWidth(child) { markExpandWidth(container) }
         if shouldExpandHeight(child) { markExpandHeight(container) }
 
-        guard let color = background as? Color else { return container }
-
-        // Color.clear (alpha=0) should not paint — skip the brush entirely
-        // so the container uses the inherited parent background. Without this,
-        // pre-multiplying alpha=0 produces white, covering child content.
-        guard color.alpha > 0 else {
-            let bgInfo = BackgroundInfo(child: child, colorRef: 0, brush: nil)
-            let infoPtr = Unmanaged.passRetained(bgInfo).toOpaque()
-            SetWindowSubclass(container, backgroundProc, 11, DWORD_PTR(UInt(bitPattern: infoPtr)))
-            SetWindowPos(child, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
-            return container
+        var bgNatural = ViewSize(width: 0, height: 0)
+        if let bgHwnd {
+            var bgRect = RECT()
+            GetWindowRect(bgHwnd, &bgRect)
+            bgNatural = ViewSize(width: Double(bgRect.right - bgRect.left),
+                                 height: Double(bgRect.bottom - bgRect.top))
         }
+        // Track each axis independently: a background that fills only one axis
+        // (e.g. a horizontal rule) must not be stretched on the other.
+        let bgExpandsW = bgHwnd.map { shouldExpandWidth($0) } ?? false
+        let bgExpandsH = bgHwnd.map { shouldExpandHeight($0) } ?? false
 
-        // Pre-multiply alpha against white to simulate transparency.
-        // GDI brushes don't support alpha, so we blend manually.
-        let a = color.alpha
-        let r = UInt8((color.red * a + 1.0 * (1.0 - a)) * 255)
-        let g = UInt8((color.green * a + 1.0 * (1.0 - a)) * 255)
-        let b = UInt8((color.blue * a + 1.0 * (1.0 - a)) * 255)
-        let colorRef = win32_RGB(r, g, b)
-
-        let bgInfo = BackgroundInfo(child: child, colorRef: colorRef, brush: CreateSolidBrush(colorRef))
-        let infoPtr = Unmanaged.passRetained(bgInfo).toOpaque()
-        SetWindowSubclass(container, backgroundProc, 11, DWORD_PTR(UInt(bitPattern: infoPtr)))
-
-        // Initial layout
+        if let bgHwnd {
+            placeBackgroundLayer(bgHwnd, in: (w, h), natural: bgNatural,
+                                 expandsWidth: bgExpandsW, expandsHeight: bgExpandsH,
+                                 alignment: alignment)
+        }
         SetWindowPos(child, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+
+        let info = BackgroundShapeInfo(content: child, background: bgHwnd,
+                                       backgroundNatural: bgNatural,
+                                       backgroundExpandsWidth: bgExpandsW,
+                                       backgroundExpandsHeight: bgExpandsH,
+                                       alignment: alignment)
+        let infoPtr = Unmanaged.passRetained(info).toOpaque()
+        SetWindowSubclass(container, backgroundShapeProc, 13, DWORD_PTR(UInt(bitPattern: infoPtr)))
 
         return container
     }
+}
+
+/// Paint a solid-color fill (optionally with rounded corners) behind `content`
+/// by filling the container and handing its brush to descendants — the same
+/// proven, resize-safe path as a plain `Color` background. The fill is square:
+/// a shape's corner radius is not applied as a clip here (see the note in the
+/// body), matching `.background`'s non-clipping semantics.
+private func solidFillBackground<C: View>(content: C, color: Color,
+                                          in context: RenderContext) -> HWND? {
+    registerStackClassIfNeeded(hInstance: context.hInstance)
+
+    let container = CreateWindowExW(
+        0, stackContainerClassName, nil,
+        DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
+        0, 0, 0, 0,
+        context.parent, nil, context.hInstance, nil
+    )!
+    markHostedNodeKind(container, .background)
+
+    let childContext = RenderContext(parent: container, hInstance: context.hInstance)
+    guard let child = winRenderView(content, in: childContext) else { return container }
+
+    var childRect = RECT()
+    GetWindowRect(child, &childRect)
+    let w = childRect.right - childRect.left
+    let h = childRect.bottom - childRect.top
+    SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+    if shouldExpandWidth(child) { markExpandWidth(container) }
+    if shouldExpandHeight(child) { markExpandHeight(container) }
+
+    // NB: a filled Shape's corner radius is intentionally NOT applied here as a
+    // window region. Clipping the container would also clip the foreground
+    // content's paint and hit-testing in the corners, which `.background` must
+    // not do (unlike `.clipShape`). The fill is therefore square; callers that
+    // want a rounded, clipped card should compose `.clipShape`.
+
+    // Color.clear (alpha 0): no brush — inherit the parent background.
+    guard color.alpha > 0 else {
+        let bgInfo = BackgroundInfo(child: child, colorRef: 0, brush: nil)
+        let infoPtr = Unmanaged.passRetained(bgInfo).toOpaque()
+        SetWindowSubclass(container, backgroundProc, 11, DWORD_PTR(UInt(bitPattern: infoPtr)))
+        SetWindowPos(child, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+        return container
+    }
+
+    // GDI brushes are opaque — pre-multiply alpha against white.
+    let a = color.alpha
+    let r = UInt8((color.red * a + 1.0 * (1.0 - a)) * 255)
+    let g = UInt8((color.green * a + 1.0 * (1.0 - a)) * 255)
+    let b = UInt8((color.blue * a + 1.0 * (1.0 - a)) * 255)
+    let colorRef = win32_RGB(r, g, b)
+
+    let bgInfo = BackgroundInfo(child: child, colorRef: colorRef,
+                                brush: CreateSolidBrush(colorRef))
+    let infoPtr = Unmanaged.passRetained(bgInfo).toOpaque()
+    SetWindowSubclass(container, backgroundProc, 11, DWORD_PTR(UInt(bitPattern: infoPtr)))
+
+    SetWindowPos(child, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+
+    return container
 }
 
 class BackgroundInfo {
@@ -2800,6 +2905,112 @@ let backgroundProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
             UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
         ).release()
         RemoveWindowSubclass(hwnd, backgroundProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    }
+}
+
+/// Holds the two layers of a Shape-backed `.background` so the container
+/// subclass can keep them matched to its size on resize.
+final class BackgroundShapeInfo {
+    let content: HWND
+    let background: HWND?
+    let backgroundNatural: ViewSize
+    let backgroundExpandsWidth: Bool
+    let backgroundExpandsHeight: Bool
+    let alignment: SwiftOpenUI.Alignment
+
+    init(content: HWND, background: HWND?, backgroundNatural: ViewSize,
+         backgroundExpandsWidth: Bool, backgroundExpandsHeight: Bool,
+         alignment: SwiftOpenUI.Alignment) {
+        self.content = content
+        self.background = background
+        self.backgroundNatural = backgroundNatural
+        self.backgroundExpandsWidth = backgroundExpandsWidth
+        self.backgroundExpandsHeight = backgroundExpandsHeight
+        self.alignment = alignment
+    }
+}
+
+/// Place a `.background` layer within `(w, h)` content bounds. Each axis is
+/// handled independently: a space-filling axis stretches to fill; otherwise the
+/// layer keeps its natural size on that axis and is aligned per SwiftUI's
+/// `.background(alignment:)` rules.
+func placeBackgroundLayer(_ bg: HWND, in size: (Int32, Int32), natural: ViewSize,
+                          expandsWidth: Bool, expandsHeight: Bool,
+                          alignment: SwiftOpenUI.Alignment) {
+    let (w, h) = size
+    let bw = expandsWidth ? w : Int32(natural.width)
+    let bh = expandsHeight ? h : Int32(natural.height)
+    let x: Int32
+    let y: Int32
+    switch alignment {
+    case .topLeading:     x = 0;           y = 0
+    case .top:            x = (w - bw) / 2; y = 0
+    case .topTrailing:    x = w - bw;       y = 0
+    case .leading:        x = 0;           y = (h - bh) / 2
+    case .center:         x = (w - bw) / 2; y = (h - bh) / 2
+    case .trailing:       x = w - bw;       y = (h - bh) / 2
+    case .bottomLeading:  x = 0;           y = h - bh
+    case .bottom:         x = (w - bw) / 2; y = h - bh
+    case .bottomTrailing: x = w - bw;       y = h - bh
+    }
+    SetWindowPos(bg, nil, x, y, bw, bh, UINT(SWP_NOZORDER))
+}
+
+/// Subclass proc for a Shape-backed `.background` container. Keeps the (behind)
+/// background and (front) content matched to the container's size on resize and
+/// routes wrapper messages like the other stack containers.
+let backgroundShapeProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let info = Unmanaged<BackgroundShapeInfo>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_SIZE):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let w = rect.right - rect.left
+        let h = rect.bottom - rect.top
+        if let bg = info.background {
+            placeBackgroundLayer(bg, in: (w, h), natural: info.backgroundNatural,
+                                 expandsWidth: info.backgroundExpandsWidth,
+                                 expandsHeight: info.backgroundExpandsHeight,
+                                 alignment: info.alignment)
+        }
+        SetWindowPos(info.content, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+        return 0
+
+    case UINT(WM_ERASEBKGND):
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
+
+    case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
+        // Forward to parent so BackgroundView ancestors can set their brush.
+        if let parent = GetParent(hwnd!) {
+            return SendMessageW(parent, uMsg, wParam, lParam)
+        }
+        let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        SetBkMode(hdc, TRANSPARENT)
+        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+
+    case UINT(WM_COMMAND):
+        if lParam != 0, let childHwnd = HWND(bitPattern: Int(lParam)) {
+            SendMessageW(childHwnd, uMsg, wParam, lParam)
+        }
+        if let root = findRootWindow(from: hwnd!) as HWND? {
+            return SendMessageW(root, uMsg, wParam, lParam)
+        }
+        return 0
+
+    case UINT(WM_NCDESTROY):
+        Unmanaged<BackgroundShapeInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, backgroundShapeProc, uIdSubclass)
         return DefSubclassProc(hwnd, uMsg, wParam, lParam)
 
     default:
@@ -9121,7 +9332,16 @@ private let shapePaintProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSub
 
                 state.draw(rt, brush, Float(w), Float(h))
 
-                _ = d2d1_RenderTarget_EndDraw(rt)
+                // Handle D2D device/target loss (e.g. after a window resize that
+                // doesn't resize this surface): EndDraw reports it, so drop the
+                // target and repaint — ensureTarget then rebuilds it. Without
+                // this the fill goes blank until the view is rebuilt. Matches
+                // D2DSurface's recovery.
+                let hr = d2d1_RenderTarget_EndDraw(rt)
+                if hr < 0 {
+                    state.cleanup()
+                    InvalidateRect(hwnd, nil, false)
+                }
             }
         }
 
