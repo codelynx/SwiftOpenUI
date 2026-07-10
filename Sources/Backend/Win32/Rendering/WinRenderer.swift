@@ -4734,30 +4734,136 @@ extension OverlayView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
         SetWindowPos(contentHwnd, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
 
-        // Render overlay on top, positioned by alignment
+        // Propagate expand flags from content so parent layouts
+        // (VStack/HStack/FrameView) know this container should fill.
+        if shouldExpandWidth(contentHwnd) { markExpandWidth(container) }
+        if shouldExpandHeight(contentHwnd) { markExpandHeight(container) }
+
+        // Render overlay on top, positioned by alignment.
         if let overlayHwnd = winRenderView(overlay, in: childContext) {
             var overlayRect = RECT()
             GetWindowRect(overlayHwnd, &overlayRect)
-            let ow = overlayRect.right - overlayRect.left
-            let oh = overlayRect.bottom - overlayRect.top
+            let naturalW = overlayRect.right - overlayRect.left
+            let naturalH = overlayRect.bottom - overlayRect.top
 
-            let ox: Int32
-            let oy: Int32
-            switch alignment {
-            case .topLeading:     ox = 0;           oy = 0
-            case .top:            ox = (w - ow) / 2; oy = 0
-            case .topTrailing:    ox = w - ow;       oy = 0
-            case .leading:        ox = 0;           oy = (h - oh) / 2
-            case .center:         ox = (w - ow) / 2; oy = (h - oh) / 2
-            case .trailing:       ox = w - ow;       oy = (h - oh) / 2
-            case .bottomLeading:  ox = 0;           oy = h - oh
-            case .bottom:         ox = (w - ow) / 2; oy = h - oh
-            case .bottomTrailing: ox = w - ow;       oy = h - oh
+            // Determine if the overlay is a zero-natural-size shape
+            // (stroke border, filled shape, etc.) that should fill
+            // the content bounds. Shapes have no inherent size in
+            // SwiftUI — they fill their parent. Overlays with real
+            // natural size (badges, text, hidden buttons) use the
+            // alignment-based positioning path instead.
+            let isShapeFill = (naturalW <= 0 && naturalH <= 0)
+                           || shouldExpandWidth(overlayHwnd)
+                           || shouldExpandHeight(overlayHwnd)
+
+            if isShapeFill {
+                // Stretch to fill and apply a hollow border region so
+                // the content behind shows through. Win32 child HWNDs
+                // are opaque — without the region cut-out the overlay
+                // D2D surface covers the content entirely.
+                SetWindowPos(overlayHwnd, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+                applyHollowBorderRegion(overlayHwnd, w: w, h: h)
+            } else {
+                // Alignment-based positioning for overlays with real
+                // natural size (badges, labels, hidden hooks, etc.)
+                let ow = naturalW
+                let oh = naturalH
+                let ox: Int32
+                let oy: Int32
+                switch alignment {
+                case .topLeading:     ox = 0;           oy = 0
+                case .top:            ox = (w - ow) / 2; oy = 0
+                case .topTrailing:    ox = w - ow;       oy = 0
+                case .leading:        ox = 0;           oy = (h - oh) / 2
+                case .center:         ox = (w - ow) / 2; oy = (h - oh) / 2
+                case .trailing:       ox = w - ow;       oy = (h - oh) / 2
+                case .bottomLeading:  ox = 0;           oy = h - oh
+                case .bottom:         ox = (w - ow) / 2; oy = h - oh
+                case .bottomTrailing: ox = w - ow;       oy = h - oh
+                }
+                SetWindowPos(overlayHwnd, nil, ox, oy, ow, oh, UINT(SWP_NOZORDER))
             }
-            SetWindowPos(overlayHwnd, nil, ox, oy, ow, oh, UINT(SWP_NOZORDER))
+
+            // Install WM_SIZE handler so both content and overlay
+            // resize when a parent (e.g. FrameView) resizes us.
+            let overlayInfo = OverlayInfo(content: contentHwnd, overlay: overlayHwnd,
+                                          isShapeFill: isShapeFill)
+            let infoPtr = Unmanaged.passRetained(overlayInfo).toOpaque()
+            if !SetWindowSubclass(container, overlayProc, 12,
+                                  DWORD_PTR(UInt(bitPattern: infoPtr))) {
+                // Subclass failed — release to avoid leak
+                Unmanaged<OverlayInfo>.fromOpaque(infoPtr).release()
+            }
         }
 
         return container
+    }
+}
+
+class OverlayInfo {
+    let content: HWND
+    let overlay: HWND
+    let isShapeFill: Bool
+
+    init(content: HWND, overlay: HWND, isShapeFill: Bool) {
+        self.content = content
+        self.overlay = overlay
+        self.isShapeFill = isShapeFill
+    }
+}
+
+/// Creates a hollow border region on `hwnd`: the full (w × h) rect
+/// minus an inset interior. The interior pixels "don't exist," so
+/// the content behind the overlay shows through. Used only for
+/// shape-fill overlays (stroke borders, filled shapes) where the
+/// overlay HWND is stretched to fill the content bounds.
+private func applyHollowBorderRegion(_ hwnd: HWND, w: Int32, h: Int32) {
+    let margin: Int32 = 6
+    guard w > margin * 2, h > margin * 2 else {
+        // Too small for a meaningful border — hide overlay entirely
+        // rather than leaving it opaque over the content.
+        SetWindowRgn(hwnd, CreateRectRgn(0, 0, 0, 0), true)
+        return
+    }
+    guard let outer = CreateRectRgn(0, 0, w, h),
+          let inner = CreateRectRgn(margin, margin, w - margin, h - margin)
+    else { return }
+    CombineRgn(outer, outer, inner, Int32(RGN_DIFF))
+    SetWindowRgn(hwnd, outer, true)
+    DeleteObject(inner)
+    // outer is now owned by the window — don't delete
+}
+
+let overlayProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) in
+    guard dwRefData != 0 else { return DefSubclassProc(hwnd, uMsg, wParam, lParam) }
+
+    let info = Unmanaged<OverlayInfo>.fromOpaque(
+        UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+    ).takeUnretainedValue()
+
+    switch uMsg {
+    case UINT(WM_SIZE):
+        var rect = RECT()
+        GetClientRect(hwnd, &rect)
+        let w = rect.right - rect.left
+        let h = rect.bottom - rect.top
+        SetWindowPos(info.content, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+        if info.isShapeFill {
+            SetWindowPos(info.overlay, nil, 0, 0, w, h, UINT(SWP_NOZORDER))
+            applyHollowBorderRegion(info.overlay, w: w, h: h)
+        }
+        // Non-shape overlays keep their creation-time position/size
+        return 0
+
+    case UINT(WM_NCDESTROY):
+        Unmanaged<OverlayInfo>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: UInt(dwRefData))!
+        ).release()
+        RemoveWindowSubclass(hwnd, overlayProc, uIdSubclass)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
