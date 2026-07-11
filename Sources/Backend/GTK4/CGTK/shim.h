@@ -624,6 +624,39 @@ gtk_swift_orientable_set_orientation(GtkWidget *widget, GtkOrientation orientati
     gtk_orientable_set_orientation(GTK_ORIENTABLE(widget), orientation);
 }
 
+// --- GtkCustomLayout (flexible HStack equal-division) ---
+//
+// A GtkLayoutManager driven by plain C callbacks — no GObject subclass.
+// The measure/allocate/request-mode funcs receive the container widget
+// (not user_data); per-stack config is stashed on the widget via
+// g_object_set_data and read back Swift-side. The func pointers are
+// passed as their real GtkCustom*Func types (no bit-cast).
+
+static inline gpointer
+gtk_swift_custom_layout_new(GtkCustomRequestModeFunc request_mode,
+                            GtkCustomMeasureFunc measure,
+                            GtkCustomAllocateFunc allocate) {
+    return (gpointer)gtk_custom_layout_new(request_mode, measure, allocate);
+}
+
+static inline void
+gtk_swift_widget_set_layout_manager(GtkWidget *widget, gpointer manager) {
+    // Takes ownership (transfer full) of the manager.
+    gtk_widget_set_layout_manager(widget, GTK_LAYOUT_MANAGER(manager));
+}
+
+// Allocate a child at (x, y) with the given size. In GTK4 a child's
+// position comes from a transform, not a GtkAllocation rect; a fresh
+// translate is built per call and consumed transfer-full by
+// gtk_widget_allocate.
+static inline void
+gtk_swift_allocate_child(GtkWidget *child, int x, int y,
+                         int width, int height, int baseline) {
+    graphene_point_t p = GRAPHENE_POINT_INIT((float)x, (float)y);
+    GskTransform *t = gsk_transform_translate(NULL, &p);
+    gtk_widget_allocate(child, width, height, baseline, t);
+}
+
 // --- GtkPaned shims ---
 
 static inline void

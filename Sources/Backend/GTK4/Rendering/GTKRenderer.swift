@@ -983,7 +983,289 @@ private func gtkRenderFallbackHStack(
     }
     if needsHExpand { gtk_widget_set_hexpand(box, 1) }
     if needsVExpand { gtk_widget_set_vexpand(box, 1) }
+
+    // SwiftUI parity: 2+ flexible (hexpand, non-marker) children must split
+    // the remaining width EQUALLY. A plain GtkBox gives each child
+    // natural + equal-extra, so unequal content naturals → unequal widths.
+    // Install a custom layout that splits the remainder equally for that
+    // case; single-flexible / spacer-only layouts stay on the proven
+    // GtkBox path. See docs/proposals/gtk4-flexible-hstack-layout.md.
+    // Count only real flexible frames (non-marker hexpand), among VISIBLE
+    // children — matching the visible-child set the layout callbacks use.
+    // Spacers are deliberately excluded here (a spacer-only / single-real-
+    // flex row stays on GtkBox), even though the distribution treats a
+    // spacer as flexible once the custom layout is engaged.
+    let flexibleCount = children.filter { widget in
+        guard gtk_widget_get_visible(widget) != 0 else { return false }
+        let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
+        let isMarker = g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil
+            || g_object_get_data(gobject, gtkSwiftDividerMarker) != nil
+        return !isMarker && gtk_widget_get_hexpand(widget) != 0
+    }.count
+    if flexibleCount >= 2 {
+        gtkInstallFlexibleHStackLayout(box, spacing: spacing, alignment: alignment)
+    }
+
     return opaqueFromWidget(box)
+}
+
+// MARK: - Flexible HStack equal-division layout (GtkCustomLayout)
+//
+// GtkBox distributes each child natural + equal-extra, so two
+// `.frame(maxWidth:.infinity)` children with different content widths end
+// up unequal — unlike SwiftUI, which splits the remainder equally. This
+// custom layout implements the SwiftUI split for the fallback HStack when
+// 2+ flexible children are present. See the proposal doc for the full
+// spec, the review corrections, and the test matrix.
+
+private final class HStackFlexContext {
+    let spacing: Int
+    let alignment: VerticalAlignment
+    init(spacing: Int, alignment: VerticalAlignment) {
+        self.spacing = spacing
+        self.alignment = alignment
+    }
+}
+
+private let flexHStackContextKey = "swiftopenui-flex-hstack-context"
+
+private func flexHStackContext(_ box: UnsafeMutablePointer<GtkWidget>) -> HStackFlexContext? {
+    let gobject = UnsafeMutableRawPointer(box).assumingMemoryBound(to: GObject.self)
+    guard let ptr = g_object_get_data(gobject, flexHStackContextKey) else { return nil }
+    return Unmanaged<HStackFlexContext>.fromOpaque(ptr).takeUnretainedValue()
+}
+
+private func gtkInstallFlexibleHStackLayout(
+    _ box: UnsafeMutablePointer<GtkWidget>,
+    spacing: Int,
+    alignment: VerticalAlignment
+) {
+    let ctx = HStackFlexContext(spacing: spacing, alignment: alignment)
+    let ptr = Unmanaged.passRetained(ctx).toOpaque()
+    let gobject = UnsafeMutableRawPointer(box).assumingMemoryBound(to: GObject.self)
+    g_object_set_data_full(gobject, flexHStackContextKey, ptr) { userData in
+        Unmanaged<HStackFlexContext>.fromOpaque(userData!).release()
+    }
+    let manager = gtk_swift_custom_layout_new(
+        flexHStackRequestModeCallback,
+        flexHStackMeasureCallback,
+        flexHStackAllocateCallback
+    )!
+    gtk_swift_widget_set_layout_manager(box, manager)
+}
+
+/// Visible children of `box`, in order.
+private func gtkFlexHStackVisibleChildren(
+    _ box: UnsafeMutablePointer<GtkWidget>
+) -> [UnsafeMutablePointer<GtkWidget>] {
+    var out: [UnsafeMutablePointer<GtkWidget>] = []
+    var cur = gtk_widget_get_first_child(box)
+    while let child = cur {
+        if gtk_widget_get_visible(child) != 0 { out.append(child) }
+        cur = gtk_widget_get_next_sibling(child)
+    }
+    return out
+}
+
+struct HStackAssignment {
+    let child: UnsafeMutablePointer<GtkWidget>
+    let width: Int
+}
+
+/// Splits `remainder` into equal slices across `k = mins.count` flexible
+/// children with an iterative waterfall: a child whose minimum exceeds its
+/// slice is clamped to its minimum and removed from the pool, then the rest
+/// re-divide. Never returns a negative width (terminal over-constrained
+/// case → each remaining child clamps to its minimum, may overflow/clip).
+func gtkHStackWaterfall(remainder: Int, mins: [Int]) -> [Int] {
+    let k = mins.count
+    guard k > 0 else { return [] }
+    var result = [Int](repeating: 0, count: k)
+    var active = Array(0..<k)
+    var pool = remainder
+    while !active.isEmpty {
+        let slice = pool / active.count
+        let over = active.filter { mins[$0] > slice }
+        if over.isEmpty {
+            var extra = pool - slice * active.count // >= 0
+            for i in active {
+                result[i] = slice + (extra > 0 ? 1 : 0)
+                if extra > 0 { extra -= 1 }
+            }
+            break
+        }
+        for i in over {
+            result[i] = mins[i]
+            pool -= mins[i]
+        }
+        active.removeAll { over.contains($0) }
+        if pool < 0 {
+            for i in active { result[i] = mins[i] }
+            break
+        }
+    }
+    for i in 0..<k where result[i] < 0 { result[i] = 0 }
+    return result
+}
+
+/// Assigns each visible child a width for a container width `W`. Shared by
+/// the allocate callback and `measure(VERTICAL, for_size ≥ 0)` so the two
+/// can't diverge (height-for-width correctness).
+func gtkHStackAssignWidths(
+    box: UnsafeMutablePointer<GtkWidget>,
+    totalWidth W: Int,
+    spacing s: Int
+) -> [HStackAssignment] {
+    let children = gtkFlexHStackVisibleChildren(box)
+    let n = children.count
+    guard n > 0 else { return [] }
+
+    var isFlex = [Bool](repeating: false, count: n)
+    var minW = [Int](repeating: 0, count: n)
+    var natW = [Int](repeating: 0, count: n)
+    for (i, child) in children.enumerated() {
+        var mn: gint = 0, nt: gint = 0
+        gtk_widget_measure(child, GTK_ORIENTATION_HORIZONTAL, -1, &mn, &nt, nil, nil)
+        minW[i] = Int(mn); natW[i] = Int(nt)
+        let gobject = UnsafeMutableRawPointer(child).assumingMemoryBound(to: GObject.self)
+        let isSpacer = g_object_get_data(gobject, gtkSwiftSpacerMarker) != nil
+        let isDivider = g_object_get_data(gobject, gtkSwiftDividerMarker) != nil
+        // A Spacer is *maximally* flexible (SwiftUI) — it joins the equal-
+        // split pool (its measured minimum honors any minLength). A Divider
+        // stays fixed. Otherwise flexible iff it wants to expand. (The
+        // install-time gate, separately, does NOT count spacers, so a
+        // spacer-only / single-real-flex row stays on the GtkBox path.)
+        isFlex[i] = isSpacer || (!isDivider && gtk_widget_get_hexpand(child) != 0)
+    }
+
+    let available = max(0, W - s * (n - 1))
+    let fixedIdx = (0..<n).filter { !isFlex[$0] }
+    let flexIdx = (0..<n).filter { isFlex[$0] }
+    let fixedNat = fixedIdx.reduce(0) { $0 + natW[$1] }
+    let flexMin = flexIdx.reduce(0) { $0 + minW[$1] }
+
+    var widths = [Int](repeating: 0, count: n)
+    // Normal case needs room for fixed at natural AND every flexible child's
+    // minimum; otherwise fixed children must shrink or the row overflows.
+    if available >= fixedNat + flexMin {
+        // Fixed children take natural; flexible split the remainder equally.
+        for i in fixedIdx { widths[i] = natW[i] }
+        let remainder = available - fixedNat
+        let flexWidths = gtkHStackWaterfall(remainder: remainder, mins: flexIdx.map { minW[$0] })
+        for (k, i) in flexIdx.enumerated() { widths[i] = flexWidths[k] }
+    } else {
+        // Over-constrained: shrink fixed children proportionally between
+        // their min and natural (GtkBox parity); flexible clamp to minimum.
+        for i in flexIdx { widths[i] = minW[i] }
+        let fixedMin = fixedIdx.reduce(0) { $0 + minW[$1] }
+        let fixedTarget = max(fixedMin, available - flexMin)
+        let shrinkRoom = fixedNat - fixedMin
+        let shrinkNeeded = max(0, min(shrinkRoom, fixedNat - fixedTarget))
+        // Integer largest-remainder distribution so the shrinks sum exactly
+        // to shrinkNeeded (no per-child rounding drift).
+        var shrinks = [Int](repeating: 0, count: fixedIdx.count)
+        if shrinkRoom > 0 && shrinkNeeded > 0 {
+            var fracs: [(j: Int, frac: Double)] = []
+            var assigned = 0
+            for (j, i) in fixedIdx.enumerated() {
+                let exact = Double(shrinkNeeded) * Double(natW[i] - minW[i]) / Double(shrinkRoom)
+                shrinks[j] = Int(exact)
+                assigned += shrinks[j]
+                fracs.append((j, exact - Double(shrinks[j])))
+            }
+            var residual = shrinkNeeded - assigned
+            for (j, _) in fracs.sorted(by: { $0.frac > $1.frac }) where residual > 0 {
+                if shrinks[j] < natW[fixedIdx[j]] - minW[fixedIdx[j]] {
+                    shrinks[j] += 1; residual -= 1
+                }
+            }
+        }
+        for (j, i) in fixedIdx.enumerated() { widths[i] = max(minW[i], natW[i] - shrinks[j]) }
+    }
+    return (0..<n).map { HStackAssignment(child: children[$0], width: widths[$0]) }
+}
+
+private let flexHStackRequestModeCallback: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?
+) -> GtkSizeRequestMode = { _ in GTK_SIZE_REQUEST_HEIGHT_FOR_WIDTH }
+
+private let flexHStackMeasureCallback: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?, GtkOrientation, gint,
+    UnsafeMutablePointer<gint>?, UnsafeMutablePointer<gint>?,
+    UnsafeMutablePointer<gint>?, UnsafeMutablePointer<gint>?
+) -> Void = { widget, orientation, forSize, minOut, natOut, minBase, natBase in
+    minBase?.pointee = -1
+    natBase?.pointee = -1
+    guard let box = widget else { return }
+    let spacing = flexHStackContext(box)?.spacing ?? 0
+    let children = gtkFlexHStackVisibleChildren(box)
+    let n = children.count
+
+    if orientation == GTK_ORIENTATION_HORIZONTAL {
+        var minSum = 0, natSum = 0
+        for child in children {
+            var mn: gint = 0, nt: gint = 0
+            gtk_widget_measure(child, GTK_ORIENTATION_HORIZONTAL, -1, &mn, &nt, nil, nil)
+            minSum += Int(mn); natSum += Int(nt)
+        }
+        if n > 1 { minSum += spacing * (n - 1); natSum += spacing * (n - 1) }
+        minOut?.pointee = gint(minSum)
+        natOut?.pointee = gint(natSum)
+        return
+    }
+
+    // Vertical is height-for-width: measure each child's height at its
+    // ASSIGNED width (not natural) when for_size is known, else at natural.
+    var maxMin = 0, maxNat = 0
+    if forSize < 0 {
+        for child in children {
+            var mn: gint = 0, nt: gint = 0
+            gtk_widget_measure(child, GTK_ORIENTATION_VERTICAL, -1, &mn, &nt, nil, nil)
+            maxMin = max(maxMin, Int(mn)); maxNat = max(maxNat, Int(nt))
+        }
+    } else {
+        for a in gtkHStackAssignWidths(box: box, totalWidth: Int(forSize), spacing: spacing) {
+            var mn: gint = 0, nt: gint = 0
+            gtk_widget_measure(a.child, GTK_ORIENTATION_VERTICAL, gint(a.width), &mn, &nt, nil, nil)
+            maxMin = max(maxMin, Int(mn)); maxNat = max(maxNat, Int(nt))
+        }
+    }
+    minOut?.pointee = gint(maxMin)
+    natOut?.pointee = gint(maxNat)
+}
+
+private let flexHStackAllocateCallback: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?, gint, gint, gint
+) -> Void = { widget, width, height, _ in
+    guard let box = widget else { return }
+    let ctx = flexHStackContext(box)
+    let spacing = ctx?.spacing ?? 0
+    let alignment = ctx?.alignment ?? .center
+    let W = Int(width), H = Int(height)
+    let assignments = gtkHStackAssignWidths(box: box, totalWidth: W, spacing: spacing)
+    guard !assignments.isEmpty else { return }
+    let rtl = gtk_widget_get_direction(box) == GTK_TEXT_DIR_RTL
+
+    var x = 0
+    for a in assignments {
+        var mnH: gint = 0, ntH: gint = 0
+        gtk_widget_measure(a.child, GTK_ORIENTATION_VERTICAL, gint(a.width), &mnH, &ntH, nil, nil)
+        let vexpand = gtk_widget_get_vexpand(a.child) != 0
+        let childH = vexpand ? H : min(Int(ntH), H)
+        let y: Int
+        if vexpand {
+            y = 0
+        } else {
+            switch alignment {
+            case .top: y = 0
+            case .center: y = max(0, (H - childH) / 2)
+            case .bottom: y = max(0, H - childH)
+            }
+        }
+        let ax = rtl ? (W - x - a.width) : x
+        gtk_swift_allocate_child(a.child, gint(ax), gint(y), gint(a.width), gint(childH), -1)
+        x += a.width + spacing
+    }
 }
 
 extension ZStack: GTKRenderable, GTKDescribable {
