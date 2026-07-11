@@ -30,6 +30,7 @@ swift run ParityGestures
 swift run ParityAnimation
 swift run ParityFocus
 swift run ParityAppStructure
+swift run ParityKeyboardShortcut
 ```
 
 Requires Xcode command-line tools. The window appears as a native SwiftUI app with Dock icon and ⌘Tab support.
@@ -171,6 +172,7 @@ See [android-setup.md](android-setup.md) for full setup instructions.
 | Animation | `ParityAnimation` | .animation(), withAnimation() |
 | Focus | `ParityFocus` | @FocusState (bool + enum), .focused() |
 | AppStructure | `ParityAppStructure` | App, Scene, WindowGroup, @ViewBuilder, window sizing APIs |
+| KeyboardShortcut | `ParityKeyboardShortcut` | .keyboardShortcut(), .onExitCommand(), hidden window-scoped shortcut |
 
 
 ## Platform Support Matrix
