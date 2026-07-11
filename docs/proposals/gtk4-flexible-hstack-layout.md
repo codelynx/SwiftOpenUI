@@ -1,8 +1,9 @@
 # Proposal: GTK4 flexible HStack equal-division layout
 
-**Status:** design for review (no code yet). GTK4 backend.
+**Status:** approved (review sign-off); implementing. GTK4 backend.
 **Owner:** Linux-side agent. **Reviewers:** core/mac agent (foundational
-layout path).
+layout path) — signed off with the vertical-measure + over-constrained-
+shrink corrections folded in below.
 **Issue:** [`gtk4-hstack-maxwidth-infinity-not-equal.md`](../issues/gtk4-hstack-maxwidth-infinity-not-equal.md)
 
 ## Problem
@@ -38,49 +39,95 @@ Given box width `W`, height `H`, spacing `s`, and children
 `c₀…cₙ₋₁` (iterated via `gtk_widget_get_first_child` /
 `get_next_sibling`):
 
-1. Classify each child: **flexible** if `hexpand != 0` and it's not a
-   spacer/divider marker; else **fixed**. (Spacers/dividers keep their
-   existing GtkBox-era handling — a spacer with no flexible siblings
-   still expands; a divider stays natural-width.)
-2. `available = W − s·(childCount − 1)`.
-3. For each **fixed** child, measure its natural width
-   (`gtk_widget_measure(HORIZONTAL, H)`); sum → `fixedTotal`.
-4. `remainder = max(0, available − fixedTotal)`.
-5. Split `remainder` **equally** among the `k` flexible children:
-   `slice = remainder / k`, distributing the integer remainder to the
-   first children (±1px). **Respect each flexible child's minimum**: if a
-   flexible child's measured minimum exceeds its slice, it takes its
-   minimum and is removed from the pool; re-divide the rest (iterative,
-   matching SwiftUI's "satisfied children drop out" behavior). *v1 may
-   ship a single pass with min-clamp and note iterative as a follow-up if
-   the pathological narrow case matters.*
-6. Position children left→right: `x` accumulates `childWidth + s`. Each
-   child's vertical placement uses its measured height and the HStack
-   `VerticalAlignment` (top/center/bottom) within `H`. Allocate via
-   `gtk_widget_allocate(child, w, h, baseline, translate(x, y))`.
+Only **visible** children participate: skip `!gtk_widget_get_visible`
+children entirely (no width, no spacing) — matching GtkBox. (`.hidden()`
+stays visible-with-opacity-0, so it *does* still take space; a test
+asserts both.) Let `n` = visible child count; spacing applies between
+visible children only.
+
+1. Classify each visible child: **flexible** if `hexpand != 0` and not a
+   spacer/divider marker; else **fixed**. Same marker-aware classification
+   the 2+-gate uses (see Scope), so a spacer-only box never opts in.
+2. `available = W − s·(n − 1)`.
+3. Measure each **fixed** child's `(min, natural)` width; `fixedNatTotal`
+   = Σ naturals, `fixedMinTotal` = Σ minima.
+4. **Over-constrained fixed case (GtkBox parity).** If
+   `available < fixedNatTotal`, fixed children cannot all take natural.
+   Shrink them proportionally between their `min` and `natural` toward
+   `available` (GtkBox-like), floor at min; `remainder = 0` for flexible.
+   Otherwise each fixed child takes natural and
+   `remainder = available − fixedNatTotal`.
+5. Split `remainder` among the `k` flexible children with an **iterative
+   waterfall** (≤ k passes, ~10 lines — do NOT single-pass): `slice =
+   pool / kRemaining`; any flexible child whose measured **minimum >
+   slice** is clamped to its minimum and removed from the pool; re-divide
+   the rest. Repeat until no child is over its slice. Distribute the
+   integer rounding remainder ±1px across the first children. *Terminal
+   case:* if even `Σ flexible minima > remainder`, clamp all to minimum,
+   let GTK clip — **never emit a negative width.**
+6. Position visible children in **reading order** (see RTL note in the
+   matrix): accumulate `x += childWidth + s`. Vertical placement uses the
+   child's height measured **at its assigned width** and the HStack
+   `VerticalAlignment` (top/center/bottom) within `H`. Allocate via a
+   **fresh** `gsk_transform_translate(x, y)` per child (see gotchas —
+   `gtk_widget_allocate` takes the transform transfer-full). **Allocate
+   every visible child every pass**, even at clamped/zero width (an
+   unallocated child keeps a stale render node).
+
+`layoutPriority` and SwiftUI's full ideal-vs-min flexibility ranges are
+**explicitly out of scope** for v1 — flexible = "splits the remainder",
+fixed = "natural (shrinkable under pressure)".
 
 ### measure callback
 
+- **`request_mode`: pass an explicit func returning `HEIGHT_FOR_WIDTH`.**
+  `gtk_custom_layout_new`'s first argument is the request-mode func; a
+  `NULL` there defaults to `CONSTANT_SIZE`, silently breaking wrapping.
+  (This is a trap — "default" here means *explicit func*, not NULL.)
 - Horizontal: `minimum = Σ child minima + spacing`;
   `natural = Σ child naturals + spacing`.
-- Vertical: `minimum = max child minima`; `natural = max child naturals`.
-- `request_mode`: `HEIGHT_FOR_WIDTH` (default), matching GtkBox.
+- **Vertical is height-for-width — measure heights at *assigned* widths,
+  not natural widths.** When GTK calls `measure(VERTICAL, for_size = W)`
+  it must first run the horizontal distribution (step above) for `W`,
+  then measure each child's height **at its assigned width** and take the
+  max. Measuring at natural width under-reports a flexible Text that will
+  be squeezed and wrap to 2 lines → clipped label. Only `for_size == -1`
+  uses `max(natural heights)`. **Factor the distribution into a function
+  shared by `allocate` and `measure(VERTICAL, for_size ≥ 0)`** so the two
+  can't diverge.
 
 This makes the box's *natural* still content-driven (so parents size it
 correctly), while *allocation* splits flexible children equally — exactly
 the SwiftUI split.
 
+### GTK implementation gotchas (fold into the code)
+
+1. **Request-mode func, not NULL** (above) — else `CONSTANT_SIZE`, no
+   height-for-width.
+2. **`gtk_widget_allocate` consumes the transform (transfer-full).** Build
+   a fresh `gsk_transform_translate` per child per pass; do **not** unref
+   it after the call.
+3. **Allocate every visible child every pass**, even at clamped/zero
+   width — an unallocated child renders a stale node.
+4. **Honest minimum** (`Σ minima + spacing`) or GTK logs underallocation
+   warnings.
+5. `GtkCustomLayout` is **GTK 4.0+** — no version gate needed.
+
 ## Scope / gating
 
 - Applies **only to the expanding fallback path** (`gtkRenderFallbackHStack`).
   The shared `GtkFixed` path (no expansion) is unchanged.
-- **Gating decision to confirm in review:** apply the custom layout to
-  *all* fallback HStacks (more correct everywhere, larger regression
-  surface), **or** only when there are **2+ flexible children** (the
-  equal-division case), leaving single-flexible-child / spacer-only
-  layouts on the proven GtkBox path. *Recommendation: gate to 2+ flexible
-  children for v1* — smallest blast radius, and GtkBox already handles the
-  single-flexible case correctly (one child gets all the remainder).
+- **Gating — DECIDED (review sign-off): 2+ flexible children only.** Zero
+  fidelity cost (GtkBox already gives a sole `hexpand` child all the
+  remainder, which *is* SwiftUI's answer), smallest regression surface.
+  Compute the gate with the **same marker-aware classification** the
+  allocate callback uses (spacers/dividers excluded) so a "2 spacers" box
+  doesn't opt in. The per-build static decision is fine (rebuilds recreate
+  the box).
+- **Fidelity — DECIDED (review sign-off): iterative waterfall from the
+  start**, not single-pass min-clamp (§algorithm step 5). Single-pass
+  overflows `W` under the exact narrow-window case users produce
+  (overlap/clip); the iterative delta is trivial.
 
 ## Shim surface (new)
 
@@ -107,10 +154,20 @@ Foundational path — must not disturb:
 - **dividers** (vertical) — stay natural width, full height
 - **nested** HStacks / stacks-in-frames
 - **vertical alignment** top/center/bottom
-- **over-constrained** width (remainder ≤ 0): flexible children clamp to
-  minimum, no negative allocations, no crash
-- **height-for-width** children (wrapping text) measured at the right
-  width
+- **over-constrained** width: fixed children shrink between min/natural
+  (GtkBox parity, §algorithm step 4), then flexible clamp to minimum — no
+  negative allocations, no overflow/overlap, no crash
+- **height-for-width** children (wrapping text) — height measured at the
+  *assigned* width (the vertical-measure fix)
+- **RTL** — under `GTK_TEXT_DIR_RTL`, GtkBox auto-mirrors; a custom
+  allocate does not. **Decision: mirror `x` when
+  `gtk_widget_get_direction() == GTK_TEXT_DIR_RTL`** (lay out right→left).
+  Tested with an RTL direction override.
+- **invisible children** — `!visible` skipped entirely (no width, no
+  spacing); `.hidden()` (opacity-0) still takes space. Assert both.
+- **min-waterfall** — a flexible child whose content minimum exceeds its
+  equal slice (e.g. a fixed-size image in a flexible frame), so the
+  iterative drop-out is actually exercised.
 - the **two-drop-zone** case: equal width regardless of path length
   (the acceptance that lets us delete Synca's fixed-width workaround)
 
@@ -136,14 +193,13 @@ match. Not a shared-code change; no cross-platform-changelog entry (GTK4
 backend-local), but worth a heads-up so Win32/Web confirm their
 flexible-HStack distribution matches.
 
-## Open questions
+## Resolved by review
 
-1. **Gating:** 2+-flexible only (recommended) vs all fallback HStacks?
-2. **Iterative vs single-pass min-clamp** for v1 (does the pathological
-   narrow case matter for any real layout)?
-3. **Baseline alignment:** current `VerticalAlignment` is top/center/
-   bottom only; no `.firstTextBaseline`. Keep that scope, or is baseline
-   needed?
-4. Should the same custom layout eventually **replace** the GtkBox
-   fallback wholesale (retire the natural-bias path entirely) once
-   proven — a later consolidation?
+1. **Gating:** 2+-flexible only. ✅ (see Scope)
+2. **Fidelity:** iterative waterfall from the start. ✅ (see §algorithm)
+3. **Baseline alignment:** keep top/center/bottom scope — nothing in
+   Synca uses `.firstTextBaseline`, and baseline plumbing through
+   `gtk_widget_allocate` is real work; **defer until a consumer exists.**
+4. **Wholesale GtkBox-fallback replacement:** **defer** — revisit only
+   after the 2+ gate has soaked; answering it requires the
+   over-constrained fixed-shrink policy (§algorithm step 4) anyway.
