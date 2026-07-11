@@ -44,10 +44,16 @@ it on GTK4/Win32 while macOS holds steady.
 Win32 additionally has a *separate* gap —
 [`win32-conditional-view-rebuild.md`](../issues/win32-conditional-view-rebuild.md):
 structural branch swaps (`if/else`) don't rebuild at all. GTK4 and macOS
-already handle that correctly. That is Win32 catch-up, and it is a
-**prerequisite** for Win32 here (you cannot preserve state across a
-rebuild that never happens) — but it is not part of this shared contract.
-Do not conflate the two.
+already handle that correctly. That is Win32 catch-up and it is out of
+scope here — but, **corrected on review, it is NOT a prerequisite for this
+contract.** Synca's actual expansion-reset triggers (filter typing,
+sync-mode flip) are *value-change* rebuilds of an always-present
+`OutlineGroup` — `displayTree` is `@State`, `applyFilter()` reassigns it,
+and the tree is not behind an `if/else` — so the rebuild boundary the token
+rides already fires on Win32 today (that is precisely *why* expansion
+resets there). Branch-swap catch-up would only extend the contract to a
+reset trigger that is itself an `if/else` swap — which none of Synca's
+are. Keep the two separate, but do not gate this work on it.
 
 ## Core design questions
 
@@ -128,22 +134,32 @@ At the level of *what*, not *how*:
 
 ## Win32 section
 
-**Prerequisite:** implement structural rebuild for branch swaps first
-([`win32-conditional-view-rebuild.md`](../issues/win32-conditional-view-rebuild.md)) —
-until the subtree rebuilds at all, there is no rebuild boundary to
-preserve state across. GTK4/macOS already clear this bar.
+**No hard prerequisite** (corrected on review). The
+[`win32-conditional-view-rebuild.md`](../issues/win32-conditional-view-rebuild.md)
+branch-swap gap is *not* a blocker here: Synca's expansion-reset triggers
+(filter typing, sync-mode flip) are value-change rebuilds of an
+always-present `OutlineGroup`, so `Win32ViewHost.rebuild()` already
+DestroyWindows + re-renders the tree subtree today — the very reason
+expansion resets. The token rides *that* existing rebuild lifecycle, which
+is the same seam GTK4 uses. (The branch-swap fix stays worthwhile on its
+own, and would gate this contract only for a future reset trigger that is
+itself an `if/else` swap.)
 
-**Then:** `Win32OutlineTree` keeps expansion in a retained
+**Mechanism:** `Win32OutlineTree` keeps expansion in a retained
 `Win32OutlineModel`, but `OutlineGroup.winCreateWidget` allocates a fresh
 model with an empty `expanded` set on every call, and the model dies with
 the hosting view on structural rebuild
 ([followups §1](../issues/win32-outlinegroup-dropdown-followups.md)).
 Under this contract Win32 implements: capture the `expanded` set keyed by
-node identity (not the current positional `"0","1"` keys) plus the scroll
-offset, into the shared token; restore both after the new model is built,
-dropping identities that no longer exist. The existing retained-model
-design is a head start — it only needs to be re-seeded from the token
-instead of from empty.
+**node identity — the ancestor-ID path (root→row), per Q3** — not the
+current positional `"0","1"` keys, plus the scroll offset, into the shared
+token; restore both after the new model is built, dropping identities that
+no longer exist. (Synca's `\.fullPath` id is already root-anchored, so for
+this app the path form collapses to the id itself; the path framing is what
+keeps the contract correct for trees whose leaf ids recur across subtrees —
+the same reason the GTK4 section keys on the ID path.) The existing
+retained-model design is a head start — it only needs to be re-seeded from
+the token instead of from empty.
 
 ## GTK4 section
 
