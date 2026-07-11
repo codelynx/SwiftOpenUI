@@ -198,8 +198,9 @@ required by this proposal).
 
 ### Sign-off status
 
-**GTK4: signed off** (Linux-side agent). **Win32: pending.** Answers below
-reflect the GTK4 review; Win32 to confirm no conflict before core lands.
+**GTK4: signed off** (Linux-side agent). **Win32: signed off** (Win32-side
+agent, verified against code — see confirmations below). Core lifecycle is
+cleared to build.
 
 1. **Identity source / uniqueness.** "Type-signature default + explicit
    `.id()` override" is sufficient. **Resolved rule:** two same-type
@@ -217,6 +218,45 @@ reflect the GTK4 review; Win32 to confirm no conflict before core lands.
    `scrollOffset`) is a **mild yes, non-blocking** — add it when the
    cross-backend round-trip parity test is written, strictly optional,
    never a shared-layer dependency. Not required in v1.
+
+#### Win32 confirmations (verified against code)
+
+Signed off; all four map cleanly onto the Win32 backend, checked against
+the current renderer:
+
+1. **Async `restoreState` allowance — keep it; Win32 *wants* it.** The
+   expanded-set re-seed is synchronous, but Win32's scroll restore hits the
+   same realize-after-rebuild problem GTK4 does — `SetScrollInfo` to a saved
+   offset before the outline content is laid out would clamp. Win32 will
+   defer scroll via a posted message / next paint, so the async allowance is
+   useful, not merely tolerated.
+2. **Realized-widget-tree walk — reachable, no descriptor-tree trap.**
+   `Win32ViewHost.rebuild()` already walks the realized HWND tree at the
+   right seam: `saveInputState(in: container)`
+   (`Win32ViewHost.swift:307`, before teardown) via recursive child-HWND
+   traversal, and restore rides the existing post-rebuild `defer`
+   (`:324-334`, where `restoreFocus`/`restoreEditStates` run). The
+   `Win32OutlineModel` is stored on its scroll-container HWND's
+   `GWLP_USERDATA` (`Win32OutlineTree.swift:94-96`, read back by
+   `outlineModel(from:)` `:173-180`), so the same walk reaches it — find the
+   outline container by class, pull the model, call capture/restore. Capture
+   must (and does) precede `DestroyWindow(oldChild)` (`:347`), whose
+   `WM_NCDESTROY` frees the model. Win32's tree state lives on the HWND, not
+   in a descriptor tree, so the GTK4 trap does not apply here.
+3. **Host-collision → bail-out.** Matches Win32 expectation: two same-type
+   outline hosts with no `.id()` make host matching ambiguous; conservative
+   skip is correct and how I'd derive `RestorationIdentity`.
+4. **Opaque token, backend-defined node keys.** Confirmed. Win32's token =
+   the `expanded` set (re-keyed from today's positional `"0"/"1"` to
+   ancestor-ID paths — the known Q3 migration) plus the `SB_VERT` scroll
+   position. Opaque is right; shared convenience struct deferred as above.
+
+*Implementation note (not a contract concern):* `rebuild()` has two
+teardown-bypassing fast paths — the Phase-7 skip-rebuild (`:299`) and the
+narrow text/color mutation path (`:342`). The outline capture/restore
+should be gated to the actual full-rebuild/`DestroyWindow` path so it
+doesn't run redundantly when the model was never torn down. Adapter detail;
+no contract change.
 
 ## Win32 section
 
