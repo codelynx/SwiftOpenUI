@@ -87,6 +87,32 @@ a `.keyboardShortcut` Button **directly** under a reconciling host
 without such a shield could drop its registration on a describe-path
 replace. Not a bug here — just the trap to avoid in future slices.
 
-**Remaining for full close:** runtime confirmation that Ctrl+F focuses
-the GTK4 filter field (interactive session), plus the macOS-reference
+**Remaining for full close:** ~~runtime confirmation that Ctrl+F focuses
+the GTK4 filter field (interactive session)~~, plus the macOS-reference
 `Examples/Parity` entry.
+
+## Resolution (CORRECTED — a framework fix *was* required)
+
+Runtime testing disproved the "no framework change" conclusion above:
+Ctrl+F did **not** focus the field at runtime, while ESC (`onExitCommand`)
+in the same window did. The registration/dispatch/`@FocusState`/
+`grab_focus` chain is all correct — but the window's key controller was
+attached in GTK's default **BUBBLE** phase. A focused `GtkText`/`GtkEntry`
+therefore consumed Ctrl+F first via its built-in binding (Ctrl+F =
+move-cursor forward-char) and the event never reached the window
+controller. ESC has no such entry binding, so it bubbled up and fired —
+the ESC-works-but-Ctrl+F-doesn't divergence.
+
+**Fix:** attach the window key controller in **CAPTURE** phase
+(`gtk_event_controller_set_propagation_phase(controller, GTK_PHASE_CAPTURE)`
+in `gtkAttachKeyboardShortcutController`, `GTK4Backend.swift`), so
+window-scoped app shortcuts are seen before a focused widget consumes
+them. Safe for normal typing: `gtkKeyPressedHandler` returns FALSE on
+no-match, so non-shortcut keys still propagate to the focused widget.
+This is SwiftUI-correct precedence (app shortcuts win over widget default
+bindings) and is general — fixes Ctrl+F and any future window shortcut,
+not just Synca's filter.
+
+**Runtime-confirmed** on Linux/GTK4 (interactive): Ctrl+F focuses the
+filter field; ESC still clears/defocuses; normal typing unaffected. The
+`Examples/Parity` entry remains as the only open follow-up.

@@ -182,6 +182,15 @@ func gtkAttachKeyboardShortcutController(to window: UnsafeMutablePointer<GtkWidg
         GConnectFlags(rawValue: 0)
     )
 
+    // CAPTURE phase so window-scoped app shortcuts (⌘F→Ctrl+F, ESC, …)
+    // are seen before a focused GtkText/GtkEntry consumes them via its
+    // built-in key bindings. In the default BUBBLE phase a focused entry
+    // eats Ctrl+F (GtkText binds it to move-cursor forward-char) and it
+    // never reaches this window controller — while ESC, which no entry
+    // binds, bubbled up fine (the ESC-works-but-Ctrl+F-doesn't divergence).
+    // Safe for normal typing: gtkKeyPressedHandler returns FALSE on
+    // no-match, so non-shortcut keys still propagate to the focused widget.
+    gtk_event_controller_set_propagation_phase(controller, GTK_PHASE_CAPTURE)
     gtk_widget_add_controller(window, controller)
 }
 
