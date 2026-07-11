@@ -132,6 +132,78 @@ At the level of *what*, not *how*:
   after rebuild the content isn't realized, so an immediate offset clamps
   to zero).
 
+## Contract sketch (for backend review)
+
+Interface-level, not implementation — this is the shape the three
+backend adapters build against, so it needs cross-backend sign-off
+**before** core code lands. Signatures are illustrative; names open.
+
+### Shared core (SwiftOpenUI)
+
+```swift
+/// A backend widget wrapper that holds UI-only state which should
+/// survive a host rebuild. Backends conform their tree / scroll
+/// wrappers (GtkTreeList…, Win32OutlineModel host, Web tree element).
+protocol RestorableStateHost {
+    /// Stable identity for matching the outgoing widget to its
+    /// incoming replacement. Derived from the owning view's id — equal
+    /// iff "the same logical widget" across the rebuild. (Q3: identity,
+    /// never positional.)
+    var restorationIdentity: RestorationIdentity { get }
+
+    /// Snapshot current UI-only state, or nil if there's nothing to
+    /// save. Entries inside are keyed by *node* identity, never index.
+    func captureRestorableState() -> RestorableStateToken?
+
+    /// Re-apply a snapshot. Best-effort: silently drop entries whose
+    /// node no longer exists; never throw. May defer (e.g. scroll
+    /// offset to the next frame, once rows are realized).
+    func restoreState(_ token: RestorableStateToken)
+}
+
+/// Backend-opaque payload. The shared layer stores and routes it by
+/// identity and never inspects the contents.
+struct RestorableStateToken { /* backend-defined */ }
+
+struct RestorationIdentity: Hashable { /* from view id / idKeyPath */ }
+```
+
+### Lifecycle (extends the existing `rebuild()`)
+
+The host already has one save-before-teardown / restore-after point
+(GTK4 `saveFocusInfo`, Web innerHTML swap). Generalize it:
+
+1. **Before teardown** — walk the outgoing subtree; for each
+   `RestorableStateHost`, stash `captureRestorableState()` under its
+   `restorationIdentity`.
+2. **Teardown + rebuild body** — unchanged.
+3. **After rebuild** — walk the incoming subtree; for each
+   `RestorableStateHost`, if a token matches its `restorationIdentity`,
+   `restoreState(it)`. No match → skip (bail-out guard, never an error).
+
+This *is* input-state-preservation generalized: today's focus/cursor
+save/restore is the same lifecycle for text controls, keyed by
+tag+type+index. Text controls can migrate onto this protocol later (not
+required by this proposal).
+
+### Open questions for backend sign-off
+
+1. **Identity source / uniqueness.** A single OutlineGroup per view
+   (Synca today) can key off a type+structural signature. Multiple
+   restorable widgets in one view need real disambiguation — an explicit
+   `.id()` on the view, threaded into `RestorationIdentity`. Is
+   "type-signature default, explicit `.id()` override" enough for all
+   backends?
+2. **Walk boundary.** Each backend needs one cheap point to walk
+   outgoing/incoming. GTK4 `rebuild()` ✓; Web innerHTML swap ✓; Win32 ✓
+   on the structural-rebuild path (no longer a hard prerequisite per the
+   Win32-section correction).
+3. **Token: opaque vs. shared-typed.** Recommend **opaque** (shared
+   layer stays out of modeling expansion/scroll; extensible). An optional
+   shared convenience struct (`expanded: [ID]`, `scrollOffset: Double`)
+   backends *may* use would enable cross-backend tests — worth it, or
+   premature?
+
 ## Win32 section
 
 **No hard prerequisite** (corrected on review). The
