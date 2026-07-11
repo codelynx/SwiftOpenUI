@@ -2,6 +2,8 @@
 
 This file defines the collaboration protocol for multi-platform feature work in SwiftOpenUI.
 
+> **Before you start:** skim [`docs/cross-platform-changelog.md`](docs/cross-platform-changelog.md) for shared-surface changes another backend landed that may affect yours (symbol map, core `View`/`Layout` types, view-host, cross-cutting behavior). Append an entry there whenever you change shared surface.
+
 ## Branch Roles
 
 - `develop`
