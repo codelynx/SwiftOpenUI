@@ -147,14 +147,74 @@ instead of from empty.
 
 ## GTK4 section
 
-_Owned by the Linux-side agent — to be appended._
+**No prerequisite** (unlike Win32): GTK4 already rebuilds branch swaps
+correctly, so the rebuild boundary the token rides already exists. This
+section implements the shared contract directly once the core hook lands.
 
-<!-- Anchors already established for this work (from the GTK4 collapse
-     analysis): save at the GTKViewHost.saveFocusInfo point; new shims for
-     tree-list-row expanded get/set, list-model row/count, and scrolled-
-     window vadjustment get/set-value; identity keyed by OutlineGroup
-     idKeyPath; scroll restore idle-deferred. Linux agent to confirm and
-     detail. -->
+**Where the state is lost.** `OutlineGroup` renders via
+`GTKRenderable.gtkCreateWidget` → `gtkCreateLazyTreeWidget`, which builds
+a **fresh** `GtkTreeListModel` + `GtkListView` + `GtkScrolledWindow` on
+every `GTKViewHost.rebuild()` — all-collapsed (`autoexpand=FALSE`), scroll
+adjustment back to 0. Expansion lives in `GtkTreeListRow` GObjects and
+**never enters `@State`/StateStorage**, so it's exactly the renderer-owned
+UI state this token is for.
+
+**Lifecycle seam (the token generalizes what already exists).** Focus/
+cursor survival already brackets `rebuild()` at the right points:
+`saveFocusInfo(in: container)` (`GTKViewHost.swift:300`) *before* the
+teardown loop (`gtk_box_remove`, `:320`), and `restoreFocusInfo(…, in:
+newChild)` (`:436`) *after* `gtk_box_append` (`:357`). The generic
+capture/restore should **generalize this bracket** — focus becomes one
+token channel, expansion+scroll another — not a parallel path.
+
+**Capture (outgoing subtree → token).** From the OutlineGroup's top widget
+(a `GtkScrolledWindow`) reach its `GtkListView` → `GtkTreeListModel`; walk
+`0..<n_items` via `get_row(i)`, and for each row with `get_expanded == true`
+record its **identity** (see keying below); read the scrolled-window
+vadjustment value. Cost is O(**materialized** rows) = O(roots + expanded
+descendants), not O(total) — preserves the virtualization win.
+- *Access gap to close:* the model/context is currently stored only on the
+  factory (`GTKRenderer.swift:5383,5415`), not reachable from the scrolled
+  widget. Stash the tree model (+context) on the scrolled widget via
+  `g_object_set_data_full` at build time (cleanest), or add widget→model
+  traversal shims.
+
+**Restore (token → incoming subtree).** After the new model is built,
+re-expand **top-down** — setting `expanded` on a row lazily materializes
+its child model via the create-func, which is what makes deeper rows
+addressable; a deep set cannot be restored in one flat pass. Match by
+identity, drop identities that no longer exist (bail-out). Then restore the
+vadjustment **idle-deferred** (`g_idle_add` — already the pattern at
+`GTKViewHost.swift:139,419`); an immediate offset clamps to 0 before rows
+realize.
+
+**Keying — identity as an ancestor-ID path (refines Q3 for trees).** Per
+Q3, key by the view's `idKeyPath` (Synca's `\.fullPath`) — **but for a
+tree the token key must be the ancestor-ID *path* (root→row), not the bare
+leaf ID**: the same leaf ID can recur in different subtrees, which is why
+`LazyTreeContext` uses globally-unique positional keys today
+(`GTKRenderer.swift:5231`). A bare leaf ID would misrestore; the ID path is
+unique and stable across a filter/mode-flip rebuild.
+
+**Plumbing change (explicit).** `LazyTreeContext.init` takes only `items`,
+`childrenKeyPath`, `rowContent` (`GTKRenderer.swift:5222`), and
+`OutlineGroup.gtkCreateWidget` does not pass `idKeyPath` (`:5428`). Thread
+`idKeyPath` through and build a **positional-key → ancestor-ID-path** map
+alongside `childKeysByKey`, so capture/restore translates between the
+model's positional rows and the stable identity the token carries.
+
+**New GTK shims (Linux agent owns; all absent today — only the
+`GtkExpander` `expanded` accessor exists; all thin GIR wrappers):**
+`gtk_tree_list_row_get_expanded` / `set_expanded`,
+`gtk_tree_list_model_get_row`, `g_list_model_get_n_items`,
+`gtk_scrolled_window_get_vadjustment`, `gtk_adjustment_get_value` /
+`set_value`.
+
+**Scroll robustness (v1 → follow-up).** v1 restores the raw vadjustment
+value (best-effort, deferred). A raw pixel offset is brittle when content
+height changed (filter apply/clear); the robust **follow-up is a
+node-anchored scroll** — record the top-visible row's ancestor-ID path and
+scroll to it after re-expansion.
 
 ## macOS section
 
