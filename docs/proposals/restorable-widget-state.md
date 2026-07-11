@@ -152,12 +152,16 @@ protocol RestorableStateHost {
     var restorationIdentity: RestorationIdentity { get }
 
     /// Snapshot current UI-only state, or nil if there's nothing to
-    /// save. Entries inside are keyed by *node* identity, never index.
+    /// save. Entries inside are keyed by *node* identity — and for tree
+    /// widgets that means the full **ancestor-ID path**, not a bare leaf
+    /// id (the same leaf id recurs across subtrees). Never an index.
     func captureRestorableState() -> RestorableStateToken?
 
     /// Re-apply a snapshot. Best-effort: silently drop entries whose
-    /// node no longer exists; never throw. May defer (e.g. scroll
-    /// offset to the next frame, once rows are realized).
+    /// node no longer exists; never throw. **May complete
+    /// asynchronously** — e.g. GTK4 kicks scroll restore onto an idle
+    /// callback that runs after rows realize — so the lifecycle must not
+    /// assume synchronous completion.
     func restoreState(_ token: RestorableStateToken)
 }
 
@@ -181,28 +185,38 @@ The host already has one save-before-teardown / restore-after point
    `RestorableStateHost`, if a token matches its `restorationIdentity`,
    `restoreState(it)`. No match → skip (bail-out guard, never an error).
 
+**The walk traverses the realized *widget* tree, not the descriptor
+tree** (as `saveFocusInfo` already does): a `GTKRenderable`-rendered
+OutlineGroup produces a scrolled-window/listview that never enters the
+descriptor tree, so a descriptor-only walk would miss it entirely. Walk
+widgets and the `RestorableStateHost` is reachable.
+
 This *is* input-state-preservation generalized: today's focus/cursor
 save/restore is the same lifecycle for text controls, keyed by
 tag+type+index. Text controls can migrate onto this protocol later (not
 required by this proposal).
 
-### Open questions for backend sign-off
+### Sign-off status
 
-1. **Identity source / uniqueness.** A single OutlineGroup per view
-   (Synca today) can key off a type+structural signature. Multiple
-   restorable widgets in one view need real disambiguation — an explicit
-   `.id()` on the view, threaded into `RestorationIdentity`. Is
-   "type-signature default, explicit `.id()` override" enough for all
-   backends?
-2. **Walk boundary.** Each backend needs one cheap point to walk
-   outgoing/incoming. GTK4 `rebuild()` ✓; Web innerHTML swap ✓; Win32 ✓
-   on the structural-rebuild path (no longer a hard prerequisite per the
-   Win32-section correction).
-3. **Token: opaque vs. shared-typed.** Recommend **opaque** (shared
-   layer stays out of modeling expansion/scroll; extensible). An optional
-   shared convenience struct (`expanded: [ID]`, `scrollOffset: Double`)
-   backends *may* use would enable cross-backend tests — worth it, or
-   premature?
+**GTK4: signed off** (Linux-side agent). **Win32: pending.** Answers below
+reflect the GTK4 review; Win32 to confirm no conflict before core lands.
+
+1. **Identity source / uniqueness.** "Type-signature default + explicit
+   `.id()` override" is sufficient. **Resolved rule:** two same-type
+   restorable hosts in one view with no `.id()` **collide → bail-out
+   (skip restore), never mis-restore** — the conservative guard applies
+   to host matching, not just node matching. `RestorationIdentity` is the
+   *host* identity (which OutlineGroup); the node keys inside the token
+   are a separate, per-tree concern.
+2. **Walk boundary.** GTK4 `rebuild()` ✓ (capture at `saveFocusInfo`,
+   restore at `restoreFocusInfo`); Web innerHTML swap ✓; Win32 ✓ on the
+   structural-rebuild path. Must walk the **realized widget tree** (see
+   lifecycle note above), not the descriptor tree.
+3. **Token: opaque vs. shared-typed.** **Opaque is primary** (confirmed).
+   The optional shared convenience struct (`expanded: [ID]`,
+   `scrollOffset`) is a **mild yes, non-blocking** — add it when the
+   cross-backend round-trip parity test is written, strictly optional,
+   never a shared-layer dependency. Not required in v1.
 
 ## Win32 section
 
