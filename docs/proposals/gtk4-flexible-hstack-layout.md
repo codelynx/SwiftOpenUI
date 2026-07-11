@@ -1,9 +1,13 @@
 # Proposal: GTK4 flexible HStack equal-division layout
 
-**Status:** approved (review sign-off); implementing. GTK4 backend.
-**Owner:** Linux-side agent. **Reviewers:** core/mac agent (foundational
-layout path) — signed off with the vertical-measure + over-constrained-
-shrink corrections folded in below.
+**Status:** ✅ landed (SwiftOpenUI `a684384`; Synca workaround removed
+`280b2ed`). GTK4 backend. **Owner:** Linux-side agent. **Reviewers:**
+core/mac agent (foundational layout path) — signed off, with the
+vertical-measure + over-constrained-shrink corrections and the review's
+spacer/width-budget/integer-residual/visible-gate fixes all folded in.
+Full GTK4 suite green (278 tests) incl. `GTK4FlexibleHStackTests`;
+runtime-verified (equal drop zones, no resize on selection, symmetric
+under window resize).
 **Issue:** [`gtk4-hstack-maxwidth-infinity-not-equal.md`](../issues/gtk4-hstack-maxwidth-infinity-not-equal.md)
 
 ## Problem

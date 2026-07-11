@@ -1,5 +1,13 @@
 # GTK4: `HStack` does not split width equally among `.frame(maxWidth: .infinity)` children
 
+> **✅ RESOLVED** (SwiftOpenUI `a684384`; Synca workaround removed
+> `280b2ed`). Implemented as a `GtkCustomLayout`-backed flexible-HStack
+> equal-division on the expanding fallback path (gated to 2+ flexible
+> children). Design + review + test matrix:
+> [`../proposals/gtk4-flexible-hstack-layout.md`](../proposals/gtk4-flexible-hstack-layout.md).
+> Runtime-verified (Synca drop zones equal & stable). The "interim
+> workaround" below is now removed; kept here for history.
+
 ## Summary
 
 On the GTK4 backend, an `HStack` containing multiple
