@@ -48,6 +48,9 @@ public enum SFSymbolCompatibility {
         "chevron.right":          "chevron_right",
         "chevron.up":             "expand_less",
 
+        // MARK: Status / shapes
+        "circle.dotted":          "radio_button_unchecked",
+
         // MARK: Arrows and motion
         "arrow.backward":         "arrow_back",
         "arrow.clockwise":        "refresh",

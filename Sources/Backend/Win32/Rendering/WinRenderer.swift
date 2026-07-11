@@ -139,11 +139,17 @@ extension Text: WinRenderable {
         // SS_LEFTNOWORDWRAP prevents wrapping (matches single-line measurement).
         // SS_NOTIFY enables WM_LBUTTONDOWN/UP delivery so gesture subclasses work.
         // SS_NOPREFIX prevents & from being interpreted as accelerator prefix.
+        // SS_CENTERIMAGE vertically centers the single line of text within the
+        // control's client rect. Without it, when a fixed `.frame(height:)`
+        // (e.g. a 20×20 badge) is shorter than the measured line box, the
+        // glyph is clamped and drawn top-aligned, sitting visibly high. It is
+        // vertical-only for text, so horizontal alignment of normal labels is
+        // unaffected.
         let hwnd = content.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(),
                 wstr,
-                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
+                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX | SS_CENTERIMAGE),
                 0, 0, measured.width + 4, measured.height + 2,
                 context.parent,
                 nil,
@@ -477,6 +483,16 @@ extension Color: WinRenderable {
         markExpandWidth(container)
         markExpandHeight(container)
 
+        // Fully transparent color (e.g. Color.clear, common as an alignment
+        // placeholder): do NOT paint a filled rect. The D2D fill runs on an
+        // opaque render target, so filling at alpha 0 leaves the target's
+        // white clear color showing — a white box. Instead erase with the
+        // inherited parent background so the color is genuinely see-through.
+        if self.alpha == 0 {
+            SetWindowSubclass(container, colorClearProc, 51, 0)
+            return container
+        }
+
         let cr = Float(self.red)
         let cg = Float(self.green)
         let cb = Float(self.blue)
@@ -498,6 +514,21 @@ extension Color: WinRenderable {
         markHostedNodeKind(container, .color)
 
         return container
+    }
+}
+
+/// Subclass proc for `Color.clear` placeholders: paints nothing, erasing
+/// with the inherited parent background so the view is genuinely
+/// transparent instead of showing the D2D target's white clear color.
+private let colorClearProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uId, _) in
+    switch uMsg {
+    case UINT(WM_ERASEBKGND):
+        return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
+    case UINT(WM_NCDESTROY):
+        RemoveWindowSubclass(hwnd, colorClearProc, uId)
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+    default:
+        return DefSubclassProc(hwnd, uMsg, wParam, lParam)
     }
 }
 
@@ -3040,11 +3071,37 @@ extension FontModifiedView: WinRenderable {
     }
 }
 
+/// Marks a control whose font must not be overwritten by an ancestor
+/// `.font()` modifier — e.g. a Material Symbols glyph, which carries the
+/// bundled icon font. Without this, `applyFontRecursively` would push a
+/// Segoe UI font onto the glyph control and its icon codepoint would
+/// render as `notdef` (a stray dot/box).
+///
+/// Trade-off: a `.font()` *size* applied to an icon is therefore NOT scaled
+/// on Win32 — the glyph keeps its `.imageScale`-derived size rather than
+/// growing/shrinking to the font. This is deliberate (correct glyph at a
+/// sensible size beats a notdef box at the requested size). Icons should be
+/// sized with `.imageScale`; honoring `.font()` size on icons (re-create the
+/// glyph font in the Material family at the requested size *and* re-size the
+/// control) is a tracked follow-up.
+let iconFontLockedPropName: UnsafePointer<WCHAR> = {
+    "SwiftUIIconFontLocked".withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}()
+
 /// Apply WM_SETFONT to an HWND and all its descendants.
 /// Re-measures text-bearing controls so layout picks up the new size.
 private func applyFontRecursively(hwnd: HWND, hfont: HFONT) {
-    SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: hfont)), 1)
-    remeasureControlIfNeeded(hwnd: hwnd, hfont: hfont)
+    // Skip icon controls: their bundled Material Symbols font must survive
+    // an enclosing `.font()` (else the glyph becomes a notdef dot).
+    if GetPropW(hwnd, iconFontLockedPropName) == nil {
+        SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: hfont)), 1)
+        remeasureControlIfNeeded(hwnd: hwnd, hfont: hfont)
+    }
 
     var child = GetWindow(hwnd, UINT(GW_CHILD))
     while let c = child {
@@ -4025,6 +4082,13 @@ private let scrollViewWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
 
 extension List: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Content that scrolls itself (e.g. OutlineGroup's native tree
+        // control) is rendered directly — wrapping it in another
+        // ScrollView would double-scroll it and collapse it to its
+        // content width. Everything else gets the default scroll wrapper.
+        if let selfScrolling = content as? WinSelfScrollingContent {
+            return selfScrolling.winSelfScrollingWidget(in: context)
+        }
         // List renders as a VStack inside a scrollable container
         let scrollView = ScrollView(.vertical) { content }
         return winRenderView(scrollView, in: context)
@@ -4189,10 +4253,12 @@ extension Image: WinRenderable {
         }
 
         let size = Int32(scale.pointSize) + 4
+        // SS_CENTER | SS_CENTERIMAGE center the glyph within its box so the
+        // icon sits centered rather than top-left.
         let hwnd = glyph.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr,
-                DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
+                DWORD(SS_CENTER | SS_CENTERIMAGE | SS_NOTIFY | SS_NOPREFIX),
                 0, 0, size, size,
                 context.parent, nil, context.hInstance
             )
@@ -4201,6 +4267,9 @@ extension Image: WinRenderable {
         if let hwnd = hwnd, let hfont = hfont {
             SendMessageW(hwnd, UINT(WM_SETFONT),
                          WPARAM(UInt(bitPattern: hfont)), 1)
+            // Protect this icon's Material Symbols font from an enclosing
+            // `.font()` modifier (see applyFontRecursively).
+            SetPropW(hwnd, iconFontLockedPropName, HANDLE(bitPattern: 1))
             let info = FontCleanupInfo(hfont: hfont)
             let ptr = Unmanaged.passRetained(info).toOpaque()
             SetWindowSubclass(hwnd, fontCleanupProc, 21,
@@ -5534,6 +5603,56 @@ private let segmentedControlProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, 
     }
 }
 
+// MARK: - Picker intrinsic sizing (WinMeasurable)
+
+extension Picker: WinMeasurable {
+    public func winIntrinsicSize(_ proposal: WinSizeProposal, measuringAgainst hwnd: HWND) -> WinSize {
+        switch style {
+        case .segmented, .palette:
+            return segmentedIntrinsicSize(against: hwnd)
+        case .automatic:
+            let m = dropdownMetrics(against: hwnd)
+            return WinSize(width: m.comboX + m.triggerW, height: m.rowH)
+        }
+    }
+
+    /// Single source of truth for the dropdown control's geometry — the
+    /// label offset, the measured trigger width, and the font-derived row
+    /// height. Used by both `winIntrinsicSize` and `winCreateDropdownWidget`
+    /// so the intrinsic report and the actual layout can't drift.
+    func dropdownMetrics(against hwnd: HWND) -> (comboX: Int32, triggerW: Int32, rowH: Int32) {
+        let rowH = dropdownRowHeight(hwnd)
+        let label = getCurrentEnvironment().labelsHidden ? "" : self.label
+        let comboX: Int32 = label.isEmpty ? 0 : measureText(label, hwnd: hwnd).width + 8
+
+        // Size to the widest option. Take the max of GDI and DirectWrite
+        // measurements (the trigger draws with DirectWrite but the two
+        // engines disagree by several px), then add a generous buffer so the
+        // leading-aligned value can't clip — the same tolerance the segmented
+        // control relies on.
+        let fmt = D2DRenderer.shared.textFormat()
+        var widest: Int32 = 0
+        for option in options {
+            let gdi = measureText(option, hwnd: hwnd).width
+            let dw = fmt.map { Int32(D2DRenderer.shared.measureText(option, format: $0).0.rounded(.up)) } ?? 0
+            widest = max(widest, max(gdi, dw))
+        }
+        // Text region in the trigger = triggerW - leftPad(12) - chevronSlot(28).
+        // Reserve widest + a small buffer there.
+        let triggerW = max(Int32(120), widest + 12 + 28 + 12)
+        return (comboX, triggerW, rowH)
+    }
+
+    private func segmentedIntrinsicSize(against hwnd: HWND) -> WinSize {
+        let segmentPadding: Int32 = 24
+        let segmentHeight: Int32 = 28
+        let label = getCurrentEnvironment().labelsHidden ? "" : self.label
+        var width: Int32 = label.isEmpty ? 0 : measureText(label, hwnd: hwnd).width + 8
+        for option in options { width += measureText(option, hwnd: hwnd).width + segmentPadding }
+        return WinSize(width: width, height: segmentHeight)
+    }
+}
+
 extension Picker: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         switch style {
@@ -5555,61 +5674,45 @@ extension Picker: WinRenderable {
     private func winCreateDropdownWidget(in context: RenderContext) -> HWND? {
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
+        // All geometry comes from the shared intrinsic-size metrics, so the
+        // control's actual layout matches what `winIntrinsicSize` reports.
+        let m = dropdownMetrics(against: context.parent)
+
         let container = CreateWindowExW(
             0, stackContainerClassName, nil,
             DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
-            0, 0, 250, 24,
+            0, 0, m.comboX + m.triggerW, m.rowH,
             context.parent, nil, context.hInstance, nil
         )!
+        // Inherit the footer background (else the label sits on a white box).
+        winMakeDropdownContainerTransparent(container)
 
         // Label — rendered only when not hidden by `.labelsHidden()`.
         let displayedLabel = effectiveLabel
-        let labelMeasured: (width: Int32, height: Int32)
         if !displayedLabel.isEmpty {
-            labelMeasured = measureText(displayedLabel, hwnd: context.parent)
+            let labelW = measureText(displayedLabel, hwnd: context.parent).width
             _ = displayedLabel.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
-                    win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                    0, 2, labelMeasured.width + 4, 20,
+                    win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX | SS_CENTERIMAGE),
+                    0, 0, labelW + 4, m.rowH,
                     container, nil, context.hInstance
                 )
             }
-        } else {
-            labelMeasured = (width: 0, height: 0)
         }
 
-        // ComboBox — x offset collapses to 0 when the label is hidden.
-        let comboX = displayedLabel.isEmpty ? 0 : labelMeasured.width + 8
-        let comboHwnd = win32_CreateChildWindow(
-            win32_WC_COMBOBOX(), nil,
-            DWORD(CBS_DROPDOWNLIST | WS_TABSTOP),
-            comboX, 0, 150, 200,  // height 200 = dropdown list height
-            container, nil, context.hInstance
-        )
-
-        guard let comboHwnd = comboHwnd else { return container }
-
-        // Populate combobox from options array
-        for option in options {
-            _ = option.withCString(encodedAs: UTF16.self) { wstr in
-                SendMessageW(comboHwnd, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: wstr)))
-            }
+        // D2D dropdown trigger — x offset collapses to 0 when the label is
+        // hidden. Replaces the dated native WC_COMBOBOX with a Direct2D
+        // control + popup (see Win32DropdownPicker.swift).
+        let triggerContext = RenderContext(parent: container, hInstance: context.hInstance)
+        if let trigger = winCreateD2DDropdown(options: options, selected: selected,
+                                              width: m.triggerW, onChanged: onChanged,
+                                              in: triggerContext) {
+            // 1px vertical inset so the trigger's focus ring isn't drawn on
+            // the row boundary (where it would be clipped at the top).
+            SetWindowPos(trigger, nil, m.comboX, 1, m.triggerW, m.rowH - 2, UINT(SWP_NOZORDER))
         }
 
-        SendMessageW(comboHwnd, UINT(CB_SETCURSEL), WPARAM(selected), 0)
-
-        // Wire CBN_SELCHANGE to callback
-        let callback = onChanged
-        let handler = SubclassHandler(hwnd: comboHwnd)
-        handler.onCommand = {
-            let sel = Int(SendMessageW(comboHwnd, UINT(CB_GETCURSEL), 0, 0))
-            if sel >= 0 { callback?(sel) }
-        }
-        let state = TextFieldState(handler: handler)
-        let statePtr = Unmanaged.passRetained(state).toOpaque()
-        SetWindowSubclass(comboHwnd, textFieldCleanupProc, 41, DWORD_PTR(UInt(bitPattern: statePtr)))
-
-        SetWindowPos(container, nil, 0, 0, comboX + 150, 24, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        SetWindowPos(container, nil, 0, 0, m.comboX + m.triggerW, m.rowH, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         return container
     }
