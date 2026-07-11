@@ -37,15 +37,38 @@ differs in natural width.
 
 ## Fix direction
 
-Give `HStack` (and the flexible-frame path) SwiftUI's equal-division
-semantics for flexible children: distribute the available width
-equally among `maxWidth == .infinity` children regardless of their
-content natural width (e.g. request width 0 for such wrappers so
-`GtkBox` splits the remainder evenly, while non-flexible siblings —
-like a spacer button between two zones — keep their natural size).
-This must not regress the many single-flexible-child layouts that
-currently rely on the natural-width request, so it needs its own
-slice + tests.
+**Root cause (corrected after investigation): `GtkBox` structurally
+cannot do this.** GtkBox allocates each child its **natural** width
+first, then distributes only the *leftover* space equally among
+`hexpand` children — so a flexible child whose content has a larger
+natural width always ends up wider. Two things that look like fixes but
+are NOT:
+
+- **`gtk_widget_set_size_request(w, 0, …)`** sets the child's *minimum*,
+  not its natural. GtkBox bases allocation on natural when space allows,
+  so a 0 minimum changes nothing about the split. (This was the original
+  "request width 0" idea — it does not work.)
+- **`gtk_box_set_homogeneous(TRUE)`** equalizes *all* children — wrong
+  when a non-flexible sibling (the swap button between two zones) must
+  keep its natural size.
+
+SwiftOpenUI's two HStack paths are a build-time `GtkFixed`
+(`gtkRenderSharedHStack`, no expansion) and this native `GtkBox`
+(`gtkRenderFallbackHStack`, natural-biased). **Neither implements
+allocation-time flexible distribution**, which is what SwiftUI's
+"split the remainder equally among flexible children, respecting each
+child's minimum" requires.
+
+**Real fix (a proper slice, not a config tweak):** an allocation-time
+custom horizontal layout for the flexible case — either a
+`GtkLayoutManager` subclass (GObject-level C) or a size-allocate-driven
+equalizer that, on each resize, measures non-flexible children at
+natural, then assigns the flexible children equal slices of the
+remainder (down to their minimums). Higher effort + regression risk
+(must not disturb single-flexible-child, spacer, and divider layouts) —
+needs design + a layout test matrix, and is worth reviewing with the
+core/mac agent since it changes a foundational layout path. Until then,
+the Synca fixed-width workaround below stands.
 
 ## Interim workaround (Synca)
 
