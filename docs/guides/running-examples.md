@@ -31,6 +31,12 @@ swift run ParityAnimation
 swift run ParityFocus
 swift run ParityAppStructure
 swift run ParityKeyboardShortcut
+swift run ParityCosmeticModifiers
+swift run ParityAccessibility
+swift run ParityMenu
+swift run ParityCommands
+swift run ParityDropDestination
+swift run ParityMaterialSymbols
 ```
 
 Requires Xcode command-line tools. The window appears as a native SwiftUI app with Dock icon and ⌘Tab support.
@@ -173,6 +179,12 @@ See [android-setup.md](android-setup.md) for full setup instructions.
 | Focus | `ParityFocus` | @FocusState (bool + enum), .focused() |
 | AppStructure | `ParityAppStructure` | App, Scene, WindowGroup, @ViewBuilder, window sizing APIs |
 | KeyboardShortcut | `ParityKeyboardShortcut` | .keyboardShortcut(), .onExitCommand(), hidden window-scoped shortcut |
+| CosmeticModifiers | `ParityCosmeticModifiers` | .controlSize(), .listStyle(.plain), .textFieldStyle(.plain), .monospacedDigit(), .textSelection() |
+| Accessibility | `ParityAccessibility` | .accessibilityLabel(), .accessibilityIdentifier() (screen-reader-driven) |
+| Menu | `ParityMenu` | Menu (labeled, view-shaped content), .menuStyle(.borderlessButton) |
+| Commands | `ParityCommands` | Commands, @FocusedValue, .focusedValue(), CommandGroup, CommandMenuItem |
+| DropDestination | `ParityDropDestination` | .dropDestination(for:action:isTargeted:), OS file drag-and-drop |
+| MaterialSymbols | `ParityMaterialSymbols` | Image(material:) — bundled Material Symbols glyphs on non-macOS |
 
 
 ## Platform Support Matrix
