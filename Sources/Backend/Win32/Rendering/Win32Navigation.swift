@@ -459,6 +459,10 @@ extension NavigationStack: WinRenderable {
                          caRect.right, caRect.bottom, UINT(SWP_NOZORDER))
 
             navCtx.entries.append(Win32NavigationEntry(title: title, hwnd: rootHwnd))
+            // Propagate the root content's expansion so the stack fills
+            // its available space.
+            if shouldExpandWidth(rootHwnd) { markExpandWidth(container) }
+            if shouldExpandHeight(rootHwnd) { markExpandHeight(container) }
         }
 
         // Set initial title
