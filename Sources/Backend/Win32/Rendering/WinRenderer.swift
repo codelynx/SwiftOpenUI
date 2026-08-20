@@ -1333,7 +1333,8 @@ class FlatButtonState {
             tr = textColorR ?? 0.1; tg = textColorG ?? 0.1; tb = textColorB ?? 0.1
         }
         d2d1_SolidColorBrush_SetColor(brush, tr, tg, tb, 1)
-        if let fmt = customTextFormat ?? D2DRenderer.shared.textFormat() {
+        let dpiScale = Float(win32_GetDpiForWindow(hwnd)) / 96.0
+        if let fmt = customTextFormat ?? D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) {
             dwrite_TextFormat_SetTextAlignment(fmt, 2) // center
             D2DRenderer.shared.drawText(title, target: rt, format: fmt,
                                          brush: brush, x: 0, y: 0, width: w, height: h)
@@ -7052,6 +7053,12 @@ extension NavigationSplitView: WinRenderable {
         let h = parentRect.bottom - parentRect.top
         SetWindowPos(container, nil, 0, 0, max(w, 400), max(h, 300),
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        // Propagate the columns' expansion so the split view fills its
+        // available space (SwiftUI/GTK4 behavior).
+        let columnHwnds = [sidebarHwnd, contentHwnd, detailHwnd].compactMap { $0 }
+        if columnHwnds.contains(where: { shouldExpandWidth($0) }) { markExpandWidth(container) }
+        if columnHwnds.contains(where: { shouldExpandHeight($0) }) { markExpandHeight(container) }
 
         return container
     }
