@@ -299,6 +299,22 @@ private let navContainerWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
     }
 }
 
+/// Measure the back button text with the title font (the font applied
+/// to the button via WM_SETFONT). Querying the button for its font here
+/// would re-enter the control while it processes a message.
+private func measureBackButton(ctx: Win32NavigationContext) -> Int32 {
+    let hdc = GetDC(ctx.backButton)
+    defer { ReleaseDC(ctx.backButton, hdc) }
+    var size = SIZE()
+    "← Back".withCString(encodedAs: UTF16.self) { wstr in
+        let len = Int32(wcslen(wstr))
+        let old = ctx.titleFont.flatMap { SelectObject(hdc, $0) }
+        win32_GetTextExtentPoint32W(hdc, wstr, len, &size)
+        if let old = old { SelectObject(hdc, old) }
+    }
+    return size.cx
+}
+
 /// Layout the navigation container: header bar at top, content area fills the rest.
 private func layoutNavContainer(_ ctx: Win32NavigationContext) {
     var rect = RECT()
@@ -306,16 +322,19 @@ private func layoutNavContainer(_ ctx: Win32NavigationContext) {
     let w = rect.right - rect.left
     let h = rect.bottom - rect.top
 
-    let headerHeight: Int32 = 32
+    // Header sizes are physical px; scale the 96-DPI defaults by the window DPI.
+    let dpiScale = Int32(Double(win32_GetDpiForWindow(ctx.container)) / 96.0)
+    let headerHeight: Int32 = 32 * dpiScale
     SetWindowPos(ctx.headerContainer, nil, 0, 0, w, headerHeight, UINT(SWP_NOZORDER))
 
     // Layout back button (child of headerContainer)
     let backVisible = IsWindowVisible(ctx.backButton) != false
-    let backWidth: Int32 = backVisible ? 60 : 0
+    let backWidth: Int32 = backVisible ? measureBackButton(ctx: ctx) + 16 * dpiScale : 0
     if backVisible {
         SetWindowPos(ctx.backButton, nil, 4, 4, backWidth - 8, headerHeight - 8, UINT(SWP_NOZORDER))
     }
-    SetWindowPos(ctx.titleLabel, nil, backWidth + 4, 0, w - backWidth - 8, headerHeight, UINT(SWP_NOZORDER))
+    SetWindowPos(ctx.titleLabel, nil, backWidth + 4, 0,
+                 w - backWidth - 8, headerHeight, UINT(SWP_NOZORDER))
 
     // Content area fills the rest
     SetWindowPos(ctx.contentArea, nil, 0, headerHeight, w, h - headerHeight, UINT(SWP_NOZORDER))
@@ -341,11 +360,14 @@ extension NavigationStack: WinRenderable {
             context.parent, nil, context.hInstance, nil
         )!
 
-        // Header bar (background: button face color)
+        // Header bar (background: button face color). Sizes are physical
+        // pixels, so scale the 96-DPI defaults by the window's DPI.
+        let dpiScale = Int32(Double(win32_GetDpiForWindow(container)) / 96.0)
+        let headerHeight: Int32 = 32 * dpiScale
         let headerContainer = CreateWindowExW(
             0, stackContainerClassName, nil,
             DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
-            0, 0, 0, 32,
+            0, 0, 0, headerHeight,
             container, nil, context.hInstance, nil
         )!
 
@@ -357,7 +379,7 @@ extension NavigationStack: WinRenderable {
         let backButton = "← Back".withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
-                0, 0, 60, 24,
+                0, 0, 60 * dpiScale, 24 * dpiScale,
                 headerContainer,
                 HMENU(bitPattern: UInt(backControlID)),
                 context.hInstance
@@ -371,19 +393,23 @@ extension NavigationStack: WinRenderable {
         // Title label
         let titleLabel = win32_CreateChildWindow(
             win32_WC_STATIC(), nil, DWORD(SS_CENTER | SS_CENTERIMAGE),
-            0, 0, 0, 32,
+            0, 0, 0, headerHeight,
             headerContainer, nil, context.hInstance
         )!
 
-        // Apply bold font to title (tracked for cleanup in context deinit)
+        // Apply bold font to title (tracked for cleanup in context deinit).
+        // -height is physical px; scale the 16px default by the window DPI.
         let titleFont = "Segoe UI".withCString(encodedAs: UTF16.self) { namePtr in
-            CreateFontW(-16, 0, 0, 0, FW_BOLD, 0, 0, 0,
+            CreateFontW(-16 * dpiScale, 0, 0, 0, FW_BOLD, 0, 0, 0,
                         DWORD(DEFAULT_CHARSET), DWORD(OUT_DEFAULT_PRECIS),
                         DWORD(CLIP_DEFAULT_PRECIS), DWORD(CLEARTYPE_QUALITY),
                         DWORD(DEFAULT_PITCH), namePtr)
         }
         if let f = titleFont {
             SendMessageW(titleLabel, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: f)), 1)
+            // The native button's default font is not DPI-scaled; use the
+            // same scaled font as the title.
+            SendMessageW(backButton, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: f)), 1)
         }
 
         // Content area
@@ -436,7 +462,6 @@ extension NavigationStack: WinRenderable {
         setCurrentNavigationContext(nil)
 
         // Add root as first entry and size the nav container
-        let headerHeight: Int32 = 32
         if let rootHwnd = rootHwnd {
             // Get root content's natural size
             var rootRect = RECT()
