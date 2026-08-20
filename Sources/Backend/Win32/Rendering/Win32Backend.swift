@@ -126,7 +126,8 @@ extension WindowGroup: Win32WindowRenderable {
             break
         }
 
-        // Create with default size initially; we'll resize after rendering content
+        // Create at the system default size (CW_USEDEFAULT); resize to the
+        // specified size after rendering content.
         let titleWide: [WCHAR] = Array(title.utf16) + [0]
         let hwnd = titleWide.withUnsafeBufferPointer { titlePtr in
             className.withUnsafeBufferPointer { classPtr in
@@ -136,7 +137,7 @@ extension WindowGroup: Win32WindowRenderable {
                     titlePtr.baseAddress!,
                     style,
                     Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT),
-                    500, 600,
+                    Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT),
                     nil,
                     nil,
                     hInstance,
@@ -161,48 +162,41 @@ extension WindowGroup: Win32WindowRenderable {
             let naturalContentW = contentRect.right - contentRect.left
             let naturalContentH = contentRect.bottom - contentRect.top
 
-            let desiredClientSize: (Int32, Int32) = {
-                switch windowSizing ?? .automatic {
-                case .automatic, .content, .contentFixed:
-                    return (naturalContentW + 20, naturalContentH + 20)
-                case .size(let width, let height):
-                    return (Int32(width), Int32(height))
-                }
-            }()
-
+            // The window starts at the system default size (CW_USEDEFAULT).
+            // Resize it only when the app specifies a size.
             let screenW = GetSystemMetrics(SM_CXSCREEN)
             let screenH = GetSystemMetrics(SM_CYSCREEN)
-            // When explicit sizing is provided (defaultWindowSize or windowSizing(.size)),
-            // don't enforce 300x200 minimum — the developer chose the size.
-            let hasExplicitSize = defaultWindowWidth != nil || defaultWindowHeight != nil || {
-                if case .size = windowSizing ?? .automatic { return true }
-                if case .contentFixed = windowSizing ?? .automatic { return true }
-                return false
-            }()
-            let minClientW = minWindowWidth.map { Int32($0) } ?? (hasExplicitSize ? 1 : 300)
-            let minClientH = minWindowHeight.map { Int32($0) } ?? (hasExplicitSize ? 1 : 200)
-            let maxClientW = maxWindowWidth.map { Int32($0) } ?? (screenW * 3 / 4)
-            let maxClientH = maxWindowHeight.map { Int32($0) } ?? (screenH * 3 / 4)
+            // Scale by the existing window's DPI.
+            let dpiScale = Double(win32_GetDpiForWindow(hwnd)) / 96.0
+            let minClientW = minWindowWidth.map { Int32(Double($0) * dpiScale) }
+            let minClientH = minWindowHeight.map { Int32(Double($0) * dpiScale) }
+            let maxClientW = maxWindowWidth.map { Int32(Double($0) * dpiScale) } ?? (screenW * 3 / 4)
+            let maxClientH = maxWindowHeight.map { Int32(Double($0) * dpiScale) } ?? (screenH * 3 / 4)
 
-            let defaultClientW = defaultWindowWidth.map { Int32($0) }
-            let defaultClientH = defaultWindowHeight.map { Int32($0) }
-            let automaticDefaultClientSize: (Int32?, Int32?) = {
-                if case .automatic = windowSizing ?? .automatic {
-                    return (Int32(defaultAutomaticWindowWidth), Int32(defaultAutomaticWindowHeight))
+            var requestedSize: (Int32, Int32)?
+            if let dw = defaultWindowWidth, let dh = defaultWindowHeight {
+                requestedSize = (Int32(Double(dw) * dpiScale), Int32(Double(dh) * dpiScale))
+            } else if let sizing = windowSizing {
+                switch sizing {
+                case .size(let width, let height):
+                    requestedSize = (Int32(Double(width) * dpiScale), Int32(Double(height) * dpiScale))
+                case .content, .contentFixed:
+                    requestedSize = (naturalContentW + 20, naturalContentH + 20)
+                case .automatic:
+                    break
                 }
-                return (nil, nil)
-            }()
-            let unclampedW = defaultClientW ?? automaticDefaultClientSize.0 ?? desiredClientSize.0
-            let unclampedH = defaultClientH ?? automaticDefaultClientSize.1 ?? desiredClientSize.1
-            let clientW = max(minClientW, min(unclampedW, maxClientW))
-            let clientH = max(minClientH, min(unclampedH, maxClientH))
+            }
 
-            let windowSize = adjustedWindowSize(clientWidth: clientW, clientHeight: clientH, style: style)
-            SetWindowPos(hwnd, nil,
-                         Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT),
-                         windowSize.0,
-                         windowSize.1,
-                         UINT(SWP_NOMOVE | SWP_NOZORDER))
+            if let (reqW, reqH) = requestedSize {
+                let clientW = max(minClientW ?? 1, min(reqW, maxClientW))
+                let clientH = max(minClientH ?? 1, min(reqH, maxClientH))
+                let windowSize = adjustedWindowSize(clientWidth: clientW, clientHeight: clientH, style: style)
+                SetWindowPos(hwnd, nil,
+                             Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT),
+                             windowSize.0,
+                             windowSize.1,
+                             UINT(SWP_NOMOVE | SWP_NOZORDER))
+            }
 
             // SwiftUI's WindowGroup centers intrinsically-sized root content
             // (e.g. a plain Text) and stretches fill-semantic roots (e.g. a
@@ -283,13 +277,20 @@ private let mainWindowProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
         if userData != 0, let info = UnsafeMutablePointer<MINMAXINFO>(bitPattern: Int(lParam)) {
             let state = Unmanaged<MainWindowState>.fromOpaque(UnsafeMutableRawPointer(bitPattern: Int(userData))!).takeUnretainedValue()
+            let dpiScale = Double(win32_GetDpiForWindow(hwnd!)) / 96.0
             if let minW = state.minClientWidth, let minH = state.minClientHeight {
-                let adjusted = adjustedWindowSize(clientWidth: minW, clientHeight: minH, style: state.style)
+                let adjusted = adjustedWindowSize(
+                    clientWidth: Int32(Double(minW) * dpiScale),
+                    clientHeight: Int32(Double(minH) * dpiScale),
+                    style: state.style)
                 info.pointee.ptMinTrackSize.x = LONG(adjusted.0)
                 info.pointee.ptMinTrackSize.y = LONG(adjusted.1)
             }
             if let maxW = state.maxClientWidth, let maxH = state.maxClientHeight {
-                let adjusted = adjustedWindowSize(clientWidth: maxW, clientHeight: maxH, style: state.style)
+                let adjusted = adjustedWindowSize(
+                    clientWidth: Int32(Double(maxW) * dpiScale),
+                    clientHeight: Int32(Double(maxH) * dpiScale),
+                    style: state.style)
                 info.pointee.ptMaxTrackSize.x = LONG(adjusted.0)
                 info.pointee.ptMaxTrackSize.y = LONG(adjusted.1)
             }
@@ -768,11 +769,8 @@ extension Window: Win32WindowRenderable {
         }
 
         let style = DWORD(WS_OVERLAPPEDWINDOW)
-        let clientW = defaultWindowWidth.map { Int32($0) } ?? 400
-        let clientH = defaultWindowHeight.map { Int32($0) } ?? 300
-        let windowSize = adjustedWindowSize(
-            clientWidth: clientW, clientHeight: clientH, style: style)
-
+        // Create at the system default size (CW_USEDEFAULT); resize to the
+        // specified logical size (DPI-scaled) once the window exists.
         let titleWide: [WCHAR] = Array(title.utf16) + [0]
         let hwnd = titleWide.withUnsafeBufferPointer { titlePtr in
             classNameWide.withUnsafeBufferPointer { classPtr in
@@ -782,7 +780,7 @@ extension Window: Win32WindowRenderable {
                     titlePtr.baseAddress!,
                     style,
                     Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT),
-                    windowSize.0, windowSize.1,
+                    Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT),
                     nil, nil, hInstance, nil
                 )
             }
@@ -833,6 +831,17 @@ extension Window: Win32WindowRenderable {
         let windowId = id
         Win32WindowRegistry.shared.setLiveWindow(id: windowId, hwnd: hwnd)
 
+        // Resize to the specified logical size, scaled by this window's DPI.
+        if let dw = defaultWindowWidth, let dh = defaultWindowHeight {
+            let dpiScale = Double(win32_GetDpiForWindow(hwnd)) / 96.0
+            let scaledSize = adjustedWindowSize(
+                clientWidth: Int32(Double(dw) * dpiScale),
+                clientHeight: Int32(Double(dh) * dpiScale),
+                style: style)
+            SetWindowPos(hwnd, nil, 0, 0, scaledSize.0, scaledSize.1,
+                         UINT(SWP_NOMOVE | SWP_NOZORDER))
+        }
+
         ShowWindow(hwnd, SW_SHOWDEFAULT)
         UpdateWindow(hwnd)
     }
@@ -864,9 +873,12 @@ private let windowSceneWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
             let state = Unmanaged<MainWindowState>.fromOpaque(
                 UnsafeMutableRawPointer(bitPattern: Int(userData))!
             ).takeUnretainedValue()
+            let dpiScale = Double(win32_GetDpiForWindow(hwnd!)) / 96.0
             if let minW = state.minClientWidth, let minH = state.minClientHeight {
                 let adjusted = adjustedWindowSize(
-                    clientWidth: minW, clientHeight: minH, style: state.style)
+                    clientWidth: Int32(Double(minW) * dpiScale),
+                    clientHeight: Int32(Double(minH) * dpiScale),
+                    style: state.style)
                 info.pointee.ptMinTrackSize.x = LONG(adjusted.0)
                 info.pointee.ptMinTrackSize.y = LONG(adjusted.1)
             }

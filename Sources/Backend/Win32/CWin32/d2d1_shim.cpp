@@ -49,7 +49,13 @@ HRESULT d2d1_Factory_CreateHwndRenderTarget(
     D2DRenderTarget *ppTarget
 ) {
     auto f = AS_FACTORY(factory);
+    // The layout engine works in physical pixels, so pin the target's DPI
+    // to 96 (1 DIP = 1 physical pixel). The default (system DPI) would
+    // reinterpret every coordinate as device-independent pixels and
+    // double all sizes on a 200% display.
     D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties();
+    rtProps.dpiX = 96.0f;
+    rtProps.dpiY = 96.0f;
     D2D1_HWND_RENDER_TARGET_PROPERTIES hwndProps = D2D1::HwndRenderTargetProperties(
         hwnd, D2D1::SizeU(width, height)
     );
