@@ -5,8 +5,10 @@ import SwiftOpenUI
 /// Measure a text string's size using DirectWrite (preferred) or GDI fallback.
 /// DirectWrite provides more accurate sub-pixel measurement than GDI.
 public func measureText(_ text: String, hwnd: HWND) -> (width: Int32, height: Int32) {
+    // Text renders DPI-scaled, so measure with the scaled default size.
+    let dpiScale = Float(win32_GetDpiForWindow(hwnd)) / 96.0
     // Try DirectWrite first — more accurate and consistent with D2D rendering
-    if let fmt = D2DRenderer.shared.textFormat() {
+    if let fmt = D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) {
         let (w, h) = D2DRenderer.shared.measureText(text, format: fmt)
         if w > 0 || h > 0 {
             return (width: Int32(w) + 4, height: Int32(h) + 2)
@@ -23,12 +25,13 @@ public func measureText(_ text: String, hwnd: HWND) -> (width: Int32, height: In
         win32_GetTextExtentPoint32W(hdc, wstr, len, &size)
     }
 
-    return (width: size.cx, height: size.cy)
+    return (width: Int32(Double(size.cx) * Double(dpiScale)), height: Int32(Double(size.cy) * Double(dpiScale)))
 }
 
 /// Measure text with a specific font family using DirectWrite.
 public func measureText(_ text: String, fontFamily: String, hwnd: HWND) -> (width: Int32, height: Int32) {
-    if let fmt = D2DRenderer.shared.textFormat(fontFamily: fontFamily) {
+    let dpiScale = Float(win32_GetDpiForWindow(hwnd)) / 96.0
+    if let fmt = D2DRenderer.shared.textFormat(fontFamily: fontFamily, fontSize: 14 * dpiScale) {
         let (w, h) = D2DRenderer.shared.measureText(text, format: fmt)
         if w > 0 || h > 0 {
             return (width: Int32(w) + 4, height: Int32(h) + 2)
