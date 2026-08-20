@@ -4252,7 +4252,8 @@ extension Image: WinRenderable {
             )
         }
 
-        let size = Int32(scale.pointSize) + 4
+        // Box must track the DPI-scaled font height or the glyph is cropped.
+        let size = Int32(Double(scale.pointSize) * dpiScale) + 4
         // SS_CENTER | SS_CENTERIMAGE center the glyph within its box so the
         // icon sits centered rather than top-left.
         let hwnd = glyph.withCString(encodedAs: UTF16.self) { wstr in
