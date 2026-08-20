@@ -2595,7 +2595,8 @@ final class Win32RenderTests: XCTestCase {
         renderEnv.setObject(model)
         setCurrentEnvironment(renderEnv)
 
-        let menu = DelayedEnvironmentMenuHostView().menu
+        let elements: [MenuElement] = MenuBuilder.buildExpression(
+            MenuItem("Increment") { model.count += 1 })
         guard let hMenu = CreatePopupMenu() else {
             return XCTFail("Expected popup menu creation to succeed in test harness")
         }
@@ -2603,7 +2604,7 @@ final class Win32RenderTests: XCTestCase {
 
         var nextMenuID: UINT = 50000
         var actions: [UINT: () -> Void] = [:]
-        winPopulateMenu(hMenu, elements: menu.elements, nextMenuID: &nextMenuID, actions: &actions)
+        winPopulateMenu(hMenu, elements: elements, nextMenuID: &nextMenuID, actions: &actions)
 
         guard let itemAction = actions[50000] else {
             return XCTFail("Expected first menu item action to be registered through winPopulateMenu")
