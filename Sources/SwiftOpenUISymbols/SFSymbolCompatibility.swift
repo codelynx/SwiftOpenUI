@@ -142,5 +142,12 @@ public enum SFSymbolCompatibility {
         "star.fill":              "star",
         "tag":                    "label",
         "tag.fill":               "label",
+
+        // MARK: Devices / media
+        "camera":                 "photo_camera",
+        "iphone.gen3":            "smartphone",
+        "iphone.slash":           "no_sim",
+        "record.circle":          "fiber_manual_record",
+        "square.on.square":       "history",
     ]
 }
