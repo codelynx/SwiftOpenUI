@@ -73,6 +73,12 @@ public enum MaterialSymbolsCodepoints {
         "info":                0xE88E,
         "verified":            0xEF76,
         "warning":             0xE002,
+        // Devices / media
+        "fiber_manual_record": 0xE061,
+        "history":             0xE889,
+        "no_sim":              0xE0CE,
+        "photo_camera":        0xE412,
+        "smartphone":          0xE32C,
 
         // Common actions
         "add":                 0xE145,
