@@ -577,7 +577,7 @@ public struct GTK4Backend: RenderBackend {
         // asks Pango to resolve the "Material Symbols Rounded" family.
         gtkRegisterBundledIconFont()
 
-        let gtkApp = gtk_application_new(nil, G_APPLICATION_DEFAULT_FLAGS)!
+        let gtkApp = gtk_application_new(nil, GApplicationFlags.APPLICATION_CAN_OVERRIDE_APP_ID)!
         let appPtr = OpaquePointer(gtkApp)
 
         let factory: (OpaquePointer) -> Void = { appPtr in
