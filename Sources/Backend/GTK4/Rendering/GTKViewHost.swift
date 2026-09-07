@@ -125,9 +125,17 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         let currentAnimation = getCurrentAnimation()
         defer { lock.unlock() }
         guard isContainerAlive else { return }
-        // Defer rebuild while interactive (e.g. slider drag)
-        if interactiveUpdateDepth > 0 {
+        // Defer rebuild while interactive: either THIS host is mid-interaction
+        // (interactiveUpdateDepth, e.g. a native slider drag) or ANY host is
+        // (globalInteractionDepth). A gesture drag freezes EVERY host's rebuilds,
+        // because a sibling/ancestor host that observes the same model would
+        // otherwise rebuild mid-drag and recreate — detaching — the dragged
+        // gesture's widget. Deferred hosts are collected and flushed on end.
+        if interactiveUpdateDepth > 0 || GTKViewHost.globalInteractionDepth > 0 {
             rebuildDeferredDuringInteraction = true
+            if GTKViewHost.globalInteractionDepth > 0 {
+                GTKViewHost.deferredDuringGlobalInteraction[ObjectIdentifier(self)] = self
+            }
             return
         }
         if let currentAnimation {
@@ -141,6 +149,50 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
             host.rebuild()
             return 0 // G_SOURCE_REMOVE
         }, retained.toOpaque())
+    }
+
+    // MARK: - Global interaction deferral
+
+    /// While > 0, EVERY host defers its rebuilds (see `scheduleRebuild`). A
+    /// gesture drag brackets itself with `begin/endGlobalInteraction` so that no
+    /// host — not the dragged control's, nor a sibling/ancestor that observes the
+    /// same model — rebuilds mid-drag and recreates (and thereby detaches) the
+    /// dragged gesture's widget. Accessed only on the GTK main thread, so no lock.
+    static var globalInteractionDepth: Int = 0
+
+    /// Hosts that deferred a rebuild during the current global interaction,
+    /// flushed exactly once when the interaction ends. Strong refs are fine —
+    /// entries live only for the duration of a drag.
+    static var deferredDuringGlobalInteraction: [ObjectIdentifier: GTKViewHost] = [:]
+
+    /// Enter a global interaction (drag begin). Balanced by `endGlobalInteraction`.
+    static func beginGlobalInteraction() {
+        globalInteractionDepth += 1
+    }
+
+    /// Leave a global interaction (drag end). When the last one ends, flush every
+    /// host that deferred a rebuild during it, so the whole UI reconciles once.
+    static func endGlobalInteraction() {
+        guard globalInteractionDepth > 0 else { return }
+        globalInteractionDepth -= 1
+        guard globalInteractionDepth == 0 else { return }
+        let hosts = deferredDuringGlobalInteraction
+        deferredDuringGlobalInteraction = [:]
+        for host in hosts.values {
+            host.scheduleRebuild()
+        }
+    }
+
+    /// Repaint every host that has deferred a rebuild during the current global
+    /// interaction, without rebuilding. Called on each drag-update so controls
+    /// bound to the value being dragged (a linked knob and XY pad, say) track it
+    /// live: their Canvas draw closures read the shared value at paint time, so a
+    /// queue_draw reflects the new value even though the value-change observation
+    /// is one-shot and its re-registering rebuild is deferred until drag-end.
+    static func redrawDeferredInteractionHosts() {
+        for host in deferredDuringGlobalInteraction.values where host.isContainerAlive {
+            gtkQueueDrawSubtree(host.container)
+        }
     }
 
     public func beginInteractiveUpdate() {
@@ -236,19 +288,46 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         observationDidFire = false
         lock.unlock()
 
-        // --- Narrow mutation path: try text/color in-place update ---
-        // Skipped when withObservationTracking's onChange fired — the narrow
-        // path returns without re-running body under withObservationTracking,
-        // which would leave @Observable subscriptions dead after the first
-        // change. Fall through to the full rebuild so observation re-registers.
-        if !fromObservation,
-           let describeBody = describeBody,
+        // --- Narrow mutation path: try text/color/canvas in-place update ---
+        // Applied for both @State- and @Observable-driven changes. A full
+        // rebuild tears down the widget tree, which cancels any in-flight
+        // gesture (e.g. a drag on a Canvas knob); the narrow path mutates in
+        // place and preserves it. For an @Observable change the describe pass
+        // below is run under `withObservationTracking`, so re-reading the
+        // observed properties re-registers the one-shot subscription — the same
+        // re-registration the full rebuild gets from `buildBodyWithTracking`,
+        // without the teardown. If the change is not narrow-applicable we fall
+        // through to the full rebuild, which re-registers observation as before.
+        if let describeBody = describeBody,
            let oldRetained = lastRetainedDescriptor,
            let oldExecutor = retainedExecutor {
 
             let previousEnv = getCurrentEnvironment()
             installRebuildEnvironment()
-            let described = gtkDescribeCapturingCanvasPayloads(describeBody)
+            let described: (descriptor: GTK4DescriptorNode, canvasPayloads: [GTK4CanvasPayload])
+            if fromObservation {
+                #if canImport(Observation)
+                if #available(macOS 14.0, iOS 17.0, *) {
+                    var captured: (descriptor: GTK4DescriptorNode, canvasPayloads: [GTK4CanvasPayload])!
+                    withObservationTracking {
+                        captured = gtkDescribeCapturingCanvasPayloads(describeBody)
+                    } onChange: { [weak self] in
+                        guard let self else { return }
+                        self.lock.lock()
+                        self.observationDidFire = true
+                        self.lock.unlock()
+                        self.scheduleRebuild()
+                    }
+                    described = captured
+                } else {
+                    described = gtkDescribeCapturingCanvasPayloads(describeBody)
+                }
+                #else
+                described = gtkDescribeCapturingCanvasPayloads(describeBody)
+                #endif
+            } else {
+                described = gtkDescribeCapturingCanvasPayloads(describeBody)
+            }
             setCurrentEnvironment(previousEnv)
 
             let newIdentified = gtkIdentifyDescriptorTree(described.descriptor)

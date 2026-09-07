@@ -2893,6 +2893,25 @@ private class GTKDragState {
     var startX: Double = 0
     var startY: Double = 0
     var dragStarted = false
+    /// Owning view host, captured at widget creation, used to bracket the drag
+    /// in an interactive-update deferral so a mid-drag rebuild cannot recreate
+    /// (and detach) the gesture's widget. Weak — the host outlives the gesture.
+    weak var host: GTKViewHost?
+}
+
+/// Queue a redraw of `widget` and every descendant.
+///
+/// GTK4 caches each widget's render node and reuses a child's node when only an
+/// ancestor is invalidated, so `gtk_widget_queue_draw` on a container does not
+/// re-run a nested `GtkDrawingArea`'s draw func. Walking the subtree marks every
+/// widget dirty, which is what a live Canvas redraw during a drag needs.
+func gtkQueueDrawSubtree(_ widget: UnsafeMutablePointer<GtkWidget>) {
+    gtk_widget_queue_draw(widget)
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        gtkQueueDrawSubtree(c)
+        child = gtk_widget_get_next_sibling(c)
+    }
 }
 
 extension DragGestureView: GTKRenderable, GTKDescribable {
@@ -2914,6 +2933,51 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
         let gesture = gtk_gesture_drag_new()!
 
         let dragState = GTKDragState()
+        dragState.host = GTKViewHost.getCurrentRebuilding()
+
+        // Bracket the whole drag sequence in the host's interactive-update
+        // deferral. A state-mutating onChanged schedules a rebuild that, when
+        // sibling controls are bound to the same model, is not narrow-applicable
+        // and recreates this gesture's widget mid-drag — detaching GtkGestureDrag
+        // so the sequence ends after one tick. Deferring rebuilds until drag-end
+        // keeps the widget (and the in-flight gesture) alive; the live redraw
+        // still happens via gtkQueueDrawSubtree in drag-update, and the single
+        // deferred rebuild on drag-end reconciles final state and re-registers
+        // observation. GtkGestureDrag emits drag-begin and drag-end exactly once
+        // per sequence, so these begin/end calls pair. Connected before the user
+        // handlers; GTK invokes multiple handlers for a signal in order.
+        let bracketState = dragState
+        _ = bracketState  // host no longer needed for the bracket; kept for the trace
+        let bracketBeginBox = Unmanaged.passRetained(DoubleDoubleClosureBox { _, _ in
+            GTKViewHost.beginGlobalInteraction()
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(gesture),
+            "drag-begin",
+            unsafeBitCast({ (_: gpointer?, x: gdouble, y: gdouble, userData: gpointer?) in
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure(x, y)
+            } as @convention(c) (gpointer?, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+            bracketBeginBox,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+        let bracketEndBox = Unmanaged.passRetained(DoubleDoubleClosureBox { _, _ in
+            GTKViewHost.endGlobalInteraction()
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(gesture),
+            "drag-end",
+            unsafeBitCast({ (_: gpointer?, offsetX: gdouble, offsetY: gdouble, userData: gpointer?) in
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure(offsetX, offsetY)
+            } as @convention(c) (gpointer?, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+            bracketEndBox,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
 
         if let onChanged = onChanged {
             let boundOnChanged = bindActionToCurrentEnvironment(onChanged)
@@ -2931,6 +2995,27 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
                     translation: (width: offsetX, height: offsetY)
                 )
                 boundOnChanged(value)
+                // Live redraw during the drag. The rebuild that a state-mutating
+                // onChanged schedules runs at default idle priority, which the
+                // stream of pointer-motion events starves, so a Canvas otherwise
+                // only repaints on release. The drawing-area draw func re-invokes
+                // the stored draw closure, which reads the bound value at paint
+                // time, so forcing a redraw here repaints the new value
+                // immediately — no rebuild required.
+                //
+                // The gesture's widget is typically a container (e.g. a Canvas
+                // wrapped by `.frame`); GTK4 reuses a child's cached render node
+                // when only an ancestor is invalidated, so a bare
+                // `queue_draw(widget)` would not re-run a nested GtkDrawingArea's
+                // draw func. Walk the subtree so the Canvas itself is marked
+                // dirty and actually repaints.
+                gtkQueueDrawSubtree(widget)
+                // Repaint every control bound to the value being dragged (linked
+                // knob/XY sharing a parameter), not just the dragged one, so they
+                // track live. Their rebuilds are deferred during the drag, so this
+                // drives the redraw directly; the Canvas closures read the value
+                // at paint time.
+                GTKViewHost.redrawDeferredInteractionHosts()
             }).toOpaque()
 
             // drag-begin: record start position
