@@ -225,10 +225,22 @@ extension Divider: GTKRenderable, GTKDescribable {
     }
 }
 
-extension TextField: GTKRenderable {
+extension TextField: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        // A real descriptor node (not an empty `.composite`, which would poison
+        // the host's narrow-mutation path) so a text change can be applied in
+        // place via `.textFieldValue` — letting the field track a live value
+        // (e.g. bound to a slider being dragged) instead of only at mouse-up.
+        GTK4DescriptorNode(
+            kind: .textField, typeName: "TextField",
+            props: .textField(GTK4TextFieldDescriptor(
+                text: text.wrappedValue, placeholder: title)))
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let entry = gtk_entry_new()!
         gtk_widget_set_hexpand(entry, 1)
+        gtkMarkHostedNodeKind(entry, kind: .textField)
         let entryPtr = UnsafeMutableRawPointer(entry).assumingMemoryBound(to: GtkEntry.self)
         let bufferPtr = gtk_entry_get_buffer(entryPtr)
         gtk_entry_buffer_set_text(bufferPtr, text.wrappedValue, -1)
