@@ -7689,3 +7689,56 @@ extension OverlayView: GTKDescribable {
         )
     }
 }
+
+// MARK: - Opaque-leaf state-signature conformances
+//
+// Native widgets the narrow path can't update in place. Describing them as
+// `.opaqueLeaf(signature)` (not an empty `.composite`) stops them poisoning a
+// host's narrow path; the signature captures the bound state that affects
+// appearance, so an unchanged widget reuses and a changed one forces a rebuild.
+// Each signature must include EVERY value that changes the widget's look.
+
+extension Toggle: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(label), AnyHashable(isOn.wrappedValue)])
+    }
+}
+
+extension Stepper: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(label), AnyHashable(value.wrappedValue),
+                     AnyHashable(range.lowerBound), AnyHashable(range.upperBound),
+                     AnyHashable(step)])
+    }
+}
+
+extension Picker: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(label), AnyHashable(selected), AnyHashable(options)])
+    }
+}
+
+extension FilledShape: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(color.red), AnyHashable(color.green),
+                     AnyHashable(color.blue), AnyHashable(color.alpha)])
+    }
+}
+
+extension StrokedShape: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(color.red), AnyHashable(color.green),
+                     AnyHashable(color.blue), AnyHashable(color.alpha)])
+    }
+}
+
+// Static shapes / gradients / empty — a constant signature (they don't change;
+// a structural swap is caught by the descriptor typeName, not the signature).
+extension Circle: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("Circle") } }
+extension Rectangle: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("Rectangle") } }
+extension Ellipse: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("Ellipse") } }
+extension Capsule: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("Capsule") } }
+extension RoundedRectangle: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable(cornerRadius) } }
+extension LinearGradient: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("LinearGradient") } }
+extension RadialGradient: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("RadialGradient") } }
+extension EmptyView: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("EmptyView") } }

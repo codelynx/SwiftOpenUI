@@ -25,6 +25,14 @@ public enum GTK4DescriptorKind: Equatable {
     case font
     case text
     case textField
+    /// An opaque native widget whose state the narrow path does not model (Toggle,
+    /// Stepper, Picker, a filled Shape, …). It carries an `AnyHashable` state
+    /// signature so the diff can tell whether it changed: an unchanged signature
+    /// `.reuse`s (passing the narrow gate — it is NOT an empty `.composite`), a
+    /// changed one plans an `.update`/`.none` the gate rejects, forcing a full
+    /// rebuild. This keeps such widgets from poisoning a host's narrow path while
+    /// staying correct on a real state change.
+    case opaqueLeaf
     case color
     case frame
     case foregroundColor
@@ -93,6 +101,13 @@ public struct GTK4TextDescriptor: Equatable {
 public struct GTK4TextFieldDescriptor: Equatable {
     public let text: String
     public let placeholder: String
+}
+
+/// State signature of an opaque native widget (see `.opaqueLeaf`). Two describe
+/// as equal iff their signatures are equal, so an unchanged widget reuses and a
+/// changed one forces a rebuild. `AnyHashable` is `Equatable`, so this is too.
+public struct GTK4OpaqueLeafDescriptor: Equatable {
+    public let signature: AnyHashable
 }
 
 public struct GTK4ColorDescriptor: Equatable {
@@ -238,6 +253,7 @@ public enum GTK4DescriptorProps: Equatable {
     case scale(GTK4ScaleDescriptor)
     case text(GTK4TextDescriptor)
     case textField(GTK4TextFieldDescriptor)
+    case opaqueLeaf(GTK4OpaqueLeafDescriptor)
     case color(GTK4ColorDescriptor)
     case frame(GTK4FrameDescriptor)
     case foregroundColor(GTK4ColorDescriptor)
@@ -516,6 +532,16 @@ public protocol GTKContentWrapper {
     var gtkWrappedContent: any View { get }
 }
 
+/// An opaque native-widget view (Toggle, Stepper, Picker, a filled Shape, …) that
+/// the narrow path cannot update in place. Conforming makes it describe as a
+/// `.opaqueLeaf` carrying `gtkStateSignature` instead of an empty `.composite`, so
+/// it no longer poisons the host's narrow path — an unchanged signature reuses; a
+/// changed one forces a full rebuild. The signature MUST include every bound value
+/// that affects the widget's appearance, or a programmatic change goes stale.
+public protocol GTKOpaqueLeaf {
+    var gtkStateSignature: AnyHashable { get }
+}
+
 private final class GTK4CanvasPayloadCollector {
     var payloads: [GTK4CanvasPayload] = []
 }
@@ -559,6 +585,16 @@ public func gtkDescribeView<V: View>(_ view: V) -> GTK4DescriptorNode {
             kind: .composite,
             typeName: String(describing: type(of: view)),
             children: [gtkDescribeAnyView(wrapper.gtkWrappedContent)]
+        )
+    }
+    // Opaque native leaf widget: describe as `.opaqueLeaf` carrying its state
+    // signature (not an empty `.composite`), so it doesn't poison the host's
+    // narrow path but still forces a rebuild when its state changes.
+    if let leaf = view as? GTKOpaqueLeaf {
+        return GTK4DescriptorNode(
+            kind: .opaqueLeaf,
+            typeName: String(describing: type(of: view)),
+            props: .opaqueLeaf(GTK4OpaqueLeafDescriptor(signature: leaf.gtkStateSignature))
         )
     }
     if let multi = view as? MultiChildView {
@@ -726,6 +762,7 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
         return oldSlider.range == newSlider.range && oldSlider.step == newSlider.step
             ? .sliderValue : .sliderConfiguration
     case .text:          return .textContent
+    case .opaqueLeaf:    return .none  // any state-signature change → full rebuild
     case .textField:
         guard case let .textField(oldTF) = old.props,
               case let .textField(newTF) = new.props else {
