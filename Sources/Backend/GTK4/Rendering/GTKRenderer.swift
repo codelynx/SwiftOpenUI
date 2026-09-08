@@ -7541,3 +7541,151 @@ extension ViewThatFits: GTKRenderable {
         return opaqueFromWidget(stack)
     }
 }
+
+// MARK: - Transparent content-wrapper describe conformances
+//
+// These styling / gesture / lifecycle / environment modifiers wrap a single
+// `content` view and render it directly. Conforming to GTKContentWrapper makes
+// gtkDescribeView describe the wrapped content instead of collapsing to an empty
+// `.composite` (which the narrow-mutation gate rejects, poisoning the host).
+
+extension OnChangeView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnChangeTwoArgView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnSubmitView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnAppearView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnDisappearView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FocusedView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FocusedEqualsView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FocusedValueView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension MonospacedDigitView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension MultilineTextAlignmentView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension TextFieldStyleModifier: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ButtonStyleModifier: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ToggleStyleModifier: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LabelsHiddenView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LineLimitView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension TruncationModeView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LineSpacingView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension BoldView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ItalicView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FontWeightView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension UnderlineView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension StrikethroughView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension TextCaseView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension CornerRadiusView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ClippedView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ClipShapeView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ShadowView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension BlurView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension AspectRatioView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension PositionView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LayoutPriorityView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FixedSizeView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension HelpView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension IdView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension TagView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension KeyboardShortcutView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension HiddenView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ContextMenuView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LongPressGestureView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnExitCommandView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension EnvironmentModifierView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension EnvironmentObjectModifierView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension EnvironmentObservableModifierView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+
+// OverlayView has two view children (content + overlay); describe both so a
+// change in either stays narrow-applicable.
+extension OverlayView: GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .composite, typeName: "OverlayView",
+            children: [gtkDescribeAnyView(content), gtkDescribeAnyView(overlay)]
+        )
+    }
+}

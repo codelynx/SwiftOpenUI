@@ -503,6 +503,19 @@ public protocol GTKDescribable {
     func gtkDescribeNode() -> GTK4DescriptorNode
 }
 
+/// A transparent single-`content` wrapper view (a styling / gesture / lifecycle
+/// modifier) whose only visible structure is the view it wraps. Conforming lets
+/// `gtkDescribeView` describe the wrapped content rather than falling through to
+/// an EMPTY `.composite` — which the narrow-mutation gate rejects
+/// (`gtkCanApplyTextColorHostMutation`), poisoning the whole host's narrow path
+/// and dropping the wrapped node from the descriptor tree entirely. With this,
+/// a `Text` / `TextField` / slider wrapped in `.onChange` / `.monospacedDigit` /
+/// `.focused` / … stays narrow-applicable, so its value change updates in place
+/// instead of forcing a full-window rebuild.
+public protocol GTKContentWrapper {
+    var gtkWrappedContent: any View { get }
+}
+
 private final class GTK4CanvasPayloadCollector {
     var payloads: [GTK4CanvasPayload] = []
 }
@@ -536,6 +549,17 @@ public func gtkDescribeCapturingCanvasPayloads(
 public func gtkDescribeView<V: View>(_ view: V) -> GTK4DescriptorNode {
     if let describable = view as? GTKDescribable {
         return describable.gtkDescribeNode()
+    }
+    // Transparent single-content wrapper (styling / gesture / lifecycle modifier):
+    // describe the wrapped content so it stays in the descriptor tree and remains
+    // narrow-applicable, instead of collapsing to an empty `.composite` that the
+    // narrow gate rejects (which would poison the whole host's narrow path).
+    if let wrapper = view as? GTKContentWrapper {
+        return GTK4DescriptorNode(
+            kind: .composite,
+            typeName: String(describing: type(of: view)),
+            children: [gtkDescribeAnyView(wrapper.gtkWrappedContent)]
+        )
     }
     if let multi = view as? MultiChildView {
         return GTK4DescriptorNode(
