@@ -7742,3 +7742,30 @@ extension RoundedRectangle: GTKOpaqueLeaf { public var gtkStateSignature: AnyHas
 extension LinearGradient: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("LinearGradient") } }
 extension RadialGradient: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("RadialGradient") } }
 extension EmptyView: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("EmptyView") } }
+
+// MARK: - Conditional / optional transparent describe
+//
+// `if/else` in a ViewBuilder produces `_ConditionalView`; a bare `if` (incl.
+// `if let`) produces `Optional<some View>`. Both are GTKRenderable-only, so they
+// described as empty `.composite`s that poison the host's narrow path. Describe
+// the ACTIVE branch transparently instead. A branch/optional FLIP changes the
+// described child's type — caught as a structural change (rebuild) — but a stable
+// condition (as during a drag) reuses, keeping the host narrow-applicable.
+
+extension _ConditionalView: GTKContentWrapper {
+    public var gtkWrappedContent: any View {
+        switch self {
+        case .trueContent(let view): return view
+        case .falseContent(let view): return view
+        }
+    }
+}
+
+extension Optional: GTKContentWrapper where Wrapped: View {
+    public var gtkWrappedContent: any View {
+        switch self {
+        case .some(let view): return view
+        case .none: return EmptyView()
+        }
+    }
+}
