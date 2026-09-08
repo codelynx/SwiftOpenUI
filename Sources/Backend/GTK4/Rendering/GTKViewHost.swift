@@ -160,13 +160,6 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
     /// dragged gesture's widget. Accessed only on the GTK main thread, so no lock.
     static var globalInteractionDepth: Int = 0
 
-    /// Last narrow-rejection/outcome diagnostic line printed (SWIFTOPENUI_NARROW_DEBUG),
-    /// to dedupe a held drag's repeated logs. Main-thread only.
-    static var lastNarrowRejectLog: String = ""
-    /// Separate dedupe for the per-pass "deferred hosts = N" line so it doesn't
-    /// alternate with the outcome lines and re-print every motion event.
-    static var lastNarrowPassLog: String = ""
-
     /// Hosts that deferred a rebuild during the current global interaction,
     /// flushed exactly once when the interaction ends. Strong refs are fine —
     /// entries live only for the duration of a drag.
@@ -201,13 +194,6 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         // re-register observation whose onChange re-inserts into the dict, so we
         // must not iterate the live dictionary while mutating it.
         let hosts = Array(deferredDuringGlobalInteraction.values)
-        if gtkNarrowDebugEnabled {
-            let line = "[narrow-pass] deferred hosts = \(hosts.count)"
-            if line != lastNarrowPassLog {
-                lastNarrowPassLog = line
-                FileHandle.standardError.write(Data((line + "\n").utf8))
-            }
-        }
         for host in hosts where host.isContainerAlive {
             // Push narrow (text/color/canvas) in-place updates so NATIVE widgets
             // bound to the dragged value — a TextField's GtkEntry, say — track
@@ -353,25 +339,7 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         )
         let plan = gtkPlanDescriptorTree(old: oldRetained, new: newIdentified)
 
-        // Diagnostics (SWIFTOPENUI_NARROW_DEBUG): log the full narrow-path outcome
-        // during a drag — whether the gate rejected (and why), or passed but the
-        // mutation failed at slot-validation / hook time, or applied. Deduped.
-        let debugInteraction = gtkNarrowDebugEnabled && GTKViewHost.globalInteractionDepth > 0
-        func narrowLog(_ line: String) {
-            if line != GTKViewHost.lastNarrowRejectLog {
-                GTKViewHost.lastNarrowRejectLog = line
-                FileHandle.standardError.write(Data((line + "\n").utf8))
-            }
-        }
-
-        let canApply = gtkCanApplyTextColorHostMutation(plan: plan)
-        if debugInteraction, !canApply {
-            var reasons: [String] = []
-            gtkCollectNonNarrowReasons(plan, into: &reasons)
-            narrowLog("[narrow-reject] " + reasons.prefix(8).joined(separator: " | "))
-        }
-
-        if canApply {
+        if gtkCanApplyTextColorHostMutation(plan: plan) {
             let action = gtkExecuteDescriptorPlan(
                 old: oldExecutor,
                 plan: plan,
@@ -380,11 +348,9 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
 
             // Verify all slots are still valid before mutating
             let allSlotsValid = gtkAllSlotsValid(action: action)
-            if !allSlotsValid, debugInteraction { narrowLog("[narrow-slots-invalid] plan accepted but a slot was nil/dead") }
             if allSlotsValid {
                 let result = gtkApplyHookMutation(action: action)
                 if gtkHookMutationSucceeded(result) {
-                    if debugInteraction { narrowLog("[narrow-APPLIED] in-place update") }
                     // Success — update retained state, skip full rebuild
                     lastRetainedDescriptor = gtkRetainDescriptorTree(newIdentified)
                     retainedExecutor = action.resultingNode
