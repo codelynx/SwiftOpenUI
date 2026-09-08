@@ -448,7 +448,22 @@ extension Button: GTKRenderable, GTKDescribable {
         // dedicated kind prevents the narrow-mutation guard from rejecting
         // the entire tree when a Button appears alongside mutable nodes
         // (Canvas, Text, Slider, etc.).
-        GTK4DescriptorNode(kind: .button, typeName: "Button")
+        //
+        // A `Text` label renders as the GtkButton's OWN native label (see
+        // gtkCreateWidget: `gtk_button_new_with_label`) — no separate hosted
+        // widget — so describe a childless leaf. A CUSTOM label view is rendered
+        // as child widgets (`gtkRenderView(label)`), whose hosted leaves
+        // (Text/Canvas/…) are collected during slot capture; they must appear in
+        // the descriptor too, or the descriptor/widget leaf counts mismatch and
+        // `gtkCaptureSupportedNativeSlots` bails (assigning no slots → later
+        // narrow updates see nil slots).
+        if label is Text {
+            return GTK4DescriptorNode(kind: .button, typeName: "Button")
+        }
+        return GTK4DescriptorNode(
+            kind: .button, typeName: "Button",
+            children: [gtkDescribeView(label)]
+        )
     }
 
     public func gtkCreateWidget() -> OpaquePointer {
