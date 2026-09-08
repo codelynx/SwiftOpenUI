@@ -869,6 +869,35 @@ public func gtkHookMutationSucceeded(_ result: GTK4HookResult) -> Bool {
 /// Opaque composites (Body = Never, no describable conformance) with no
 /// described children are rejected — their child content is not captured
 /// in the descriptor, so we can't prove nothing changed inside.
+/// Debug (SWIFTOPENUI_NARROW_DEBUG): true when narrow-path rejection diagnostics
+/// should be logged. Cheap `getenv` at first access.
+public let gtkNarrowDebugEnabled: Bool =
+    ProcessInfo.processInfo.environment["SWIFTOPENUI_NARROW_DEBUG"] != nil
+
+/// Debug: collect the nodes that make `gtkCanApplyTextColorHostMutation` reject a
+/// plan — i.e. why a host fell to a full rebuild instead of a narrow update. Each
+/// entry names the plan action, the descriptor kind, and its `typeName`.
+public func gtkCollectNonNarrowReasons(_ plan: GTK4DescriptorPlan, into out: inout [String]) {
+    switch plan.kind {
+    case .create, .replace:
+        out.append("\(plan.kind) \(plan.newDescriptor.kind) '\(plan.newDescriptor.typeName)'")
+        return
+    case .reuse:
+        if plan.newDescriptor.kind == .composite && plan.children.isEmpty {
+            out.append("reuse EMPTY .composite '\(plan.newDescriptor.typeName)'")
+            return
+        }
+    case .update:
+        switch plan.updateIntent {
+        case .textContent, .colorFill, .canvasContent, .sliderValue, .textFieldValue, .paddingLayout:
+            break
+        default:
+            out.append("update intent=\(plan.updateIntent) \(plan.newDescriptor.kind) '\(plan.newDescriptor.typeName)'")
+        }
+    }
+    for child in plan.children { gtkCollectNonNarrowReasons(child, into: &out) }
+}
+
 public func gtkCanApplyTextColorHostMutation(plan: GTK4DescriptorPlan) -> Bool {
     switch plan.kind {
     case .create, .replace:

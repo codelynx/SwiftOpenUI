@@ -160,6 +160,10 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
     /// dragged gesture's widget. Accessed only on the GTK main thread, so no lock.
     static var globalInteractionDepth: Int = 0
 
+    /// Last narrow-rejection diagnostic line printed (SWIFTOPENUI_NARROW_DEBUG),
+    /// to dedupe a held drag's repeated logs. Main-thread only.
+    static var lastNarrowRejectLog: String = ""
+
     /// Hosts that deferred a rebuild during the current global interaction,
     /// flushed exactly once when the interaction ends. Strong refs are fine —
     /// entries live only for the duration of a drag.
@@ -338,6 +342,22 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
             payloads: described.canvasPayloads
         )
         let plan = gtkPlanDescriptorTree(old: oldRetained, new: newIdentified)
+
+        // Diagnostics (SWIFTOPENUI_NARROW_DEBUG): during a drag, if the narrow path
+        // is about to be rejected, log the offending node(s) — the reason a host
+        // falls to a full rebuild instead of updating in place. Deduped so a held
+        // drag doesn't flood stderr.
+        if gtkNarrowDebugEnabled,
+           GTKViewHost.globalInteractionDepth > 0,
+           !gtkCanApplyTextColorHostMutation(plan: plan) {
+            var reasons: [String] = []
+            gtkCollectNonNarrowReasons(plan, into: &reasons)
+            let line = "[narrow-reject] " + reasons.prefix(8).joined(separator: " | ")
+            if line != GTKViewHost.lastNarrowRejectLog {
+                GTKViewHost.lastNarrowRejectLog = line
+                FileHandle.standardError.write(Data((line + "\n").utf8))
+            }
+        }
 
         if gtkCanApplyTextColorHostMutation(plan: plan) {
             let action = gtkExecuteDescriptorPlan(
