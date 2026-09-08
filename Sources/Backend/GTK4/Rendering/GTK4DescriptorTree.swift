@@ -1271,6 +1271,15 @@ public func gtkCaptureSupportedNativeSlots(
     gtkCollectSupportedHostedWidgets(from: widgetRoot, into: &supportedWidgets)
 
     guard supportedDescriptors.count == supportedWidgets.count else {
+        // Diagnostics: this bail (no slots assigned → later narrow updates see
+        // nil slots) is a leading cause of `[narrow-slots-invalid]`. Log the
+        // mismatch: which descriptor leaf-kinds vs which widget hosted-kinds.
+        if gtkNarrowDebugEnabled {
+            let dk = supportedDescriptors.map { "\($0.kind)" }.joined(separator: ",")
+            let wk = supportedWidgets.map { "\(gtkHostedNodeKind(of: $0))" }.joined(separator: ",")
+            FileHandle.standardError.write(Data(
+                "[slot-mismatch] desc=\(supportedDescriptors.count)[\(dk)] widgets=\(supportedWidgets.count)[\(wk)]\n".utf8))
+        }
         return executorRoot
     }
 
