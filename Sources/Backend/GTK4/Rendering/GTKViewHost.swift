@@ -355,8 +355,6 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
                     lastRetainedDescriptor = gtkRetainDescriptorTree(newIdentified)
                     retainedExecutor = action.resultingNode
                     return true
-                } else if debugInteraction {
-                    narrowLog("[narrow-hook-failed] gtkApplyHookMutation returned failure")
                 }
             }
         }
