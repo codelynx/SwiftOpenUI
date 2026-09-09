@@ -81,6 +81,7 @@ extension GTK4Backend {
         let contentWidget: UnsafeMutablePointer<GtkWidget> = widgetFromOpaque(gtkRenderView(content()))
         gtkConfigureRootContentToFillWindow(contentWidget)
         gtk_window_set_child(winPtr, contentWidget)
+        gtkAttachPointerTracking(to: widgetPointer(winPtr))
 
         let handle: GTK4StandaloneWindowHandle = GTK4StandaloneWindowHandle(winPtr: winPtr)
 

@@ -162,6 +162,7 @@ extension WindowGroup: GTKWindowRenderable {
         gtkSetupMenuBarIfNeeded(winPtr: winWidget, contentWidget: contentWidget, windowID: Int(bitPattern: winPtr))
         gtkAttachKeyboardShortcutController(to: winWidget)
         gtkAttachWindowActivationHandler(to: winWidget)
+        gtkAttachPointerTracking(to: winWidget)
         gtk_window_present(winPtr)
     }
 }
@@ -673,6 +674,7 @@ extension Window: GTKWindowRenderable {
         gtkSetupMenuBarIfNeeded(winPtr: winWidget, contentWidget: contentWidget, windowID: Int(bitPattern: winPtr))
         gtkAttachKeyboardShortcutController(to: winWidget)
         gtkAttachWindowActivationHandler(to: winWidget)
+        gtkAttachPointerTracking(to: winWidget)
         gtk_window_present(winPtr)
 
         // Track the live window so repeated openWindow(id:) refocuses
