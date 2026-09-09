@@ -1191,3 +1191,16 @@ gtk_swift_get_active_window(void) {
     if (!app || !GTK_IS_APPLICATION(app)) return NULL;
     return gtk_application_get_active_window(GTK_APPLICATION(app));
 }
+
+/// Return the process default GApplication cast to GtkApplication, or NULL if
+/// there is no default application or it is not a GtkApplication. Used to
+/// parent an imperatively-opened standalone window (via
+/// GTK4Backend.openStandaloneWindow) to the GtkApplication started by
+/// GTK4Backend.run(_:), so a window can be opened at runtime from outside the
+/// App/Scene tree.
+static inline GtkApplication *
+gtk_swift_get_default_gtk_application(void) {
+    GApplication *app = g_application_get_default();
+    if (!app || !GTK_IS_APPLICATION(app)) return NULL;
+    return GTK_APPLICATION(app);
+}
