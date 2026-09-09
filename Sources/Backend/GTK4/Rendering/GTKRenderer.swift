@@ -7784,3 +7784,79 @@ extension Optional: GTKContentWrapper where Wrapped: View {
         }
     }
 }
+
+// MARK: - Broader narrow-path coverage (Patch F, batch 2)
+//
+// More views that described as empty `.composite`s and poisoned a host's narrow
+// path. Same principle as batch 1: describe what gtkCreateWidget renders inline,
+// so descriptor and widget leaves stay balanced for slot capture.
+
+// Type-erased single view.
+extension AnyView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { wrapped }
+}
+
+// Single-content wrappers whose `content` is the inline base view (the modal /
+// drop / grid-cell chrome is auxiliary and rendered elsewhere).
+extension DropDestinationView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension GridCellSpanView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension FullScreenCoverView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension PopoverView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension SheetModifierView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension ItemSheetModifierView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension AlertModifierView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension ConfirmationDialogView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+
+// Container wrappers that render `content` inline as their body.
+extension List: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension Grid: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension DisclosureGroup: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension Section: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+
+// Lazy stacks/grids render one child per data item — expose them as children so
+// each item's leaves participate in the narrow path (like ForEach).
+extension LazyVStack: MultiChildView {
+    public var children: [any View] { items.map { contentBuilder($0) as any View } }
+}
+extension LazyHStack: MultiChildView {
+    public var children: [any View] { items.map { contentBuilder($0) as any View } }
+}
+extension LazyVGrid: MultiChildView {
+    public var children: [any View] { items.map { contentBuilder($0) as any View } }
+}
+extension LazyHGrid: MultiChildView {
+    public var children: [any View] { items.map { contentBuilder($0) as any View } }
+}
+
+// Opaque native leaf widgets (native labels/entries — no marked inner widgets).
+extension SecureField: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(placeholder), AnyHashable(text.wrappedValue)])
+    }
+}
+extension TextEditor: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable { AnyHashable(text.wrappedValue) }
+}
+extension DatePicker: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(title), AnyHashable(selection?.wrappedValue)])
+    }
+}
+extension ProgressView: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(value), AnyHashable(total), AnyHashable(title)])
+    }
+}
+extension Link: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(title), AnyHashable(destination)])
+    }
+}
+extension Label: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(title), AnyHashable(systemImage), AnyHashable(imagePath)])
+    }
+}
+extension Image: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable { AnyHashable(String(describing: source)) }
+}
