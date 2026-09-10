@@ -96,6 +96,35 @@ gtk_swift_source_buffer_insert_at_cursor(void *buffer, const char *text) {
     gtk_text_buffer_end_user_action(b);
 }
 
+// Replace the identifier word immediately before the cursor with `text`, then
+// leave the caret after the inserted text. Used when applying a completion so
+// the already-typed prefix (`Osc` when picking `OscSin`) is not duplicated. When
+// there is no identifier prefix before the caret (e.g. just after a `.`), this
+// inserts without deleting anything. Any active selection is replaced first.
+static inline void
+gtk_swift_source_buffer_replace_prefix_at_cursor(void *buffer, const char *text) {
+    GtkTextBuffer *b = (GtkTextBuffer *)buffer;
+    gtk_text_buffer_begin_user_action(b);
+    if (gtk_text_buffer_get_has_selection(b)) {
+        gtk_text_buffer_delete_selection(b, FALSE, TRUE);
+    }
+    GtkTextMark *insert = gtk_text_buffer_get_insert(b);
+    GtkTextIter end;
+    gtk_text_buffer_get_iter_at_mark(b, &end, insert);
+    GtkTextIter start = end;
+    // Walk left over identifier characters (letters, digits, underscore).
+    while (gtk_text_iter_backward_char(&start)) {
+        gunichar ch = gtk_text_iter_get_char(&start);
+        if (!(g_unichar_isalnum(ch) || ch == '_')) {
+            gtk_text_iter_forward_char(&start);
+            break;
+        }
+    }
+    gtk_text_buffer_delete(b, &start, &end);
+    gtk_text_buffer_insert_at_cursor(b, text, -1);
+    gtk_text_buffer_end_user_action(b);
+}
+
 // The caret's rectangle in widget coordinates (for anchoring a popover).
 static inline void
 gtk_swift_source_view_get_cursor_rect(void *view, int *x, int *y, int *w, int *h) {

@@ -19,6 +19,11 @@ final class CodeEditorCompletionController: @unchecked Sendable {
 
     private var items: [CodeCompletionItem] = []
     private var popover: UnsafeMutablePointer<GtkWidget>?
+    /// The identifier word to the left of the caret at the moment Ctrl+Space was
+    /// pressed. Used to narrow the (large, unfiltered) sourcekit-lsp candidate set
+    /// client-side — sourcekit returns every in-scope symbol and expects the
+    /// editor to filter by what was typed.
+    private var prefix: String = ""
 
     init(
         viewRaw: UnsafeMutableRawPointer,
@@ -42,10 +47,27 @@ final class CodeEditorCompletionController: @unchecked Sendable {
         gtk_swift_source_buffer_get_cursor_line_col(bufferRaw, &line, &col)
         let l: Int = Int(line)
         let c: Int = Int(col)
+        prefix = Self.identifierPrefix(text: text, line: l, column: c)
         Task { [self] in
             let result: [CodeCompletionItem] = await provider(text, l, c)
             await MainActor.run { self.present(result) }
         }
+    }
+
+    /// The identifier word (letters / digits / `_`) ending at the caret on
+    /// `line` / `column` (both 0-based). Empty when the char before the caret is
+    /// not an identifier char (e.g. just after `.` or a space).
+    private static func identifierPrefix(text: String, line: Int, column: Int) -> String {
+        let lines: [Substring] = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard line >= 0, line < lines.count else { return "" }
+        let chars: [Character] = Array(lines[line])
+        let end: Int = min(max(column, 0), chars.count)
+        var start: Int = end
+        while start > 0 {
+            let ch: Character = chars[start - 1]
+            if ch.isLetter || ch.isNumber || ch == "_" { start -= 1 } else { break }
+        }
+        return String(chars[start..<end])
     }
 
     /// Show `items` in a popover at the caret. Clicking (or activating) a row
@@ -53,8 +75,9 @@ final class CodeEditorCompletionController: @unchecked Sendable {
     @MainActor
     private func present(_ candidates: [CodeCompletionItem]) {
         dismiss()
-        guard !candidates.isEmpty else { return }
-        items = candidates
+        let filtered: [CodeCompletionItem] = Self.filter(candidates, prefix: prefix)
+        guard !filtered.isEmpty else { return }
+        items = filtered
         let view: UnsafeMutablePointer<GtkWidget> = viewRaw.assumingMemoryBound(to: GtkWidget.self)
 
         guard let popover = gtk_popover_new() else { return }
@@ -62,7 +85,7 @@ final class CodeEditorCompletionController: @unchecked Sendable {
         guard let listBox = gtk_list_box_new() else { return }
         let listBoxOp: OpaquePointer = OpaquePointer(listBox)
         gtk_list_box_set_selection_mode(listBoxOp, GTK_SELECTION_SINGLE)
-        for candidate: CodeCompletionItem in candidates {
+        for candidate: CodeCompletionItem in filtered {
             let label: UnsafeMutablePointer<GtkWidget> = candidate.label.withCString { (c: UnsafePointer<CChar>) in
                 gtk_label_new(c)
             }
@@ -79,7 +102,7 @@ final class CodeEditorCompletionController: @unchecked Sendable {
         let scrolledOp: OpaquePointer = OpaquePointer(scrolled)
         gtk_scrolled_window_set_policy(scrolledOp, GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
         gtk_scrolled_window_set_child(scrolledOp, listBox)
-        gtk_widget_set_size_request(scrolled, 280, min(220, 26 * Int32(candidates.count)))
+        gtk_widget_set_size_request(scrolled, 280, min(220, 26 * Int32(filtered.count)))
 
         gtk_swift_popover_set_child(popover, scrolled)
         gtk_widget_set_parent(popover, view)
@@ -115,10 +138,36 @@ final class CodeEditorCompletionController: @unchecked Sendable {
     @MainActor
     private func insert(at index: Int) {
         guard index >= 0, index < items.count else { dismiss(); return }
+        // Replace the already-typed prefix (rather than append) so picking
+        // `OscSin` after typing `Osc` yields `OscSin`, not `OscOscSin`.
         items[index].insertText.withCString { (c: UnsafePointer<CChar>) in
-            gtk_swift_source_buffer_insert_at_cursor(bufferRaw, c)
+            gtk_swift_source_buffer_replace_prefix_at_cursor(bufferRaw, c)
         }
         dismiss()
+    }
+
+    /// Narrow the raw sourcekit-lsp candidate set to those matching the typed
+    /// `prefix` (case-insensitive), preferring a `label`/`insertText` that starts
+    /// with the prefix, then a contains-match, each ordered alphabetically. An
+    /// empty prefix (member access after `.`) passes the set through unchanged —
+    /// sourcekit has already scoped it.
+    private static func filter(_ candidates: [CodeCompletionItem], prefix: String) -> [CodeCompletionItem] {
+        guard !prefix.isEmpty else { return candidates }
+        let lp: String = prefix.lowercased()
+        var starts: [CodeCompletionItem] = []
+        var contains: [CodeCompletionItem] = []
+        for item: CodeCompletionItem in candidates {
+            let label: String = item.label.lowercased()
+            let insert: String = item.insertText.lowercased()
+            if label.hasPrefix(lp) || insert.hasPrefix(lp) {
+                starts.append(item)
+            } else if label.contains(lp) {
+                contains.append(item)
+            }
+        }
+        starts.sort { $0.label.lowercased() < $1.label.lowercased() }
+        contains.sort { $0.label.lowercased() < $1.label.lowercased() }
+        return starts + contains
     }
 
     @MainActor
