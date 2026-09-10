@@ -1,0 +1,76 @@
+// CGtkSource — a thin, OpaquePointer-only shim over GtkSourceView 5, kept in its
+// own system-library module (pkgConfig "gtksourceview-5") so the gtksourceview
+// include path + link don't have to be forced onto the gtk4-only CGTK module.
+//
+// Every function takes/returns `void*` (an opaque GtkWidget* / GtkTextBuffer*),
+// so the Swift caller treats the handles as `OpaquePointer`/`gpointer` and never
+// imports GtkSourceView's C types alongside CGTK's — avoiding cross-module
+// GtkWidget/GtkTextBuffer redefinitions. Signal wiring stays on the CGTK side
+// (the buffer is just a gpointer to g_signal_connect_data).
+#ifndef LYREBIRD_CGTKSOURCE_SHIM_H
+#define LYREBIRD_CGTKSOURCE_SHIM_H
+
+#include <gtksourceview/gtksource.h>
+
+// Create a code editor view configured for Swift: syntax highlighting, a
+// line-number gutter, a monospace font, 4-space soft tabs, and auto-indent.
+// Returns the GtkSourceView as an opaque GtkWidget*.
+static inline void *
+gtk_swift_source_view_new(void) {
+    GtkSourceView *view = GTK_SOURCE_VIEW(gtk_source_view_new());
+    gtk_source_view_set_show_line_numbers(view, TRUE);
+    gtk_source_view_set_auto_indent(view, TRUE);
+    gtk_source_view_set_highlight_current_line(view, TRUE);
+    gtk_source_view_set_tab_width(view, 4);
+    gtk_source_view_set_insert_spaces_instead_of_tabs(view, TRUE);
+
+    // Monospace is a GtkTextView property in GtkSourceView 5 (there is no
+    // gtk_source_view_set_monospace).
+    GtkTextView *tv = GTK_TEXT_VIEW(view);
+    gtk_text_view_set_monospace(tv, TRUE);
+
+    GtkSourceBuffer *buf =
+        GTK_SOURCE_BUFFER(gtk_text_view_get_buffer(tv));
+    GtkSourceLanguageManager *lm = gtk_source_language_manager_get_default();
+    GtkSourceLanguage *lang =
+        gtk_source_language_manager_get_language(lm, "swift");
+    if (lang) {
+        gtk_source_buffer_set_language(buf, lang);
+        gtk_source_buffer_set_highlight_syntax(buf, TRUE);
+    }
+    return (void *)view;
+}
+
+// The view's GtkSourceBuffer as an opaque GtkTextBuffer* (it is a subclass, so
+// the base gtk_text_buffer_* API applies).
+static inline void *
+gtk_swift_source_view_get_buffer(void *view) {
+    return (void *)gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
+}
+
+static inline void
+gtk_swift_source_buffer_set_text(void *buffer, const char *text, int length) {
+    gtk_text_buffer_set_text((GtkTextBuffer *)buffer, text, length);
+}
+
+// Full buffer contents. Caller must g_free the returned string.
+static inline char *
+gtk_swift_source_buffer_get_text(void *buffer) {
+    GtkTextIter start, end;
+    gtk_text_buffer_get_bounds((GtkTextBuffer *)buffer, &start, &end);
+    return gtk_text_buffer_get_text((GtkTextBuffer *)buffer, &start, &end, FALSE);
+}
+
+// Apply a named style scheme (e.g. "Adwaita-dark", "classic") when present.
+static inline void
+gtk_swift_source_buffer_set_style_scheme(void *buffer, const char *scheme_id) {
+    GtkSourceStyleSchemeManager *sm =
+        gtk_source_style_scheme_manager_get_default();
+    GtkSourceStyleScheme *scheme =
+        gtk_source_style_scheme_manager_get_scheme(sm, scheme_id);
+    if (scheme) {
+        gtk_source_buffer_set_style_scheme((GtkSourceBuffer *)buffer, scheme);
+    }
+}
+
+#endif /* LYREBIRD_CGTKSOURCE_SHIM_H */
