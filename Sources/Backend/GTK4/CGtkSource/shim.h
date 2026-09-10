@@ -61,6 +61,18 @@ gtk_swift_source_buffer_get_text(void *buffer) {
     return gtk_text_buffer_get_text((GtkTextBuffer *)buffer, &start, &end, FALSE);
 }
 
+// The currently selected text, or an empty string when nothing is selected.
+// Caller must g_free the returned string.
+static inline char *
+gtk_swift_source_buffer_get_selected_text(void *buffer) {
+    GtkTextBuffer *b = (GtkTextBuffer *)buffer;
+    GtkTextIter start, end;
+    if (!gtk_text_buffer_get_selection_bounds(b, &start, &end)) {
+        return g_strdup("");
+    }
+    return gtk_text_buffer_get_text(b, &start, &end, FALSE);
+}
+
 // Apply a named style scheme (e.g. "Adwaita-dark", "classic") when present.
 static inline void
 gtk_swift_source_buffer_set_style_scheme(void *buffer, const char *scheme_id) {

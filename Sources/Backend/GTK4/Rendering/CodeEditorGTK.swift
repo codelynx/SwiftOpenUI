@@ -51,6 +51,33 @@ extension CodeEditor: GTKRenderable {
             GConnectFlags(rawValue: 0)
         )
 
+        // Mirror the selection out (for line-level evaluation). "mark-set" fires
+        // whenever the caret or selection bound moves.
+        if let selectionBinding: Binding<String> = selection {
+            let selBox: UnsafeMutableRawPointer = Unmanaged.passRetained(StringClosureBox { (sel: String) in
+                if sel != selectionBinding.wrappedValue {
+                    selectionBinding.wrappedValue = sel
+                }
+            }).toOpaque()
+            g_signal_connect_data(
+                gpointer(bufferRaw),
+                "mark-set",
+                unsafeBitCast({ (bufferPtr: gpointer?, _: gpointer?, _: gpointer?, userData: gpointer?) in
+                    guard let userData, let bufferPtr else { return }
+                    let box = Unmanaged<StringClosureBox>.fromOpaque(userData).takeUnretainedValue()
+                    guard let cStr: UnsafeMutablePointer<CChar> = gtk_swift_source_buffer_get_selected_text(bufferPtr) else { return }
+                    let result: String = String(cString: cStr)
+                    g_free(UnsafeMutableRawPointer(cStr))
+                    box.closure(result)
+                } as @convention(c) (gpointer?, gpointer?, gpointer?, gpointer?) -> Void, to: GCallback.self),
+                selBox,
+                { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                    if let userData { Unmanaged<StringClosureBox>.fromOpaque(userData).release() }
+                },
+                GConnectFlags(rawValue: 0)
+            )
+        }
+
         let scrolled = gtk_scrolled_window_new()!
         gtk_scrolled_window_set_policy(OpaquePointer(scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC)
         gtk_scrolled_window_set_child(OpaquePointer(scrolled), view)
