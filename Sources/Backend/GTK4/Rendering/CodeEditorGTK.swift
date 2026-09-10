@@ -9,6 +9,18 @@ import SwiftOpenUI
 // shape as the plain `TextEditor` render, but the widget is created via the
 // OpaquePointer-only CGtkSource shim so gtksourceview's C types never cross into
 // this file.
+// A code editor holds live, user-owned state (the buffer text, caret, and
+// selection) that must survive host rebuilds. Describe it as an opaque leaf with
+// a CONSTANT signature so the narrow path always REUSES the existing
+// GtkSourceView instead of recreating it: an unrelated `@Observable` change (the
+// scope's poll timer, the run flag) that rebuilds the host no longer flickers the
+// editor or snaps the caret to the end on every keystroke. The trade-off — an
+// external, programmatic change to the bound text is not pushed back into the
+// widget — is exactly right for a scratch editor the user is the sole author of.
+extension CodeEditor: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable { AnyHashable("SwiftOpenUI.CodeEditor") }
+}
+
 extension CodeEditor: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         let viewRaw: UnsafeMutableRawPointer = gtk_swift_source_view_new()
