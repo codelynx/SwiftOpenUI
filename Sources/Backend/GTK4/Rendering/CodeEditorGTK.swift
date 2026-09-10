@@ -90,6 +90,14 @@ extension CodeEditor: GTKRenderable {
             )
         }
 
+        // Ctrl+Space completion, when a provider was supplied.
+        if let provider = completionProvider {
+            let completion: CodeEditorCompletionController = CodeEditorCompletionController(
+                viewRaw: viewRaw, bufferRaw: bufferRaw, provider: provider
+            )
+            gtkAttachCodeEditorCompletion(view: viewRaw, controller: completion)
+        }
+
         let scrolled = gtk_scrolled_window_new()!
         gtk_scrolled_window_set_policy(OpaquePointer(scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC)
         gtk_scrolled_window_set_child(OpaquePointer(scrolled), view)

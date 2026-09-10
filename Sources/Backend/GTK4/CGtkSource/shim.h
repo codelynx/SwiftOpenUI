@@ -73,6 +73,45 @@ gtk_swift_source_buffer_get_selected_text(void *buffer) {
     return gtk_text_buffer_get_text(b, &start, &end, FALSE);
 }
 
+// Cursor position as 0-based (line, column-in-characters).
+static inline void
+gtk_swift_source_buffer_get_cursor_line_col(void *buffer, int *line, int *col) {
+    GtkTextBuffer *b = (GtkTextBuffer *)buffer;
+    GtkTextMark *insert = gtk_text_buffer_get_insert(b);
+    GtkTextIter it;
+    gtk_text_buffer_get_iter_at_mark(b, &it, insert);
+    *line = gtk_text_iter_get_line(&it);
+    *col = gtk_text_iter_get_line_offset(&it);
+}
+
+// Insert `text` at the cursor (replacing any selection).
+static inline void
+gtk_swift_source_buffer_insert_at_cursor(void *buffer, const char *text) {
+    GtkTextBuffer *b = (GtkTextBuffer *)buffer;
+    gtk_text_buffer_begin_user_action(b);
+    if (gtk_text_buffer_get_has_selection(b)) {
+        gtk_text_buffer_delete_selection(b, FALSE, TRUE);
+    }
+    gtk_text_buffer_insert_at_cursor(b, text, -1);
+    gtk_text_buffer_end_user_action(b);
+}
+
+// The caret's rectangle in widget coordinates (for anchoring a popover).
+static inline void
+gtk_swift_source_view_get_cursor_rect(void *view, int *x, int *y, int *w, int *h) {
+    GtkTextView *tv = GTK_TEXT_VIEW(view);
+    GtkTextBuffer *b = gtk_text_view_get_buffer(tv);
+    GtkTextMark *insert = gtk_text_buffer_get_insert(b);
+    GtkTextIter it;
+    gtk_text_buffer_get_iter_at_mark(b, &it, insert);
+    GdkRectangle loc;
+    gtk_text_view_get_iter_location(tv, &it, &loc);
+    int bx = 0, by = 0;
+    gtk_text_view_buffer_to_window_coords(tv, GTK_TEXT_WINDOW_WIDGET,
+                                          loc.x, loc.y, &bx, &by);
+    *x = bx; *y = by; *w = loc.width; *h = loc.height;
+}
+
 // Apply a named style scheme (e.g. "Adwaita-dark", "classic") when present.
 static inline void
 gtk_swift_source_buffer_set_style_scheme(void *buffer, const char *scheme_id) {
