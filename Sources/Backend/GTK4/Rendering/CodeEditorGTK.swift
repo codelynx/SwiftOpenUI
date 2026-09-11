@@ -90,6 +90,17 @@ extension CodeEditor: GTKRenderable {
             )
         }
 
+        // Imperative text replacement (file loads): push straight into the
+        // buffer. The buffer's "changed" signal above then flows the new text
+        // back out through the `text` binding, so the host's state stays in sync.
+        if let controller: CodeEditorController = controller {
+            controller._applyText = { (newText: String) in
+                newText.withCString { (c: UnsafePointer<CChar>) in
+                    gtk_swift_source_buffer_set_text(bufferRaw, c, Int32(newText.utf8.count))
+                }
+            }
+        }
+
         // Ctrl+Space completion, when a provider was supplied.
         if let provider = completionProvider {
             let completion: CodeEditorCompletionController = CodeEditorCompletionController(
