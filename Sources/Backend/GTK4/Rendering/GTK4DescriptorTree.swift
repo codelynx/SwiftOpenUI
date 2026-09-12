@@ -24,6 +24,15 @@ public enum GTK4DescriptorKind: Equatable {
     case searchable
     case font
     case text
+    case textField
+    /// An opaque native widget whose state the narrow path does not model (Toggle,
+    /// Stepper, Picker, a filled Shape, …). It carries an `AnyHashable` state
+    /// signature so the diff can tell whether it changed: an unchanged signature
+    /// `.reuse`s (passing the narrow gate — it is NOT an empty `.composite`), a
+    /// changed one plans an `.update`/`.none` the gate rejects, forcing a full
+    /// rebuild. This keeps such widgets from poisoning a host's narrow path while
+    /// staying correct on a real state change.
+    case opaqueLeaf
     case color
     case frame
     case foregroundColor
@@ -82,6 +91,23 @@ public struct GTK4AnimatedDescriptor: Equatable {
 
 public struct GTK4TextDescriptor: Equatable {
     public let content: String
+}
+
+/// A `TextField`'s current text + placeholder. Making the text visible in the
+/// descriptor tree means a changed value plans a `.textFieldValue` update the
+/// narrow path applies in place (`gtk_swift_editable_set_text` on the hosted
+/// GtkEntry) instead of a silent-reuse that never updates, or an empty
+/// `.composite` that poisons the whole host's narrow path.
+public struct GTK4TextFieldDescriptor: Equatable {
+    public let text: String
+    public let placeholder: String
+}
+
+/// State signature of an opaque native widget (see `.opaqueLeaf`). Two describe
+/// as equal iff their signatures are equal, so an unchanged widget reuses and a
+/// changed one forces a rebuild. `AnyHashable` is `Equatable`, so this is too.
+public struct GTK4OpaqueLeafDescriptor: Equatable {
+    public let signature: AnyHashable
 }
 
 public struct GTK4ColorDescriptor: Equatable {
@@ -226,6 +252,8 @@ public enum GTK4DescriptorProps: Equatable {
     case rotation(GTK4RotationDescriptor)
     case scale(GTK4ScaleDescriptor)
     case text(GTK4TextDescriptor)
+    case textField(GTK4TextFieldDescriptor)
+    case opaqueLeaf(GTK4OpaqueLeafDescriptor)
     case color(GTK4ColorDescriptor)
     case frame(GTK4FrameDescriptor)
     case foregroundColor(GTK4ColorDescriptor)
@@ -382,6 +410,7 @@ public enum GTK4DescriptorUpdateIntent: Equatable {
     case sliderConfiguration
     case sliderValue
     case textContent
+    case textFieldValue
     case vStackLayout
     case zStackLayout
     case widgetPropertyUpdate
@@ -490,6 +519,29 @@ public protocol GTKDescribable {
     func gtkDescribeNode() -> GTK4DescriptorNode
 }
 
+/// A transparent single-`content` wrapper view (a styling / gesture / lifecycle
+/// modifier) whose only visible structure is the view it wraps. Conforming lets
+/// `gtkDescribeView` describe the wrapped content rather than falling through to
+/// an EMPTY `.composite` — which the narrow-mutation gate rejects
+/// (`gtkCanApplyTextColorHostMutation`), poisoning the whole host's narrow path
+/// and dropping the wrapped node from the descriptor tree entirely. With this,
+/// a `Text` / `TextField` / slider wrapped in `.onChange` / `.monospacedDigit` /
+/// `.focused` / … stays narrow-applicable, so its value change updates in place
+/// instead of forcing a full-window rebuild.
+public protocol GTKContentWrapper {
+    var gtkWrappedContent: any View { get }
+}
+
+/// An opaque native-widget view (Toggle, Stepper, Picker, a filled Shape, …) that
+/// the narrow path cannot update in place. Conforming makes it describe as a
+/// `.opaqueLeaf` carrying `gtkStateSignature` instead of an empty `.composite`, so
+/// it no longer poisons the host's narrow path — an unchanged signature reuses; a
+/// changed one forces a full rebuild. The signature MUST include every bound value
+/// that affects the widget's appearance, or a programmatic change goes stale.
+public protocol GTKOpaqueLeaf {
+    var gtkStateSignature: AnyHashable { get }
+}
+
 private final class GTK4CanvasPayloadCollector {
     var payloads: [GTK4CanvasPayload] = []
 }
@@ -523,6 +575,27 @@ public func gtkDescribeCapturingCanvasPayloads(
 public func gtkDescribeView<V: View>(_ view: V) -> GTK4DescriptorNode {
     if let describable = view as? GTKDescribable {
         return describable.gtkDescribeNode()
+    }
+    // Transparent single-content wrapper (styling / gesture / lifecycle modifier):
+    // describe the wrapped content so it stays in the descriptor tree and remains
+    // narrow-applicable, instead of collapsing to an empty `.composite` that the
+    // narrow gate rejects (which would poison the whole host's narrow path).
+    if let wrapper = view as? GTKContentWrapper {
+        return GTK4DescriptorNode(
+            kind: .composite,
+            typeName: String(describing: type(of: view)),
+            children: [gtkDescribeAnyView(wrapper.gtkWrappedContent)]
+        )
+    }
+    // Opaque native leaf widget: describe as `.opaqueLeaf` carrying its state
+    // signature (not an empty `.composite`), so it doesn't poison the host's
+    // narrow path but still forces a rebuild when its state changes.
+    if let leaf = view as? GTKOpaqueLeaf {
+        return GTK4DescriptorNode(
+            kind: .opaqueLeaf,
+            typeName: String(describing: type(of: view)),
+            props: .opaqueLeaf(GTK4OpaqueLeafDescriptor(signature: leaf.gtkStateSignature))
+        )
     }
     if let multi = view as? MultiChildView {
         return GTK4DescriptorNode(
@@ -689,6 +762,16 @@ private func gtkUpdateIntent(old: GTK4DescriptorNode,
         return oldSlider.range == newSlider.range && oldSlider.step == newSlider.step
             ? .sliderValue : .sliderConfiguration
     case .text:          return .textContent
+    case .opaqueLeaf:    return .none  // any state-signature change → full rebuild
+    case .textField:
+        guard case let .textField(oldTF) = old.props,
+              case let .textField(newTF) = new.props else {
+            return .none
+        }
+        // Only a text change rides the narrow path; a placeholder change is rare
+        // and left to a full rebuild (returns .none → reuse, no narrow update).
+        return oldTF.text != newTF.text && oldTF.placeholder == newTF.placeholder
+            ? .textFieldValue : .none
     case .vStack:        return .vStackLayout
     case .zStack:        return .zStackLayout
     case .animated:      return .animatedTiming
@@ -799,6 +882,7 @@ public func gtkCanApplyTextColorHostMutation(plan: GTK4DescriptorPlan) -> Bool {
         guard plan.updateIntent == .textContent || plan.updateIntent == .colorFill
                 || plan.updateIntent == .canvasContent
                 || plan.updateIntent == .sliderValue
+                || plan.updateIntent == .textFieldValue
                 || plan.updateIntent == .paddingLayout else {
             // .widgetPropertyUpdate is deliberately NOT here: `.widgetProperty`
             // applies in-place to the content's (often already-hosted) widget
@@ -836,6 +920,8 @@ private func gtkUpdateHook(action: GTK4ExecutorAction,
         return gtkCanvasContentHook(action: action, performMutation: performMutation)
     case .sliderValue:
         return gtkSliderValueHook(action: action, performMutation: performMutation)
+    case .textFieldValue:
+        return gtkTextFieldValueHook(action: action, performMutation: performMutation)
     case .paddingLayout:
         return gtkPaddingLayoutHook(action: action, performMutation: performMutation)
     case .animatedTiming, .backgroundColor, .borderStyle, .fontStyle, .frameLayout, .foregroundColor,
@@ -907,6 +993,21 @@ private func gtkSliderValueHook(action: GTK4ExecutorAction,
         mutationSucceeded = false
     }
     return gtkUpdatedHookResult(action: action, intent: .sliderValue,
+                                 performMutation: performMutation,
+                                 mutationSucceeded: mutationSucceeded)
+}
+
+private func gtkTextFieldValueHook(action: GTK4ExecutorAction,
+                                    performMutation: Bool) -> GTK4HookResult {
+    var mutationSucceeded = true
+    if performMutation,
+       case let .textField(tfDesc) = action.currentDescriptor.props,
+       let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID {
+        mutationSucceeded = gtkSetTextFieldValue(slotID: slotID, text: tfDesc.text)
+    } else if performMutation {
+        mutationSucceeded = false
+    }
+    return gtkUpdatedHookResult(action: action, intent: .textFieldValue,
                                  performMutation: performMutation,
                                  mutationSucceeded: mutationSucceeded)
 }
@@ -1018,6 +1119,7 @@ public func gtkColorDescriptor(_ color: Color) -> GTK4ColorDescriptor {
 /// Kinds of hosted native widgets that support in-place mutation.
 public enum GTK4HostedNodeKind: String {
     case text
+    case textField
     case color
     case canvas
     case slider
@@ -1035,6 +1137,8 @@ public func gtkMarkHostedNodeKind(_ widget: UnsafeMutablePointer<GtkWidget>,
     switch kind {
     case .text:
         g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindTextPtr))
+    case .textField:
+        g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindTextFieldPtr))
     case .color:
         g_object_set_data(gobject, gtkHostedKindKey, UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr))
     case .canvas:
@@ -1053,6 +1157,7 @@ public func gtkHostedNodeKind(of widget: UnsafeMutablePointer<GtkWidget>) -> GTK
     let gobject = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GObject.self)
     guard let raw = g_object_get_data(gobject, gtkHostedKindKey) else { return .unknown }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindTextPtr) { return .text }
+    if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindTextFieldPtr) { return .textField }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindColorPtr) { return .color }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindCanvasPtr) { return .canvas }
     if raw == UnsafeMutableRawPointer(mutating: gtkHostedKindSliderPtr) { return .slider }
@@ -1070,6 +1175,12 @@ private let gtkHostedKindTextPtr: UnsafePointer<CChar> = {
 private let gtkHostedKindColorPtr: UnsafePointer<CChar> = {
     let p = UnsafeMutablePointer<CChar>.allocate(capacity: 1)
     p.pointee = 2
+    return UnsafePointer(p)
+}()
+
+private let gtkHostedKindTextFieldPtr: UnsafePointer<CChar> = {
+    let p = UnsafeMutablePointer<CChar>.allocate(capacity: 1)
+    p.pointee = 6
     return UnsafePointer(p)
 }()
 
@@ -1095,6 +1206,7 @@ private let gtkHostedKindPaddingPtr: UnsafePointer<CChar> = {
 public func gtkHostedKindForDescriptor(_ kind: GTK4DescriptorKind) -> GTK4HostedNodeKind? {
     switch kind {
     case .text: return .text
+    case .textField: return .textField
     case .color: return .color
     case .canvas: return .canvas
     case .slider: return .slider
@@ -1163,7 +1275,7 @@ private func gtkCollectSupportedHostedWidgets(
     into result: inout [UnsafeMutablePointer<GtkWidget>]
 ) {
     let kind = gtkHostedNodeKind(of: widget)
-    if kind == .text || kind == .color || kind == .canvas || kind == .slider || kind == .padding {
+    if kind == .text || kind == .textField || kind == .color || kind == .canvas || kind == .slider || kind == .padding {
         result.append(widget)
     }
     var child = gtk_widget_get_first_child(widget)
@@ -1198,6 +1310,7 @@ public func gtkAllSlotsValid(action: GTK4ExecutorAction) -> Bool {
         if action.updateIntent == .textContent || action.updateIntent == .colorFill
             || action.updateIntent == .canvasContent
             || action.updateIntent == .sliderValue
+            || action.updateIntent == .textFieldValue
             || action.updateIntent == .paddingLayout {
             guard let slotID = action.resultingNode.nativeSlotID ?? action.previousNode?.nativeSlotID,
                   let widget = gtkWidgetFromSlotID(slotID),
@@ -1264,6 +1377,26 @@ public func gtkSetSliderValue(slotID: Int, value: Double) -> Bool {
     guard gtk_swift_is_widget(widget) != 0 else { return false }
     let range = UnsafeMutableRawPointer(widget).assumingMemoryBound(to: GtkRange.self)
     gtk_range_set_value(range, value)
+    return true
+}
+
+/// Set the text of a hosted GtkEntry (TextField) in place.
+///
+/// Skips while the widget is focused so a programmatic set can't clobber the
+/// caret/selection of a user who is typing — the binding still holds the value,
+/// and the field reconciles on the next full rebuild after blur. Skips when the
+/// text already matches (also avoids a redundant `notify::text` → binding
+/// round-trip). Returns `true` in the skip cases too: the narrow path has
+/// nothing to do, and must not fall back to a full rebuild that would recreate
+/// the entry mid-interaction.
+public func gtkSetTextFieldValue(slotID: Int, text: String) -> Bool {
+    guard let widget = gtkWidgetFromSlotID(slotID) else { return false }
+    guard gtk_swift_is_widget(widget) != 0 else { return false }
+    if gtk_widget_is_focus(widget) != 0 { return true }
+    if let cStr = gtk_editable_get_text(OpaquePointer(widget)) {
+        if String(cString: cStr) == text { return true }
+    }
+    gtk_swift_editable_set_text(widget, text)
     return true
 }
 

@@ -1,7 +1,11 @@
 import Foundation
 
 /// A simple date value type for DatePicker (no Foundation dependency).
-public struct DateComponents: Equatable {
+///
+/// `Hashable` (synthesized from the three `Int` fields) so it can back a
+/// `GTKOpaqueLeaf` state signature — unlike Foundation's `DateComponents`,
+/// which is not `Hashable` on swift-corelibs-foundation.
+public struct DateComponents: Hashable {
     public var year: Int
     public var month: Int
     public var day: Int

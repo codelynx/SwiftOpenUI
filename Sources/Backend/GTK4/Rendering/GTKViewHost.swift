@@ -125,9 +125,17 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         let currentAnimation = getCurrentAnimation()
         defer { lock.unlock() }
         guard isContainerAlive else { return }
-        // Defer rebuild while interactive (e.g. slider drag)
-        if interactiveUpdateDepth > 0 {
+        // Defer rebuild while interactive: either THIS host is mid-interaction
+        // (interactiveUpdateDepth, e.g. a native slider drag) or ANY host is
+        // (globalInteractionDepth). A gesture drag freezes EVERY host's rebuilds,
+        // because a sibling/ancestor host that observes the same model would
+        // otherwise rebuild mid-drag and recreate — detaching — the dragged
+        // gesture's widget. Deferred hosts are collected and flushed on end.
+        if interactiveUpdateDepth > 0 || GTKViewHost.globalInteractionDepth > 0 {
             rebuildDeferredDuringInteraction = true
+            if GTKViewHost.globalInteractionDepth > 0 {
+                GTKViewHost.deferredDuringGlobalInteraction[ObjectIdentifier(self)] = self
+            }
             return
         }
         if let currentAnimation {
@@ -141,6 +149,60 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
             host.rebuild()
             return 0 // G_SOURCE_REMOVE
         }, retained.toOpaque())
+    }
+
+    // MARK: - Global interaction deferral
+
+    /// While > 0, EVERY host defers its rebuilds (see `scheduleRebuild`). A
+    /// gesture drag brackets itself with `begin/endGlobalInteraction` so that no
+    /// host — not the dragged control's, nor a sibling/ancestor that observes the
+    /// same model — rebuilds mid-drag and recreates (and thereby detaches) the
+    /// dragged gesture's widget. Accessed only on the GTK main thread, so no lock.
+    static var globalInteractionDepth: Int = 0
+
+    /// Hosts that deferred a rebuild during the current global interaction,
+    /// flushed exactly once when the interaction ends. Strong refs are fine —
+    /// entries live only for the duration of a drag.
+    static var deferredDuringGlobalInteraction: [ObjectIdentifier: GTKViewHost] = [:]
+
+    /// Enter a global interaction (drag begin). Balanced by `endGlobalInteraction`.
+    static func beginGlobalInteraction() {
+        globalInteractionDepth += 1
+    }
+
+    /// Leave a global interaction (drag end). When the last one ends, flush every
+    /// host that deferred a rebuild during it, so the whole UI reconciles once.
+    static func endGlobalInteraction() {
+        guard globalInteractionDepth > 0 else { return }
+        globalInteractionDepth -= 1
+        guard globalInteractionDepth == 0 else { return }
+        let hosts = deferredDuringGlobalInteraction
+        deferredDuringGlobalInteraction = [:]
+        for host in hosts.values {
+            host.scheduleRebuild()
+        }
+    }
+
+    /// Repaint every host that has deferred a rebuild during the current global
+    /// interaction, without rebuilding. Called on each drag-update so controls
+    /// bound to the value being dragged (a linked knob and XY pad, say) track it
+    /// live: their Canvas draw closures read the shared value at paint time, so a
+    /// queue_draw reflects the new value even though the value-change observation
+    /// is one-shot and its re-registering rebuild is deferred until drag-end.
+    static func redrawDeferredInteractionHosts() {
+        // Snapshot the values first: a host's narrow-mutation describe pass can
+        // re-register observation whose onChange re-inserts into the dict, so we
+        // must not iterate the live dictionary while mutating it.
+        let hosts = Array(deferredDuringGlobalInteraction.values)
+        for host in hosts where host.isContainerAlive {
+            // Push narrow (text/color/canvas) in-place updates so NATIVE widgets
+            // bound to the dragged value — a TextField's GtkEntry, say — track
+            // live too, not just Canvas hosts. The narrow path never recreates a
+            // widget, so it can't detach the in-flight gesture; structural
+            // changes stay deferred to drag-end.
+            host.applyDeferredNarrowMutationDuringInteraction()
+            gtkQueueDrawSubtree(host.container)
+        }
     }
 
     public func beginInteractiveUpdate() {
@@ -221,6 +283,102 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         return result
     }
 
+    /// Attempt an in-place text/color/canvas mutation for the current body,
+    /// preserving the widget tree (and any in-flight gesture) instead of a full
+    /// teardown-rebuild. Returns `true` if the plan was narrow-applicable and
+    /// applied — the caller should then skip the full rebuild — or `false` if a
+    /// structural rebuild is still required.
+    ///
+    /// Applied for both @State- and @Observable-driven changes. For an
+    /// @Observable change the describe pass runs under `withObservationTracking`,
+    /// so re-reading the observed properties re-registers the one-shot
+    /// subscription — the same re-registration the full rebuild gets from
+    /// `buildBodyWithTracking`, without the teardown.
+    ///
+    /// Must be called with `lock` NOT held (it runs the describe/plan/apply pass
+    /// lock-free, matching the original inline placement after `lock.unlock()`).
+    func tryNarrowMutation(fromObservation: Bool) -> Bool {
+        guard let describeBody = describeBody,
+              let oldRetained = lastRetainedDescriptor,
+              let oldExecutor = retainedExecutor else {
+            return false
+        }
+
+        let previousEnv = getCurrentEnvironment()
+        installRebuildEnvironment()
+        let described: (descriptor: GTK4DescriptorNode, canvasPayloads: [GTK4CanvasPayload])
+        if fromObservation {
+            #if canImport(Observation)
+            if #available(macOS 14.0, iOS 17.0, *) {
+                var captured: (descriptor: GTK4DescriptorNode, canvasPayloads: [GTK4CanvasPayload])!
+                withObservationTracking {
+                    captured = gtkDescribeCapturingCanvasPayloads(describeBody)
+                } onChange: { [weak self] in
+                    guard let self else { return }
+                    self.lock.lock()
+                    self.observationDidFire = true
+                    self.lock.unlock()
+                    self.scheduleRebuild()
+                }
+                described = captured
+            } else {
+                described = gtkDescribeCapturingCanvasPayloads(describeBody)
+            }
+            #else
+            described = gtkDescribeCapturingCanvasPayloads(describeBody)
+            #endif
+        } else {
+            described = gtkDescribeCapturingCanvasPayloads(describeBody)
+        }
+        setCurrentEnvironment(previousEnv)
+
+        let newIdentified = gtkIdentifyDescriptorTree(described.descriptor)
+        let canvasPayloads = gtkCanvasPayloadsByIdentity(
+            descriptorRoot: newIdentified,
+            payloads: described.canvasPayloads
+        )
+        let plan = gtkPlanDescriptorTree(old: oldRetained, new: newIdentified)
+
+        if gtkCanApplyTextColorHostMutation(plan: plan) {
+            let action = gtkExecuteDescriptorPlan(
+                old: oldExecutor,
+                plan: plan,
+                canvasPayloadsByIdentity: canvasPayloads
+            )
+
+            // Verify all slots are still valid before mutating
+            let allSlotsValid = gtkAllSlotsValid(action: action)
+            if allSlotsValid {
+                let result = gtkApplyHookMutation(action: action)
+                if gtkHookMutationSucceeded(result) {
+                    // Success — update retained state, skip full rebuild
+                    lastRetainedDescriptor = gtkRetainDescriptorTree(newIdentified)
+                    retainedExecutor = action.resultingNode
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /// Apply a narrow in-place mutation for a host whose rebuild is deferred by an
+    /// active drag, WITHOUT falling back to a full rebuild. Lets native widgets
+    /// bound to the value being dragged (e.g. a `TextField`'s `GtkEntry`) track
+    /// live during the drag, the same way Canvas hosts track via redraw — the
+    /// narrow path never recreates widgets, so it cannot detach the gesture. Any
+    /// structural change stays deferred to drag-end (where the full rebuild runs,
+    /// picking it up because a failed narrow attempt leaves the retained
+    /// descriptor untouched). Called from `redrawDeferredInteractionHosts` per
+    /// drag-update. `observationDidFire` is intentionally NOT cleared here — the
+    /// deferred drag-end rebuild still needs it to re-register observation.
+    func applyDeferredNarrowMutationDuringInteraction() {
+        lock.lock()
+        guard isContainerAlive else { lock.unlock(); return }
+        let fromObservation = observationDidFire
+        lock.unlock()
+        _ = tryNarrowMutation(fromObservation: fromObservation)
+    }
+
     func rebuild() {
         lock.lock()
         scheduled = false
@@ -236,48 +394,12 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         observationDidFire = false
         lock.unlock()
 
-        // --- Narrow mutation path: try text/color in-place update ---
-        // Skipped when withObservationTracking's onChange fired — the narrow
-        // path returns without re-running body under withObservationTracking,
-        // which would leave @Observable subscriptions dead after the first
-        // change. Fall through to the full rebuild so observation re-registers.
-        if !fromObservation,
-           let describeBody = describeBody,
-           let oldRetained = lastRetainedDescriptor,
-           let oldExecutor = retainedExecutor {
-
-            let previousEnv = getCurrentEnvironment()
-            installRebuildEnvironment()
-            let described = gtkDescribeCapturingCanvasPayloads(describeBody)
-            setCurrentEnvironment(previousEnv)
-
-            let newIdentified = gtkIdentifyDescriptorTree(described.descriptor)
-            let canvasPayloads = gtkCanvasPayloadsByIdentity(
-                descriptorRoot: newIdentified,
-                payloads: described.canvasPayloads
-            )
-            let plan = gtkPlanDescriptorTree(old: oldRetained, new: newIdentified)
-
-            if gtkCanApplyTextColorHostMutation(plan: plan) {
-                let action = gtkExecuteDescriptorPlan(
-                    old: oldExecutor,
-                    plan: plan,
-                    canvasPayloadsByIdentity: canvasPayloads
-                )
-
-                // Verify all slots are still valid before mutating
-                let allSlotsValid = gtkAllSlotsValid(action: action)
-                if allSlotsValid {
-                    let result = gtkApplyHookMutation(action: action)
-                    if gtkHookMutationSucceeded(result) {
-                        // Success — update retained state, skip full rebuild
-                        lastRetainedDescriptor = gtkRetainDescriptorTree(newIdentified)
-                        retainedExecutor = action.resultingNode
-                        return
-                    }
-                }
-            }
-            // Fall through to full rebuild
+        // Narrow mutation path: try an in-place text/color/canvas update that
+        // preserves the widget tree (and any in-flight gesture) instead of a
+        // teardown-rebuild. If it fully applies, skip the full rebuild; otherwise
+        // fall through, which re-registers observation as before.
+        if tryNarrowMutation(fromObservation: fromObservation) {
+            return
         }
 
         // Phase 7: skip body evaluation if no storage was mutated since last render.

@@ -1191,3 +1191,90 @@ gtk_swift_get_active_window(void) {
     if (!app || !GTK_IS_APPLICATION(app)) return NULL;
     return gtk_application_get_active_window(GTK_APPLICATION(app));
 }
+
+/// Return the process default GApplication cast to GtkApplication, or NULL if
+/// there is no default application or it is not a GtkApplication. Used to
+/// parent an imperatively-opened standalone window (via
+/// GTK4Backend.openStandaloneWindow) to the GtkApplication started by
+/// GTK4Backend.run(_:), so a window can be opened at runtime from outside the
+/// App/Scene tree.
+static inline GtkApplication *
+gtk_swift_get_default_gtk_application(void) {
+    GApplication *app = g_application_get_default();
+    if (!app || !GTK_IS_APPLICATION(app)) return NULL;
+    return GTK_APPLICATION(app);
+}
+
+// --- Native file dialog (GtkFileDialog, GTK 4.10+) ---
+//
+// Async open/save wrappers for the live-coding scratchpad's Open/Save buttons.
+// The chosen path (or NULL on cancel/error) is delivered to a Swift callback
+// via an opaque user pointer; the dialog is parented to the active window (see
+// gtk_swift_get_active_window) so GTK 4.14 doesn't emit realization criticals.
+typedef void (*LyrebirdFileDialogCB)(const char *path, void *user);
+
+typedef struct {
+    LyrebirdFileDialogCB cb;
+    void *user;
+} LyrebirdFileDialogCtx;
+
+static void
+lyrebird_fd_open_done(GObject *src, GAsyncResult *res, gpointer data) {
+    LyrebirdFileDialogCtx *ctx = (LyrebirdFileDialogCtx *)data;
+    GFile *file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(src), res, NULL);
+    if (file) {
+        char *p = g_file_get_path(file);
+        ctx->cb(p, ctx->user);
+        g_free(p);
+        g_object_unref(file);
+    } else {
+        ctx->cb(NULL, ctx->user);
+    }
+    g_free(ctx);
+}
+
+static void
+lyrebird_fd_save_done(GObject *src, GAsyncResult *res, gpointer data) {
+    LyrebirdFileDialogCtx *ctx = (LyrebirdFileDialogCtx *)data;
+    GFile *file = gtk_file_dialog_save_finish(GTK_FILE_DIALOG(src), res, NULL);
+    if (file) {
+        char *p = g_file_get_path(file);
+        ctx->cb(p, ctx->user);
+        g_free(p);
+        g_object_unref(file);
+    } else {
+        ctx->cb(NULL, ctx->user);
+    }
+    g_free(ctx);
+}
+
+/// Present a native Open dialog. `cb(path, user)` is invoked on the GTK main
+/// thread with the chosen path, or NULL if cancelled.
+static inline void
+gtk_swift_present_open_dialog(const char *title, void *user, LyrebirdFileDialogCB cb) {
+    GtkFileDialog *dlg = gtk_file_dialog_new();
+    if (title) gtk_file_dialog_set_title(dlg, title);
+    LyrebirdFileDialogCtx *ctx = g_new0(LyrebirdFileDialogCtx, 1);
+    ctx->cb = cb;
+    ctx->user = user;
+    gtk_file_dialog_open(dlg, gtk_swift_get_active_window(), NULL,
+                         lyrebird_fd_open_done, ctx);
+    g_object_unref(dlg);
+}
+
+/// Present a native Save dialog, pre-filling `suggested_name` (may be NULL).
+/// `cb(path, user)` is invoked on the GTK main thread with the chosen path, or
+/// NULL if cancelled.
+static inline void
+gtk_swift_present_save_dialog(const char *title, const char *suggested_name,
+                           void *user, LyrebirdFileDialogCB cb) {
+    GtkFileDialog *dlg = gtk_file_dialog_new();
+    if (title) gtk_file_dialog_set_title(dlg, title);
+    if (suggested_name) gtk_file_dialog_set_initial_name(dlg, suggested_name);
+    LyrebirdFileDialogCtx *ctx = g_new0(LyrebirdFileDialogCtx, 1);
+    ctx->cb = cb;
+    ctx->user = user;
+    gtk_file_dialog_save(dlg, gtk_swift_get_active_window(), NULL,
+                         lyrebird_fd_save_done, ctx);
+    g_object_unref(dlg);
+}

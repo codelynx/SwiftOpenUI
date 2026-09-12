@@ -225,10 +225,22 @@ extension Divider: GTKRenderable, GTKDescribable {
     }
 }
 
-extension TextField: GTKRenderable {
+extension TextField: GTKRenderable, GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        // A real descriptor node (not an empty `.composite`, which would poison
+        // the host's narrow-mutation path) so a text change can be applied in
+        // place via `.textFieldValue` — letting the field track a live value
+        // (e.g. bound to a slider being dragged) instead of only at mouse-up.
+        GTK4DescriptorNode(
+            kind: .textField, typeName: "TextField",
+            props: .textField(GTK4TextFieldDescriptor(
+                text: text.wrappedValue, placeholder: title)))
+    }
+
     public func gtkCreateWidget() -> OpaquePointer {
         let entry = gtk_entry_new()!
         gtk_widget_set_hexpand(entry, 1)
+        gtkMarkHostedNodeKind(entry, kind: .textField)
         let entryPtr = UnsafeMutableRawPointer(entry).assumingMemoryBound(to: GtkEntry.self)
         let bufferPtr = gtk_entry_get_buffer(entryPtr)
         gtk_entry_buffer_set_text(bufferPtr, text.wrappedValue, -1)
@@ -436,7 +448,22 @@ extension Button: GTKRenderable, GTKDescribable {
         // dedicated kind prevents the narrow-mutation guard from rejecting
         // the entire tree when a Button appears alongside mutable nodes
         // (Canvas, Text, Slider, etc.).
-        GTK4DescriptorNode(kind: .button, typeName: "Button")
+        //
+        // A `Text` label renders as the GtkButton's OWN native label (see
+        // gtkCreateWidget: `gtk_button_new_with_label`) — no separate hosted
+        // widget — so describe a childless leaf. A CUSTOM label view is rendered
+        // as child widgets (`gtkRenderView(label)`), whose hosted leaves
+        // (Text/Canvas/…) are collected during slot capture; they must appear in
+        // the descriptor too, or the descriptor/widget leaf counts mismatch and
+        // `gtkCaptureSupportedNativeSlots` bails (assigning no slots → later
+        // narrow updates see nil slots).
+        if label is Text {
+            return GTK4DescriptorNode(kind: .button, typeName: "Button")
+        }
+        return GTK4DescriptorNode(
+            kind: .button, typeName: "Button",
+            children: [gtkDescribeView(label)]
+        )
     }
 
     public func gtkCreateWidget() -> OpaquePointer {
@@ -2893,6 +2920,25 @@ private class GTKDragState {
     var startX: Double = 0
     var startY: Double = 0
     var dragStarted = false
+    /// Owning view host, captured at widget creation, used to bracket the drag
+    /// in an interactive-update deferral so a mid-drag rebuild cannot recreate
+    /// (and detach) the gesture's widget. Weak — the host outlives the gesture.
+    weak var host: GTKViewHost?
+}
+
+/// Queue a redraw of `widget` and every descendant.
+///
+/// GTK4 caches each widget's render node and reuses a child's node when only an
+/// ancestor is invalidated, so `gtk_widget_queue_draw` on a container does not
+/// re-run a nested `GtkDrawingArea`'s draw func. Walking the subtree marks every
+/// widget dirty, which is what a live Canvas redraw during a drag needs.
+func gtkQueueDrawSubtree(_ widget: UnsafeMutablePointer<GtkWidget>) {
+    gtk_widget_queue_draw(widget)
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        gtkQueueDrawSubtree(c)
+        child = gtk_widget_get_next_sibling(c)
+    }
 }
 
 extension DragGestureView: GTKRenderable, GTKDescribable {
@@ -2914,6 +2960,51 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
         let gesture = gtk_gesture_drag_new()!
 
         let dragState = GTKDragState()
+        dragState.host = GTKViewHost.getCurrentRebuilding()
+
+        // Bracket the whole drag sequence in the host's interactive-update
+        // deferral. A state-mutating onChanged schedules a rebuild that, when
+        // sibling controls are bound to the same model, is not narrow-applicable
+        // and recreates this gesture's widget mid-drag — detaching GtkGestureDrag
+        // so the sequence ends after one tick. Deferring rebuilds until drag-end
+        // keeps the widget (and the in-flight gesture) alive; the live redraw
+        // still happens via gtkQueueDrawSubtree in drag-update, and the single
+        // deferred rebuild on drag-end reconciles final state and re-registers
+        // observation. GtkGestureDrag emits drag-begin and drag-end exactly once
+        // per sequence, so these begin/end calls pair. Connected before the user
+        // handlers; GTK invokes multiple handlers for a signal in order.
+        let bracketState = dragState
+        _ = bracketState  // host no longer needed for the bracket; kept for the trace
+        let bracketBeginBox = Unmanaged.passRetained(DoubleDoubleClosureBox { _, _ in
+            GTKViewHost.beginGlobalInteraction()
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(gesture),
+            "drag-begin",
+            unsafeBitCast({ (_: gpointer?, x: gdouble, y: gdouble, userData: gpointer?) in
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure(x, y)
+            } as @convention(c) (gpointer?, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+            bracketBeginBox,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
+        let bracketEndBox = Unmanaged.passRetained(DoubleDoubleClosureBox { _, _ in
+            GTKViewHost.endGlobalInteraction()
+        }).toOpaque()
+        g_signal_connect_data(
+            gpointer(gesture),
+            "drag-end",
+            unsafeBitCast({ (_: gpointer?, offsetX: gdouble, offsetY: gdouble, userData: gpointer?) in
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).takeUnretainedValue().closure(offsetX, offsetY)
+            } as @convention(c) (gpointer?, gdouble, gdouble, gpointer?) -> Void, to: GCallback.self),
+            bracketEndBox,
+            { (userData: gpointer?, _: UnsafeMutablePointer<GClosure>?) in
+                Unmanaged<DoubleDoubleClosureBox>.fromOpaque(userData!).release()
+            },
+            GConnectFlags(rawValue: 0)
+        )
 
         if let onChanged = onChanged {
             let boundOnChanged = bindActionToCurrentEnvironment(onChanged)
@@ -2931,6 +3022,27 @@ extension DragGestureView: GTKRenderable, GTKDescribable {
                     translation: (width: offsetX, height: offsetY)
                 )
                 boundOnChanged(value)
+                // Live redraw during the drag. The rebuild that a state-mutating
+                // onChanged schedules runs at default idle priority, which the
+                // stream of pointer-motion events starves, so a Canvas otherwise
+                // only repaints on release. The drawing-area draw func re-invokes
+                // the stored draw closure, which reads the bound value at paint
+                // time, so forcing a redraw here repaints the new value
+                // immediately — no rebuild required.
+                //
+                // The gesture's widget is typically a container (e.g. a Canvas
+                // wrapped by `.frame`); GTK4 reuses a child's cached render node
+                // when only an ancestor is invalidated, so a bare
+                // `queue_draw(widget)` would not re-run a nested GtkDrawingArea's
+                // draw func. Walk the subtree so the Canvas itself is marked
+                // dirty and actually repaints.
+                gtkQueueDrawSubtree(widget)
+                // Repaint every control bound to the value being dragged (linked
+                // knob/XY sharing a parameter), not just the dragged one, so they
+                // track live. Their rebuilds are deferred during the drag, so this
+                // drives the redraw directly; the Canvas closures read the value
+                // at paint time.
+                GTKViewHost.redrawDeferredInteractionHosts()
             }).toOpaque()
 
             // drag-begin: record start position
@@ -7443,4 +7555,308 @@ extension ViewThatFits: GTKRenderable {
 
         return opaqueFromWidget(stack)
     }
+}
+
+// MARK: - Transparent content-wrapper describe conformances
+//
+// These styling / gesture / lifecycle / environment modifiers wrap a single
+// `content` view and render it directly. Conforming to GTKContentWrapper makes
+// gtkDescribeView describe the wrapped content instead of collapsing to an empty
+// `.composite` (which the narrow-mutation gate rejects, poisoning the host).
+
+extension OnChangeView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnChangeTwoArgView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnSubmitView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnAppearView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnDisappearView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FocusedView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FocusedEqualsView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FocusedValueView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension MonospacedDigitView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension MultilineTextAlignmentView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension TextFieldStyleModifier: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ButtonStyleModifier: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ToggleStyleModifier: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LabelsHiddenView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LineLimitView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension TruncationModeView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LineSpacingView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension BoldView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ItalicView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FontWeightView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension UnderlineView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension StrikethroughView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension TextCaseView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension CornerRadiusView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ClippedView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ClipShapeView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ShadowView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension BlurView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension AspectRatioView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension PositionView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LayoutPriorityView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension FixedSizeView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension HelpView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension IdView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension TagView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension KeyboardShortcutView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension HiddenView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension ContextMenuView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension LongPressGestureView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension OnExitCommandView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension EnvironmentModifierView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension EnvironmentObjectModifierView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+extension EnvironmentObservableModifierView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { content }
+}
+
+// OverlayView has two view children (content + overlay); describe both so a
+// change in either stays narrow-applicable.
+extension OverlayView: GTKDescribable {
+    public func gtkDescribeNode() -> GTK4DescriptorNode {
+        GTK4DescriptorNode(
+            kind: .composite, typeName: "OverlayView",
+            children: [gtkDescribeAnyView(content), gtkDescribeAnyView(overlay)]
+        )
+    }
+}
+
+// MARK: - Opaque-leaf state-signature conformances
+//
+// Native widgets the narrow path can't update in place. Describing them as
+// `.opaqueLeaf(signature)` (not an empty `.composite`) stops them poisoning a
+// host's narrow path; the signature captures the bound state that affects
+// appearance, so an unchanged widget reuses and a changed one forces a rebuild.
+// Each signature must include EVERY value that changes the widget's look.
+
+extension Toggle: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(label), AnyHashable(isOn.wrappedValue)])
+    }
+}
+
+extension Stepper: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(label), AnyHashable(value.wrappedValue),
+                     AnyHashable(range.lowerBound), AnyHashable(range.upperBound),
+                     AnyHashable(step)])
+    }
+}
+
+extension Picker: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(label), AnyHashable(selected), AnyHashable(options)])
+    }
+}
+
+extension FilledShape: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(color.red), AnyHashable(color.green),
+                     AnyHashable(color.blue), AnyHashable(color.alpha)])
+    }
+}
+
+extension StrokedShape: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(color.red), AnyHashable(color.green),
+                     AnyHashable(color.blue), AnyHashable(color.alpha)])
+    }
+}
+
+// Static shapes / gradients / empty — a constant signature (they don't change;
+// a structural swap is caught by the descriptor typeName, not the signature).
+extension Circle: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("Circle") } }
+extension Rectangle: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("Rectangle") } }
+extension Ellipse: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("Ellipse") } }
+extension Capsule: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("Capsule") } }
+extension RoundedRectangle: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable(cornerRadius) } }
+extension LinearGradient: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("LinearGradient") } }
+extension RadialGradient: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("RadialGradient") } }
+extension EmptyView: GTKOpaqueLeaf { public var gtkStateSignature: AnyHashable { AnyHashable("EmptyView") } }
+
+// MARK: - Conditional / optional transparent describe
+//
+// `if/else` in a ViewBuilder produces `_ConditionalView`; a bare `if` (incl.
+// `if let`) produces `Optional<some View>`. Both are GTKRenderable-only, so they
+// described as empty `.composite`s that poison the host's narrow path. Describe
+// the ACTIVE branch transparently instead. A branch/optional FLIP changes the
+// described child's type — caught as a structural change (rebuild) — but a stable
+// condition (as during a drag) reuses, keeping the host narrow-applicable.
+
+extension _ConditionalView: GTKContentWrapper {
+    public var gtkWrappedContent: any View {
+        switch self {
+        case .trueContent(let view): return view
+        case .falseContent(let view): return view
+        }
+    }
+}
+
+extension Optional: GTKContentWrapper where Wrapped: View {
+    public var gtkWrappedContent: any View {
+        switch self {
+        case .some(let view): return view
+        case .none: return EmptyView()
+        }
+    }
+}
+
+// MARK: - Broader narrow-path coverage (Patch F, batch 2)
+//
+// More views that described as empty `.composite`s and poisoned a host's narrow
+// path. Same principle as batch 1: describe what gtkCreateWidget renders inline,
+// so descriptor and widget leaves stay balanced for slot capture.
+
+// Type-erased single view.
+extension AnyView: GTKContentWrapper {
+    public var gtkWrappedContent: any View { wrapped }
+}
+
+// Single-content wrappers whose `content` is the inline base view (the modal /
+// drop / grid-cell chrome is auxiliary and rendered elsewhere).
+extension DropDestinationView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension GridCellSpanView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension FullScreenCoverView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension PopoverView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension SheetModifierView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension ItemSheetModifierView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension AlertModifierView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension ConfirmationDialogView: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+
+// Container wrappers that render `content` inline as their body.
+extension List: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension Grid: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension DisclosureGroup: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+extension Section: GTKContentWrapper { public var gtkWrappedContent: any View { content } }
+
+// Lazy stacks/grids render one child per data item — expose them as children so
+// each item's leaves participate in the narrow path (like ForEach).
+extension LazyVStack: MultiChildView {
+    public var children: [any View] { items.map { contentBuilder($0) as any View } }
+}
+extension LazyHStack: MultiChildView {
+    public var children: [any View] { items.map { contentBuilder($0) as any View } }
+}
+extension LazyVGrid: MultiChildView {
+    public var children: [any View] { items.map { contentBuilder($0) as any View } }
+}
+extension LazyHGrid: MultiChildView {
+    public var children: [any View] { items.map { contentBuilder($0) as any View } }
+}
+
+// Opaque native leaf widgets (native labels/entries — no marked inner widgets).
+extension SecureField: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(placeholder), AnyHashable(text.wrappedValue)])
+    }
+}
+extension TextEditor: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable { AnyHashable(text.wrappedValue) }
+}
+extension DatePicker: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(title), AnyHashable(selection?.wrappedValue)])
+    }
+}
+extension ProgressView: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(value), AnyHashable(total), AnyHashable(title)])
+    }
+}
+extension Link: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(title), AnyHashable(destination)])
+    }
+}
+extension Label: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable {
+        AnyHashable([AnyHashable(title), AnyHashable(systemImage), AnyHashable(imagePath)])
+    }
+}
+extension Image: GTKOpaqueLeaf {
+    public var gtkStateSignature: AnyHashable { AnyHashable(String(describing: source)) }
 }
