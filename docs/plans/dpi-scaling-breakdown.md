@@ -9,6 +9,30 @@ independently-reviewable units with dependencies and owners.
 automatically (logical-pixel primitives); Linux's only task is D8
 (fractional-scale *confirmation*, not a fix).
 
+## Tracking
+
+| Unit | Tracked by | Status |
+|------|-----------|--------|
+| D0 — adopt RFC | PR #16 (this) | draft |
+| D1 — revised #8 | PR #8 | changes requested |
+| D2 — revised #11 | PR #11 | changes requested |
+| D3 — scale chokepoint | #17 | open |
+| D4 — WM_DPICHANGED | #18 | open |
+| D5 — 150%/200% captures | #19 | open |
+| D6 — tracked capture tooling | #20 | open |
+| D7 — document the contract | _unfiled_ (coordinator) | — |
+| D8 — GTK4 fractional scaling | #21 | open |
+
+- [ ] D0 adopt RFC (#16)
+- [ ] D1 revised #8 — contributor
+- [ ] D2 revised #11 — contributor
+- [ ] D3 scale chokepoint (#17)
+- [ ] D4 WM_DPICHANGED (#18)
+- [ ] D5 150%/200% captures (#19)
+- [ ] D6 tracked capture tooling (#20)
+- [ ] D7 document the contract
+- [ ] D8 GTK4 fractional scaling (#21)
+
 ## Critical path
 
 ```
