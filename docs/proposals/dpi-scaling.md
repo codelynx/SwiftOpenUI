@@ -105,7 +105,7 @@ Four independent `dpi / 96.0` computations, each font-only. No single place owns
 | macOS (SwiftUI) | point | AppKit/SwiftUI | automatic | ✅ reference |
 | GTK4 | CSS px (logical) | GTK (integer `scale-factor`; fractional via `GDK_DPI_SCALE`) | automatic | ✅ (fractional relies on env) |
 | Web | CSS px (logical) | browser (`devicePixelRatio`) | automatic | ✅ |
-| Win32 | **mixed** — fonts scaled; some geometry scaled by #8 (window sizes); other geometry scaling unconfirmed | manual, per-call-site | **none** (no `WM_DPICHANGED`) | ❌ incomplete |
+| Win32 (on `develop` today) | **mixed** — fonts scaled; most geometry unscaled (window-size scaling is in **unmerged** #8, not yet on `develop`) | manual, per-call-site | **none** (no `WM_DPICHANGED`) | ❌ incomplete |
 
 GTK4 and Web get DPI "for free" because their primitives are logical by
 definition. macOS is the reference. Win32 is the only backend that must do the
@@ -234,12 +234,19 @@ questions" sequencing exactly (single source of truth):
 
 ## Open questions
 
-- **#8/#11 sequencing.** The full *reviews* have been read (summarised under
-  "What #8/#11 attempt" above); a line-by-line diff review has not. Recommended
-  order (same as Migration): revised #8/#11 first, then the behaviour-preserving
+- **#8/#11 sequencing.** The full reviews **and the diffs** have been read and
+  the claims above verified against the code: #8's `case .automatic: break`
+  leaves `requestedSize` nil so automatic windows fall to `CW_USEDEFAULT` (the
+  800×600/300×200 defaults removed), while `measureText`/`FlatButtonState` each
+  recompute `win32_GetDpiForWindow/96` locally; #11 literally computes
+  `Int32(Double(win32_GetDpiForWindow(...)) / 96.0)` in `layoutNavContainer` and
+  `NavigationStack.winCreateWidget`, truncating 150% to 1×. Recommended order
+  (same as Migration): revised #8/#11 first, then the behaviour-preserving
   chokepoint refactor, then `WM_DPICHANGED`. Do **not** rewrite #8/#11 as part of
   this RFC — consolidate after they merge, so the refactor has a green, scaled
-  baseline to diff against.
+  baseline to diff against. (Not yet verified by running: #8's claim that the
+  dropdown/segmented/`D2DSurface` text paths remain unscaled — those files are
+  unchanged by #8, so the assertion rests on the review, not the diff.)
 - **Home for the DPI-baseline script and screenshots.** The capture script and
   its PNGs/`dimensions.csv` currently live under gitignored `.untracked/`, so
   this committed doc can't reference them directly (hence the inlined 100% table
