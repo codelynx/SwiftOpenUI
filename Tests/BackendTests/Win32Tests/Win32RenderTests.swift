@@ -3,7 +3,9 @@ import XCTest
 @testable import BackendWin32
 import WinSDK
 import CWin32
+import CWin32Bridge
 import Foundation
+import Observation
 
 // MARK: - Test harness
 
@@ -4352,9 +4354,142 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(hwnd, "Solid stroke Circle should still render")
         XCTAssertTrue(RedrawWindow(hwnd!, nil, nil, UINT(RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN)), "RedrawWindow should succeed")
     }
+
+    // MARK: - Conditional (if/else) branch rebuild
+
+    /// Regression for docs/issues/win32-conditional-view-rebuild.md.
+    ///
+    /// Mirrors Synca's ContentView: a conditional whose branch depends on a
+    /// computed property of an `@Observable`, flipped by a segmented Picker's
+    /// binding. Exercises the FULL runtime path — `withObservationTracking`
+    /// onChange → `scheduleRebuild` → `PostMessage(WM_SWIFTUI_REBUILD)` →
+    /// message pump → `host.rebuild()` → branch swap. A test subclass on the
+    /// parent window mirrors the real root window's WM_SWIFTUI_REBUILD handler
+    /// (Win32Backend.swift). Nothing else calls `rebuild()`, so if observation
+    /// fails to fire, the branch never swaps and the test fails.
+    @available(macOS 14.0, iOS 17.0, *)
+    func testConditionalBranchSwapsViaObservationEndToEnd() {
+        let ctx = testContext()
+        let model = ConditionalBranchModel()
+
+        func makeView() -> some View {
+            Group {
+                if model.requiresSecondary {
+                    VStack {
+                        Text("dual-source")
+                        Text("dual-target")
+                    }
+                } else {
+                    Text("single-only")
+                }
+            }
+        }
+
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in winRenderView(makeView(), in: ctx) },
+            describeBody: { winDescribeView(makeView()) }
+        )
+
+        // Establish observation exactly like winRenderStatefulView's initial render.
+        let child = host.buildBodyWithTracking(
+            RenderContext(parent: host.container, hInstance: ctx.hInstance)
+        )
+        if let c = child { host.addChild(c) }
+
+        let originalChild = GetWindow(host.container, UINT(GW_CHILD))
+        XCTAssertEqual(collectStaticLabels(in: host.container).map { windowText(of: $0) },
+                       ["single-only"],
+                       "initial render should show the SingleFolderView-like branch")
+
+        // Install the same WM_SWIFTUI_REBUILD handler the real root window uses,
+        // so the coalesced PostMessage from scheduleRebuild reaches rebuild().
+        SetWindowSubclass(testWindow, conditionalRebuildDispatchProc, 91, 0)
+        defer { RemoveWindowSubclass(testWindow, conditionalRebuildDispatchProc, 91) }
+
+        // Flip the observable — what the segmented Picker's binding does when
+        // the user clicks "Compare"/"Sync".
+        model.showSecondary = true
+
+        // Pump the queue so the posted WM_SWIFTUI_REBUILD is dispatched.
+        pumpWindowMessages(for: testWindow)
+
+        let rebuiltChild = GetWindow(host.container, UINT(GW_CHILD))
+        XCTAssertNotEqual(originalChild, rebuiltChild,
+                          "branch swap must destroy the old subtree and build the new branch")
+        XCTAssertEqual(collectStaticLabels(in: host.container).map { windowText(of: $0) },
+                       ["dual-source", "dual-target"],
+                       "after the swap only the DualFolderView-like branch's labels remain")
+    }
+
+    /// Even without observation (`fromObservation == false`), a conditional
+    /// branch swap must not be mistaken for an in-place text/color mutation:
+    /// the descriptor diff yields a structural `.replace`, so `rebuild()` drops
+    /// to a full rebuild (new child HWND) instead of patching the old subtree.
+    /// Guards `winCanApplyTextColorHostMutation` / `canReuseDescriptorNode`
+    /// against ever classifying a branch flip as narrow-eligible.
+    func testConditionalBranchSwapForcesFullRebuildStructurally() {
+        let ctx = testContext()
+        var showSecondary = false
+
+        func makeView() -> some View {
+            Group {
+                if showSecondary {
+                    VStack {
+                        Text("dual-source")
+                        Text("dual-target")
+                    }
+                } else {
+                    Text("single-only")
+                }
+            }
+        }
+
+        let host = Win32ViewHost(
+            context: ctx,
+            buildBody: { ctx in winRenderView(makeView(), in: ctx) },
+            describeBody: { winDescribeView(makeView()) }
+        )
+
+        let child = host.buildBody(RenderContext(parent: host.container, hInstance: ctx.hInstance))
+        if let c = child { host.addChild(c) }
+        let originalChild = GetWindow(host.container, UINT(GW_CHILD))
+
+        showSecondary = true
+        host.rebuild()  // fromObservation == false → narrow path is attempted first
+
+        let rebuiltChild = GetWindow(host.container, UINT(GW_CHILD))
+        XCTAssertNotEqual(originalChild, rebuiltChild,
+                          "structural branch swap must fall back to a full rebuild, not in-place mutation")
+        XCTAssertEqual(collectStaticLabels(in: host.container).map { windowText(of: $0) },
+                       ["dual-source", "dual-target"])
+    }
 }
 
 // MARK: - Test helpers
+
+/// `@Observable` model mirroring Synca's AppState for the conditional-branch
+/// rebuild tests: `requiresSecondary` is a computed property (as
+/// `AppState.requiresSecondaryFolder` is), so reading it registers
+/// `showSecondary` as an observation dependency.
+@available(macOS 14.0, iOS 17.0, *)
+@Observable
+private final class ConditionalBranchModel {
+    var showSecondary = false
+    var requiresSecondary: Bool { showSecondary }
+}
+
+/// Mirrors the real root window's WM_SWIFTUI_REBUILD handling
+/// (Win32Backend.swift): pull the retained host out of lParam and rebuild it.
+private let conditionalRebuildDispatchProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, _, _) in
+    if uMsg == WM_SWIFTUI_REBUILD {
+        let ptr = UnsafeMutableRawPointer(bitPattern: Int(lParam))!
+        let host = Unmanaged<Win32ViewHost>.fromOpaque(ptr).takeRetainedValue()
+        host.rebuild()
+        return 0
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam)
+}
 
 /// Collect direct children of a toolbar container that sit at y=0 (toolbar bar row),
 /// returned in creation order (GW_CHILD + GW_HWNDNEXT). Content is at y=barH (28).

@@ -1,5 +1,27 @@
 # Win32: conditional view (`if/else`) does not rebuild when condition changes
 
+> **RESOLVED (2026-07-10).** No longer reproduces on `develop`. The report
+> below was filed against the old radio-button `Picker` (before commit
+> `1396ed3`, "Replace Win32 segmented Picker radio buttons with D2D
+> segmented control"); the old radios never wrote the selection binding, so
+> `@Observable` state never changed and nothing rebuilt. With the D2D
+> segmented control writing the binding, the existing observation → rebuild
+> path handles the branch swap correctly.
+>
+> Verified end-to-end by two regression tests in
+> `Tests/BackendTests/Win32Tests/Win32RenderTests.swift`:
+> - `testConditionalBranchSwapsViaObservationEndToEnd` — a real `@Observable`
+>   model (mirroring Synca's `AppState`) drives the full path:
+>   `withObservationTracking` onChange → `scheduleRebuild` →
+>   `PostMessage(WM_SWIFTUI_REBUILD)` → message pump → `host.rebuild()` →
+>   branch swap. Nothing else calls `rebuild()`, so it fails if observation
+>   doesn't fire.
+> - `testConditionalBranchSwapForcesFullRebuildStructurally` — proves a
+>   branch swap falls back to a full rebuild (new HWND) rather than an
+>   in-place text/color mutation.
+>
+> The original analysis below is retained for historical context.
+
 ## Summary
 
 When a SwiftOpenUI `@Observable` property changes and a conditional view
