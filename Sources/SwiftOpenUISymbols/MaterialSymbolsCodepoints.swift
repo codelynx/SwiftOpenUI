@@ -76,7 +76,7 @@ public enum MaterialSymbolsCodepoints {
         // Devices / media
         "fiber_manual_record": 0xE061,
         "history":             0xE889,
-        "no_sim":              0xE0CE,
+        "no_sim":              0xE0CC,
         "photo_camera":        0xE412,
         "smartphone":          0xE32C,
 

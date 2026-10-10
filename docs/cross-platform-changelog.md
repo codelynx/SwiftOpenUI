@@ -21,6 +21,24 @@ backend.
 
 ---
 
+## 2026-10-10 — Windows (Win32) — shared symbol map: device / media entries
+
+- **Shared surface:** `SwiftOpenUISymbols/SFSymbolCompatibility.swift` +
+  `MaterialSymbolsCodepoints.swift` — added `camera → photo_camera` (0xE412),
+  `iphone.gen3 → smartphone` (0xE32C), `iphone.slash → no_sim` (0xE0CC),
+  `record.circle → fiber_manual_record` (0xE061), `square.on.square → history`
+  (0xE889). Additive; no existing mapping changed.
+- **Impact:** every backend resolves these five SF names now (macOS uses native
+  SF Symbols → no-op). All 65 codepoints in the table were checked against the
+  bundled `MaterialSymbolsRounded-Regular.ttf`; the PR's original `no_sim`
+  value (0xE0CE) was `wifi_tethering_off` and is corrected here. Not yet seen
+  rendered on Win32 or GTK4.
+- **Open question:** `square.on.square → history` is a loose match (the SF
+  symbol usually reads as copy/duplicate; `doc.on.doc` already maps to
+  `content_copy`). Kept as contributed; revisit if it reads wrong in an app.
+- **Ping:** coordinator (symbol map).
+- **Refs:** PR #9 (`8d5deb6`, cherry-picked) + follow-up codepoint fix.
+
 ## 2026-07-10 — Windows (Win32) — shared symbol map entry + child-@State convergence
 
 - **Shared surface:** `SwiftOpenUISymbols/SFSymbolCompatibility.swift` +
