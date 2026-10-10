@@ -101,13 +101,11 @@ private struct DelayedEnvironmentDestinationView: View {
 private struct DelayedEnvironmentMenuHostView: View {
     @Environment(DelayedEnvironmentModel.self) var model
 
-    var menu: some View {
+    var body: some View {
         Menu("Actions") {
             Button("Increment") { model.count += 1 }
         }
     }
-
-    var body: some View { menu }
 }
 
 private struct DelayedEnvironmentOnAppearView: View {
@@ -2595,8 +2593,12 @@ final class Win32RenderTests: XCTestCase {
         renderEnv.setObject(model)
         setCurrentEnvironment(renderEnv)
 
+        // The action reads the model through the host's @Environment at
+        // dispatch time, so it only succeeds if the render-time environment
+        // is reinstalled for the command.
+        let host = DelayedEnvironmentMenuHostView()
         let elements: [MenuElement] = MenuBuilder.buildExpression(
-            MenuItem("Increment") { model.count += 1 })
+            MenuItem("Increment") { host.model.count += 1 })
         guard let hMenu = CreatePopupMenu() else {
             return XCTFail("Expected popup menu creation to succeed in test harness")
         }
