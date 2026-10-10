@@ -1,24 +1,43 @@
 # Win32: conditional view (`if/else`) does not rebuild when condition changes
 
-> **RESOLVED (2026-07-10).** No longer reproduces on `develop`. The report
-> below was filed against the old radio-button `Picker` (before commit
-> `1396ed3`, "Replace Win32 segmented Picker radio buttons with D2D
-> segmented control"); the old radios never wrote the selection binding, so
-> `@Observable` state never changed and nothing rebuilt. With the D2D
-> segmented control writing the binding, the existing observation → rebuild
-> path handles the branch swap correctly.
+> **Status: does not reproduce in regression tests as of 2026-10-10. Cause
+> not confirmed. Synca re-test pending.**
 >
-> Verified end-to-end by two regression tests in
-> `Tests/BackendTests/Win32Tests/Win32RenderTests.swift`:
-> - `testConditionalBranchSwapsViaObservationEndToEnd` — a real `@Observable`
->   model (mirroring Synca's `AppState`) drives the full path:
->   `withObservationTracking` onChange → `scheduleRebuild` →
+> Two regression tests now cover the branch-swap path in
+> `Tests/BackendTests/Win32Tests/Win32RenderTests.swift`, and both pass on
+> `develop`:
+> - `testConditionalBranchSwapsViaObservationEndToEnd` — a synthetic
+>   `@Observable` model (shaped like a computed-property app state) drives the
+>   full path: `withObservationTracking` onChange → `scheduleRebuild` →
 >   `PostMessage(WM_SWIFTUI_REBUILD)` → message pump → `host.rebuild()` →
 >   branch swap. Nothing else calls `rebuild()`, so it fails if observation
 >   doesn't fire.
 > - `testConditionalBranchSwapForcesFullRebuildStructurally` — proves a
 >   branch swap falls back to a full rebuild (new HWND) rather than an
 >   in-place text/color mutation.
+>
+> **What this does and does not establish.** The tests show the observation →
+> rebuild → branch-swap path works in isolation. They are **not** the issue's
+> original reproduction, which is a GUI flow ("launch Synca, click Compare").
+> That repro has not been re-run: from this checkout the referenced symbols
+> (`requiresSecondary` / the Compare segment) were not found in the local
+> Synca sources, and the step needs interactive GUI input, so a faithful
+> re-test is still outstanding.
+>
+> **Cause is unverified.** The earlier draft of this note blamed the
+> radio-button→D2D Picker change (`1396ed3`), but that commit is from
+> 2026-04-16 — three months *before* this issue was filed (2026-07-09) — and
+> the report itself describes the D2D segmented control ("bold text on
+> Compare"), so that explanation does not fit. More likely candidates are the
+> Win32 layout/rendering commits around the filing date — `5a5558a`
+> (2026-07-09), `c1b8f4c` (2026-07-10), `629323a` (2026-07-10) — but this is
+> **unconfirmed**; a `git bisect` using the new end-to-end test would settle
+> which commit changed the behaviour.
+>
+> **Scope note.** These tests cover the conditional *branch swap* only. They
+> do **not** resolve the broader Win32 child-`@State` reconciliation gap that
+> the 2026-07-10 cross-platform changelog entry ties to this same issue doc;
+> that remains open.
 >
 > The original analysis below is retained for historical context.
 
