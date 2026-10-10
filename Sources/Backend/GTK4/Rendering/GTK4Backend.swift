@@ -577,7 +577,11 @@ public struct GTK4Backend: RenderBackend {
         // asks Pango to resolve the "Material Symbols Rounded" family.
         gtkRegisterBundledIconFont()
 
-        let gtkApp = gtk_application_new(nil, G_APPLICATION_DEFAULT_FLAGS)!
+        // Spelled as a raw value rather than G_APPLICATION_DEFAULT_FLAGS: that
+        // enumerator is not visible to the Swift importer on every GLib version
+        // (see issue #13). Zero is the default-flags value in all of them, and
+        // matches how GConnectFlags is spelled throughout this backend.
+        let gtkApp = gtk_application_new(nil, GApplicationFlags(rawValue: 0))!
         let appPtr = OpaquePointer(gtkApp)
 
         let factory: (OpaquePointer) -> Void = { appPtr in
