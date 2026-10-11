@@ -121,9 +121,11 @@ The workaround is `d2d1_shim.cpp`: a C++ file that wraps each COM call in a `ext
 - Backend: `BackendWeb` → renders to DOM elements via JavaScriptKit
 - Compiler: requires **open-source Swift toolchain** (not Xcode's — Xcode strips the Wasm backend)
 - Setup (macOS): `./configure` installs swiftly + toolchain + Wasm SDK
-- Build: `swift build --swift-sdk swift-6.2.4-RELEASE_wasm`
-- Package for browser: `swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld`
-- Serve: `npx serve .build/plugins/PackageToJS/outputs/Package`
+- Toolchain and Wasm SDK versions must match exactly (6.2.4 ↔ `swift-6.2.4-RELEASE_wasm`)
+- Build (per product — a blanket Wasm build fails linking the `BackendAndroid` dynamic library): `swiftly run swift build --swift-sdk swift-6.2.4-RELEASE_wasm --product HelloWorld +6.2.4`
+- Package for browser: `swiftly run swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld +6.2.4`
+- Serve: the packaged output has no HTML page; `./web/build-wasm.sh` generates one per example, then `cd web && npx vite`
+- Xcode 27: Swift 6.2.4 cannot compile against the macOS 27 SDK; set `DEVELOPER_DIR` to an Xcode 26.x install for Wasm builds (see `docs/guides/web-setup.md`)
 - Environment: single-threaded global (no TLS needed on Wasm)
 - Debug builds are ~59MB; release builds will be significantly smaller
 - DOM mapping: VStack → `flex-direction: column`, HStack → `row`, ZStack → CSS grid, etc.

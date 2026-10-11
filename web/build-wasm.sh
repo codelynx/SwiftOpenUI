@@ -7,6 +7,10 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# Prefer the swiftly-managed (open-source) toolchain over Xcode's, which has
+# no Wasm backend, even when /usr/bin comes first on PATH.
+[ -d "$HOME/.swiftly/bin" ] && export PATH="$HOME/.swiftly/bin:$PATH"
+
 PRODUCTS=(
     # Showcase
     HelloWorld Stopwatch ColorMixer

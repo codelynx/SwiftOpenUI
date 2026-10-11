@@ -10,11 +10,16 @@ WASM_SDK_CHECKSUM="32fdb8772d73bb174f77b5c59bc88a0d55003d75712832129394d3465158f
 WASM_SDK_NAME="swift-${SWIFT_VERSION}-RELEASE_wasm"
 SWIFTLY_HOME="${SWIFTLY_HOME_DIR:-$HOME/.swiftly}"
 
-# Source swiftly env if available (ensures swiftly-managed swift is on PATH)
+# Source swiftly env if available (ensures swiftly is on PATH)
 if [ -f "$SWIFTLY_HOME/env.sh" ]; then
     # shellcheck disable=SC1091
     source "$SWIFTLY_HOME/env.sh"
 fi
+
+# Run the open-source toolchain explicitly. A bare `swift` may resolve to
+# Xcode's (when /usr/bin precedes swiftly on PATH), and `swiftly use` would
+# rewrite .swift-version, so neither is relied on here.
+oss_swift() { swiftly run swift "$@" "+$SWIFT_VERSION"; }
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -67,52 +72,29 @@ fi
 # --------------------------------------------------------------------------
 # 2. Check / install open-source Swift toolchain
 # --------------------------------------------------------------------------
-check_toolchain() {
-    local ver
-    ver=$(swift --version 2>&1 | head -1)
-    # Xcode's Swift: "Apple Swift version 6.2.4 (swiftlang-6.2.4.1.4 clang-...)"
-    # Open-source:   "Apple Swift version 6.2.4 (swift-6.2.4-RELEASE)"
-    if echo "$ver" | grep -q "swiftlang-"; then
-        return 1  # Xcode toolchain (no Wasm backend)
-    fi
-    return 0  # Open-source toolchain
-}
-
-if check_toolchain; then
-    ok "Open-source Swift toolchain active: $(swift --version 2>&1 | head -1)"
-else
-    warn "Xcode's Swift is active (lacks Wasm backend)."
+# Xcode's Swift:  "Apple Swift version 6.2.4 (swiftlang-6.2.4.1.4 clang-...)"
+# Open-source:    "Apple Swift version 6.2.4 (swift-6.2.4-RELEASE)"
+# Only the open-source toolchain has the Wasm backend.
+if ! swiftly list 2>/dev/null | grep -q "Swift $SWIFT_VERSION"; then
     info "Installing open-source Swift $SWIFT_VERSION via swiftly..."
+    swiftly install "$SWIFT_VERSION"
+fi
 
-    if swiftly list 2>/dev/null | grep -q "$SWIFT_VERSION"; then
-        info "Swift $SWIFT_VERSION already installed, switching..."
-        swiftly use "$SWIFT_VERSION"
-    else
-        swiftly install --use "$SWIFT_VERSION"
-    fi
-
-    # Re-source env to pick up the new toolchain PATH
-    if [ -f "$SWIFTLY_HOME/env.sh" ]; then
-        source "$SWIFTLY_HOME/env.sh"
-    fi
-    hash -r 2>/dev/null || true
-
-    if check_toolchain; then
-        ok "Switched to open-source Swift: $(swift --version 2>&1 | head -1)"
-    else
-        fail "Failed to switch to open-source toolchain. Xcode's Swift is still active."
-    fi
+if oss_swift --version 2>&1 | grep -q "swift-$SWIFT_VERSION-RELEASE"; then
+    ok "Open-source Swift toolchain available: $(oss_swift --version 2>&1 | head -1)"
+else
+    fail "Open-source Swift $SWIFT_VERSION is not available through swiftly."
 fi
 
 # --------------------------------------------------------------------------
 # 3. Check / install Wasm SDK
 # --------------------------------------------------------------------------
-if swift sdk list 2>/dev/null | grep -q "$WASM_SDK_NAME"; then
+if oss_swift sdk list 2>/dev/null | grep -q "$WASM_SDK_NAME"; then
     ok "Wasm SDK already installed: $WASM_SDK_NAME"
 else
     info "Installing Wasm SDK ($WASM_SDK_NAME)..."
-    swift sdk install "$WASM_SDK_URL" --checksum "$WASM_SDK_CHECKSUM"
-    if swift sdk list 2>/dev/null | grep -q "$WASM_SDK_NAME"; then
+    oss_swift sdk install "$WASM_SDK_URL" --checksum "$WASM_SDK_CHECKSUM"
+    if oss_swift sdk list 2>/dev/null | grep -q "$WASM_SDK_NAME"; then
         ok "Wasm SDK installed: $WASM_SDK_NAME"
     else
         fail "Wasm SDK installation failed."
@@ -123,20 +105,28 @@ fi
 # 4. Verify builds
 # --------------------------------------------------------------------------
 echo ""
-info "Verifying macOS build..."
-if swift build 2>&1 | tail -1 | grep -q "Build complete"; then
+info "Verifying macOS build (Xcode's Swift)..."
+if xcrun swift build 2>&1 | tail -1 | grep -q "Build complete"; then
     ok "macOS build OK"
 else
     warn "macOS build had issues (may be expected if not on macOS)"
 fi
 
-info "Verifying Wasm build..."
-WASM_OUTPUT=$(swift build --swift-sdk "$WASM_SDK_NAME" 2>&1)
-if echo "$WASM_OUTPUT" | grep -q "Build complete"; then
+# Built per product: a blanket Wasm build tries to link the BackendAndroid
+# dynamic library, which wasm32 does not support.
+info "Verifying Wasm build (HelloWorld)..."
+WASM_OUTPUT=$(oss_swift build --swift-sdk "$WASM_SDK_NAME" --product HelloWorld 2>&1 || true)
+if echo "$WASM_OUTPUT" | grep -q "complete!"; then
     ok "Wasm build OK"
 else
     warn "Wasm build failed:"
-    echo "$WASM_OUTPUT" | grep -E "error:" | head -5
+    echo "$WASM_OUTPUT" | grep -E "error:" | sort -u | cut -c1-160 | head -5
+    if echo "$WASM_OUTPUT" | grep -q "target-arch-variant"; then
+        echo ""
+        warn "Swift $SWIFT_VERSION cannot use this Xcode's macOS SDK."
+        echo "    Point DEVELOPER_DIR at an older Xcode for Wasm builds, e.g.:"
+        echo "    DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer ./configure"
+    fi
 fi
 
 # --------------------------------------------------------------------------
@@ -148,15 +138,14 @@ echo "Configuration complete."
 echo ""
 echo "Build commands:"
 echo "  swift build                                  # macOS (native SwiftUI)"
-echo "  swift build --swift-sdk $WASM_SDK_NAME       # WebAssembly"
 echo "  swift test                                   # Run tests"
+echo "  swiftly run swift build --swift-sdk $WASM_SDK_NAME --product HelloWorld +$SWIFT_VERSION   # WebAssembly"
 echo ""
 echo "Run examples:"
 echo "  swift run HelloWorld"
-echo "  swift run Counter"
-echo "  swift run Showcase1"
-echo "  swift run Showcase2"
+echo "  swift run Stopwatch"
+echo "  swift run ColorMixer"
 echo ""
-echo "Note: To use the open-source toolchain in new shells, ensure"
-echo "swiftly's env is sourced: source \"$SWIFTLY_HOME/env.sh\""
+echo "Note: Wasm builds need the open-source toolchain. \`swiftly run swift … +$SWIFT_VERSION\`"
+echo "selects it without changing your default toolchain or .swift-version."
 echo ""

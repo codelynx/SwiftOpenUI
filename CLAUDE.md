@@ -64,9 +64,10 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
 swift build
 swift test                   # ~628 macOS / ~707 Linux
 
-# WebAssembly (requires open-source Swift toolchain, not Xcode's)
-source ~/.swiftly/env.sh     # activate swiftly-managed toolchain
-swift build --swift-sdk swift-6.2.4-RELEASE_wasm
+# WebAssembly (requires open-source Swift 6.2.4 via swiftly, not Xcode's)
+# Build per product: a blanket Wasm build fails linking the BackendAndroid dynamic library.
+# On Xcode 27, prefix with DEVELOPER_DIR=<Xcode 26.x>/Contents/Developer (see docs/guides/web-setup.md).
+swiftly run swift build --swift-sdk swift-6.2.4-RELEASE_wasm --product HelloWorld +6.2.4
 
 # Run examples on macOS
 swift run HelloWorld
@@ -76,9 +77,9 @@ swift run SimplePaint
 swift run LayoutStress
 swift run ParityViewsBasic
 
-# Run in browser (Wasm)
-swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product HelloWorld
-npx serve .build/plugins/PackageToJS/outputs/Package
+# Run in browser (Wasm) — builds all examples into web/examples, then serves them
+./web/build-wasm.sh
+cd web && npx vite           # http://localhost:3000
 
 # Package an app as a .app bundle
 swift package create-bundle HelloWorld --allow-writing-to-package-directory

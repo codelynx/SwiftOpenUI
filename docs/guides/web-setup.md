@@ -7,7 +7,8 @@ This documents how to build, run, and develop SwiftOpenUI examples for the brows
 | Component | Version | Notes |
 |-----------|---------|-------|
 | Swift toolchain | 6.2.4 (open-source, via swiftly) | Xcode's Swift lacks the Wasm backend |
-| Wasm SDK | swift-6.2.4-RELEASE_wasm | Install via `./configure` or manually |
+| Wasm SDK | swift-6.2.4-RELEASE_wasm | Must match the toolchain version exactly. Install via `./configure` or manually |
+| macOS SDK | Xcode 26.x | Swift 6.2.4 cannot compile against Xcode 27's SDK — see [Toolchain notes](#toolchain-notes) |
 | Node.js | 18+ | For Vite dev server and screenshot tooling |
 | Google Chrome | Any | For Puppeteer screenshots (optional) |
 
@@ -146,6 +147,28 @@ cp -r .build/plugins/PackageToJS/outputs/Package web/examples/HelloWorld
 ```
 
 Then refresh the browser. (No hot reload for Wasm — you must rebuild and refresh.)
+
+### Toolchain notes
+
+Wasm builds are sensitive to which `swift` runs and which SDKs it sees:
+
+- **Use the open-source toolchain, not Xcode's.** Check with `swift --version`: it must
+  print `swift-6.2.4-RELEASE`, not `swiftlang-…`. If `/usr/bin` precedes `~/.swiftly/bin`
+  on your `PATH`, a bare `swift` is Xcode's even after `source ~/.swiftly/env.sh`.
+  `swiftly run swift <args> +6.2.4` always selects the right one, without changing your
+  default toolchain or `.swift-version`. (`web/build-wasm.sh` puts `~/.swiftly/bin` first
+  for you.)
+- **Build per product.** `swift build --swift-sdk swift-6.2.4-RELEASE_wasm` with no
+  `--product` fails with `dynamic libraries are unsupported for target 'wasm32-unknown-wasip1'`,
+  because `Package.swift` declares `BackendAndroid` as a dynamic library on macOS hosts.
+- **Xcode 27.** Swift 6.2.4 crashes while compiling package manifests against the
+  macOS 27 SDK (`unknown argument: '-target-arch-variant'`). Point it at an Xcode 26.x
+  install for Wasm builds:
+
+  ```bash
+  DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer \
+    swiftly run swift build --swift-sdk swift-6.2.4-RELEASE_wasm --product HelloWorld +6.2.4
+  ```
 
 ### Stale build cache
 
