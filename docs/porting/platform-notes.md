@@ -67,6 +67,9 @@ example-runner behavior, not a global framework rule.
 - Requires: `libgtk-4-dev` (`sudo apt install libgtk-4-dev`)
 - CSS styling via `CSSHelper` for fonts, colors, borders
 - Thread-local environment via `pthread_key_t`
+- GLib flag constants are spelled as raw values (`GApplicationFlags(rawValue: 0)`,
+  `GConnectFlags(rawValue: 0)`) — named enumerators such as `G_APPLICATION_DEFAULT_FLAGS`
+  are not visible to the Swift importer on every GLib version (Fedora 44 fails; issue #13)
 
 ## Windows (Win32)
 
