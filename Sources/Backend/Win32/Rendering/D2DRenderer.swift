@@ -76,6 +76,11 @@ public class D2DRenderer {
 
     // MARK: - Text
 
+    /// Default-size text format scaled to the window's DPI (the D2D target is pinned to 96 DPI).
+    public func textFormat(for hwnd: HWND, bold: Bool = false) -> DWriteTextFormat? {
+        textFormat(fontSize: 14 * Float(win32_GetDpiForWindow(hwnd)) / 96.0, bold: bold)
+    }
+
     /// Get or create a cached text format for the given parameters.
     public func textFormat(
         fontFamily: String = "Segoe UI",

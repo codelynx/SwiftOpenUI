@@ -59,9 +59,9 @@ extension RotationView: _D2DContentAccess {
 }
 
 /// Measure a D2D-renderable view's size.
-func d2dMeasure<V: View>(_ view: V) -> (width: Float, height: Float) {
+func d2dMeasure<V: View>(_ view: V, dpiScale: Float) -> (width: Float, height: Float) {
     if let text = view as? Text {
-        guard let fmt = D2DRenderer.shared.textFormat() else { return (0, 0) }
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) else { return (0, 0) }
         let (w, h) = D2DRenderer.shared.measureText(text.content, format: fmt)
         return (w + 4, h + 2)
     }
@@ -75,49 +75,49 @@ func d2dMeasure<V: View>(_ view: V) -> (width: Float, height: Float) {
         return (0, 0)
     }
     if let fg = view as? ForegroundColorView<Text> {
-        return d2dMeasure(fg.content)
+        return d2dMeasure(fg.content, dpiScale: dpiScale)
     }
     if let font = view as? FontModifiedView<Text> {
         let (fontSize, bold, italic) = fontParametersForD2D(font.font)
-        guard let fmt = D2DRenderer.shared.textFormat(fontSize: fontSize, bold: bold, italic: italic) else {
-            return d2dMeasure(font.content)
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: fontSize * dpiScale, bold: bold, italic: italic) else {
+            return d2dMeasure(font.content, dpiScale: dpiScale)
         }
         let (w, h) = D2DRenderer.shared.measureText(font.content.content, format: fmt)
         return (w + 4, h + 2)
     }
     if let padded = view as? PaddedView<Text> {
-        let inner = d2dMeasure(padded.content)
+        let inner = d2dMeasure(padded.content, dpiScale: dpiScale)
         return (inner.width + Float(padded.leading + padded.trailing),
                 inner.height + Float(padded.top + padded.bottom))
     }
     // Walk through wrapper modifiers that don't change measurement
     if let v = view as? any _D2DMeasurable {
-        return v._d2dMeasureContent
+        return v._d2dMeasureContent(dpiScale: dpiScale)
     }
     return (0, 0)
 }
 
 /// Internal protocol for measuring through wrapper modifiers.
 protocol _D2DMeasurable {
-    var _d2dMeasureContent: (width: Float, height: Float) { get }
+    func _d2dMeasureContent(dpiScale: Float) -> (width: Float, height: Float)
 }
 
 extension ScaleEffectView: _D2DMeasurable {
-    var _d2dMeasureContent: (width: Float, height: Float) {
-        let inner = d2dMeasure(content)
+    func _d2dMeasureContent(dpiScale: Float) -> (width: Float, height: Float) {
+        let inner = d2dMeasure(content, dpiScale: dpiScale)
         return (inner.width * Float(scaleX), inner.height * Float(scaleY))
     }
 }
 
 extension OpacityView: _D2DMeasurable {
-    var _d2dMeasureContent: (width: Float, height: Float) {
-        d2dMeasure(content)
+    func _d2dMeasureContent(dpiScale: Float) -> (width: Float, height: Float) {
+        d2dMeasure(content, dpiScale: dpiScale)
     }
 }
 
 extension RotationView: _D2DMeasurable {
-    var _d2dMeasureContent: (width: Float, height: Float) {
-        let inner = d2dMeasure(content)
+    func _d2dMeasureContent(dpiScale: Float) -> (width: Float, height: Float) {
+        let inner = d2dMeasure(content, dpiScale: dpiScale)
         // Compute rotated bounding box
         let rad = Float(angle) * .pi / 180.0
         let cosA = abs(cos(rad))
@@ -130,9 +130,9 @@ extension RotationView: _D2DMeasurable {
 
 /// Draw a D2D-renderable view onto a render target.
 func d2dDraw<V: View>(_ view: V, target: D2DRenderTarget, brush: D2DBrush,
-                       x: Float, y: Float, width: Float, height: Float) {
+                       x: Float, y: Float, width: Float, height: Float, dpiScale: Float) {
     if let text = view as? Text {
-        guard let fmt = D2DRenderer.shared.textFormat() else { return }
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) else { return }
         d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, 1) // black text
         D2DRenderer.shared.drawText(text.content, target: target, format: fmt,
                                      brush: brush, x: x, y: y, width: width, height: height)
@@ -153,14 +153,14 @@ func d2dDraw<V: View>(_ view: V, target: D2DRenderTarget, brush: D2DBrush,
     if let fg = view as? ForegroundColorView<Text> {
         d2d1_SolidColorBrush_SetColor(brush, Float(fg.color.red), Float(fg.color.green),
                                        Float(fg.color.blue), Float(fg.color.alpha))
-        guard let fmt = D2DRenderer.shared.textFormat() else { return }
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) else { return }
         D2DRenderer.shared.drawText(fg.content.content, target: target, format: fmt,
                                      brush: brush, x: x, y: y, width: width, height: height)
         return
     }
     if let font = view as? FontModifiedView<Text> {
         let (fontSize, bold, italic) = fontParametersForD2D(font.font)
-        guard let fmt = D2DRenderer.shared.textFormat(fontSize: fontSize, bold: bold, italic: italic) else { return }
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: fontSize * dpiScale, bold: bold, italic: italic) else { return }
         d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, 1)
         D2DRenderer.shared.drawText(font.content.content, target: target, format: fmt,
                                      brush: brush, x: x, y: y, width: width, height: height)
@@ -170,12 +170,12 @@ func d2dDraw<V: View>(_ view: V, target: D2DRenderTarget, brush: D2DBrush,
         d2dDraw(padded.content, target: target, brush: brush,
                 x: x + Float(padded.leading), y: y + Float(padded.top),
                 width: width - Float(padded.leading + padded.trailing),
-                height: height - Float(padded.top + padded.bottom))
+                height: height - Float(padded.top + padded.bottom), dpiScale: dpiScale)
         return
     }
     // ScaleEffectView: draw content with scaled font size for text
     if let v = view as? any _D2DDrawable {
-        v._d2dDrawContent(target: target, brush: brush, x: x, y: y, width: width, height: height)
+        v._d2dDrawContent(target: target, brush: brush, x: x, y: y, width: width, height: height, dpiScale: dpiScale)
         return
     }
 }
@@ -183,38 +183,38 @@ func d2dDraw<V: View>(_ view: V, target: D2DRenderTarget, brush: D2DBrush,
 /// Internal protocol for drawing through wrapper modifiers.
 protocol _D2DDrawable {
     func _d2dDrawContent(target: D2DRenderTarget, brush: D2DBrush,
-                         x: Float, y: Float, width: Float, height: Float)
+                         x: Float, y: Float, width: Float, height: Float, dpiScale: Float)
 }
 
 extension ScaleEffectView: _D2DDrawable {
     func _d2dDrawContent(target: D2DRenderTarget, brush: D2DBrush,
-                         x: Float, y: Float, width: Float, height: Float) {
+                         x: Float, y: Float, width: Float, height: Float, dpiScale: Float) {
         // For text content, approximate scale via font size
         if let text = content as? Text {
             let scale = max(scaleX, scaleY)
             let (baseFontSize, bold, italic) = fontParametersForD2D(.body)
-            let scaledSize = baseFontSize * Float(scale)
+            let scaledSize = baseFontSize * Float(scale) * dpiScale
             guard let fmt = D2DRenderer.shared.textFormat(fontSize: scaledSize, bold: bold, italic: italic) else { return }
             D2DRenderer.shared.drawText(text.content, target: target, format: fmt,
                                          brush: brush, x: x, y: y, width: width, height: height)
         } else {
             // For non-text, just draw at natural size (scale not fully supported)
-            d2dDraw(content, target: target, brush: brush, x: x, y: y, width: width, height: height)
+            d2dDraw(content, target: target, brush: brush, x: x, y: y, width: width, height: height, dpiScale: dpiScale)
         }
     }
 }
 
 extension OpacityView: _D2DDrawable {
     func _d2dDrawContent(target: D2DRenderTarget, brush: D2DBrush,
-                         x: Float, y: Float, width: Float, height: Float) {
+                         x: Float, y: Float, width: Float, height: Float, dpiScale: Float) {
         // Opacity is handled by the D2DSurfaceState, just draw content
-        d2dDraw(content, target: target, brush: brush, x: x, y: y, width: width, height: height)
+        d2dDraw(content, target: target, brush: brush, x: x, y: y, width: width, height: height, dpiScale: dpiScale)
     }
 }
 
 extension RotationView: _D2DDrawable {
     func _d2dDrawContent(target: D2DRenderTarget, brush: D2DBrush,
-                         x: Float, y: Float, width: Float, height: Float) {
+                         x: Float, y: Float, width: Float, height: Float, dpiScale: Float) {
         let rad = Float(angle) * .pi / 180.0
         let cosA = cos(rad)
         let sinA = sin(rad)
@@ -230,11 +230,11 @@ extension RotationView: _D2DDrawable {
         d2d1_RenderTarget_SetTransform(target, cosA, sinA, -sinA, cosA, dx, dy)
 
         // Draw the inner content at its natural size, centered
-        let inner = d2dMeasure(content)
+        let inner = d2dMeasure(content, dpiScale: dpiScale)
         let ix = cx - inner.width / 2
         let iy = cy - inner.height / 2
         d2dDraw(content, target: target, brush: brush,
-                x: ix, y: iy, width: inner.width, height: inner.height)
+                x: ix, y: iy, width: inner.width, height: inner.height, dpiScale: dpiScale)
 
         // Reset transform
         d2d1_RenderTarget_SetTransformIdentity(target)
@@ -408,7 +408,8 @@ func createD2DSurface<V: View>(
     let animation = getCurrentAnimation() ?? consumePendingAnimation()
     registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
 
-    let measured = d2dMeasure(view)
+    let dpiScale = Float(win32_GetDpiForWindow(context.parent)) / 96.0
+    let measured = d2dMeasure(view, dpiScale: dpiScale)
     let w = max(Int32(measured.width * scale), 1)
     let h = max(Int32(measured.height * scale), 1)
 
@@ -426,13 +427,13 @@ func createD2DSurface<V: View>(
         // For text, use scaled font size for smooth scale animation
         if let text = view as? Text {
             let (baseFontSize, bold, italic) = fontParametersForD2D(.body)
-            let scaledSize = baseFontSize * currentScale
+            let scaledSize = baseFontSize * currentScale * dpiScale
             if let fmt = D2DRenderer.shared.textFormat(fontSize: scaledSize, bold: bold, italic: italic) {
                 D2DRenderer.shared.drawText(text.content, target: rt, format: fmt,
                                              brush: brush, x: 0, y: 0, width: width, height: height)
             }
         } else {
-            d2dDraw(view, target: rt, brush: brush, x: 0, y: 0, width: width, height: height)
+            d2dDraw(view, target: rt, brush: brush, x: 0, y: 0, width: width, height: height, dpiScale: dpiScale)
         }
     }
 

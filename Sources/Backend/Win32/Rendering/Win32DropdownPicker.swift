@@ -104,7 +104,7 @@ private final class DropdownTriggerState {
         d2d1_RenderTarget_DrawRoundedRectangle(rt, brush, 0.5, 0.5, w - 1, h - 1, cr, cr, 1)
 
         // Selected value text (leading, vertically centered).
-        if let fmt = D2DRenderer.shared.textFormat() {
+        if let fmt = D2DRenderer.shared.textFormat(for: hwnd) {
             if enabled {
                 d2d1_SolidColorBrush_SetColor(brush, 0.1, 0.1, 0.1, 1)
             } else {
@@ -205,7 +205,7 @@ private final class DropdownPopupState {
         d2d1_SolidColorBrush_SetColor(brush, 0.72, 0.72, 0.74, 1)
         d2d1_RenderTarget_DrawRoundedRectangle(rt, brush, 0.5, 0.5, w - 1, h - 1, cr, cr, 1)
 
-        let fmt = D2DRenderer.shared.textFormat()
+        let fmt = D2DRenderer.shared.textFormat(for: hwnd)
         for (i, option) in options.enumerated() {
             let top = Float(ddPopupVPad + Int32(i) * itemHeight)
             let bottom = top + Float(itemHeight)
