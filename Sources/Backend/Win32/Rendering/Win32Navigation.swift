@@ -323,13 +323,14 @@ private func layoutNavContainer(_ ctx: Win32NavigationContext) {
     let h = rect.bottom - rect.top
 
     // Header sizes are physical px; scale the 96-DPI defaults by the window DPI.
-    let dpiScale = Int32(Double(win32_GetDpiForWindow(ctx.container)) / 96.0)
-    let headerHeight: Int32 = 32 * dpiScale
+    // Keep the ratio fractional and round each scaled dimension (125%, 175%).
+    let dpiScale = Double(win32_GetDpiForWindow(ctx.container)) / 96.0
+    let headerHeight = Int32((32 * dpiScale).rounded())
     SetWindowPos(ctx.headerContainer, nil, 0, 0, w, headerHeight, UINT(SWP_NOZORDER))
 
     // Layout back button (child of headerContainer)
     let backVisible = IsWindowVisible(ctx.backButton) != false
-    let backWidth: Int32 = backVisible ? measureBackButton(ctx: ctx) + 16 * dpiScale : 0
+    let backWidth: Int32 = backVisible ? measureBackButton(ctx: ctx) + Int32((16 * dpiScale).rounded()) : 0
     if backVisible {
         SetWindowPos(ctx.backButton, nil, 4, 4, backWidth - 8, headerHeight - 8, UINT(SWP_NOZORDER))
     }
@@ -362,8 +363,9 @@ extension NavigationStack: WinRenderable {
 
         // Header bar (background: button face color). Sizes are physical
         // pixels, so scale the 96-DPI defaults by the window's DPI.
-        let dpiScale = Int32(Double(win32_GetDpiForWindow(container)) / 96.0)
-        let headerHeight: Int32 = 32 * dpiScale
+        // Keep the ratio fractional and round each scaled dimension (125%, 175%).
+        let dpiScale = Double(win32_GetDpiForWindow(container)) / 96.0
+        let headerHeight = Int32((32 * dpiScale).rounded())
         let headerContainer = CreateWindowExW(
             0, stackContainerClassName, nil,
             DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
@@ -379,7 +381,7 @@ extension NavigationStack: WinRenderable {
         let backButton = "← Back".withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
-                0, 0, 60 * dpiScale, 24 * dpiScale,
+                0, 0, Int32((60 * dpiScale).rounded()), Int32((24 * dpiScale).rounded()),
                 headerContainer,
                 HMENU(bitPattern: UInt(backControlID)),
                 context.hInstance
@@ -400,7 +402,7 @@ extension NavigationStack: WinRenderable {
         // Apply bold font to title (tracked for cleanup in context deinit).
         // -height is physical px; scale the 16px default by the window DPI.
         let titleFont = "Segoe UI".withCString(encodedAs: UTF16.self) { namePtr in
-            CreateFontW(-16 * dpiScale, 0, 0, 0, FW_BOLD, 0, 0, 0,
+            CreateFontW(Int32((-16 * dpiScale).rounded()), 0, 0, 0, FW_BOLD, 0, 0, 0,
                         DWORD(DEFAULT_CHARSET), DWORD(OUT_DEFAULT_PRECIS),
                         DWORD(CLIP_DEFAULT_PRECIS), DWORD(CLEARTYPE_QUALITY),
                         DWORD(DEFAULT_PITCH), namePtr)
@@ -485,7 +487,11 @@ extension NavigationStack: WinRenderable {
 
             navCtx.entries.append(Win32NavigationEntry(title: title, hwnd: rootHwnd))
             // Propagate the root content's expansion so the stack fills
-            // its available space.
+            // its available space. This is root-only: push() sizes a
+            // destination inside the existing content area and does not
+            // update these flags, so a pushed view that should expand
+            // changes nothing. Marking the container in push() would not be
+            // enough either, because the outer window caches expansion.
             if shouldExpandWidth(rootHwnd) { markExpandWidth(container) }
             if shouldExpandHeight(rootHwnd) { markExpandHeight(container) }
         }
