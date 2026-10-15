@@ -7054,7 +7054,6 @@ extension NavigationSplitView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, max(w, 400), max(h, 300),
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
-
         return container
     }
 }
