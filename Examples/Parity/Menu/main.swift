@@ -4,9 +4,8 @@
 //
 // Mirrors Synca's merge-resolution control: a labeled Menu whose title
 // reflects the current selection and whose three actions rewrite it.
-// GTK4 shows a popover (verified on real hardware); Win32 currently
-// renders the label only (popup pending — the known Menu Win32
-// regression); macOS is the native reference.
+// GTK4 shows a popover (verified on real hardware); Win32 opens a native
+// popup menu below the label; macOS is the native reference.
 
 #if os(macOS)
 import SwiftUI
