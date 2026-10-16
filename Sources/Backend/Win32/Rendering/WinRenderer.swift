@@ -1168,7 +1168,9 @@ private func swiftDropTarget_Drop(
 	// Convert POINTL (screen coords) to client coords
 	var clientPt = POINT(x: pt.x, y: pt.y)
 	ScreenToClient(target.hwnd, &clientPt)
-	let location = CGPoint(x: Double(clientPt.x), y: Double(clientPt.y))
+	// Drop location is handed to user code in logical points.
+	let location = CGPoint(x: pxToPoints(Double(clientPt.x), for: target.hwnd),
+	                       y: pxToPoints(Double(clientPt.y), for: target.hwnd))
 
 	target.isDragging = false
 	let accepted = target.action(urls, location)
@@ -1810,7 +1812,8 @@ public func dispatchCommand(wParam: WPARAM) -> Bool {
 
 extension VStack: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        let spacing = resolveStackSpacing(spacing)
+        // Spacing is in logical points; convert once.
+        let spacing = px(Double(resolveStackSpacing(spacing)), for: context.parent)
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
         let container = CreateWindowExW(
@@ -1896,7 +1899,8 @@ extension VStack: WinRenderable {
 
 extension HStack: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        let spacing = resolveStackSpacing(spacing)
+        // Spacing is in logical points; convert once.
+        let spacing = px(Double(resolveStackSpacing(spacing)), for: context.parent)
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
         let container = CreateWindowExW(
@@ -2149,10 +2153,11 @@ extension PaddedView: WinRenderable {
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         guard let child = winRenderView(content, in: childContext) else { return container }
 
+        // Insets are logical points; convert to pixels once.
         let padInfo = PaddingLayoutInfo(
             child: child,
-            top: Int32(top), bottom: Int32(bottom),
-            leading: Int32(leading), trailing: Int32(trailing)
+            top: px(Double(top), for: context.parent), bottom: px(Double(bottom), for: context.parent),
+            leading: px(Double(leading), for: context.parent), trailing: px(Double(trailing), for: context.parent)
         )
         let infoPtr = Unmanaged.passRetained(padInfo).toOpaque()
         SetWindowSubclass(container, paddingLayoutProc, 2, DWORD_PTR(UInt(bitPattern: infoPtr)))
@@ -2162,8 +2167,8 @@ extension PaddedView: WinRenderable {
         GetWindowRect(child, &childRect)
         let childW = childRect.right - childRect.left
         let childH = childRect.bottom - childRect.top
-        let totalW = childW + Int32(leading) + Int32(trailing)
-        let totalH = childH + Int32(top) + Int32(bottom)
+        let totalW = childW + padInfo.leading + padInfo.trailing
+        let totalH = childH + padInfo.top + padInfo.bottom
         SetWindowPos(container, nil, 0, 0, totalW, totalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         // Propagate expand flags from child
@@ -2181,7 +2186,7 @@ extension SafeAreaPaddingView: WinRenderable {
         // Batch A: lower to padding with synthetic default of 16 when length is nil.
         // Negative lengths are clamped to 0 (cross-platform Batch A rule).
         // No native/measured safe-area insets in this batch.
-        let amount = max(0, Int32(length ?? 16))
+        let amount = max(0, px(Double(length ?? 16), for: context.parent))
         let padTop     = edges.contains(.top)      ? amount : 0
         let padBottom  = edges.contains(.bottom)   ? amount : 0
         let padLeading = edges.contains(.leading)  ? amount : 0
@@ -2316,6 +2321,16 @@ extension FrameView: WinRenderable {
         // Space-filling views (Color) expand to fill the frame
         let expandsWidth = GetPropW(child, colorExpandPropName) != nil || shouldExpandWidth(child)
         let expandsHeight = GetPropW(child, colorExpandPropName) != nil || shouldExpandHeight(child)
+
+        // Frame constraints are logical points; the child's natural size is
+        // pixels. Convert once here so everything below (layout, caps, the
+        // stored info the resize clamp reads) is in pixels.
+        let width = self.width.map { pxExact($0, for: context.parent) }
+        let height = self.height.map { pxExact($0, for: context.parent) }
+        let minWidth = self.minWidth.map { pxExact($0, for: context.parent) }
+        let minHeight = self.minHeight.map { pxExact($0, for: context.parent) }
+        let maxWidth = self.maxWidth.map { pxExact($0, for: context.parent) }
+        let maxHeight = self.maxHeight.map { pxExact($0, for: context.parent) }
 
         // Use shared layout computation for initial sizing
         let result = computeFrameLayout(
@@ -3256,7 +3271,8 @@ extension BorderView: WinRenderable {
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
         guard let child = winRenderView(content, in: childContext) else { return container }
 
-        let bw = Int32(width)
+        // Border width is in logical points; at least 1px so it stays visible.
+        let bw = width > 0 ? max(1, px(Double(width), for: context.parent)) : 0
         // Size container to child + border on each side
         var childRect = RECT()
         GetWindowRect(child, &childRect)
@@ -6451,6 +6467,9 @@ private func extractGridCells(from view: any View, in context: RenderContext) ->
 
 extension Grid: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Spacing is in logical points; convert once.
+        let hSpacing = px(Double(self.hSpacing), for: context.parent)
+        let vSpacing = px(Double(self.vSpacing), for: context.parent)
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
         let container = CreateWindowExW(
@@ -7080,11 +7099,14 @@ extension GeometryReader: WinRenderable {
         let availW = Double(parentRect.right - parentRect.left)
         let availH = Double(parentRect.bottom - parentRect.top)
 
-        // Use parent size or a default if parent hasn't been sized yet
-        let proxyW = availW > 0 ? availW : 300
-        let proxyH = availH > 0 ? availH : 200
+        // Use parent size or a default (300x200pt) if parent hasn't been sized
+        // yet. Sizes stay in pixels for the HWNDs; the proxy that user code
+        // reads gets logical points, matching .frame() and friends.
+        let scale = dpiScaleFactor(for: context.parent)
+        let proxyW = availW > 0 ? availW : 300 * scale
+        let proxyH = availH > 0 ? availH : 200 * scale
 
-        let proxy = GeometryProxy(size: GeometrySize(width: proxyW, height: proxyH))
+        let proxy = GeometryProxy(size: GeometrySize(width: proxyW / scale, height: proxyH / scale))
         let childView = content(proxy)
 
         let childContext = RenderContext(parent: container, hInstance: context.hInstance)
@@ -7504,8 +7526,8 @@ extension CornerRadiusView: WinRenderable {
             GetWindowRect(hwnd, &r)
             let w = r.right - r.left
             let h = r.bottom - r.top
-            let rx = Int32(radius)
-            let ry = Int32(radius)
+            let rx = px(Double(radius), for: hwnd)
+            let ry = rx
             let rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, rx * 2, ry * 2)
             // SetWindowRgn takes ownership of the region — do not delete
             SetWindowRgn(hwnd, rgn, true)
@@ -7586,7 +7608,7 @@ extension ClipShapeView: WinRenderable {
         } else if shape is Ellipse {
             rgn = CreateEllipticRgn(0, 0, w, h)
         } else if let rr = shape as? RoundedRectangle {
-            let cr = Int32(rr.cornerRadius)
+            let cr = px(Double(rr.cornerRadius), for: hwnd)
             rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, cr * 2, cr * 2)
         } else if shape is Capsule {
             let cr = min(w, h)
@@ -7775,8 +7797,13 @@ extension ShadowView: WinRenderable {
         let cw = r.right - r.left
         let ch = r.bottom - r.top
 
+        // Shadow radius/offset are logical points; convert once.
+        let radius = pxExact(Double(self.radius), for: context.parent)
+        let x = pxExact(Double(self.x), for: context.parent)
+        let y = pxExact(Double(self.y), for: context.parent)
+
         // Create a container slightly larger to accommodate the shadow
-        let shadowOffset = Int32(max(radius, max(abs(x), abs(y))))
+        let shadowOffset = Int32(max(radius, max(abs(x), abs(y))).rounded())
         let containerW = cw + shadowOffset * 2
         let containerH = ch + shadowOffset * 2
 
@@ -7848,8 +7875,8 @@ extension OffsetView: WinRenderable {
         let childW = childRect.right - childRect.left
         let childH = childRect.bottom - childRect.top
 
-        let offsetX = Int32(x.rounded())
-        let offsetY = Int32(y.rounded())
+        let offsetX = px(Double(x), for: context.parent)
+        let offsetY = px(Double(y), for: context.parent)
         SetWindowPos(container, nil, 0, 0, childW, childH, UINT(SWP_NOZORDER | SWP_NOMOVE))
         SetWindowPos(child, nil, offsetX, offsetY, childW, childH, UINT(SWP_NOZORDER))
 
@@ -8692,8 +8719,8 @@ extension PositionView: WinRenderable {
         GetWindowRect(child, &childRect)
         let childW = childRect.right - childRect.left
         let childH = childRect.bottom - childRect.top
-        let left = Int32(x) - childW / 2
-        let top = Int32(y) - childH / 2
+        let left = px(Double(x), for: context.parent) - childW / 2
+        let top = px(Double(y), for: context.parent) - childH / 2
         SetWindowPos(child, nil, left, top, 0, 0,
                      UINT(SWP_NOSIZE | SWP_NOZORDER))
         return child
@@ -9138,18 +9165,20 @@ private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
             let dy = y - handler.startY
             let dist = (dx * dx + dy * dy).squareRoot()
 
-            // Only start dragging once minimumDistance is exceeded
+            // Only start dragging once minimumDistance (points) is exceeded
+            let scale = dpiScaleFactor(for: handler.rootHwnd)
             if !handler.dragging {
-                guard dist >= handler.minimumDistance else {
+                guard dist >= handler.minimumDistance * scale else {
                     return DefSubclassProc(hwnd, uMsg, wParam, lParam)
                 }
                 handler.dragging = true
             }
 
+            // Tracked in pixels; user code gets logical points.
             let value = DragGestureValue(
-                startLocation: (x: handler.startX, y: handler.startY),
-                location: (x: x, y: y),
-                translation: (width: dx, height: dy)
+                startLocation: (x: handler.startX / scale, y: handler.startY / scale),
+                location: (x: x / scale, y: y / scale),
+                translation: (width: dx / scale, height: dy / scale)
             )
             handler.onChanged?(value)
             // Invalidate so Canvas (or other D2D views) repaints with updated state
@@ -9170,10 +9199,11 @@ private let dragGestureProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
                     ScreenToClient(handler.rootHwnd, &pt)
                 }
                 let x = Double(pt.x), y = Double(pt.y)
+                let scale = dpiScaleFactor(for: handler.rootHwnd)
                 let value = DragGestureValue(
-                    startLocation: (x: handler.startX, y: handler.startY),
-                    location: (x: x, y: y),
-                    translation: (width: x - handler.startX, height: y - handler.startY)
+                    startLocation: (x: handler.startX / scale, y: handler.startY / scale),
+                    location: (x: x / scale, y: y / scale),
+                    translation: (width: (x - handler.startX) / scale, height: (y - handler.startY) / scale)
                 )
                 handler.onEnded?(value)
                 // Invalidate so Canvas repaints with the committed stroke
@@ -9383,13 +9413,21 @@ private let canvasPaintProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
                     Float(win32_GetBValue(bgColor)) / 255.0, 1.0)
 
                 let d2dCtx = D2DCanvasContext(renderTarget: rt, brush: brush)
+                // Canvas coordinates are logical points: start from a
+                // uniform DPI scale. scale()/restore() compose onto and
+                // return to this base, since they track the full matrix.
+                let dpi = dpiScaleFactor(for: hwnd)
+                d2dCtx.m11 = Float(dpi); d2dCtx.m22 = Float(dpi)
+                d2d1_RenderTarget_SetTransform(rt, d2dCtx.m11, 0, 0, d2dCtx.m22, 0, 0)
                 let ctxPtr = Unmanaged.passRetained(d2dCtx).toOpaque()
                 let context = DrawingContext(cr: OpaquePointer(ctxPtr))
+                let ptW = Double(w) / dpi, ptH = Double(h) / dpi
                 if let sizedHandler = state.sizedDrawHandler {
-                    sizedHandler(context, CGSize(width: CGFloat(w), height: CGFloat(h)))
+                    sizedHandler(context, CGSize(width: CGFloat(ptW), height: CGFloat(ptH)))
                 } else {
-                    state.drawHandler(context, Int(w), Int(h))
+                    state.drawHandler(context, Int(ptW.rounded()), Int(ptH.rounded()))
                 }
+                d2d1_RenderTarget_SetTransform(rt, 1, 0, 0, 1, 0, 0)
                 Unmanaged<D2DCanvasContext>.fromOpaque(ctxPtr).release()
 
                 _ = d2d1_RenderTarget_EndDraw(rt)
@@ -9619,7 +9657,8 @@ extension SwiftOpenUI.Rectangle: WinRenderable {
 
 extension RoundedRectangle: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        let cr = cornerRadius
+        // Corner radius is in logical points; the D2D surface draws in pixels.
+        let cr = pxExact(Double(cornerRadius), for: context.parent)
         return createShapeSurface(draw: { rt, brush, w, h in
             let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
             let path = RoundedRectangle(cornerRadius: cr).path(in: rect)
@@ -9669,7 +9708,13 @@ extension StrokedShape: WinRenderable {
         let r = Float(color.red), g = Float(color.green)
         let b = Float(color.blue), a = Float(color.alpha)
         let shape = self.shape
-        let strokeStyle = self.style
+        // Line width and dash lengths are logical points; the surface draws
+        // in pixels.
+        let scale = CGFloat(dpiScaleFactor(for: context.parent))
+        var strokeStyle = self.style
+        strokeStyle.lineWidth *= scale
+        strokeStyle.dash = strokeStyle.dash.map { $0 * scale }
+        strokeStyle.dashPhase *= scale
         return createShapeSurface(draw: { rt, brush, w, h in
             let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
             let path = shape.path(in: rect)
@@ -9683,8 +9728,9 @@ extension Canvas: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
 
-        let w = width > 0 ? Int32(width) : 200
-        let h = height > 0 ? Int32(height) : 200
+        // Canvas size is in logical points.
+        let w = px(Double(width > 0 ? width : 200), for: context.parent)
+        let h = px(Double(height > 0 ? height : 200), for: context.parent)
 
         let hwnd = CreateWindowExW(
             0, d2dSurfaceClassName, nil,
@@ -10209,6 +10255,8 @@ extension IgnoresSafeAreaView: WinRenderable {
 
 extension SafeAreaInsetView: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
+        // Spacing is in logical points; convert once.
+        let spacing = px(Double(self.spacing), for: context.parent)
         registerStackClassIfNeeded(hInstance: context.hInstance)
 
         let container = CreateWindowExW(
