@@ -5,9 +5,11 @@
 //      docs/issues/gtk4-win32-textselection-modifier.md
 //
 // On macOS these render their native SwiftUI effect. On GTK4/Win32 the
-// cosmetic ones are accepted no-ops (API parity) except .monospacedDigit
-// (tabular figures) and .textSelection (selectable label) which have
-// real backend behavior. The point of this example is that the SAME
+// cosmetic ones are accepted no-ops (API parity), except that GTK4 gives
+// .monospacedDigit (tabular figures) and .textSelection (selectable
+// label) real behavior. On Win32 both are still no-ops: Segoe UI digits
+// are already tabular, so the rows below align anyway, and text is not
+// yet selectable. The point of this example is that the SAME
 // source compiles and runs everywhere with no #if os() guards.
 
 #if os(macOS)
