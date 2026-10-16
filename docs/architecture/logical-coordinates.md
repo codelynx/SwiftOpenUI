@@ -84,6 +84,34 @@ The helpers live in `Sources/Backend/Win32/Rendering/LayoutEngine.swift`:
    PR #39). Code that converts at creation is therefore correct after a
    move, as long as it reads the DPI per rule 5.
 
+## GTK4 at fractional scale
+
+Confirmed at 150% on GNOME Shell 50 (Wayland) with GTK 4.22 (RFC #16 D8,
+issue #21). GTK needs no conversion code, at fractional scales too:
+
+- **Geometry stays in points.** GTK reports a surface scale of 1.5 and
+  lays out in logical pixels, so an 800×600pt window is 1200×900 device
+  pixels and a 100pt frame is 150px. Window sizes are identical at 100% and
+  150%. Text is rendered at device resolution and is crisp.
+- **Canvas is crisp.** Cairo drawing in a `Canvas` is rasterized at 1.5×,
+  not drawn at 2× and scaled down.
+- **1pt hairlines are soft.** A 1pt border is 1.5 device pixels and falls
+  between pixels, so it renders as a two-pixel soft line. Native GTK widget
+  borders do the same; unlike Win32 (rule 4) we do not snap hairlines to
+  physical pixels. Bitmaps are resampled and slightly soft. At 200% both
+  are sharp.
+- **The integer scale factor is 2 at 150%.** `gtk_widget_get_scale_factor`
+  rounds up; use `gdk_surface_get_scale` for the real value. Nothing in the
+  backend reads either today.
+- **`GDK_SCALE` and `GDK_DPI_SCALE` have no effect** under Wayland: the
+  output is identical to an unset run. Display scaling comes from the
+  compositor only.
+- **Not tested:** GNOME's text-only "Large Text" setting
+  (`text-scaling-factor`), which could make text outgrow fixed frames the
+  way Win32 text did before D3; and X11 sessions.
+
+Evidence and the probe view used: `docs/evidence/dpi/gtk4-150/`.
+
 ## Testing
 
 - `swift test` runs in a process that is **not** DPI-aware, so it always
@@ -94,3 +122,7 @@ The helpers live in `Sources/Backend/Win32/Rendering/LayoutEngine.swift`:
   awake; a sleeping display drops Direct2D-drawn controls from captures.
 - Reference captures: `docs/evidence/dpi/150/` (before), `150-d3a/`,
   `150-d3b/` (after).
+- GTK4: `screenshots/capture-linux-scaled.sh 1.5 [target…]` runs the
+  examples on a private headless GNOME Shell at the given scale, so your
+  own desktop is left alone. Each example renders its own window to PNG,
+  enabled by `SWIFTOPENUI_GTK_CAPTURE=<file.png>` (`GTKCapture.swift`).

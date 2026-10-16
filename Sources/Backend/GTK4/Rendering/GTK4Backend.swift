@@ -163,6 +163,7 @@ extension WindowGroup: GTKWindowRenderable {
         gtkAttachKeyboardShortcutController(to: winWidget)
         gtkAttachWindowActivationHandler(to: winWidget)
         gtk_window_present(winPtr)
+        gtkScheduleCaptureIfRequested(winPtr)
     }
 }
 
@@ -678,6 +679,7 @@ extension Window: GTKWindowRenderable {
         gtkAttachKeyboardShortcutController(to: winWidget)
         gtkAttachWindowActivationHandler(to: winWidget)
         gtk_window_present(winPtr)
+        gtkScheduleCaptureIfRequested(winPtr)
 
         // Track the live window so repeated openWindow(id:) refocuses
         // instead of creating duplicates. Hook the destroy signal to
