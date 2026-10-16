@@ -620,12 +620,10 @@ private class D2DViewState {
         guard w > 0, h > 0 else { return }
 
         d2d1_RenderTarget_BeginDraw(rt)
-        // Clear with window background color
-        let bgColor = GetSysColor(COLOR_WINDOW)
-        d2d1_RenderTarget_Clear(rt,
-            Float(win32_GetRValue(bgColor)) / 255.0,
-            Float(win32_GetGValue(bgColor)) / 255.0,
-            Float(win32_GetBValue(bgColor)) / 255.0, 1.0)
+        // Clear to the inherited background so thin views (e.g. Divider)
+        // don't show a window-colored strip on custom backgrounds.
+        let bg = inheritedBackgroundColor(for: hwnd)
+        d2d1_RenderTarget_Clear(rt, bg.r, bg.g, bg.b, 1.0)
 
         drawCallback?(rt, brush, w, h)
 
@@ -1255,22 +1253,7 @@ class FlatButtonState {
         d2d1_RenderTarget_BeginDraw(rt)
 
         // Clear with parent background
-        var bgR: Float = Float(win32_GetRValue(GetSysColor(COLOR_WINDOW))) / 255.0
-        var bgG: Float = Float(win32_GetGValue(GetSysColor(COLOR_WINDOW))) / 255.0
-        var bgB: Float = Float(win32_GetBValue(GetSysColor(COLOR_WINDOW))) / 255.0
-        if let parent = GetParent(hwnd) {
-            let hdc = GetDC(hwnd)
-            let brushResult = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC),
-                                            WPARAM(UInt(bitPattern: hdc)), LPARAM(Int(bitPattern: hwnd)))
-            if brushResult != 0, let hBrush = HBRUSH(bitPattern: Int(brushResult)) {
-                var logBrush = LOGBRUSH()
-                GetObjectW(hBrush, Int32(MemoryLayout<LOGBRUSH>.size), &logBrush)
-                bgR = Float(win32_GetRValue(logBrush.lbColor)) / 255.0
-                bgG = Float(win32_GetGValue(logBrush.lbColor)) / 255.0
-                bgB = Float(win32_GetBValue(logBrush.lbColor)) / 255.0
-            }
-            ReleaseDC(hwnd, hdc)
-        }
+        let (bgR, bgG, bgB) = inheritedBackgroundColor(for: hwnd)
         d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
 
         let cornerRadius: Float = 5
@@ -3555,23 +3538,7 @@ private class D2DSliderState {
         d2d1_RenderTarget_BeginDraw(rt)
 
         // Clear with inherited background from parent chain
-        var bgR: Float = Float(win32_GetRValue(GetSysColor(COLOR_WINDOW))) / 255.0
-        var bgG: Float = Float(win32_GetGValue(GetSysColor(COLOR_WINDOW))) / 255.0
-        var bgB: Float = Float(win32_GetBValue(GetSysColor(COLOR_WINDOW))) / 255.0
-        if let parent = GetParent(hwnd) {
-            // Create a temporary memory DC to query the brush color
-            let hdc = GetDC(hwnd)
-            let brushResult = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC),
-                                            WPARAM(UInt(bitPattern: hdc)), LPARAM(Int(bitPattern: hwnd)))
-            if brushResult != 0, let brush = HBRUSH(bitPattern: Int(brushResult)) {
-                var logBrush = LOGBRUSH()
-                GetObjectW(brush, Int32(MemoryLayout<LOGBRUSH>.size), &logBrush)
-                bgR = Float(win32_GetRValue(logBrush.lbColor)) / 255.0
-                bgG = Float(win32_GetGValue(logBrush.lbColor)) / 255.0
-                bgB = Float(win32_GetBValue(logBrush.lbColor)) / 255.0
-            }
-            ReleaseDC(hwnd, hdc)
-        }
+        let (bgR, bgG, bgB) = inheritedBackgroundColor(for: hwnd)
         d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
 
         let centerY = h / 2
@@ -5392,22 +5359,7 @@ private class SegmentedControlState {
         d2d1_RenderTarget_BeginDraw(rt)
 
         // Clear with parent background
-        var bgR: Float = Float(win32_GetRValue(GetSysColor(COLOR_WINDOW))) / 255.0
-        var bgG: Float = Float(win32_GetGValue(GetSysColor(COLOR_WINDOW))) / 255.0
-        var bgB: Float = Float(win32_GetBValue(GetSysColor(COLOR_WINDOW))) / 255.0
-        if let parent = GetParent(hwnd) {
-            let hdc = GetDC(hwnd)
-            let brushResult = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC),
-                                            WPARAM(UInt(bitPattern: hdc)), LPARAM(Int(bitPattern: hwnd)))
-            if brushResult != 0, let hBrush = HBRUSH(bitPattern: Int(brushResult)) {
-                var logBrush = LOGBRUSH()
-                GetObjectW(hBrush, Int32(MemoryLayout<LOGBRUSH>.size), &logBrush)
-                bgR = Float(win32_GetRValue(logBrush.lbColor)) / 255.0
-                bgG = Float(win32_GetGValue(logBrush.lbColor)) / 255.0
-                bgB = Float(win32_GetBValue(logBrush.lbColor)) / 255.0
-            }
-            ReleaseDC(hwnd, hdc)
-        }
+        let (bgR, bgG, bgB) = inheritedBackgroundColor(for: hwnd)
         d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
 
         // Outer border — rounded rect around the entire control
