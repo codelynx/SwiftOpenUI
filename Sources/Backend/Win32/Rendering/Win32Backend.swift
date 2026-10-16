@@ -33,19 +33,30 @@ private func win32RegisterBundledIconFont() {
 }
 
 private final class MainWindowState {
-    let contentHwnd: HWND
+    var contentHwnd: HWND
     let style: DWORD
-    let minClientWidth: Int32?
-    let minClientHeight: Int32?
-    let maxClientWidth: Int32?
-    let maxClientHeight: Int32?
+    var minClientWidth: Int32?
+    var minClientHeight: Int32?
+    var maxClientWidth: Int32?
+    var maxClientHeight: Int32?
     /// Whether the root content wants to expand on each axis.
     /// When false, the content is centered at its natural size (SwiftUI behavior).
-    let expandsWidth: Bool
-    let expandsHeight: Bool
+    var expandsWidth: Bool
+    var expandsHeight: Bool
     /// Natural (intrinsic) size of the root content, used for centering.
-    let naturalContentW: Int32
-    let naturalContentH: Int32
+    var naturalContentW: Int32
+    var naturalContentH: Int32
+
+    // MARK: DPI change (RFC #16 D4)
+    /// Re-renders the window's root view value at the window's current DPI.
+    /// Uses the same view value as the first render, so @State storage it
+    /// holds carries over.
+    var rerenderContent: (() -> HWND?)?
+    /// Window size constraints in logical points, re-converted on DPI change.
+    var constraintPoints: (minW: Double?, minH: Double?, maxW: Double?, maxH: Double?) = (nil, nil, nil, nil)
+    /// Main windows size and center by the content's natural size and
+    /// expansion; Window scenes always fill.
+    var tracksContentSizing = false
 
     init(
         contentHwnd: HWND,
@@ -248,6 +259,15 @@ extension WindowGroup: Win32WindowRenderable {
                 naturalContentW: naturalContentW,
                 naturalContentH: naturalContentH
             )
+            state.tracksContentSizing = true
+            state.constraintPoints = (minWindowWidth, minWindowHeight, maxWindowWidth, maxWindowHeight)
+            let rootContent = content
+            state.rerenderContent = {
+                var env = getCurrentEnvironment()
+                env.windowID = Int(bitPattern: hwnd)
+                setCurrentEnvironment(env)
+                return winRenderView(rootContent, in: RenderContext(parent: hwnd, hInstance: hInstance))
+            }
             let retained = Unmanaged.passRetained(state).toOpaque()
             win32_SetWindowLongPtrW(hwnd, GWLP_USERDATA, LONG_PTR(Int(bitPattern: retained)))
         }
@@ -271,9 +291,53 @@ extension WindowGroup: Win32WindowRenderable {
     }
 }
 
+/// WM_DPICHANGED (RFC #16 D4): the window moved to a monitor with a
+/// different scale, or the scale changed. Everything was converted from
+/// points at creation, so re-render the root content at the new DPI, re-derive
+/// the pixel constraints, then take the size Windows suggests for the new
+/// monitor.
+private func handleDpiChanged(_ hwnd: HWND, lParam: LPARAM) {
+    invalidateInheritedBackgrounds()
+    let userData = win32_GetWindowLongPtrW(hwnd, GWLP_USERDATA)
+    if userData != 0 {
+        let state = Unmanaged<MainWindowState>.fromOpaque(UnsafeMutableRawPointer(bitPattern: Int(userData))!).takeUnretainedValue()
+        if let rerender = state.rerenderContent {
+            DestroyWindow(state.contentHwnd)
+            if let newContent = rerender() {
+                state.contentHwnd = newContent
+                if state.tracksContentSizing {
+                    var r = RECT()
+                    GetWindowRect(newContent, &r)
+                    state.naturalContentW = r.right - r.left
+                    state.naturalContentH = r.bottom - r.top
+                    state.expandsWidth = shouldExpandWidth(newContent)
+                    state.expandsHeight = shouldExpandHeight(newContent)
+                }
+            }
+        }
+        let c = state.constraintPoints
+        state.minClientWidth = c.minW.map { px($0, for: hwnd) } ?? state.minClientWidth
+        state.minClientHeight = c.minH.map { px($0, for: hwnd) } ?? state.minClientHeight
+        state.maxClientWidth = c.maxW.map { px($0, for: hwnd) } ?? state.maxClientWidth
+        state.maxClientHeight = c.maxH.map { px($0, for: hwnd) } ?? state.maxClientHeight
+    }
+    if let suggested = UnsafePointer<RECT>(bitPattern: Int(lParam))?.pointee {
+        SetWindowPos(hwnd, nil, suggested.left, suggested.top,
+                     suggested.right - suggested.left, suggested.bottom - suggested.top,
+                     UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+    }
+    // Lay the new content out even if the suggested size didn't change.
+    SendMessageW(hwnd, UINT(WM_SIZE), 0, 0)
+    RedrawWindow(hwnd, nil, nil, UINT(RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN))
+}
+
 /// WndProc for the main application window.
 private let mainWindowProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
     switch uMsg {
+    case UINT(WM_DPICHANGED):
+        handleDpiChanged(hwnd!, lParam: lParam)
+        return 0
+
     case UINT(WM_SYSCOLORCHANGE), UINT(WM_SETTINGCHANGE), UINT(WM_THEMECHANGED):
         // COLOR_WINDOW (the inherited-background fallback) may have changed.
         invalidateInheritedBackgrounds()
@@ -837,6 +901,14 @@ extension Window: Win32WindowRenderable {
                 maxClientWidth: nil,
                 maxClientHeight: nil
             )
+            state.constraintPoints = (minWindowWidth, minWindowHeight, nil, nil)
+            let rootContent = content
+            state.rerenderContent = {
+                var env = getCurrentEnvironment()
+                env.windowID = Int(bitPattern: hwnd)
+                setCurrentEnvironment(env)
+                return winRenderView(rootContent, in: RenderContext(parent: hwnd, hInstance: hInstance))
+            }
             let retained = Unmanaged.passRetained(state).toOpaque()
             win32_SetWindowLongPtrW(hwnd, GWLP_USERDATA, LONG_PTR(Int(bitPattern: retained)))
         }
@@ -866,6 +938,10 @@ extension Window: Win32WindowRenderable {
 /// only the main window's destruction should quit the app.
 private let windowSceneWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
     switch uMsg {
+    case UINT(WM_DPICHANGED):
+        handleDpiChanged(hwnd!, lParam: lParam)
+        return 0
+
     case UINT(WM_SYSCOLORCHANGE), UINT(WM_SETTINGCHANGE), UINT(WM_THEMECHANGED):
         // COLOR_WINDOW (the inherited-background fallback) may have changed.
         invalidateInheritedBackgrounds()
