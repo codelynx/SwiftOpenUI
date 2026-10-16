@@ -10,8 +10,8 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 **What changed since the March pass**
 - **Typography.** Plain `Text` now renders in Segoe UI instead of the legacy bitmap System font (#22), so
   text weight and size closely match macOS across every example. The old captures looked uniformly bold.
-- **Window size.** Windows now open at the shared 800x600 automatic default (`6d7d982`, April) instead of
-  sizing to their content. Short examples gain empty space; tall Parity examples are now **clipped** (see Open Issue 1).
+- **Window size.** Windows open at the shared 800x600 automatic default (`6d7d982`, April) and grow
+  to fit taller or wider content, capped at 3/4 of the screen. Short examples gain empty space versus March.
 
 ## Showcase Examples
 
@@ -77,8 +77,8 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Button (custom label) | Faint "Custom label ->" | Faint "Custom label ->" | OK |
 | TextField | Full width, system font | Full width, Segoe UI | OK |
 | Color swatches | Two rows | Two rows | OK |
-| Spacer / Divider sections | Visible | Clipped by window height | Open -- window fit |
-| Overall | Complete | Complete but clipped | B+ |
+| Spacer / Divider sections | Visible | Visible | OK |
+| Overall | Complete | Complete | A- |
 
 ### 7. ViewsLayout
 
@@ -88,8 +88,8 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | HStack / ZStack / Group | Correct | Correct | OK |
 | ForEach (0/1/2) + +/- buttons | Working | Working | OK |
 | Label text on colored boxes | Black | Black | OK |
-| AnyView / EmptyView sections | Visible | Clipped by window height | Open -- window fit |
-| Overall | Complete | Complete but clipped | A- |
+| AnyView / EmptyView sections | Visible | Visible | OK |
+| Overall | Complete | Complete | A |
 
 ### 8. ViewsContainers
 
@@ -99,7 +99,7 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Slider + driven bar | Native | D2D custom | Good |
 | Image (system) | SF Symbols | Win32 stock icons (labeled) | OK |
 | ScrollView | Content-width, rows leading-aligned | Full width, rows centered | Open -- row alignment |
-| List | Rows leading-aligned | Rows centered; rows 1-2 clipped | Open -- row alignment, window fit |
+| List | Rows leading-aligned | Rows centered | Open -- row alignment |
 | Overall | Complete | Functional | B+ |
 
 ### 9. Modifiers
@@ -111,8 +111,8 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | .foregroundColor() / .foregroundStyle() | Correct | Correct | OK |
 | .background() | Yellow/Custom bg | Yellow/Custom bg | OK |
 | .font() sizes | All 6 sizes | All 6 sizes | OK |
-| .border() ... .modifier() | 6 sections visible | Clipped by window height | Open -- window fit |
-| Overall | All 11 modifiers shown | 6 of 11 visible, all correct | B+ |
+| .border() ... .modifier() | 6 sections visible | 6 sections visible | OK |
+| Overall | All 11 modifiers shown | All 11 shown | A- |
 
 ### 10. StateData
 
@@ -182,11 +182,11 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 
 | Rating | Examples |
 |--------|----------|
-| A | HelloWorld, StateData, Environment, AppStructure |
-| A- | Stopwatch, ColorStudio, Calculator, ViewsLayout, Navigation, Focus |
-| B+ | SimplePaint, ViewsBasic, ViewsContainers, Modifiers, Gestures, Animation |
+| A | HelloWorld, ViewsLayout, StateData, Environment, AppStructure |
+| A- | Stopwatch, ColorStudio, Calculator, ViewsBasic, Modifiers, Navigation, Focus |
+| B+ | SimplePaint, ViewsContainers, Gestures, Animation |
 
-Most B+ ratings come from two shared causes (Open Issues 1-2), not from per-example bugs.
+Gestures and Animation share one cause (Open Issue 1).
 
 ## DPI Scaling
 
@@ -198,17 +198,17 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 
 | # | Issue | Affects | Type | Effort |
 |---|-------|---------|------|--------|
-| 1 | Window doesn't grow to fit content: the 800x600 automatic default clips tall content, while macOS sizes the window to at least the content's height | ViewsBasic, ViewsLayout, ViewsContainers, Modifiers | Window sizing | Medium |
-| 2 | `.foregroundColor()` applied after `.padding().background()` doesn't reach the inner `Text` | Gestures, Animation | Modifier propagation | Medium |
-| 3 | ScrollView / List rows are centered instead of leading-aligned | ViewsContainers | Layout | Medium |
-| 4 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
-| 5 | SimplePaint canvas page frame not drawn | SimplePaint | Not investigated | ? |
-| 6 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
+| 1 | `.foregroundColor()` applied after `.padding().background()` doesn't reach the inner `Text` | Gestures, Animation | Modifier propagation | Medium |
+| 2 | ScrollView / List rows are centered instead of leading-aligned | ViewsContainers | Layout | Medium |
+| 3 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
+| 4 | SimplePaint canvas page frame not drawn | SimplePaint | Not investigated | ? |
+| 5 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
 
 ## All Fixes Applied
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
+| Automatic window grows to fit content | `a557817` | ViewsBasic B+ -> A-, ViewsLayout A- -> A, Modifiers B+ -> A- |
 | TextField/SecureField/TextEditor/search field font + TextField width | `d26f7bb` | Focus B+ -> A-, ViewsBasic B -> B+ |
 | Default Segoe UI font for plain Text (#22) | `83c32bd` | Typography matches macOS everywhere; "×" glyph renders (Modifiers "D0x30" fixed) |
 | Navigation expansion + header DPI (#11) | `fd4d1e3`..`c646d8e` | Navigation content fills the window; header scales at 125-175% |
@@ -231,9 +231,8 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 | Slot validation | `785990b` | Aligned with GTK4/Web |
 | Shadow-free screenshots | `db47b65` | Clean captures via PrintWindow |
 
-Rating changes in this pass mostly come from the window now being a fixed 800x600 (Open Issue 1)
-and from closer side-by-side checking, not from rendering regressions. The March captures were content-sized,
-so clipping and alignment gaps weren't visible then.
+Rating drops in the October pass came from closer side-by-side checking and the then-fixed 800x600 window
+(since fixed), not from rendering regressions. The March captures were content-sized, so alignment gaps weren't visible then.
 
 ## Platform Differences (Expected)
 

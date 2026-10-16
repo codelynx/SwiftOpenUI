@@ -194,9 +194,12 @@ extension WindowGroup: Win32WindowRenderable {
             let defaultClientH = defaultWindowHeight.map { Int32($0) }
             let automaticDefaultClientSize: (Int32?, Int32?) = {
                 if case .automatic = windowSizing ?? .automatic {
+                    // Grow past the default when content is larger, like SwiftUI's
+                    // WindowGroup, so tall content isn't clipped at first launch.
+                    // The max clamp below still caps it to the screen.
                     let scaledW = Int32((defaultAutomaticWindowWidth * dpiScale).rounded())
                     let scaledH = Int32((defaultAutomaticWindowHeight * dpiScale).rounded())
-                    return (scaledW, scaledH)
+                    return (max(scaledW, naturalContentW), max(scaledH, naturalContentH))
                 }
                 return (nil, nil)
             }()
