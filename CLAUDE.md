@@ -169,6 +169,7 @@ NavigationStack, NavigationLink, NavigationSplitView, NavigationPath, .navigatio
 | `docs/guides/web-setup.md` | Web/Wasm build, Vite, screenshots, DOM mapping |
 | `docs/guides/android-setup.md` | Android cross-compilation setup |
 | `docs/architecture/rendering-backends.md` | Backend architecture, ViewHost patterns |
+| `docs/architecture/logical-coordinates.md` | Every dimension is a logical point; how each backend scales (Win32 `px()` chokepoint) |
 | `docs/architecture/gtk4-animation-pipeline.md` | GTK4 animation: CSS transitions, transform composition, descriptors |
 | `docs/architecture/web-animation-two-phase-rebuild.md` | Web animation: two-phase DOM rebuild, marker-based pairing, token lifecycle |
 | `docs/architecture/android-backend-design.md` | Android backend design (batched JNI diffs) |

@@ -13,16 +13,19 @@ public struct PaddedView<Content: View>: View, PrimitiveView {
 
 extension View {
     /// Apply uniform padding on all sides.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func padding(_ amount: Int = 8) -> PaddedView<Self> {
         PaddedView(content: self, top: amount, bottom: amount, leading: amount, trailing: amount)
     }
 
     /// Apply padding with specific values per edge.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func padding(top: Int = 0, bottom: Int = 0, leading: Int = 0, trailing: Int = 0) -> PaddedView<Self> {
         PaddedView(content: self, top: top, bottom: bottom, leading: leading, trailing: trailing)
     }
 
     /// SwiftUI-compatible edge-set padding.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func padding(_ edges: Edge.Set, _ amount: Int = 8) -> PaddedView<Self> {
         PaddedView(
             content: self,

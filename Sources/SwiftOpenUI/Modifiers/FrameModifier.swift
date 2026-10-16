@@ -16,6 +16,7 @@ public struct FrameView<Content: View>: View, PrimitiveView {
 
 extension View {
     /// Set an explicit fixed size.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func frame(
         width: Double? = nil,
         height: Double? = nil,
@@ -31,6 +32,7 @@ extension View {
     }
 
     /// Set flexible size constraints.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func frame(
         minWidth: Double? = nil,
         idealWidth: Double? = nil,

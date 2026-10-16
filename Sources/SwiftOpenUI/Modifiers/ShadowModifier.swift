@@ -13,6 +13,7 @@ public struct ShadowView<Content: View>: View {
 
 extension View {
     /// Adds a shadow to this view.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func shadow(
         color: Color = Color(red: 0, green: 0, blue: 0, opacity: 0.33),
         radius: Double = 4,

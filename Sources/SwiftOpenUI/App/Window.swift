@@ -47,6 +47,7 @@ public struct Window<Content: View>: Scene {
 
     public var body: Never { fatalError("Window is a primitive scene") }
 
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func defaultWindowSize(width: Double, height: Double) -> Window<Content> {
         Window(
             title: title, id: id, content: content,

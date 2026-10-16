@@ -78,6 +78,7 @@ extension View {
     }
 
     /// Offset this view by the specified amounts.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func offset(x: Double = 0, y: Double = 0) -> OffsetView<Self> {
         OffsetView(content: self, x: x, y: y)
     }

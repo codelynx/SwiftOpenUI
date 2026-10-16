@@ -21,6 +21,7 @@ public struct LongPressGestureView<Content: View>: View {
 }
 
 /// Value describing a drag gesture's current state.
+/// Values are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
 public struct DragGestureValue {
     /// The location where the drag started.
     public let startLocation: (x: Double, y: Double)
