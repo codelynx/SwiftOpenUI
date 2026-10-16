@@ -1519,6 +1519,36 @@ final class Win32RenderTests: XCTestCase {
                        "Inner .foregroundColor() should override an outer one")
     }
 
+    func testDistributeFlexibleSpaceRespectsCaps() {
+        // Capped child stops at its max; the rest goes to the uncapped one.
+        XCTAssertEqual(distributeFlexibleSpace(300, caps: [100, nil]), [100, 200])
+        // A cap above the even share doesn't bind.
+        XCTAssertEqual(distributeFlexibleSpace(300, caps: [200, nil]), [150, 150])
+        XCTAssertEqual(distributeFlexibleSpace(90, caps: [nil, nil, nil]), [30, 30, 30])
+    }
+
+    /// Width of the HStack's first child after laying the stack out at 400px.
+    private func firstChildWidthInWideHStack<V: View>(_ view: V) -> Int32 {
+        let ctx = testContext()
+        let stack = winRenderView(HStack(spacing: 0) { view }, in: ctx)!
+        SetWindowPos(stack, nil, 0, 0, 400, 40, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        let child = GetWindow(stack, UINT(GW_CHILD))!
+        var r = RECT()
+        GetWindowRect(child, &r)
+        return r.right - r.left
+    }
+
+    func testFlexibleFrameGrowsToFiniteMaxWidth() {
+        let w = firstChildWidthInWideHStack(Text("Flex").frame(minWidth: 40, maxWidth: 100))
+        XCTAssertEqual(w, 100, "frame(minWidth:maxWidth:) should take offered space up to its max")
+    }
+
+    func testFlexibleFrameCapSurvivesBackgroundWrapper() {
+        let w = firstChildWidthInWideHStack(
+            Text("Flex").frame(minWidth: 40, maxWidth: 100).background(Color.green))
+        XCTAssertEqual(w, 100, "A background around a bounded frame should stop at the same max")
+    }
+
     func testForegroundColorMakesButtonsOwnerDrawn() {
         let ctx = testContext()
         let hwnd = winRenderView(Button("Tinted", action: {}).foregroundColor(.blue), in: ctx)

@@ -385,8 +385,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
         RemovePropW(container, expandWidthPropName)
         RemovePropW(container, expandHeightPropName)
         guard let child = currentChild else { return }
-        if shouldExpandWidth(child) { markExpandWidth(container) }
-        if shouldExpandHeight(child) { markExpandHeight(container) }
+        propagateExpandFlags(from: child, to: container)
     }
 
     func layoutChild() {

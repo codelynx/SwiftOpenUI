@@ -224,10 +224,12 @@ extension WindowGroup: Win32WindowRenderable {
             GetClientRect(hwnd, &actualClientRect)
             let actualW = Int32(actualClientRect.right - actualClientRect.left)
             let actualH = Int32(actualClientRect.bottom - actualClientRect.top)
-            let contentW: Int32 = wantsFillW ? actualW : min(naturalContentW, actualW)
-            let contentH: Int32 = wantsFillH ? actualH : min(naturalContentH, actualH)
-            let contentX: Int32 = wantsFillW ? 0 : (actualW - contentW) / 2
-            let contentY: Int32 = wantsFillH ? 0 : (actualH - contentH) / 2
+            let contentW: Int32 = wantsFillW
+                ? min(actualW, expandMaxWidth(contentHwnd) ?? actualW) : min(naturalContentW, actualW)
+            let contentH: Int32 = wantsFillH
+                ? min(actualH, expandMaxHeight(contentHwnd) ?? actualH) : min(naturalContentH, actualH)
+            let contentX: Int32 = (actualW - contentW) / 2
+            let contentY: Int32 = (actualH - contentH) / 2
             SetWindowPos(
                 contentHwnd, nil,
                 contentX, contentY,
@@ -282,10 +284,14 @@ private let mainWindowProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
             let clientH = clientRect.bottom - clientRect.top
 
             // Center intrinsic content; fill expanding content.
-            let cw = state.expandsWidth ? clientW : min(state.naturalContentW, clientW)
-            let ch = state.expandsHeight ? clientH : min(state.naturalContentH, clientH)
-            let cx = state.expandsWidth ? Int32(0) : (clientW - cw) / 2
-            let cy = state.expandsHeight ? Int32(0) : (clientH - ch) / 2
+            // Bounded expanders (finite maxWidth/maxHeight) stop at their cap.
+            let content = state.contentHwnd
+            let cw = state.expandsWidth
+                ? min(clientW, expandMaxWidth(content) ?? clientW) : min(state.naturalContentW, clientW)
+            let ch = state.expandsHeight
+                ? min(clientH, expandMaxHeight(content) ?? clientH) : min(state.naturalContentH, clientH)
+            let cx = (clientW - cw) / 2
+            let cy = (clientH - ch) / 2
             SetWindowPos(state.contentHwnd, nil, cx, cy, cw, ch, UINT(SWP_NOZORDER))
         }
         return 0

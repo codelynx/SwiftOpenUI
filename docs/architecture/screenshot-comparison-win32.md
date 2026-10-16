@@ -108,12 +108,12 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
 | .padding() | 3 colored boxes | 3 colored boxes | OK |
-| .frame() | "60×30" + "Flex" (100pt) | "60×30" renders; "Flex" at min width | Minor -- flex frame width |
+| .frame() | "60×30" + "Flex" (100pt) | "60×30" + "Flex" (100px) | OK |
 | .foregroundColor() / .foregroundStyle() | Correct | Correct | OK |
 | .background() | Yellow/Custom bg | Yellow/Custom bg | OK |
 | .font() sizes | All 6 sizes | All 6 sizes | OK |
 | .border() ... .modifier() | 6 sections visible | 6 sections visible | OK |
-| Overall | All 11 modifiers shown | All 11 shown | A- |
+| Overall | All 11 modifiers shown | All 11 shown, all correct | A |
 
 ### 10. StateData
 
@@ -184,10 +184,10 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 
 | Rating | Examples |
 |--------|----------|
-| A | HelloWorld, ViewsLayout, StateData, Environment, Gestures, AppStructure |
-| A- | Stopwatch, ColorStudio, Calculator, SimplePaint, ViewsBasic, ViewsContainers, Modifiers, Navigation, Animation, Focus |
+| A | HelloWorld, ViewsLayout, Modifiers, StateData, Environment, Gestures, AppStructure |
+| A- | Stopwatch, ColorStudio, Calculator, SimplePaint, ViewsBasic, ViewsContainers, Navigation, Animation, Focus |
 
-No shared cause remains; the open issues below are each local to one or two examples.
+One open issue remains; the A- ratings otherwise reflect the minor differences noted per example.
 
 ## DPI Scaling
 
@@ -200,12 +200,12 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 | # | Issue | Affects | Type | Effort |
 |---|-------|---------|------|--------|
 | 1 | Vertical ScrollView fills the available width; on macOS it hugs its content width | ViewsContainers | Layout | Medium |
-| 2 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
 
 ## All Fixes Applied
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
+| Bounded expansion for finite maxWidth/maxHeight frames | `bfb6862` | Modifiers A- -> A |
 | D2D views (Divider) clear to the inherited background, not white | `b3fcf03` | Stopwatch/ColorStudio dividers subtle on dark backgrounds |
 | SimplePaint: border the non-macOS canvas (example only had it on macOS) | `4a161bd` | SimplePaint B+ -> A- |
 | List rows leading-aligned | `6c75b5e` | ViewsContainers B+ -> A- |
