@@ -541,6 +541,11 @@ let zStackLayoutProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass,
     case UINT(WM_CTLCOLORSTATIC):
         // ZStack children overlap — STATIC controls must have transparent
         // backgrounds so underlying Color/Image views show through.
+        // Forward first (ignoring the brush) so an outer .foregroundColor()
+        // still sets the text color.
+        if let parent = GetParent(hwnd!) {
+            _ = SendMessageW(parent, uMsg, wParam, lParam)
+        }
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetBkMode(hdc, TRANSPARENT)
         return LRESULT(Int(bitPattern: GetStockObject(HOLLOW_BRUSH)))
