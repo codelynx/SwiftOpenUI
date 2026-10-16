@@ -48,6 +48,37 @@ Coordinator owns:
 - parity matrix updates
 - repo-level status docs
 
+## Concurrent Sessions
+
+Several agent sessions may run against this repo at once. They share one working
+directory unless told otherwise, which collides in two ways: a branch switch moves the
+checkout under another session, and two `swift build` / `swift test` runs race in the
+same build directory.
+
+- One session owns the main checkout. Every other concurrent session works in its own
+  git worktree, with its own build directory. Prefer moving the session that has no
+  in-flight branches.
+- Checkout ownership must be explicit — stated by the user, or agreed between sessions.
+  Do not infer it from an agent or session listing, which may omit independent
+  sessions. `git worktree list` shows which checkouts exist, not who is working in one.
+  Until ownership is established, treat the main checkout as unavailable for changes or
+  builds. A handoff may record ownership; it does not silently transfer it.
+- Never switch, reset, or delete a branch in a checkout another session owns. Ask that
+  session to move itself.
+- Never push another session's branch. An unpushed branch is usually waiting on its own
+  user's approval, not an oversight.
+- Hand work between sessions as a cherry-pickable commit, reported in the
+  `Required Handoff Format` above. Worktrees share the object store, so
+  `git cherry-pick <sha>` needs no fetch or push.
+- Before removing a worktree, confirm it is clean and preserve its exact HEAD with a
+  branch or tag outside the cleanup tool's deletion scope; afterwards, verify that ref
+  still resolves to the recorded commit. `git worktree remove` keeps the worktree's
+  branch, but tooling that deletes the branch along with the worktree — the harness
+  `ExitWorktree` does — or a tip left detached can leave those commits without a
+  durable reference. Matching file contents (an empty `git diff`) is not evidence that
+  commits are reachable. A clean status does not cover ignored or untracked files, so
+  copy out any build output or local files you still need first.
+
 ## Shared Docs Workers Must Not Edit As Final Truth
 
 - `docs/api/implementation-tracker/**`
