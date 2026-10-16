@@ -57,6 +57,14 @@ Cross-platform SwiftUI framework — write SwiftUI, run anywhere.
   - parity/doc truth
 - If a platform report arrives after the batch is already integrated, coordinator should prefer cherry-picking the focused fix commit instead of merging the stale platform branch head.
 
+## Concurrent Sessions
+
+Several agent sessions may run against this repo at once, sharing one working
+directory. Before switching branches, modifying files, or running builds, read
+`AGENTS.md` → "Concurrent Sessions". Use the main checkout only when ownership is
+explicitly established; otherwise create a separate worktree with its own build
+directory.
+
 ## Build & Test
 
 ```bash
