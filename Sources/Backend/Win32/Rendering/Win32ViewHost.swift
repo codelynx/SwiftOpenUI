@@ -307,6 +307,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
         SendMessageW(container, UINT(WM_SETREDRAW), 0, 0)
 
         let inputState = saveInputState(in: container)
+        let outlineStates = saveOutlineTreeStates(in: container)
 
         let previousEnv = getCurrentEnvironment()
         defer { setCurrentEnvironment(previousEnv) }
@@ -324,6 +325,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
         defer { setCurrentAnimation(previousAnim) }
 
         defer {
+            restoreOutlineTreeStates(outlineStates, in: container)
             restoreEditStates(inputState.editStates, in: container)
 
             if !shouldSuppressFocus {
