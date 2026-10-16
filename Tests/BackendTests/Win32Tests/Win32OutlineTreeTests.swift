@@ -151,6 +151,30 @@ final class Win32OutlineTreeTests: XCTestCase {
         XCTAssertEqual(after.expanded, ["0"], "b is now the first node")
     }
 
+    /// The WM_DPICHANGED path saves state while the old tree still holds
+    /// old-DPI pixels, and may pass the tree itself as the root. Scroll is
+    /// carried in points, so it lands at the same logical offset.
+    func testSnapshotCarriesScrollInPointsAcrossScale() throws {
+        let nodes = (0..<40).map { Node(id: "n\($0)", children: [Node(id: "c\($0)")]) }
+        let group = OutlineGroup(nodes, id: \.id, children: \.children) { Text($0.id) }
+        let ctx = testContext()
+
+        let oldTree = try XCTUnwrap(winRenderView(group, in: ctx))
+        let old = try XCTUnwrap(model(of: oldTree))
+        old.toggle("2") // n1
+        old.layoutScale = 2 // pretend it was laid out at 200%
+        old.scrollY = 200   // = 100pt
+        let snapshots = saveOutlineTreeStates(in: oldTree)
+        XCTAssertEqual(snapshots.count, 1, "the root itself is the tree")
+        DestroyWindow(oldTree)
+
+        let newTree = try XCTUnwrap(winRenderView(group, in: ctx))
+        restoreOutlineTreeStates(snapshots, in: newTree)
+        let new = try XCTUnwrap(model(of: newTree))
+        XCTAssertEqual(new.expandedIdentityPaths, [["n1"]])
+        XCTAssertEqual(new.scrollY, px(100, for: newTree))
+    }
+
     /// A node that no longer exists after the rebuild is dropped, not
     /// mapped onto whatever now sits at its old position.
     func testRemovedNodeExpansionIsDropped() throws {

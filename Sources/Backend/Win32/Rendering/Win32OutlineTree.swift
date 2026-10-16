@@ -116,6 +116,10 @@ final class Win32OutlineModel {
     var hInstance: HINSTANCE?
     var capturedEnv: EnvironmentValues?
     var scrollY: Int32 = 0
+    /// DPI scale the rows were last laid out at. Read when saving state:
+    /// during WM_DPICHANGED the window already reports the new DPI, but
+    /// `scrollY` is still in the old pixels.
+    var layoutScale: Double = 1
     var contentHeight: Int32 = 0
     var contentWidth: Int32 = 0
     /// Set by an arrow click, consumed by the container's toggle message.
@@ -205,12 +209,21 @@ final class Win32OutlineModel {
 // MARK: - State across ancestor rebuilds
 
 /// Expansion and scroll state of one outline tree, saved before a view host
-/// destroys and re-renders its subtree. A rebuild creates a fresh
-/// `Win32OutlineModel`, so without this every ancestor state change would
-/// collapse the tree back to its roots.
+/// (or a DPI change) destroys and re-renders its subtree. A rebuild creates
+/// a fresh `Win32OutlineModel`, so without this every ancestor state change
+/// would collapse the tree back to its roots.
 struct OutlineTreeSnapshot {
     let expanded: Set<[AnyHashable]>
-    let scrollY: Int32
+    /// In points, so it survives a DPI change.
+    let scrollPoints: Double
+}
+
+/// `root` itself if it is an outline tree, else every outline tree below it.
+private func outlineTrees(at root: HWND) -> [HWND] {
+    if isOutlineContainer(root) { return [root] }
+    var trees: [HWND] = []
+    collectOutlineTrees(in: root, into: &trees)
+    return trees
 }
 
 /// Every outline tree under `parent`, in depth-first window order.
@@ -236,11 +249,12 @@ private func isOutlineContainer(_ hwnd: HWND) -> Bool {
 /// Saves the state of each outline tree under `container`, matched back by
 /// position (the same ordinal matching `saveInputState` uses for focus).
 func saveOutlineTreeStates(in container: HWND) -> [OutlineTreeSnapshot] {
-    var trees: [HWND] = []
-    collectOutlineTrees(in: container, into: &trees)
-    return trees.compactMap { tree in
+    outlineTrees(at: container).compactMap { tree in
         guard let model = outlineModel(from: tree) else { return nil }
-        return OutlineTreeSnapshot(expanded: model.expandedIdentityPaths, scrollY: model.scrollY)
+        return OutlineTreeSnapshot(
+            expanded: model.expandedIdentityPaths,
+            scrollPoints: Double(model.scrollY) / model.layoutScale
+        )
     }
 }
 
@@ -249,13 +263,12 @@ func saveOutlineTreeStates(in container: HWND) -> [OutlineTreeSnapshot] {
 /// kept it) is left alone.
 func restoreOutlineTreeStates(_ snapshots: [OutlineTreeSnapshot], in container: HWND) {
     guard !snapshots.isEmpty else { return }
-    var trees: [HWND] = []
-    collectOutlineTrees(in: container, into: &trees)
-    for (tree, snapshot) in zip(trees, snapshots) {
+    for (tree, snapshot) in zip(outlineTrees(at: container), snapshots) {
         guard let model = outlineModel(from: tree) else { continue }
         let expansionChanged = model.restoreExpansion(snapshot.expanded)
-        guard expansionChanged || model.scrollY != snapshot.scrollY else { continue }
-        model.scrollY = snapshot.scrollY
+        let scrollY = px(snapshot.scrollPoints, for: tree)
+        guard expansionChanged || model.scrollY != scrollY else { continue }
+        model.scrollY = scrollY
         if expansionChanged {
             outlineRelayout(model) // clamps scrollY to the new content height
         } else {
@@ -364,6 +377,7 @@ private func outlineRelayout(_ model: Win32OutlineModel) {
 
     model.contentHeight = y
     model.contentWidth = widest
+    model.layoutScale = dpiScaleFactor(for: container)
 
     var crect = RECT(); GetClientRect(container, &crect)
     let clientW = crect.right - crect.left

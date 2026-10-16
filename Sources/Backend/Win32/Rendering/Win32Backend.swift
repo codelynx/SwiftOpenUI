@@ -320,9 +320,13 @@ private func handleDpiChanged(_ hwnd: HWND, lParam: LPARAM) {
                      UINT(SWP_NOZORDER | SWP_NOACTIVATE))
     }
     if let state, let rerender = state.rerenderContent {
+        // Outline trees keep expansion in a retained model, not @State;
+        // carry it over like a host rebuild does.
+        let outlineStates = saveOutlineTreeStates(in: state.contentHwnd)
         DestroyWindow(state.contentHwnd)
         if let newContent = rerender() {
             state.contentHwnd = newContent
+            restoreOutlineTreeStates(outlineStates, in: newContent)
             if state.tracksContentSizing {
                 var r = RECT()
                 GetWindowRect(newContent, &r)

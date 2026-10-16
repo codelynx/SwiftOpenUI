@@ -46,9 +46,9 @@ tree back to roots.
   (`[rootID, …, nodeID]`), not the positional key, so a filter that drops
   earlier rows keeps the right folders open, and nodes that disappear are
   dropped. Trees are matched to their snapshot by depth-first order under
-  the host. Not covered: the `WM_DPICHANGED` re-render path in
-  `Win32Backend.swift`, which still resets expansion. Tests:
-  `Win32OutlineTreeTests`.
+  the host. The `WM_DPICHANGED` re-render (`handleDpiChanged`) uses the same
+  save/restore; scroll is carried in points so it lands at the same logical
+  offset at the new scale. Tests: `Win32OutlineTreeTests`.
 
 ## 2. OutlineGroup rows are intrinsic-width (trailing alignment ineffective)
 
