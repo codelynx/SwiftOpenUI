@@ -222,8 +222,9 @@ struct ToolPanelView: View {
                 ToolIcon(tool: tool)
                     .frame(width: 24, height: 24)
                     .frame(width: 36, height: 36)
-                    .background(selectedTool == tool ? Color.blue : Color.white)
-                    .border(Color.gray)
+                    .background(Color.white)
+                    .border(selectedTool == tool ? Color.blue : Color.gray,
+                            width: selectedTool == tool ? 2 : 1)
                     .onTapGesture {
                         selectedTool = tool
                     }
