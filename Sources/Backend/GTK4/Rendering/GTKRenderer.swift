@@ -1739,6 +1739,23 @@ extension FrameView: GTKRenderable, GTKDescribable {
         if childExpH || childFillsWidthAsLabel {
             horizontalAlign = GTK_ALIGN_FILL
             gtk_widget_set_hexpand(child, 1)
+            if childFillsWidthAsLabel {
+                // The label now spans the whole frame, so the frame's
+                // alignment has to move into the label's own xalign —
+                // otherwise Text's default xalign 0 left-aligns it where
+                // SwiftUI would place the single line per `alignment`
+                // (`.center` by default).
+                let xalign: Float
+                switch alignment {
+                case .topLeading, .leading, .bottomLeading:
+                    xalign = 0
+                case .top, .center, .bottom:
+                    xalign = 0.5
+                case .topTrailing, .trailing, .bottomTrailing:
+                    xalign = 1
+                }
+                gtk_swift_label_set_xalign(child, xalign)
+            }
         } else {
             switch alignment {
             case .topLeading, .leading, .bottomLeading:
