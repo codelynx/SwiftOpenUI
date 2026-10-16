@@ -7016,10 +7016,15 @@ private class ShapeDrawBox {
     }
     let pathGenerator: (CGRect) -> Path
     let mode: Mode
+    /// Device-independent pixels the drawing area extends past the shape's
+    /// frame on every side (see `gtkWrapShapeWithOutset`). The path is
+    /// generated in the frame's rect, inset by this much from the area.
+    let outset: Int
 
-    init(pathGenerator: @escaping (CGRect) -> Path, mode: Mode) {
+    init(pathGenerator: @escaping (CGRect) -> Path, mode: Mode, outset: Int = 0) {
         self.pathGenerator = pathGenerator
         self.mode = mode
+        self.outset = outset
     }
 }
 
@@ -7053,7 +7058,8 @@ private func gtkCreateShapeWidget(box: ShapeDrawBox) -> OpaquePointer {
            userData: gpointer?) in
             guard let cr = cr, let userData = userData else { return }
             let box = Unmanaged<ShapeDrawBox>.fromOpaque(userData).takeUnretainedValue()
-            let rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+            let o = CGFloat(box.outset)
+            let rect = CGRect(x: o, y: o, width: CGFloat(w) - 2 * o, height: CGFloat(h) - 2 * o)
             let path = box.pathGenerator(rect)
             let context = DrawingContext(cr: cr)
 
@@ -7071,7 +7077,77 @@ private func gtkCreateShapeWidget(box: ShapeDrawBox) -> OpaquePointer {
         }
     )
 
+    if box.outset > 0 {
+        return gtkWrapShapeWithOutset(area, outset: box.outset)
+    }
     return opaqueFromWidget(area)
+}
+
+// MARK: Stroke outset
+//
+// `.stroke()` centers the line on the shape's outline, so half of it lies
+// outside the frame. SwiftUI draws that half; a GtkDrawingArea can only
+// draw inside its own allocation. The area is therefore wrapped in a
+// widget that reports the area's own size to layout but allocates it
+// `outset` px larger on every side. GtkSwift layout containers don't clip
+// (`gtk_swift_fixed_new`), so the overhang is drawn.
+
+private let gtkSwiftShapeOutsetKey = "swiftopenui-shape-outset"
+
+/// Px a stroke can reach past the outline: half the line width, times √2
+/// for a miter or square cap at a right angle, plus 1px of antialiasing.
+/// Sharper custom-path angles can still lose the tip of a miter.
+private func gtkStrokeOutset(_ style: StrokeStyle) -> Int {
+    Int((style.lineWidth / 2 * 2.0.squareRoot()).rounded(.up)) + 1
+}
+
+private func gtkWrapShapeWithOutset(
+    _ area: UnsafeMutablePointer<GtkWidget>,
+    outset: Int
+) -> OpaquePointer {
+    let wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!
+    gtk_box_append(boxPointer(wrapper), area)
+    setWidgetDouble(wrapper, key: gtkSwiftShapeOutsetKey, value: Double(outset))
+    gtk_widget_set_overflow(wrapper, GTK_OVERFLOW_VISIBLE)
+    gtk_widget_set_hexpand(wrapper, gtk_widget_get_hexpand(area))
+    gtk_widget_set_vexpand(wrapper, gtk_widget_get_vexpand(area))
+    // Same hit rule as the bare area: a stroke is not a pointer target
+    // unless a gesture modifier marks the returned widget interactive.
+    gtk_widget_set_can_target(wrapper, gtk_widget_get_can_target(area))
+    let manager = gtk_swift_custom_layout_new(
+        shapeOutsetRequestModeCallback,
+        shapeOutsetMeasureCallback,
+        shapeOutsetAllocateCallback
+    )!
+    gtk_swift_widget_set_layout_manager(wrapper, manager)
+    return opaqueFromWidget(wrapper)
+}
+
+private let shapeOutsetRequestModeCallback: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?
+) -> GtkSizeRequestMode = { _ in GTK_SIZE_REQUEST_CONSTANT_SIZE }
+
+private let shapeOutsetMeasureCallback: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?, GtkOrientation, gint,
+    UnsafeMutablePointer<gint>?, UnsafeMutablePointer<gint>?,
+    UnsafeMutablePointer<gint>?, UnsafeMutablePointer<gint>?
+) -> Void = { widget, orientation, forSize, minOut, natOut, minBase, natBase in
+    minBase?.pointee = -1
+    natBase?.pointee = -1
+    var mn: gint = 0, nt: gint = 0
+    if let wrapper = widget, let area = gtk_widget_get_first_child(wrapper) {
+        gtk_swift_widget_measure(area, orientation, forSize, &mn, &nt)
+    }
+    minOut?.pointee = mn
+    natOut?.pointee = nt
+}
+
+private let shapeOutsetAllocateCallback: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?, gint, gint, gint
+) -> Void = { widget, width, height, _ in
+    guard let wrapper = widget, let area = gtk_widget_get_first_child(wrapper) else { return }
+    let o = Int32(getWidgetDouble(wrapper, key: gtkSwiftShapeOutsetKey) ?? 0)
+    gtk_swift_allocate_child(area, -o, -o, width + 2 * o, height + 2 * o, -1)
 }
 
 /// Render a bare shape (no .fill() or .stroke()) filled with the current
@@ -7115,9 +7191,20 @@ extension FilledShape: GTKRenderable {
 
 extension StrokedShape: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
-        let box = ShapeDrawBox(
-            pathGenerator: { rect in self.shape.path(in: rect) },
-            mode: .stroke(r: color.red, g: color.green, b: color.blue, a: color.alpha, style: style))
+        let mode = ShapeDrawBox.Mode.stroke(
+            r: color.red, g: color.green, b: color.blue, a: color.alpha, style: style)
+        let box: ShapeDrawBox
+        if isBorder {
+            // strokeBorder: inset the outline so the whole line is inside.
+            let inset = style.lineWidth / 2
+            box = ShapeDrawBox(
+                pathGenerator: { rect in self.shape.path(in: rect.insetBy(dx: inset, dy: inset)) },
+                mode: mode)
+        } else {
+            box = ShapeDrawBox(
+                pathGenerator: { rect in self.shape.path(in: rect) },
+                mode: mode, outset: gtkStrokeOutset(style))
+        }
         return gtkCreateShapeWidget(box: box)
     }
 }
