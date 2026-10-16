@@ -1,0 +1,34 @@
+{
+  "generator": "Built-in image_gen tool",
+  "generatedOn": "2026-10-16",
+  "runtimeSizePixels": [
+    96,
+    96
+  ],
+  "displaySizePoints": [
+    24,
+    24
+  ],
+  "prompts": [
+    {
+      "name": "pencil",
+      "prompt": "Use case: ui-mockup\nAsset type: One production toolbar icon for the SimplePaint drawing application, a square PNG image intended to display at only 24 x 24 logical points.\nStyle: crisp, simple flat desktop utility icon, dark charcoal (#263238) consistent bold outlines with rounded joins, minimal color accents, no texture, no gradients, no shadows, no 3D.\nBackground: solid pure white (#FFFFFF), fully opaque, edge to edge. No transparency.\nComposition: a single centered glyph, complete silhouette, generous but even padding of about 15% on all sides. Square 1024 x 1024 canvas. Strong readable silhouette after reduction to 24 pixels. Keep details large and simple.\nConstraints: exactly one icon, no caption, no lettering, no watermark, no surrounding button frame, no multiple variants, no grid.\nSubject: a classic yellow ochre wooden pencil with dark graphite tip, drawn diagonally from bottom left tip to top right eraser end. Simple flat silhouette with charcoal outline. Communicates freehand drawing. No scribble, no paper."
+    },
+    {
+      "name": "eraser",
+      "prompt": "Use case: ui-mockup\nAsset type: One production toolbar icon for the SimplePaint drawing application, a square PNG image intended to display at only 24 x 24 logical points.\nStyle: crisp, simple flat desktop utility icon, dark charcoal (#263238) consistent bold outlines with rounded joins, minimal color accents, no texture, no gradients, no shadows, no 3D.\nBackground: solid pure white (#FFFFFF), fully opaque, edge to edge. No transparency.\nComposition: a single centered glyph, complete silhouette, generous but even padding of about 15% on all sides. Square 1024 x 1024 canvas. Strong readable silhouette after reduction to 24 pixels. Keep details large and simple.\nConstraints: exactly one icon, no caption, no lettering, no watermark, no surrounding button frame, no multiple variants, no grid.\nSubject: a simple pink and pale gray two-tone block eraser, diagonally positioned, recognizable parallelogram silhouette with bold charcoal outline and a single seam. Communicates erase strokes. No broom, no crumbs, no shadow."
+    },
+    {
+      "name": "line",
+      "prompt": "Use case: ui-mockup\nAsset type: One production toolbar icon for the SimplePaint drawing application, a square PNG image intended to display at only 24 x 24 logical points.\nStyle: crisp, simple flat desktop utility icon, dark charcoal (#263238) consistent bold outlines with rounded joins, minimal color accents, no texture, no gradients, no shadows, no 3D.\nBackground: solid pure white (#FFFFFF), fully opaque, edge to edge. No transparency.\nComposition: a single centered glyph, complete silhouette, generous but even padding of about 15% on all sides. Square 1024 x 1024 canvas. Strong readable silhouette after reduction to 24 pixels. Keep details large and simple.\nConstraints: exactly one icon, no caption, no lettering, no watermark, no surrounding button frame, no multiple variants, no grid.\nSubject: exactly one straight charcoal diagonal line running from lower left to upper right. Bold uniform stroke with round ends, about 7% of canvas width thick, line bounding box spans about 70% of canvas. No pencil, no ruler, no arrowheads, no endpoint dots."
+    },
+    {
+      "name": "rectangle",
+      "prompt": "Use case: ui-mockup\nAsset type: One production toolbar icon for the SimplePaint drawing application, a square PNG image intended to display at only 24 x 24 logical points.\nStyle: crisp, simple flat desktop utility icon, dark charcoal (#263238) consistent bold outlines with rounded joins, minimal color accents, no texture, no gradients, no shadows, no 3D.\nBackground: solid pure white (#FFFFFF), fully opaque, edge to edge. No transparency.\nComposition: a single centered glyph, complete silhouette, generous but even padding of about 15% on all sides. Square 1024 x 1024 canvas. Strong readable silhouette after reduction to 24 pixels. Keep details large and simple.\nConstraints: exactly one icon, no caption, no lettering, no watermark, no surrounding button frame, no multiple variants, no grid.\nSubject: exactly one wide horizontal rectangular outline, white inside, charcoal uniform stroke about 6% of canvas width, outline outer dimensions approximately 72% canvas width and 52% canvas height. Nearly square corners with just slightly softened joins. No fill, no selection handles, no perspective, no extra lines."
+    },
+    {
+      "name": "ellipse",
+      "prompt": "Use case: ui-mockup\nAsset type: One production toolbar icon for the SimplePaint drawing application, a square PNG image intended to display at only 24 x 24 logical points.\nStyle: crisp, simple flat desktop utility icon, dark charcoal (#263238) consistent bold outlines with rounded joins, minimal color accents, no texture, no gradients, no shadows, no 3D.\nBackground: solid pure white (#FFFFFF), fully opaque, edge to edge. No transparency.\nComposition: a single centered glyph, complete silhouette, generous but even padding of about 15% on all sides. Square 1024 x 1024 canvas. Strong readable silhouette after reduction to 24 pixels. Keep details large and simple.\nConstraints: exactly one icon, no caption, no lettering, no watermark, no surrounding button frame, no multiple variants, no grid.\nSubject: exactly one wide horizontal ellipse outline, white inside, charcoal uniform stroke about 6% of canvas width, outline outer dimensions approximately 72% canvas width and 52% canvas height. Geometrically smooth oval. No fill, no handles, no perspective, no extra lines."
+    }
+  ]
+}
