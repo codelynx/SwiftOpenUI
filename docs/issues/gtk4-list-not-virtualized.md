@@ -1,5 +1,16 @@
 # GTK4: `List` / `OutlineGroup` render all rows eagerly (not virtualized) — freezes on large data
 
+> **✅ RESOLVED** (issue #47). Two fixes, landed separately:
+> - `OutlineGroup` was virtualized with `GtkTreeListModel` the same day this
+>   doc was written (`6e7d0c0`, 2026-07-09), and `List { OutlineGroup(…) }`
+>   renders it directly. So the Synca repro below was already fixed when
+>   #47 was filed from this doc; only the analysis below predates it.
+> - Plain `List` rows (`List { ForEach(…) }`) were still eager. Lists over
+>   200 rows now use the `GtkListView` lazy list (#47); smaller ones keep
+>   the `GtkListBox`. The same fix makes lazily built rows keep the
+>   environment, navigation context and state tracking of the list they
+>   belong to, which every lazy container had lost.
+
 ## Summary
 
 SwiftOpenUI's `List` renderable builds a widget for **every** row up front
