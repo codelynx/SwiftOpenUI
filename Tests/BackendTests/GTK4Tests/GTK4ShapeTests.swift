@@ -62,7 +62,10 @@ final class GTK4ShapeTests: XCTestCase {
         try requireGTK()
         let widget = widgetFromOpaque(gtkRenderView(Rectangle().stroke(.blue, lineWidth: 2)))
         XCTAssertNotNil(widget)
-        XCTAssertEqual(widgetTypeName(widget), "GtkDrawingArea")
+        // Stroke: the drawing area sits in an outset wrapper (issue #45).
+        XCTAssertEqual(widgetTypeName(widget), "GtkBox")
+        let area = try XCTUnwrap(gtk_widget_get_first_child(widget))
+        XCTAssertEqual(widgetTypeName(area), "GtkDrawingArea")
     }
 
     func testStrokedCircleWithStyleRendersWidget() throws {
@@ -71,7 +74,75 @@ final class GTK4ShapeTests: XCTestCase {
             Circle().stroke(.green, style: StrokeStyle(lineWidth: 3, lineCap: .round))
         ))
         XCTAssertNotNil(widget)
+        XCTAssertEqual(widgetTypeName(widget), "GtkBox")
+        let area = try XCTUnwrap(gtk_widget_get_first_child(widget))
+        XCTAssertEqual(widgetTypeName(area), "GtkDrawingArea")
+    }
+
+    func testStrokeBorderRendersBareDrawingArea() throws {
+        try requireGTK()
+        // strokeBorder keeps the line inside the frame, so no outset wrapper.
+        let widget = widgetFromOpaque(gtkRenderView(Circle().strokeBorder(.green, lineWidth: 3)))
         XCTAssertEqual(widgetTypeName(widget), "GtkDrawingArea")
+    }
+
+    // MARK: - Drawing past the frame (issue #45)
+
+    /// `.stroke()` centers the line on the outline, so half of it is drawn
+    /// outside the frame, as in SwiftUI. The drawing area is allocated past
+    /// the frame on every side, while layout still sees the frame's size.
+    func testStrokeDrawingAreaExtendsPastFrame() throws {
+        try requireGTK()
+        let widget = widgetFromOpaque(gtkRenderView(
+            Circle().stroke(.black, lineWidth: 4).frame(width: 40, height: 40)
+        ))
+        let size = measuredSize(of: widget)
+        XCTAssertEqual(size.width, 40, accuracy: 0.01)
+        XCTAssertEqual(size.height, 40, accuracy: 0.01)
+        gtk_widget_allocate(widget, 40, 40, -1, nil)
+
+        let area = try XCTUnwrap(findWidget(named: "GtkDrawingArea", in: widget))
+        let outsetWrapper = try XCTUnwrap(gtk_widget_get_parent(area))
+        XCTAssertEqual(gtk_widget_get_width(outsetWrapper), 40)
+        // lineWidth 4: half is 2pt, ×√2 for corners, +1px antialiasing → 4.
+        XCTAssertEqual(gtk_widget_get_width(area), 48)
+        XCTAssertEqual(gtk_widget_get_height(area), 48)
+        let origin = try XCTUnwrap(origin(of: area, in: outsetWrapper))
+        XCTAssertEqual(origin.x, -4, accuracy: 0.01)
+        XCTAssertEqual(origin.y, -4, accuracy: 0.01)
+
+        // Nothing between the frame and the area clips the overhang.
+        var current: UnsafeMutablePointer<GtkWidget>? = area
+        while let w = current {
+            XCTAssertEqual(gtk_widget_get_overflow(w), GTK_OVERFLOW_VISIBLE,
+                           "\(widgetTypeName(w)) clips the stroke")
+            if w == widget { break }
+            current = gtk_widget_get_parent(w)
+        }
+    }
+
+    func testStrokeIsNotAPointerTarget() throws {
+        try requireGTK()
+        let widget = widgetFromOpaque(gtkRenderView(Circle().stroke(.black, lineWidth: 2)))
+        XCTAssertEqual(gtk_widget_get_can_target(widget), gboolean(0))
+    }
+
+    func testFixedLayoutContainersDoNotClip() throws {
+        try requireGTK()
+        // GtkFixed clips by default; SwiftUI containers don't, so an
+        // .offset() label must not be cut at its original bounds.
+        let widget = widgetFromOpaque(gtkRenderView(
+            HStack(spacing: 16) {
+                Text("Normal")
+                Text("Offset(10,5)").offset(x: 10, y: 5)
+            }
+            .frame(height: 24)
+        ))
+        var hidden: [String] = []
+        walk(widget) { w in
+            if gtk_widget_get_overflow(w) == GTK_OVERFLOW_HIDDEN { hidden.append(widgetTypeName(w)) }
+        }
+        XCTAssertEqual(hidden, [], "widgets clipping the offset label")
     }
 
     // MARK: - Shapes expand to fill
@@ -149,4 +220,31 @@ private func measuredSize(of widget: UnsafeMutablePointer<GtkWidget>) -> (width:
     gtk_widget_measure(widget, GTK_ORIENTATION_HORIZONTAL, -1, &minW, &natW, nil, nil)
     gtk_widget_measure(widget, GTK_ORIENTATION_VERTICAL, -1, &minH, &natH, nil, nil)
     return (Double(natW), Double(natH))
+}
+
+private func walk(_ widget: UnsafeMutablePointer<GtkWidget>, _ visit: (UnsafeMutablePointer<GtkWidget>) -> Void) {
+    visit(widget)
+    var child = gtk_widget_get_first_child(widget)
+    while let c = child {
+        walk(c, visit)
+        child = gtk_widget_get_next_sibling(c)
+    }
+}
+
+private func findWidget(named name: String, in widget: UnsafeMutablePointer<GtkWidget>) -> UnsafeMutablePointer<GtkWidget>? {
+    var found: UnsafeMutablePointer<GtkWidget>?
+    walk(widget) { w in
+        if found == nil, widgetTypeName(w) == name { found = w }
+    }
+    return found
+}
+
+private func origin(
+    of widget: UnsafeMutablePointer<GtkWidget>,
+    in ancestor: UnsafeMutablePointer<GtkWidget>
+) -> (x: Double, y: Double)? {
+    var source = graphene_point_t()
+    var result = graphene_point_t()
+    guard gtk_widget_compute_point(widget, ancestor, &source, &result) != 0 else { return nil }
+    return (Double(result.x), Double(result.y))
 }

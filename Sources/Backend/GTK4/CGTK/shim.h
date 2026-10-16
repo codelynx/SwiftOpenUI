@@ -125,7 +125,12 @@ gtk_swift_widget_measure(GtkWidget *widget,
 
 static inline GtkWidget *
 gtk_swift_fixed_new(void) {
-    return gtk_fixed_new();
+    // GtkFixed clips its children by default; SwiftUI layout containers
+    // do not (an .offset() or a stroke can draw past the frame). Clipping
+    // is opted into explicitly by .clipped() / .clipShape() / ScrollView.
+    GtkWidget *fixed = gtk_fixed_new();
+    gtk_widget_set_overflow(fixed, GTK_OVERFLOW_VISIBLE);
+    return fixed;
 }
 
 static inline void

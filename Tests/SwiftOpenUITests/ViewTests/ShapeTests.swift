@@ -154,6 +154,16 @@ final class ShapeTests: XCTestCase {
         XCTAssertEqual(stroked.style.lineJoin, .bevel)
     }
 
+    func testStrokeIsNotBorder() {
+        XCTAssertFalse(Circle().stroke(.black, lineWidth: 2).isBorder)
+        XCTAssertFalse(Circle().stroke(.black, style: StrokeStyle(lineWidth: 2)).isBorder)
+    }
+
+    func testStrokeBorderIsBorder() {
+        XCTAssertTrue(Circle().strokeBorder(.black, lineWidth: 2).isBorder)
+        XCTAssertTrue(Circle().strokeBorder(.black, style: StrokeStyle(lineWidth: 2)).isBorder)
+    }
+
     func testStrokedShapePreservesShape() {
         let stroked = Capsule().stroke(.black, lineWidth: 1)
         XCTAssertEqual(stroked.shape.style, .circular)

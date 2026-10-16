@@ -120,6 +120,17 @@ public struct StrokedShape<S: Shape>: View, PrimitiveView {
     public let shape: S
     public let color: Color
     public let style: StrokeStyle
+    /// True for `strokeBorder`: the line is inset by half its width so it
+    /// stays inside the frame. False for `stroke`: the line is centered on
+    /// the shape's outline, so half of it lies outside the frame.
+    public let isBorder: Bool
+
+    public init(shape: S, color: Color, style: StrokeStyle, isBorder: Bool = false) {
+        self.shape = shape
+        self.color = color
+        self.style = style
+        self.isBorder = isBorder
+    }
 
     public var body: Never { fatalError() }
 }
@@ -146,11 +157,11 @@ extension Shape {
     /// on the path. For thin borders the visual difference is negligible;
     /// insetting-by-lineWidth-/2 can be added later if needed.
     public func strokeBorder(_ color: Color, lineWidth: Double = 1) -> StrokedShape<Self> {
-        StrokedShape(shape: self, color: color, style: StrokeStyle(lineWidth: lineWidth))
+        StrokedShape(shape: self, color: color, style: StrokeStyle(lineWidth: lineWidth), isBorder: true)
     }
 
     /// Stroke the border of this shape with a color and stroke style.
     public func strokeBorder(_ color: Color, style: StrokeStyle) -> StrokedShape<Self> {
-        StrokedShape(shape: self, color: color, style: style)
+        StrokedShape(shape: self, color: color, style: style, isBorder: true)
     }
 }
