@@ -293,11 +293,18 @@ extension WindowGroup: Win32WindowRenderable {
 
 /// WM_DPICHANGED (RFC #16 D4): the window moved to a monitor with a
 /// different scale, or the scale changed. Everything was converted from
-/// points at creation, so re-render the root content at the new DPI, re-derive
-/// the pixel constraints, then take the size Windows suggests for the new
-/// monitor.
+/// points at creation, so take the size Windows suggests for the new
+/// monitor, then re-render the root content at the new DPI and re-derive
+/// the pixel constraints.
 private func handleDpiChanged(_ hwnd: HWND, lParam: LPARAM) {
     invalidateInheritedBackgrounds()
+    // Resize to the suggested rect FIRST: views that read their parent's
+    // size while rendering (GeometryReader) must see the new client area.
+    if let suggested = UnsafePointer<RECT>(bitPattern: Int(lParam))?.pointee {
+        SetWindowPos(hwnd, nil, suggested.left, suggested.top,
+                     suggested.right - suggested.left, suggested.bottom - suggested.top,
+                     UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+    }
     let userData = win32_GetWindowLongPtrW(hwnd, GWLP_USERDATA)
     if userData != 0 {
         let state = Unmanaged<MainWindowState>.fromOpaque(UnsafeMutableRawPointer(bitPattern: Int(userData))!).takeUnretainedValue()
@@ -321,12 +328,7 @@ private func handleDpiChanged(_ hwnd: HWND, lParam: LPARAM) {
         state.maxClientWidth = c.maxW.map { px($0, for: hwnd) } ?? state.maxClientWidth
         state.maxClientHeight = c.maxH.map { px($0, for: hwnd) } ?? state.maxClientHeight
     }
-    if let suggested = UnsafePointer<RECT>(bitPattern: Int(lParam))?.pointee {
-        SetWindowPos(hwnd, nil, suggested.left, suggested.top,
-                     suggested.right - suggested.left, suggested.bottom - suggested.top,
-                     UINT(SWP_NOZORDER | SWP_NOACTIVATE))
-    }
-    // Lay the new content out even if the suggested size didn't change.
+    // Lay the new content out in the (already resized) client area.
     SendMessageW(hwnd, UINT(WM_SIZE), 0, 0)
     RedrawWindow(hwnd, nil, nil, UINT(RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN))
 }
