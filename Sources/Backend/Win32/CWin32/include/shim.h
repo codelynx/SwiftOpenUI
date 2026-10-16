@@ -26,6 +26,15 @@ static inline WORD win32_HIWORD(DWORD_PTR value) {
     return HIWORD(value);
 }
 
+// --- Return-value reinterpretation ---
+
+// TrackPopupMenu with TPM_RETURNCMD returns the chosen command id through
+// its BOOL result, which Swift imports as Bool. Returns it as an int
+// (0 = dismissed).
+static inline int win32_TrackPopupMenuReturnCmd(HMENU menu, UINT flags, int x, int y, HWND owner) {
+    return (int)TrackPopupMenu(menu, flags | TPM_RETURNCMD, x, y, 0, owner, NULL);
+}
+
 // --- Macro expansions: mouse coordinates from LPARAM ---
 
 static inline int win32_GET_X_LPARAM(LPARAM lParam) {

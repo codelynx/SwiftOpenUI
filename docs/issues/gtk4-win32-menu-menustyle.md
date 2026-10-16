@@ -94,11 +94,20 @@ above, deferred.)
 
 ### Remaining open items
 
-1. **Windows regression (§3):** the old `Menu` rendered a working
-   `TrackPopupMenu` string menu; the view-shaped items can't bridge to it,
-   so Win32 now renders the label trigger only — **no working popup on
-   Windows** until the view-popup rework. Documented, owner-accepted as
-   part of "minimal Win32." Not runtime-validated.
+1. ~~**Windows regression (§3):** Win32 renders the label trigger only.~~
+   **Resolved (2026-10-16)** in `Win32Menu.swift`: the content views are
+   walked into native popup entries (`Button` → item, `Divider` →
+   separator, nested `Menu` → submenu, `Section` → divider-separated group
+   with an inert header row, `.disabled` → grayed; `Group`/`ForEach`/`if`/
+   `AnyView` and other modifier wrappers are flattened). A click anywhere on
+   the rendered label opens a `TrackPopupMenu` below it; the chosen item's
+   action runs after the menu closes. Item titles are text only (first
+   `Text`/`Label` title in the item's label; icons dropped). Runtime-checked
+   with `ParityMenu` on Windows 11: both menus open below their trigger and
+   the picked action updates the label/log. Still open on Win32: the trigger
+   has no button chrome or chevron for `.automatic` style (it renders like
+   `.borderlessButton`), and there is no keyboard activation of the trigger.
+   Tests: `Win32MenuTests`.
 2. Interactive GTK checks: popover opens, items fire + dismiss, borderless
    renders, and the rebuild-on-change trigger updates correctly.
 3. `Examples/Parity` entry (macOS-reference side).

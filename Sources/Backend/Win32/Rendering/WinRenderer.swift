@@ -6162,17 +6162,6 @@ private let viewThatFitsResizeProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam
 
 // MARK: - Phase 4D views
 
-extension Menu: WinRenderable {
-    public func winCreateWidget(in context: RenderContext) -> HWND? {
-        // MINIMAL, not yet validated on Windows: render the view-shaped
-        // `label` as the trigger. The view-shaped popup (items are Views,
-        // not the old string MenuElements that TrackPopupMenu needs) is a
-        // follow-up the Windows-side owner picks up — this keeps the port
-        // compiling with the trigger visible. Tracked in the Menu issue.
-        return winRenderView(label, in: context)
-    }
-}
-
 func winPopulateMenu(_ targetMenu: HMENU,
                      elements: [MenuElement],
                      nextMenuID: inout UINT,
