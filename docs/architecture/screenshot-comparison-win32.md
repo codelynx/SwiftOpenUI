@@ -147,18 +147,19 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
-| Tap / Double-tap / Long press | White text on color | Black text on color | Open -- foregroundColor outside background |
+| Tap / Double-tap / Long press | White text on color | White text on color | OK |
 | 1s duration | Correct | Correct | OK |
 | Drag | "(not available on macOS)" | "Drag me" + offset + reset | OK -- Win32 has more |
-| Overall | Core gestures | All gestures, low-contrast labels | B+ |
+| Overall | Core gestures | All gestures including drag | A |
 
 ### 14. Animation
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
-| Fade / Scale / Slide / withAnimation | 4 animations, white labels | 4 animations, black labels | Open -- foregroundColor outside background |
+| Fade / Scale / Slide / withAnimation | 4 animations, white labels | 4 animations, white labels | OK |
+| Slide / Animated label position | Centered in box | Sits low in box | Minor |
 | Toggle / withAnimation buttons | Correct | Correct | OK |
-| Overall | 4 animations shown | 4 animations shown | B+ |
+| Overall | 4 animations shown | 4 animations shown | A- |
 
 ### 15. Focus
 
@@ -182,11 +183,11 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 
 | Rating | Examples |
 |--------|----------|
-| A | HelloWorld, ViewsLayout, StateData, Environment, AppStructure |
-| A- | Stopwatch, ColorStudio, Calculator, ViewsBasic, Modifiers, Navigation, Focus |
-| B+ | SimplePaint, ViewsContainers, Gestures, Animation |
+| A | HelloWorld, ViewsLayout, StateData, Environment, Gestures, AppStructure |
+| A- | Stopwatch, ColorStudio, Calculator, ViewsBasic, Modifiers, Navigation, Animation, Focus |
+| B+ | SimplePaint, ViewsContainers |
 
-Gestures and Animation share one cause (Open Issue 1).
+No shared cause remains; the open issues below are each local to one or two examples.
 
 ## DPI Scaling
 
@@ -198,16 +199,16 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 
 | # | Issue | Affects | Type | Effort |
 |---|-------|---------|------|--------|
-| 1 | `.foregroundColor()` applied after `.padding().background()` doesn't reach the inner `Text` | Gestures, Animation | Modifier propagation | Medium |
-| 2 | ScrollView / List rows are centered instead of leading-aligned | ViewsContainers | Layout | Medium |
-| 3 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
-| 4 | SimplePaint canvas page frame not drawn | SimplePaint | Not investigated | ? |
-| 5 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
+| 1 | ScrollView / List rows are centered instead of leading-aligned | ViewsContainers | Layout | Medium |
+| 2 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
+| 3 | SimplePaint canvas page frame not drawn | SimplePaint | Not investigated | ? |
+| 4 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
 
 ## All Fixes Applied
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
+| Outer .foregroundColor() reaches text through .background()/ZStack; innermost color wins | `7b399b8` | Gestures B+ -> A, Animation B+ -> A-; also fixes label colors in ViewsLayout, Modifiers, Navigation |
 | Automatic window grows to fit content | `a557817` | ViewsBasic B+ -> A-, ViewsLayout A- -> A, Modifiers B+ -> A- |
 | TextField/SecureField/TextEditor/search field font + TextField width | `d26f7bb` | Focus B+ -> A-, ViewsBasic B -> B+ |
 | Default Segoe UI font for plain Text (#22) | `83c32bd` | Typography matches macOS everywhere; "×" glyph renders (Modifiers "D0x30" fixed) |
