@@ -121,8 +121,10 @@ private final class DropdownTriggerState {
         d2d1_SolidColorBrush_SetColor(brush, 0.45, 0.45, 0.47, 1)
         let cx = w - Float(ddChevronSlot(hwnd)) / 2 - Float(pxExact(2, for: hwnd))
         let cy = h / 2
-        d2d1_RenderTarget_DrawLine(rt, brush, cx - 4, cy - 2, cx, cy + 2, 1.4)
-        d2d1_RenderTarget_DrawLine(rt, brush, cx, cy + 2, cx + 4, cy - 2, 1.4)
+        // Arrow is 8x4pt; its 1.4px stroke stays a physical-pixel hairline.
+        let armX = Float(pxExact(4, for: hwnd)), armY = Float(pxExact(2, for: hwnd))
+        d2d1_RenderTarget_DrawLine(rt, brush, cx - armX, cy - armY, cx, cy + armY, 1.4)
+        d2d1_RenderTarget_DrawLine(rt, brush, cx, cy + armY, cx + armX, cy - armY, 1.4)
 
         // Focus ring — inset a full 2px so the antialiased stroke stays
         // clear of the control's edges (avoids top/right clipping).
