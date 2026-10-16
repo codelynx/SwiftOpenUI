@@ -426,6 +426,31 @@ func eraseWithInheritedBackground(hwnd: HWND, wParam: WPARAM) -> LRESULT {
     return 1
 }
 
+/// The background color inherited from `hwnd`'s parent chain (as 0...1 RGB),
+/// for D2D surfaces that must clear to whatever is behind them. Falls back
+/// to the system window color when no ancestor supplies a solid brush.
+/// A hollow brush (e.g. from a ZStack) has no color, so keep looking above it.
+func inheritedBackgroundColor(for hwnd: HWND) -> (r: Float, g: Float, b: Float) {
+    var color = GetSysColor(COLOR_WINDOW)
+    if let parent = GetParent(hwnd) {
+        let hdc = GetDC(hwnd)
+        let brushResult = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC),
+                                       WPARAM(UInt(bitPattern: hdc)), LPARAM(Int(bitPattern: hwnd)))
+        ReleaseDC(hwnd, hdc)
+        if brushResult != 0, let brush = HBRUSH(bitPattern: Int(brushResult)) {
+            var logBrush = LOGBRUSH()
+            GetObjectW(brush, Int32(MemoryLayout<LOGBRUSH>.size), &logBrush)
+            if logBrush.lbStyle == UINT(BS_NULL) {
+                return inheritedBackgroundColor(for: parent)
+            }
+            color = logBrush.lbColor
+        }
+    }
+    return (Float(win32_GetRValue(color)) / 255.0,
+            Float(win32_GetGValue(color)) / 255.0,
+            Float(win32_GetBValue(color)) / 255.0)
+}
+
 // MARK: - Stack container class
 
 let stackContainerClassName: UnsafePointer<WCHAR> = {
