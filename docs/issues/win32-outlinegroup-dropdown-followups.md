@@ -13,7 +13,7 @@
 The Win32 backend gained a native `OutlineGroup` tree renderer
 (`Win32OutlineTree.swift`), a Direct2D dropdown `Picker`
 (`Win32DropdownPicker.swift`), and a `WinMeasurable` intrinsic-sizing
-protocol (`Win32Measure.swift`). Four follow-ups remain.
+protocol (`Win32Measure.swift`). Four follow-ups were filed; #1 is resolved.
 
 ## 1. OutlineGroup expansion state resets on an ancestor structural rebuild
 
@@ -37,6 +37,18 @@ tree back to roots.
   general child-`@State` reconciliation pass.
 - **Impact:** expand/collapse is usable in the common case; the reset only
   bites when an ancestor rebuilds while folders are expanded.
+- **Resolved (2026-10-16)** with a Win32-specific save/restore rather than
+  general child-state reconciliation. `Win32ViewHost.rebuild()` saves each
+  outline tree's expanded nodes and scroll offset before tearing the subtree
+  down (`saveOutlineTreeStates`) and re-applies them to the re-created trees
+  afterwards (`restoreOutlineTreeStates`), the same way focus and edit
+  selection are already carried over. Expansion is keyed by **id path**
+  (`[rootID, …, nodeID]`), not the positional key, so a filter that drops
+  earlier rows keeps the right folders open, and nodes that disappear are
+  dropped. Trees are matched to their snapshot by depth-first order under
+  the host. The `WM_DPICHANGED` re-render (`handleDpiChanged`) uses the same
+  save/restore; scroll is carried in points so it lands at the same logical
+  offset at the new scale. Tests: `Win32OutlineTreeTests`.
 
 ## 2. OutlineGroup rows are intrinsic-width (trailing alignment ineffective)
 

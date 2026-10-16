@@ -99,6 +99,11 @@ final class Win32OutlineModel {
     let rootKeys: [String]
     private let childKeysByKey: [String: [String]]
     private let depthByKey: [String: Int]
+    /// Each node's id chain from its root (`[rootID, …, nodeID]`). Unlike the
+    /// positional keys, it still names the same node after the data changes
+    /// (e.g. a filter drops rows), so it is what survives a rebuild.
+    private let identityPathByKey: [String: [AnyHashable]]
+    private let keyByIdentityPath: [[AnyHashable]: String]
     /// Renders the row body (badge/icon/name — no arrow) for a key into
     /// `parent`. Captures the OutlineGroup's generic `rowContent`.
     private let renderRow: (String, HWND, HINSTANCE) -> HWND?
@@ -111,36 +116,50 @@ final class Win32OutlineModel {
     var hInstance: HINSTANCE?
     var capturedEnv: EnvironmentValues?
     var scrollY: Int32 = 0
+    /// DPI scale the rows were last laid out at. Read when saving state:
+    /// during WM_DPICHANGED the window already reports the new DPI, but
+    /// `scrollY` is still in the old pixels.
+    var layoutScale: Double = 1
     var contentHeight: Int32 = 0
     var contentWidth: Int32 = 0
     /// Set by an arrow click, consumed by the container's toggle message.
     var pendingToggleKey: String?
 
-    init<Data: RandomAccessCollection, Row: View>(
+    init<Data: RandomAccessCollection, ID: Hashable, Row: View>(
         items: [Data.Element],
+        idKeyPath: KeyPath<Data.Element, ID>,
         childrenKeyPath: KeyPath<Data.Element, Data?>,
         rowContent: @escaping (Data.Element) -> Row
     ) {
         var nodesByKey: [String: Data.Element] = [:]
         var childKeys: [String: [String]] = [:]
         var depths: [String: Int] = [:]
+        var paths: [String: [AnyHashable]] = [:]
+        var keysByPath: [[AnyHashable]: String] = [:]
         var counter = 0
 
         // Positional depth-first keying ("0", "1", …): unique and stable,
         // and immune to two nodes in different subtrees sharing an id.
-        func assign(_ element: Data.Element, _ depth: Int) -> String {
+        func assign(_ element: Data.Element, _ depth: Int, _ parentPath: [AnyHashable]) -> String {
             let key = String(counter)
             counter += 1
             nodesByKey[key] = element
             depths[key] = depth
+            let path = parentPath + [AnyHashable(element[keyPath: idKeyPath])]
+            paths[key] = path
+            // First wins if siblings share an id; such a node just won't
+            // have its expansion restored.
+            if keysByPath[path] == nil { keysByPath[path] = key }
             if let kids = element[keyPath: childrenKeyPath], !kids.isEmpty {
-                childKeys[key] = kids.map { assign($0, depth + 1) }
+                childKeys[key] = kids.map { assign($0, depth + 1, path) }
             }
             return key
         }
-        rootKeys = items.map { assign($0, 0) }
+        rootKeys = items.map { assign($0, 0, []) }
         childKeysByKey = childKeys
         depthByKey = depths
+        identityPathByKey = paths
+        keyByIdentityPath = keysByPath
         renderRow = { key, parent, hInst in
             guard let element = nodesByKey[key] else { return nil }
             return winRenderView(rowContent(element), in: RenderContext(parent: parent, hInstance: hInst))
@@ -169,6 +188,92 @@ final class Win32OutlineModel {
 
     func toggle(_ key: String) {
         if expanded.contains(key) { expanded.remove(key) } else { expanded.insert(key) }
+    }
+
+    /// The expanded nodes as id chains, for carrying across a rebuild.
+    var expandedIdentityPaths: Set<[AnyHashable]> {
+        Set(expanded.compactMap { identityPathByKey[$0] })
+    }
+
+    /// Re-expands the nodes named by `paths` that still exist in this tree.
+    /// Returns whether the expansion set changed.
+    @discardableResult
+    func restoreExpansion(_ paths: Set<[AnyHashable]>) -> Bool {
+        let restored = Set(paths.compactMap { keyByIdentityPath[$0] })
+        guard restored != expanded else { return false }
+        expanded = restored
+        return true
+    }
+}
+
+// MARK: - State across ancestor rebuilds
+
+/// Expansion and scroll state of one outline tree, saved before a view host
+/// (or a DPI change) destroys and re-renders its subtree. A rebuild creates
+/// a fresh `Win32OutlineModel`, so without this every ancestor state change
+/// would collapse the tree back to its roots.
+struct OutlineTreeSnapshot {
+    let expanded: Set<[AnyHashable]>
+    /// In points, so it survives a DPI change.
+    let scrollPoints: Double
+}
+
+/// `root` itself if it is an outline tree, else every outline tree below it.
+private func outlineTrees(at root: HWND) -> [HWND] {
+    if isOutlineContainer(root) { return [root] }
+    var trees: [HWND] = []
+    collectOutlineTrees(in: root, into: &trees)
+    return trees
+}
+
+/// Every outline tree under `parent`, in depth-first window order.
+private func collectOutlineTrees(in parent: HWND, into result: inout [HWND]) {
+    var child = GetWindow(parent, UINT(GW_CHILD))
+    while let c = child {
+        if isOutlineContainer(c) {
+            result.append(c)
+        } else {
+            collectOutlineTrees(in: c, into: &result)
+        }
+        child = GetWindow(c, UINT(GW_HWNDNEXT))
+    }
+}
+
+private func isOutlineContainer(_ hwnd: HWND) -> Bool {
+    var buffer = [WCHAR](repeating: 0, count: 64)
+    let length = GetClassNameW(hwnd, &buffer, Int32(buffer.count))
+    guard length > 0 else { return false }
+    return String(decodingCString: buffer, as: UTF16.self) == "SwiftUIOutlineTree"
+}
+
+/// Saves the state of each outline tree under `container`, matched back by
+/// position (the same ordinal matching `saveInputState` uses for focus).
+func saveOutlineTreeStates(in container: HWND) -> [OutlineTreeSnapshot] {
+    outlineTrees(at: container).compactMap { tree in
+        guard let model = outlineModel(from: tree) else { return nil }
+        return OutlineTreeSnapshot(
+            expanded: model.expandedIdentityPaths,
+            scrollPoints: Double(model.scrollY) / model.layoutScale
+        )
+    }
+}
+
+/// Re-applies saved outline state to the trees under `container` after a
+/// rebuild. A tree whose state already matches (the narrow mutation path
+/// kept it) is left alone.
+func restoreOutlineTreeStates(_ snapshots: [OutlineTreeSnapshot], in container: HWND) {
+    guard !snapshots.isEmpty else { return }
+    for (tree, snapshot) in zip(outlineTrees(at: container), snapshots) {
+        guard let model = outlineModel(from: tree) else { continue }
+        let expansionChanged = model.restoreExpansion(snapshot.expanded)
+        let scrollY = px(snapshot.scrollPoints, for: tree)
+        guard expansionChanged || model.scrollY != scrollY else { continue }
+        model.scrollY = scrollY
+        if expansionChanged {
+            outlineRelayout(model) // clamps scrollY to the new content height
+        } else {
+            outlineHandleResize(model)
+        }
     }
 }
 
@@ -272,6 +377,7 @@ private func outlineRelayout(_ model: Win32OutlineModel) {
 
     model.contentHeight = y
     model.contentWidth = widest
+    model.layoutScale = dpiScaleFactor(for: container)
 
     var crect = RECT(); GetClientRect(container, &crect)
     let clientW = crect.right - crect.left
@@ -519,6 +625,7 @@ extension OutlineGroup: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
         let model = Win32OutlineModel(
             items: items,
+            idKeyPath: idKeyPath,
             childrenKeyPath: childrenKeyPath,
             rowContent: rowContent
         )
