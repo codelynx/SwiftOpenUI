@@ -48,9 +48,10 @@ public struct SubMenu {
 /// - GTK4: `GtkMenuButton` whose child is the rendered label and whose
 ///   popover holds the rendered items; an item tap fires its action, then
 ///   the popover is dismissed (act-then-dismiss).
-/// - Win32: the rendered label is the trigger; a click opens a native
-///   popup menu built from the content views (`Button`, `Divider`, nested
-///   `Menu`, `Section`). Item titles are text only.
+/// - Win32: a native popup menu built from the content views (`Button`,
+///   `Divider`, nested `Menu`, `Section`; item titles are text only). The
+///   trigger is a button with a chevron, or the bare label under
+///   `.borderlessButton`.
 /// - Web: minimal — renders the label trigger and the items into a
 ///   dropdown (full parity deferred).
 ///

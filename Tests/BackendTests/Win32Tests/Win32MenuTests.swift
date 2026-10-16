@@ -25,7 +25,57 @@ private func menuString(_ hmenu: HMENU, at index: UINT) -> String {
     return String(decoding: buffer.prefix(Int(length)), as: UTF16.self)
 }
 
+private var testWindow: HWND!
+private let testClassName: [WCHAR] = Array("SwiftUIMenuTest".utf16) + [0]
+
+private func testContext() -> RenderContext {
+    let hInstance = GetModuleHandleW(nil)!
+    if testWindow == nil {
+        var wc = WNDCLASSEXW()
+        wc.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
+        wc.lpfnWndProc = DefWindowProcW
+        wc.hInstance = hInstance
+        testClassName.withUnsafeBufferPointer { ptr in
+            wc.lpszClassName = ptr.baseAddress!
+            RegisterClassExW(&wc)
+            testWindow = CreateWindowExW(0, ptr.baseAddress!, nil, DWORD(WS_OVERLAPPEDWINDOW),
+                                         0, 0, 400, 300, nil, nil, hInstance, nil)
+        }
+    }
+    return RenderContext(parent: testWindow, hInstance: hInstance)
+}
+
+private func className(_ hwnd: HWND) -> String {
+    var buffer = [WCHAR](repeating: 0, count: 64)
+    let length = GetClassNameW(hwnd, &buffer, Int32(buffer.count))
+    return String(decoding: buffer.prefix(Int(length)), as: UTF16.self)
+}
+
 final class Win32MenuTests: XCTestCase {
+    override func tearDown() {
+        if let parent = testWindow {
+            while let child = GetWindow(parent, UINT(GW_CHILD)) { DestroyWindow(child) }
+        }
+        super.tearDown()
+    }
+
+    /// The default style renders a real button (focusable, with chrome).
+    func testAutomaticStyleRendersButtonTrigger() throws {
+        let hwnd = try XCTUnwrap(winRenderView(Menu("Actions") { Button("A") {} }, in: testContext()))
+        XCTAssertEqual(className(hwnd), "SwiftUID2DSurface")
+        XCTAssertNotEqual(win32_GetWindowLongPtrW(hwnd, GWL_STYLE) & LONG_PTR(WS_TABSTOP), 0)
+    }
+
+    /// .borderlessButton renders the label itself as the trigger.
+    func testBorderlessStyleRendersPlainLabel() throws {
+        let menu = Menu("Actions") { Button("A") {} }.menuStyle(.borderlessButton)
+        let hwnd = try XCTUnwrap(winRenderView(menu, in: testContext()))
+        XCTAssertEqual(className(hwnd), "Static")
+        var buffer = [WCHAR](repeating: 0, count: 64)
+        let length = GetWindowTextW(hwnd, &buffer, Int32(buffer.count))
+        XCTAssertEqual(String(decoding: buffer.prefix(Int(length)), as: UTF16.self), "Actions")
+    }
+
     func testButtonsDividersAndSubmenusFlattenInOrder() {
         let menu = Menu {
             Button("Use Source") {}

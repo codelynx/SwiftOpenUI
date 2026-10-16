@@ -193,18 +193,19 @@ func winBuildPopupMenu(_ hmenu: HMENU, entries: [WinMenuEntry],
 /// Click state shared by every HWND of one trigger.
 private final class MenuTriggerHandler {
     let entries: [WinMenuEntry]
-    let trigger: HWND
+    /// The trigger the popup anchors to. Set once the trigger is created
+    /// (the bordered trigger's button action needs the handler first).
+    var trigger: HWND?
     /// Set on button-down inside the trigger, so a stray button-up (e.g.
     /// the release that dismissed the previous popup) doesn't reopen it.
     var armed = false
 
-    init(entries: [WinMenuEntry], trigger: HWND) {
+    init(entries: [WinMenuEntry]) {
         self.entries = entries
-        self.trigger = trigger
     }
 
     func showPopup() {
-        guard !entries.isEmpty, let hmenu = CreatePopupMenu() else { return }
+        guard let trigger, !entries.isEmpty, let hmenu = CreatePopupMenu() else { return }
         defer { DestroyMenu(hmenu) }
         var nextID: UINT = 1
         var actions: [UINT: () -> Void] = [:]
@@ -269,9 +270,33 @@ private func installMenuTrigger(on hwnd: HWND, handler: MenuTriggerHandler) {
 
 extension Menu: WinRenderable {
     public func winCreateWidget(in context: RenderContext) -> HWND? {
-        guard let trigger = winRenderView(label, in: context) else { return nil }
-        let handler = MenuTriggerHandler(entries: winMenuEntries(from: content), trigger: trigger)
-        installMenuTrigger(on: trigger, handler: handler)
+        let handler = MenuTriggerHandler(entries: winMenuEntries(from: content))
+
+        guard getCurrentEnvironment().menuStyle == .automatic else {
+            // .borderlessButton: the label itself is the trigger.
+            guard let trigger = winRenderView(label, in: context) else { return nil }
+            handler.trigger = trigger
+            installMenuTrigger(on: trigger, handler: handler)
+            return trigger
+        }
+
+        // .automatic: a button, like SwiftUI's pull-down menu button, whose
+        // action opens the popup. Rendering it as a real Button gives the
+        // same chrome, hover/pressed states, focus and Space/Enter as any
+        // other button. A chevron marks it as a menu.
+        let open = { handler.showPopup() }
+        let trigger: HWND?
+        if let text = label as? Text {
+            trigger = winRenderView(Button("\(text.content) \u{25BE}", action: open), in: context)
+        } else {
+            trigger = winRenderView(Button(action: open) {
+                HStack(spacing: 4) {
+                    label
+                    Image(systemName: "chevron.down").imageScale(.small)
+                }
+            }, in: context)
+        }
+        handler.trigger = trigger
         return trigger
     }
 }

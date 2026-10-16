@@ -104,10 +104,11 @@ above, deferred.)
    action runs after the menu closes. Item titles are text only (first
    `Text`/`Label` title in the item's label; icons dropped). Runtime-checked
    with `ParityMenu` on Windows 11: both menus open below their trigger and
-   the picked action updates the label/log. Still open on Win32: the trigger
-   has no button chrome or chevron for `.automatic` style (it renders like
-   `.borderlessButton`), and there is no keyboard activation of the trigger.
-   Tests: `Win32MenuTests`.
+   the picked action updates the label/log. Trigger styling (2026-10-16):
+   `.automatic` renders the trigger as a regular Win32 `Button` (D2D chrome,
+   hover/pressed, Tab focus, Space/Enter) whose label gets a chevron (`▾`
+   after a `Text`, `chevron.down` after a custom label);
+   `.borderlessButton` keeps the plain label. Tests: `Win32MenuTests`.
 2. Interactive GTK checks: popover opens, items fire + dismiss, borderless
    renders, and the rebuild-on-change trigger updates correctly.
 3. `Examples/Parity` entry (macOS-reference side).
