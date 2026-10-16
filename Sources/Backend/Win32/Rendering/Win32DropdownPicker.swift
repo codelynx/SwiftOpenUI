@@ -13,15 +13,16 @@ import Foundation
 // corners, hover highlighting, and a check on the current selection. Same
 // D2D infrastructure the segmented Picker already uses (`D2DRenderer`).
 
-private let ddPopupVPad: Int32 = 5
-private let ddHPad: Int32 = 12
-private let ddChevronSlot: Int32 = 28
+// Geometry in points, converted for the window being drawn/measured.
+private func ddPopupVPad(_ hwnd: HWND) -> Int32 { px(5, for: hwnd) }
+private func ddHPad(_ hwnd: HWND) -> Int32 { px(12, for: hwnd) }
+private func ddChevronSlot(_ hwnd: HWND) -> Int32 { px(28, for: hwnd) }
 
 /// Control height derived from the current font's measured text height plus
 /// vertical padding, so the trigger and popup rows scale with the font/DPI
 /// instead of a hardcoded pixel height. `"Ag"` samples ascender+descender.
 func dropdownRowHeight(_ hwnd: HWND) -> Int32 {
-    max(24, measureText("Ag", hwnd: hwnd).height + 10)
+    max(px(24, for: hwnd), measureText("Ag", hwnd: hwnd).height + px(10, for: hwnd))
 }
 
 // MARK: - Trigger state
@@ -82,7 +83,7 @@ private final class DropdownTriggerState {
         let w = Float(r.right), h = Float(r.bottom)
         guard w > 0, h > 0 else { return }
         let enabled = IsWindowEnabled(hwnd)
-        let cr: Float = 5
+        let cr = Float(pxExact(5, for: hwnd))
 
         d2d1_RenderTarget_BeginDraw(rt)
         // Background (parent inherited color under the rounded rect).
@@ -112,13 +113,13 @@ private final class DropdownTriggerState {
             }
             dwrite_TextFormat_SetTextAlignment(fmt, 0) // leading
             D2DRenderer.shared.drawText(selectedText, target: rt, format: fmt, brush: brush,
-                                        x: Float(ddHPad), y: 0,
-                                        width: w - Float(ddHPad + ddChevronSlot), height: h)
+                                        x: Float(ddHPad(hwnd)), y: 0,
+                                        width: w - Float(ddHPad(hwnd) + ddChevronSlot(hwnd)), height: h)
         }
 
         // Chevron (downward), trailing.
         d2d1_SolidColorBrush_SetColor(brush, 0.45, 0.45, 0.47, 1)
-        let cx = w - Float(ddChevronSlot) / 2 - 2
+        let cx = w - Float(ddChevronSlot(hwnd)) / 2 - Float(pxExact(2, for: hwnd))
         let cy = h / 2
         d2d1_RenderTarget_DrawLine(rt, brush, cx - 4, cy - 2, cx, cy + 2, 1.4)
         d2d1_RenderTarget_DrawLine(rt, brush, cx, cy + 2, cx + 4, cy - 2, 1.4)
@@ -174,8 +175,8 @@ private final class DropdownPopupState {
     }
 
     func itemAt(y: Int32) -> Int {
-        guard y >= ddPopupVPad else { return -1 } // top padding, not item 0
-        let idx = Int((y - ddPopupVPad) / itemHeight)
+        guard y >= ddPopupVPad(hwnd) else { return -1 } // top padding, not item 0
+        let idx = Int((y - ddPopupVPad(hwnd)) / itemHeight)
         return (idx >= 0 && idx < options.count) ? idx : -1
     }
 
@@ -194,7 +195,7 @@ private final class DropdownPopupState {
         var r = RECT(); GetClientRect(hwnd, &r)
         let w = Float(r.right), h = Float(r.bottom)
         guard w > 0, h > 0 else { return }
-        let cr: Float = 6
+        let cr = Float(pxExact(6, for: hwnd))
 
         d2d1_RenderTarget_BeginDraw(rt)
         d2d1_RenderTarget_Clear(rt, 1, 1, 1, 1)
@@ -207,7 +208,7 @@ private final class DropdownPopupState {
 
         let fmt = D2DRenderer.shared.textFormat(for: hwnd)
         for (i, option) in options.enumerated() {
-            let top = Float(ddPopupVPad + Int32(i) * itemHeight)
+            let top = Float(ddPopupVPad(hwnd) + Int32(i) * itemHeight)
             let bottom = top + Float(itemHeight)
 
             if i == hovered {
@@ -436,20 +437,21 @@ private func ddTogglePopup(_ s: DropdownTriggerState) {
     let triggerW = tr.right - tr.left
     var widest: Int32 = 0
     for opt in s.options { widest = max(widest, measureText(opt, hwnd: s.hwnd).width) }
-    let popupW = max(triggerW, widest + 26 + ddHPad)
-    let popupH = ddPopupVPad * 2 + Int32(s.options.count) * s.rowHeight
+    let popupW = max(triggerW, widest + px(26, for: s.hwnd) + ddHPad(s.hwnd))
+    let popupH = ddPopupVPad(s.hwnd) * 2 + Int32(s.options.count) * s.rowHeight
 
     // Place below the trigger, or above if it would run off the bottom of the
     // trigger's monitor work area (handles multi-monitor / non-primary /
     // vertically-stacked displays — SM_CYSCREEN only covers the primary).
-    var y = tr.bottom + 2
+    let popupGap = px(2, for: s.hwnd)
+    var y = tr.bottom + popupGap
     var mi = MONITORINFO()
     mi.cbSize = DWORD(MemoryLayout<MONITORINFO>.size)
     let mon = MonitorFromWindow(s.hwnd, DWORD(MONITOR_DEFAULTTONEAREST))
     let haveWork = GetMonitorInfoW(mon, &mi)
     let workBottom: Int32 = haveWork ? mi.rcWork.bottom : GetSystemMetrics(SM_CYSCREEN)
     if y + popupH > workBottom {
-        y = tr.top - 2 - popupH
+        y = tr.top - popupGap - popupH
         // Clamp to the work-area top (only bites a long list near the top edge).
         if haveWork, y < mi.rcWork.top { y = mi.rcWork.top }
     }
@@ -484,7 +486,7 @@ private func ddTogglePopup(_ s: DropdownTriggerState) {
 
     // Clip the window itself to a rounded rect so the square window corners
     // don't show around the D2D rounded card. Radius matches the card's.
-    let rgn = CreateRoundRectRgn(0, 0, popupW + 1, popupH + 1, 12, 12)
+    let rgn = CreateRoundRectRgn(0, 0, popupW + 1, popupH + 1, px(12, for: s.hwnd), px(12, for: s.hwnd))
     SetWindowRgn(popup, rgn, true) // window takes ownership of the region
 
     ShowWindow(popup, SW_SHOWNA)

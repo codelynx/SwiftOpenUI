@@ -150,7 +150,7 @@ extension Text: WinRenderable {
                 win32_WC_STATIC(),
                 wstr,
                 DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX | SS_CENTERIMAGE),
-                0, 0, measured.width + 4, measured.height + 2,
+                0, 0, measured.width + px(4, for: context.parent), measured.height + px(2, for: context.parent),
                 context.parent,
                 nil,
                 context.hInstance
@@ -237,7 +237,7 @@ extension TextField: WinRenderable {
                 win32_WC_EDIT(),
                 wstr,
                 DWORD(ES_AUTOHSCROLL | borderStyle | WS_TABSTOP),
-                0, 0, max(measured.width + 16, 150), measured.height + 8,
+                0, 0, max(measured.width + px(16, for: context.parent), px(150, for: context.parent)), measured.height + px(8, for: context.parent),
                 context.parent,
                 nil,
                 context.hInstance
@@ -467,7 +467,7 @@ extension Color: WinRenderable {
         let container = CreateWindowExW(
             0, d2dViewClassName, nil,
             DWORD(WS_CHILD | WS_VISIBLE),
-            0, 0, 20, 20,
+            0, 0, px(20, for: context.parent), px(20, for: context.parent),
             context.parent, nil, context.hInstance, nil
         )
 
@@ -1185,8 +1185,8 @@ func createNativeButton(title: String, action: @escaping () -> Void,
     registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
 
     let measured = measureText(title, hwnd: context.parent)
-    let buttonWidth = measured.width + 24
-    let buttonHeight = measured.height + 12
+    let buttonWidth = measured.width + px(24, for: context.parent)
+    let buttonHeight = measured.height + px(12, for: context.parent)
 
     let hwnd = CreateWindowExW(
         0, d2dSurfaceClassName, nil,
@@ -1260,7 +1260,9 @@ class FlatButtonState {
         let (bgR, bgG, bgB) = backgroundCache.color(for: hwnd)
         d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
 
-        let cornerRadius: Float = 5
+        // Radius is 5pt; the 0.5/1px insets and hairline strokes below stay
+        // physical pixels so borders remain crisp at any scale.
+        let cornerRadius = Float(pxExact(5, for: hwnd))
         let enabled = IsWindowEnabled(hwnd)
 
         switch buttonStyle {
@@ -1460,13 +1462,13 @@ let flatButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
                 let (tw, th): (Int32, Int32) = {
                     if let fmt = fmt {
                         let (w, h) = D2DRenderer.shared.measureText(state.title, format: fmt)
-                        return (Int32(w) + 4, Int32(h) + 2)
+                        return (Int32(w) + px(4, for: hwnd!), Int32(h) + px(2, for: hwnd!))
                     }
                     return (measureText(state.title, hwnd: hwnd!).width,
                             measureText(state.title, hwnd: hwnd!).height)
                 }()
-                let bw = tw + 24
-                let bh = th + 12
+                let bw = tw + px(24, for: hwnd!)
+                let bh = th + px(12, for: hwnd!)
                 SetWindowPos(hwnd, nil, 0, 0, bw, bh, UINT(SWP_NOZORDER | SWP_NOMOVE))
                 InvalidateRect(hwnd, nil, false)
             }
@@ -3248,8 +3250,8 @@ private func remeasureControlIfNeeded(hwnd: HWND, hfont: HFONT) {
 
     var size = SIZE()
     win32_GetTextExtentPoint32W(hdc, buffer, length, &size)
-    let widthPadding: Int32 = className == "Button" ? 24 : 4
-    let heightPadding: Int32 = className == "Button" ? 12 : 2
+    let widthPadding: Int32 = px(className == "Button" ? 24 : 4, for: hwnd)
+    let heightPadding: Int32 = px(className == "Button" ? 12 : 2, for: hwnd)
     SetWindowPos(hwnd, nil, 0, 0,
                  size.cx + widthPadding, size.cy + heightPadding,
                  UINT(SWP_NOZORDER | SWP_NOMOVE))
@@ -3441,8 +3443,8 @@ extension Toggle: WinRenderable {
         let toggleStyle = getCurrentEnvironment().toggleStyle
         let text = label.isEmpty ? "Toggle" : label
         let measured = measureText(text, hwnd: context.parent)
-        let checkWidth = measured.width + 24  // space for checkbox
-        let checkHeight = max(measured.height + 4, 20)
+        let checkWidth = measured.width + px(24, for: context.parent)  // space for checkbox
+        let checkHeight = max(measured.height + px(4, for: context.parent), px(20, for: context.parent))
 
         // Both .checkbox and .switch use BS_AUTOCHECKBOX on Win32 —
         // no native switch control. .switch falls back to checkbox.
@@ -3498,13 +3500,16 @@ private class D2DSliderState {
     var renderTarget: D2DRenderTarget?
     var brush: D2DBrush?
 
-    // Layout constants
-    let trackHeight: Float = 4
-    let thumbRadius: Float = 8
-    let trackInset: Float = 10  // horizontal padding for thumb overhang
+    // Layout constants: 4/8/10pt, in this window's pixels
+    let trackHeight: Float
+    let thumbRadius: Float
+    let trackInset: Float  // horizontal padding for thumb overhang
 
     init(hwnd: HWND, binding: Binding<Double>, range: ClosedRange<Double>, step: Double) {
         self.hwnd = hwnd
+        self.trackHeight = Float(pxExact(4, for: hwnd))
+        self.thumbRadius = Float(pxExact(8, for: hwnd))
+        self.trackInset = Float(pxExact(10, for: hwnd))
         self.binding = binding
         self.rangeMin = range.lowerBound
         self.rangeMax = range.upperBound
@@ -3688,7 +3693,7 @@ extension Slider: WinRenderable {
         let hwnd = CreateWindowExW(
             0, d2dSurfaceClassName, nil,
             DWORD(WS_CHILD | WS_VISIBLE),
-            0, 0, 200, 24,
+            0, 0, px(200, for: context.parent), px(24, for: context.parent),
             context.parent, nil, context.hInstance, nil
         )
 
@@ -3925,7 +3930,7 @@ extension ScrollView: WinRenderable {
         let contentH = childRect.bottom - childRect.top
 
         // Set container natural size (clamped for layout)
-        let displayH = min(contentH, 200)  // max visible height before scrolling
+        let displayH = min(contentH, px(200, for: context.parent))  // max visible height (200pt) before scrolling
         SetWindowPos(container, nil, 0, 0, contentW, displayH, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         // Store scroll state
@@ -4029,8 +4034,8 @@ private let scrollViewWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
         let action = Int32(win32_LOWORD(DWORD_PTR(wParam)))
         var newPos = state.scrollY
         switch action {
-        case SB_LINEUP:    newPos -= 20
-        case SB_LINEDOWN:  newPos += 20
+        case SB_LINEUP:    newPos -= px(20, for: hwnd!)
+        case SB_LINEDOWN:  newPos += px(20, for: hwnd!)
         case SB_PAGEUP:    newPos -= visibleH
         case SB_PAGEDOWN:  newPos += visibleH
         case SB_THUMBTRACK, SB_THUMBPOSITION:
@@ -4271,7 +4276,7 @@ extension Image: WinRenderable {
         }
 
         // Box must track the DPI-scaled font height or the glyph is cropped.
-        let size = Int32(Double(scale.pointSize) * dpiScale) + 4
+        let size = Int32(Double(scale.pointSize) * dpiScale) + Int32((4 * dpiScale).rounded())
         // SS_CENTER | SS_CENTERIMAGE center the glyph within its box so the
         // icon sits centered rather than top-left.
         let hwnd = glyph.withCString(encodedAs: UTF16.self) { wstr in
@@ -4298,7 +4303,8 @@ extension Image: WinRenderable {
     }
 
     private func winCreateSystemIcon(name: String, in context: RenderContext) -> HWND? {
-        let size = Int32(scale.pointSize)
+        // Icon size is in points; load the stock icon at the scaled size so it stays crisp.
+        let size = px(Double(scale.pointSize), for: context.parent)
 
         // Try to load a known stock icon; unknown names get text fallback
         var hIcon: UnsafeMutableRawPointer? = nil
@@ -4319,7 +4325,7 @@ extension Image: WinRenderable {
                 win32_CreateChildWindow(
                     win32_WC_STATIC(), wstr,
                     DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                    0, 0, measured.width + 4, measured.height + 2,
+                    0, 0, measured.width + px(4, for: context.parent), measured.height + px(2, for: context.parent),
                     context.parent, nil, context.hInstance
                 )
             }
@@ -4381,7 +4387,7 @@ extension Image: WinRenderable {
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr,
                 DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                0, 0, measured.width + 4, measured.height + 2,
+                0, 0, measured.width + px(4, for: context.parent), measured.height + px(2, for: context.parent),
                 context.parent, nil, context.hInstance
             )
         }
@@ -4443,7 +4449,7 @@ extension SecureField: WinRenderable {
             win32_CreateChildWindow(
                 win32_WC_EDIT(), wstr,
                 DWORD(ES_PASSWORD | ES_AUTOHSCROLL | borderStyle | WS_TABSTOP),
-                0, 0, max(measured.width + 16, 150), measured.height + 8,
+                0, 0, max(measured.width + px(16, for: context.parent), px(150, for: context.parent)), measured.height + px(8, for: context.parent),
                 context.parent, nil, context.hInstance
             )
         }
@@ -4495,7 +4501,7 @@ extension TextEditor: WinRenderable {
             win32_CreateChildWindow(
                 win32_WC_EDIT(), wstr,
                 DWORD(ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL | borderStyle | WS_VSCROLL | WS_TABSTOP),
-                0, 0, 200, 100,
+                0, 0, px(200, for: context.parent), px(100, for: context.parent),
                 context.parent, nil, context.hInstance
             )
         }
@@ -4524,7 +4530,7 @@ extension Stepper: WinRenderable {
         let container = CreateWindowExW(
             0, stackContainerClassName, nil,
             DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
-            0, 0, 200, 24,
+            0, 0, px(200, for: context.parent), px(24, for: context.parent),
             context.parent, nil, context.hInstance, nil
         )!
 
@@ -4533,7 +4539,7 @@ extension Stepper: WinRenderable {
         _ = label.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                0, 0, labelMeasured.width + 4, 24,
+                0, 0, labelMeasured.width + px(4, for: context.parent), px(24, for: context.parent),
                 container, nil, context.hInstance
             )
         }
@@ -4543,7 +4549,7 @@ extension Stepper: WinRenderable {
         _ = valText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr, DWORD(SS_CENTER | SS_CENTERIMAGE),
-                labelMeasured.width + 8, 0, 40, 24,
+                labelMeasured.width + px(8, for: context.parent), 0, px(40, for: context.parent), px(24, for: context.parent),
                 container, nil, context.hInstance
             )
         }
@@ -4553,7 +4559,7 @@ extension Stepper: WinRenderable {
         let minusHwnd = "-".withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
-                labelMeasured.width + 52, 0, 24, 24,
+                labelMeasured.width + px(52, for: context.parent), 0, px(24, for: context.parent), px(24, for: context.parent),
                 container, HMENU(bitPattern: UInt(minusID)), context.hInstance
             )
         }
@@ -4563,7 +4569,7 @@ extension Stepper: WinRenderable {
         let plusHwnd = "+".withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
-                labelMeasured.width + 78, 0, 24, 24,
+                labelMeasured.width + px(78, for: context.parent), 0, px(24, for: context.parent), px(24, for: context.parent),
                 container, HMENU(bitPattern: UInt(plusID)), context.hInstance
             )
         }
@@ -4583,8 +4589,8 @@ extension Stepper: WinRenderable {
         if let m = minusHwnd { SetWindowSubclass(m, buttonCleanupProc, 0, DWORD_PTR(minusID)) }
         if let p = plusHwnd { SetWindowSubclass(p, buttonCleanupProc, 0, DWORD_PTR(plusID)) }
 
-        let totalW = labelMeasured.width + 106
-        SetWindowPos(container, nil, 0, 0, totalW, 24, UINT(SWP_NOZORDER | SWP_NOMOVE))
+        let totalW = labelMeasured.width + px(106, for: context.parent)
+        SetWindowPos(container, nil, 0, 0, totalW, px(24, for: context.parent), UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         return container
     }
@@ -4595,7 +4601,7 @@ extension ProgressView: WinRenderable {
         let progressClass: [WCHAR] = Array("msctls_progress32".utf16) + [0]
         let hwnd = progressClass.withUnsafeBufferPointer { ptr in
             CreateWindowExW(0, ptr.baseAddress!, nil, DWORD(WS_CHILD | WS_VISIBLE),
-                0, 0, 200, 20, context.parent, nil, context.hInstance, nil)
+                0, 0, px(200, for: context.parent), px(20, for: context.parent), context.parent, nil, context.hInstance, nil)
         }
         guard let hwnd = hwnd else { return nil }
         if let val = value {
@@ -4622,7 +4628,7 @@ extension Label: WinRenderable {
         return displayText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                0, 0, measured.width + 4, measured.height + 2,
+                0, 0, measured.width + px(4, for: context.parent), measured.height + px(2, for: context.parent),
                 context.parent, nil, context.hInstance
             )
         }
@@ -4804,7 +4810,7 @@ private func win32PresentSheet<Sheet: View>(
         DWORD(WS_EX_TOOLWINDOW),
         stackContainerClassName, nil,
         DWORD(WS_POPUP) | DWORD(WS_VISIBLE) | DWORD(WS_CAPTION) | DWORD(WS_SYSMENU),
-        Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT), 400, 300,
+        Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT), px(400, for: root), px(300, for: root),
         root, nil, hInstance, nil
     )
 
@@ -5119,7 +5125,7 @@ class OverlayInfo {
 /// shape-fill overlays (stroke borders, filled shapes) where the
 /// overlay HWND is stretched to fill the content bounds.
 private func applyHollowBorderRegion(_ hwnd: HWND, w: Int32, h: Int32) {
-    let margin: Int32 = 6
+    let margin = px(6, for: hwnd)
     guard w > margin * 2, h > margin * 2 else {
         // Too small for a meaningful border — hide overlay entirely
         // rather than leaving it opaque over the content.
@@ -5252,13 +5258,15 @@ extension TabView: WinRenderable {
         guard !tabPages.isEmpty else { return container }
 
         // Create tab buttons at the top
-        let tabBarHeight: Int32 = 28
+        // Tab bar is 28pt with a 2pt gap above the page.
+        let tabBarHeight = px(28, for: context.parent)
+        let barGap = px(2, for: context.parent)
         var buttonX: Int32 = 0
         var tabButtonIDs: [(id: WORD, index: Int)] = []
 
         for (i, tab) in tabPages.enumerated() {
             let measured = measureText(tab.label, hwnd: context.parent)
-            let btnW = measured.width + 16
+            let btnW = measured.width + px(16, for: context.parent)
             let controlID = nextControlID()
 
             let btn = tab.label.withCString(encodedAs: UTF16.self) { wstr in
@@ -5287,11 +5295,11 @@ extension TabView: WinRenderable {
             maxH = max(maxH, r.bottom - r.top)
         }
         for (i, tab) in tabPages.enumerated() {
-            SetWindowPos(tab.hwnd, nil, 0, tabBarHeight + 2, maxW, maxH, UINT(SWP_NOZORDER))
+            SetWindowPos(tab.hwnd, nil, 0, tabBarHeight + barGap, maxW, maxH, UINT(SWP_NOZORDER))
             ShowWindow(tab.hwnd, i == 0 ? SW_SHOW : SW_HIDE)
         }
 
-        SetWindowPos(container, nil, 0, 0, maxW, tabBarHeight + 2 + maxH,
+        SetWindowPos(container, nil, 0, 0, maxW, tabBarHeight + barGap + maxH,
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         // Wire tab buttons to show/hide pages + resize selected page
@@ -5304,7 +5312,7 @@ extension TabView: WinRenderable {
             registerCommandHandler(controlID: entry.id) {
                 for (i, page) in pages.enumerated() {
                     if i == selectedIndex {
-                        SetWindowPos(page.hwnd, nil, 0, barH + 2, pageAreaW, pageAreaH, UINT(SWP_NOZORDER))
+                        SetWindowPos(page.hwnd, nil, 0, barH + barGap, pageAreaW, pageAreaH, UINT(SWP_NOZORDER))
                         ShowWindow(page.hwnd, SW_SHOW)
                     } else {
                         ShowWindow(page.hwnd, SW_HIDE)
@@ -5381,7 +5389,7 @@ private class SegmentedControlState {
         guard w > 0, h > 0 else { return }
 
         let enabled = IsWindowEnabled(hwnd)
-        let cornerRadius: Float = 5
+        let cornerRadius = Float(pxExact(5, for: hwnd))  // 5pt
 
         d2d1_RenderTarget_BeginDraw(rt)
 
@@ -5443,7 +5451,7 @@ private class SegmentedControlState {
                     d2d1_SolidColorBrush_SetColor(brush, 0.88, 0.88, 0.88, 1)
                 }
                 d2d1_RenderTarget_DrawLine(rt, brush,
-                    xOffset, 4, xOffset, h - 4, 1)
+                    xOffset, Float(pxExact(4, for: hwnd)), xOffset, h - Float(pxExact(4, for: hwnd)), 1)
             }
 
             // Text — centered in segment; selected uses semibold weight
@@ -5630,7 +5638,7 @@ extension Picker: WinMeasurable {
     func dropdownMetrics(against hwnd: HWND) -> (comboX: Int32, triggerW: Int32, rowH: Int32) {
         let rowH = dropdownRowHeight(hwnd)
         let label = getCurrentEnvironment().labelsHidden ? "" : self.label
-        let comboX: Int32 = label.isEmpty ? 0 : measureText(label, hwnd: hwnd).width + 8
+        let comboX: Int32 = label.isEmpty ? 0 : measureText(label, hwnd: hwnd).width + px(8, for: hwnd)
 
         // Size to the widest option. Take the max of GDI and DirectWrite
         // measurements (the trigger draws with DirectWrite but the two
@@ -5646,15 +5654,15 @@ extension Picker: WinMeasurable {
         }
         // Text region in the trigger = triggerW - leftPad(12) - chevronSlot(28).
         // Reserve widest + a small buffer there.
-        let triggerW = max(Int32(120), widest + 12 + 28 + 12)
+        let triggerW = max(px(120, for: hwnd), widest + px(12, for: hwnd) + px(28, for: hwnd) + px(12, for: hwnd))
         return (comboX, triggerW, rowH)
     }
 
     private func segmentedIntrinsicSize(against hwnd: HWND) -> WinSize {
-        let segmentPadding: Int32 = 24
-        let segmentHeight: Int32 = 28
+        let segmentPadding = px(24, for: hwnd)
+        let segmentHeight = px(28, for: hwnd)
         let label = getCurrentEnvironment().labelsHidden ? "" : self.label
-        var width: Int32 = label.isEmpty ? 0 : measureText(label, hwnd: hwnd).width + 8
+        var width: Int32 = label.isEmpty ? 0 : measureText(label, hwnd: hwnd).width + px(8, for: hwnd)
         for option in options { width += measureText(option, hwnd: hwnd).width + segmentPadding }
         return WinSize(width: width, height: segmentHeight)
     }
@@ -5701,7 +5709,7 @@ extension Picker: WinRenderable {
             _ = displayedLabel.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
                     win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX | SS_CENTERIMAGE),
-                    0, 0, labelW + 4, m.rowH,
+                    0, 0, labelW + px(4, for: context.parent), m.rowH,
                     container, nil, context.hInstance
                 )
             }
@@ -5736,7 +5744,7 @@ extension Picker: WinRenderable {
         )!
 
         var x: Int32 = 0
-        let segmentHeight: Int32 = 28
+        let segmentHeight = px(28, for: context.parent)
         let clampedSel = options.isEmpty ? 0 : max(0, min(selected, options.count - 1))
 
         // Optional label — hidden when `.labelsHidden()` wrapped us.
@@ -5746,15 +5754,15 @@ extension Picker: WinRenderable {
             _ = displayedLabel.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
                     win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                    x, 4, labelMeasured.width + 4, 20,
+                    x, px(4, for: context.parent), labelMeasured.width + px(4, for: context.parent), px(20, for: context.parent),
                     container, nil, context.hInstance
                 )
             }
-            x += labelMeasured.width + 8
+            x += labelMeasured.width + px(8, for: context.parent)
         }
 
         // Compute segment widths from text measurement
-        let segmentPadding: Int32 = 24
+        let segmentPadding = px(24, for: context.parent)
         var segmentWidths: [Int32] = []
         for option in options {
             let measured = measureText(option, hwnd: context.parent)
@@ -5880,7 +5888,9 @@ extension ToolbarView: WinRenderable {
         let toolbarContext = RenderContext(parent: container, hInstance: context.hInstance)
         var leadingX: Int32 = 0
         var trailingRendered: [(hwnd: HWND, width: Int32)] = []
-        let barH: Int32 = 28
+        // 28pt bar, 4pt gaps between items.
+        let barH = px(28, for: context.parent)
+        let itemGap = px(4, for: context.parent)
 
         for item in items {
             guard let itemHwnd = winRenderAnyView(item.wrapped, in: toolbarContext) else { continue }
@@ -5890,7 +5900,7 @@ extension ToolbarView: WinRenderable {
             switch item.placement {
             case .leading:
                 SetWindowPos(itemHwnd, nil, leadingX, 0, w, barH, UINT(SWP_NOZORDER))
-                leadingX += w + 4
+                leadingX += w + itemGap
             case .trailing, .primaryAction:
                 trailingRendered.append((hwnd: itemHwnd, width: w))
             }
@@ -5900,14 +5910,14 @@ extension ToolbarView: WinRenderable {
         invalidateInheritedBackgrounds()
         var contentRect = RECT()
         GetWindowRect(hwnd, &contentRect)
-        let contentW = max(contentRect.right - contentRect.left, leadingX + 100)
+        let contentW = max(contentRect.right - contentRect.left, leadingX + px(100, for: context.parent))
 
         // Position trailing items from right edge
-        var trailingX = contentW - 4
+        var trailingX = contentW - itemGap
         for item in trailingRendered.reversed() {
             trailingX -= item.width
             SetWindowPos(item.hwnd, nil, trailingX, 0, item.width, barH, UINT(SWP_NOZORDER))
-            trailingX -= 4
+            trailingX -= itemGap
         }
         let contentH = contentRect.bottom - contentRect.top
         SetWindowPos(container, nil, 0, 0, contentW, barH + contentH,
@@ -5919,7 +5929,11 @@ extension ToolbarView: WinRenderable {
     private func renderToolbarItems(_ items: [AnyToolbarItem], into navCtx: Win32NavigationContext, context: RenderContext) {
         clearToolbarItems(from: navCtx.headerContainer)
         let headerContext = RenderContext(parent: navCtx.headerContainer, hInstance: context.hInstance)
-        var leadingX: Int32 = 68
+        // Header geometry in points (the header itself is DPI-scaled): items
+        // start 68pt in (past the back button), sit 2pt down, 24pt tall, 4pt apart.
+        let header = navCtx.headerContainer
+        let itemTop = px(2, for: header), itemH = px(24, for: header), gap = px(4, for: header)
+        var leadingX = px(68, for: header)
         var trailingItems: [(hwnd: HWND, width: Int32)] = []
 
         for item in items {
@@ -5930,8 +5944,8 @@ extension ToolbarView: WinRenderable {
             let w = r.right - r.left
             switch item.placement {
             case .leading:
-                SetWindowPos(itemHwnd, nil, leadingX, 2, w, 24, UINT(SWP_NOZORDER))
-                leadingX += w + 4
+                SetWindowPos(itemHwnd, nil, leadingX, itemTop, w, itemH, UINT(SWP_NOZORDER))
+                leadingX += w + gap
             case .trailing, .primaryAction:
                 trailingItems.append((hwnd: itemHwnd, width: w))
             }
@@ -5939,11 +5953,11 @@ extension ToolbarView: WinRenderable {
 
         var headerRect = RECT()
         GetClientRect(navCtx.headerContainer, &headerRect)
-        var trailingX = headerRect.right - headerRect.left - 4
+        var trailingX = headerRect.right - headerRect.left - gap
         for item in trailingItems.reversed() {
             trailingX -= item.width
-            SetWindowPos(item.hwnd, nil, trailingX, 2, item.width, 24, UINT(SWP_NOZORDER))
-            trailingX -= 4
+            SetWindowPos(item.hwnd, nil, trailingX, itemTop, item.width, itemH, UINT(SWP_NOZORDER))
+            trailingX -= gap
         }
     }
 }
@@ -6215,8 +6229,8 @@ extension DisclosureGroup: WinRenderable {
 
         if let labelView {
             let arrowMeasured = measureText(arrow, hwnd: context.parent)
-            let arrowW = arrowMeasured.width + 14
-            let arrowH = arrowMeasured.height + 8
+            let arrowW = arrowMeasured.width + px(14, for: context.parent)
+            let arrowH = arrowMeasured.height + px(8, for: context.parent)
 
             let arrowHwnd = arrow.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
@@ -6247,23 +6261,23 @@ extension DisclosureGroup: WinRenderable {
                              arrowW, arrowH, UINT(SWP_NOZORDER))
             }
             if let labelHwnd {
-                SetWindowPos(labelHwnd, nil, arrowW + 4, max(0, (rowH - labelH) / 2),
+                SetWindowPos(labelHwnd, nil, arrowW + px(4, for: context.parent), max(0, (rowH - labelH) / 2),
                              labelW, labelH, UINT(SWP_NOZORDER))
             }
             headerH = rowH
-            headerW = arrowW + 4 + labelW
+            headerW = arrowW + px(4, for: context.parent) + labelW
         } else {
             let btnText = "\(arrow) \(title)"
             let measured = measureText(btnText, hwnd: context.parent)
             _ = btnText.withCString(encodedAs: UTF16.self) { wstr in
                 win32_CreateChildWindow(
                     win32_WC_BUTTON(), wstr, DWORD(BS_PUSHBUTTON),
-                    0, 0, measured.width + 16, measured.height + 8,
+                    0, 0, measured.width + px(16, for: context.parent), measured.height + px(8, for: context.parent),
                     container, HMENU(bitPattern: UInt(controlID)), context.hInstance
                 )
             }
-            headerH = measured.height + 8
-            headerW = measured.width + 20
+            headerH = measured.height + px(8, for: context.parent)
+            headerW = measured.width + px(20, for: context.parent)
         }
 
         let expandCallback = onExpandedChange.map(bindActionToCurrentEnvironment)
@@ -6273,7 +6287,7 @@ extension DisclosureGroup: WinRenderable {
         }
 
         // Content (shown only if expanded)
-        var totalH = headerH + 4
+        var totalH = headerH + px(4, for: context.parent)
         if isExpanded {
             let childContext = RenderContext(parent: container, hInstance: context.hInstance)
             if let childHwnd = winRenderView(content, in: childContext) {
@@ -6281,12 +6295,12 @@ extension DisclosureGroup: WinRenderable {
                 GetWindowRect(childHwnd, &r)
                 let ch = r.bottom - r.top
                 let cw = r.right - r.left
-                SetWindowPos(childHwnd, nil, 8, totalH, cw, ch, UINT(SWP_NOZORDER))
+                SetWindowPos(childHwnd, nil, px(8, for: context.parent), totalH, cw, ch, UINT(SWP_NOZORDER))
                 totalH += ch
             }
         }
 
-        SetWindowPos(container, nil, 0, 0, max(headerW, 200), totalH,
+        SetWindowPos(container, nil, 0, 0, max(headerW, px(200, for: context.parent)), totalH,
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         return container
@@ -6299,7 +6313,7 @@ extension DatePicker: WinRenderable {
         let container = CreateWindowExW(
             0, stackContainerClassName, nil,
             DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
-            0, 0, 250, 24,
+            0, 0, px(250, for: context.parent), px(24, for: context.parent),
             context.parent, nil, context.hInstance, nil
         )!
 
@@ -6308,7 +6322,7 @@ extension DatePicker: WinRenderable {
         _ = labelText.withCString(encodedAs: UTF16.self) { wstr in
             win32_CreateChildWindow(
                 win32_WC_STATIC(), wstr, DWORD(SS_LEFTNOWORDWRAP | SS_NOTIFY | SS_NOPREFIX),
-                0, 2, labelMeasured.width + 4, 20,
+                0, px(2, for: context.parent), labelMeasured.width + px(4, for: context.parent), px(20, for: context.parent),
                 container, nil, context.hInstance
             )
         }
@@ -6318,7 +6332,7 @@ extension DatePicker: WinRenderable {
             CreateWindowExW(
                 0, ptr.baseAddress!, nil,
                 DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP),
-                labelMeasured.width + 8, 0, 150, 24,
+                labelMeasured.width + px(8, for: context.parent), 0, px(150, for: context.parent), px(24, for: context.parent),
                 container, nil, context.hInstance, nil
             )
         }
@@ -6516,7 +6530,7 @@ extension Grid: WinRenderable {
             }
             // Ensure all columns have at least some minimum width
             for i in 0..<colWidths.count {
-                if colWidths[i] == 0 { colWidths[i] = 40 }
+                if colWidths[i] == 0 { colWidths[i] = px(40, for: context.parent) }
             }
 
             // Pass 3: Position each row's cells using computed column widths
@@ -6624,11 +6638,11 @@ extension GridRow: WinRenderable {
         for cell in cells {
             SetWindowPos(cell.hwnd, nil, x, 0, cell.naturalWidth, cell.naturalHeight,
                          UINT(SWP_NOZORDER))
-            x += cell.naturalWidth + 4
+            x += cell.naturalWidth + px(4, for: context.parent)
             maxH = max(maxH, cell.naturalHeight)
         }
 
-        SetWindowPos(container, nil, 0, 0, x > 0 ? x - 4 : 0, maxH,
+        SetWindowPos(container, nil, 0, 0, x > 0 ? x - px(4, for: context.parent) : 0, maxH,
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         return container
@@ -6752,7 +6766,9 @@ private class SplitViewState {
 
     // Divider dragging
     var draggingDivider: Int = 0  // 0=none, 1=first divider, 2=second divider
-    let dividerWidth: Int32 = 4  // visible divider width
+    let dividerWidth: Int32  // visible divider width (4pt)
+    let minDetailWidth: Int32  // detail column never shrinks below this (50pt)
+    let hitSlopExtra: Int32  // extra divider grab area (2pt)
     let hasContentColumn: Bool
 
     // Actual laid-out widths (after clamping to container), used for hit-testing
@@ -6762,14 +6778,19 @@ private class SplitViewState {
     // Visibility
     var visibility: NavigationSplitViewVisibility = .automatic
 
-    init(hasContentColumn: Bool, sidebarWidth: Int32, contentWidth: Int32) {
+    /// Widths are pixels; `scale` converts the built-in point defaults.
+    init(hasContentColumn: Bool, sidebarWidth: Int32, contentWidth: Int32, scale: Double) {
+        let p = { (points: Double) in Int32((points * scale).rounded()) }
         self.hasContentColumn = hasContentColumn
         self.sidebarWidth = sidebarWidth
         self.contentWidth = contentWidth
-        self.sidebarMinWidth = 100
-        self.sidebarMaxWidth = 600
-        self.contentMinWidth = 100
-        self.contentMaxWidth = 600
+        self.sidebarMinWidth = p(100)
+        self.sidebarMaxWidth = p(600)
+        self.contentMinWidth = p(100)
+        self.contentMaxWidth = p(600)
+        self.dividerWidth = p(4)
+        self.minDetailWidth = p(50)
+        self.hitSlopExtra = p(2)
     }
 
     /// Perform layout: position sidebar, content, and detail within the container.
@@ -6791,7 +6812,7 @@ private class SplitViewState {
         case .doubleColumn where hasContentColumn:
             // Show sidebar + detail, hide content
             if let ch = contentHwnd { ShowWindow(ch, SW_HIDE) }
-            let sw = min(sidebarWidth, containerW - 50)
+            let sw = min(sidebarWidth, containerW - minDetailWidth)
             layoutSidebarW = sw
             layoutContentW = 0
             if let sh = sidebarHwnd {
@@ -6828,7 +6849,7 @@ private class SplitViewState {
                                  UINT(SWP_NOZORDER))
                 }
             } else {
-                let sw = min(sidebarWidth, containerW - 50)
+                let sw = min(sidebarWidth, containerW - minDetailWidth)
                 layoutSidebarW = sw
                 layoutContentW = 0
                 if let sh = sidebarHwnd {
@@ -6848,7 +6869,7 @@ private class SplitViewState {
     /// Returns which divider (1 or 2) is at the given x position, or 0 if none.
     /// Uses the actual laid-out widths, not the unclamped stored widths.
     func hitTestDivider(x: Int32) -> Int {
-        let hitSlop = dividerWidth + 2
+        let hitSlop = dividerWidth + hitSlopExtra
         if hasContentColumn && visibility != .doubleColumn && visibility != .detailOnly {
             // 3-column: two dividers at actual laid-out positions
             let div1 = layoutSidebarW
@@ -7016,12 +7037,13 @@ extension NavigationSplitView: WinRenderable {
 
         // Extract column width constraints from modifier chain
         let sidebarProvider = winExtractColumnWidthProvider(from: sidebar)
-        let sidebarW = Int32(sidebarProvider?.columnIdealWidth ?? Double(sidebarWidth))
+        // Column widths are logical points.
+        let sidebarW = px(sidebarProvider?.columnIdealWidth ?? Double(sidebarWidth), for: context.parent)
 
         let contentW: Int32
         if hasContentColumn {
             let contentProvider = winExtractColumnWidthProvider(from: content)
-            contentW = Int32(contentProvider?.columnIdealWidth ?? 250)
+            contentW = px(contentProvider?.columnIdealWidth ?? 250, for: context.parent)
         } else {
             contentW = 0
         }
@@ -7030,7 +7052,8 @@ extension NavigationSplitView: WinRenderable {
         let state = SplitViewState(
             hasContentColumn: hasContentColumn,
             sidebarWidth: sidebarW,
-            contentWidth: contentW
+            contentWidth: contentW,
+            scale: dpiScaleFactor(for: context.parent)
         )
         state.sidebarHwnd = sidebarHwnd
         state.contentHwnd = contentHwnd
@@ -7038,12 +7061,12 @@ extension NavigationSplitView: WinRenderable {
 
         // Apply min/max constraints
         if let provider = sidebarProvider {
-            if let minW = provider.columnMinWidth { state.sidebarMinWidth = Int32(minW) }
-            if let maxW = provider.columnMaxWidth { state.sidebarMaxWidth = Int32(maxW) }
+            if let minW = provider.columnMinWidth { state.sidebarMinWidth = px(minW, for: context.parent) }
+            if let maxW = provider.columnMaxWidth { state.sidebarMaxWidth = px(maxW, for: context.parent) }
         }
         if hasContentColumn, let contentProvider = winExtractColumnWidthProvider(from: content) {
-            if let minW = contentProvider.columnMinWidth { state.contentMinWidth = Int32(minW) }
-            if let maxW = contentProvider.columnMaxWidth { state.contentMaxWidth = Int32(maxW) }
+            if let minW = contentProvider.columnMinWidth { state.contentMinWidth = px(minW, for: context.parent) }
+            if let maxW = contentProvider.columnMaxWidth { state.contentMaxWidth = px(maxW, for: context.parent) }
         }
 
         // Apply visibility
@@ -7060,7 +7083,7 @@ extension NavigationSplitView: WinRenderable {
         GetClientRect(context.parent, &parentRect)
         let w = parentRect.right - parentRect.left
         let h = parentRect.bottom - parentRect.top
-        SetWindowPos(container, nil, 0, 0, max(w, 400), max(h, 300),
+        SetWindowPos(container, nil, 0, 0, max(w, px(400, for: context.parent)), max(h, px(300, for: context.parent)),
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         // Propagate the columns' expansion so the split view fills its
@@ -7145,7 +7168,7 @@ extension SearchableView: WinRenderable {
         // (no binding), the search field is visible.
         let searchVisible = isPresented?.wrappedValue ?? true
 
-        let searchHeight: Int32 = 24
+        let searchHeight = px(24, for: context.parent)
         var searchHwnd: HWND? = nil
 
         if searchVisible {
@@ -7185,7 +7208,7 @@ extension SearchableView: WinRenderable {
 
         // Batch B: render token chips between search field and content
         var tokenRowHwnd: HWND? = nil
-        let tokenRowHeight: Int32 = tokens.isEmpty ? 0 : 22
+        let tokenRowHeight: Int32 = tokens.isEmpty ? 0 : px(22, for: context.parent)
         var tokenRowWidth: Int32 = 0
         if searchVisible && !tokens.isEmpty {
             registerStackClassIfNeeded(hInstance: context.hInstance)
@@ -7210,10 +7233,10 @@ extension SearchableView: WinRenderable {
                 }
                 if let chipHwnd {
                     let measured = measureText(chipText, hwnd: tokenRow)
-                    let chipW = measured.width + 8
+                    let chipW = measured.width + px(8, for: context.parent)
                     SetWindowPos(chipHwnd, nil, chipX, 1, chipW, tokenRowHeight - 2,
                                  UINT(SWP_NOZORDER))
-                    chipX += chipW + 4
+                    chipX += chipW + px(4, for: context.parent)
                 }
             }
             tokenRowWidth = chipX + 2
@@ -7221,7 +7244,7 @@ extension SearchableView: WinRenderable {
 
         // Batch D: render scope buttons as a horizontal row below token row
         var scopeRowHwnd: HWND? = nil
-        let scopeRowHeight: Int32 = scopes.isEmpty ? 0 : 26
+        let scopeRowHeight: Int32 = scopes.isEmpty ? 0 : px(26, for: context.parent)
         var scopeRowWidth: Int32 = 0
         if searchVisible && !scopes.isEmpty {
             let scopeRow = CreateWindowExW(
@@ -7240,7 +7263,7 @@ extension SearchableView: WinRenderable {
                 let controlID = nextControlID()
                 let label = isSelected ? "[\(scope.label)]" : scope.label
                 let measured = measureText(label, hwnd: scopeRow)
-                let btnW = measured.width + 16
+                let btnW = measured.width + px(16, for: context.parent)
                 let btn = label.withCString(encodedAs: UTF16.self) { wstr in
                     win32_CreateChildWindow(
                         win32_WC_BUTTON(), wstr,
@@ -7259,14 +7282,14 @@ extension SearchableView: WinRenderable {
                         view.selectScope(id: scopeID)
                     })
                 }
-                scopeX += btnW + 2
+                scopeX += btnW + px(2, for: context.parent)
             }
             scopeRowWidth = scopeX
         }
 
         // Batch C: render suggestion rows below search field + token row + scopes
         var suggestionContainerHwnd: HWND? = nil
-        let suggestionRowHeight: Int32 = 24
+        let suggestionRowHeight = px(24, for: context.parent)
         var suggestionContainerHeight: Int32 = 0
         var suggestionMaxWidth: Int32 = 0
         if searchVisible && !suggestions.isEmpty {
@@ -7304,7 +7327,7 @@ extension SearchableView: WinRenderable {
                         searchBinding.wrappedValue = completionText
                     })
                     let measured = measureText(suggestion.label, hwnd: sugContainer)
-                    suggestionMaxWidth = max(suggestionMaxWidth, measured.width + 24)
+                    suggestionMaxWidth = max(suggestionMaxWidth, measured.width + px(24, for: context.parent))
                 }
             }
         }
@@ -7331,12 +7354,13 @@ extension SearchableView: WinRenderable {
                           DWORD_PTR(UInt(bitPattern: infoPtr)))
 
         // Initial sizing — account for token row width so chips aren't clipped
-        var contentW: Int32 = 200
-        var contentH: Int32 = 100
+        let gap = px(4, for: context.parent)
+        var contentW = px(200, for: context.parent)
+        var contentH = px(100, for: context.parent)
         if let ch = contentHwnd {
             var r = RECT()
             GetWindowRect(ch, &r)
-            contentW = max(r.right - r.left, 200)
+            contentW = max(r.right - r.left, px(200, for: context.parent))
             contentH = r.bottom - r.top
         }
         contentW = max(contentW, tokenRowWidth)
@@ -7344,11 +7368,11 @@ extension SearchableView: WinRenderable {
         contentW = max(contentW, suggestionMaxWidth)
 
         if searchVisible {
-            let tokenExtra = tokenRowHeight > 0 ? tokenRowHeight + 4 : Int32(0)
-            let scopeExtra = scopeRowHeight > 0 ? scopeRowHeight + 4 : Int32(0)
-            let suggestionExtra = suggestionContainerHeight > 0 ? suggestionContainerHeight + 4 : Int32(0)
+            let tokenExtra = tokenRowHeight > 0 ? tokenRowHeight + gap : Int32(0)
+            let scopeExtra = scopeRowHeight > 0 ? scopeRowHeight + gap : Int32(0)
+            let suggestionExtra = suggestionContainerHeight > 0 ? suggestionContainerHeight + gap : Int32(0)
             SetWindowPos(container, nil, 0, 0, contentW,
-                         searchHeight + 4 + tokenExtra + scopeExtra + suggestionExtra + contentH,
+                         searchHeight + gap + tokenExtra + scopeExtra + suggestionExtra + contentH,
                          UINT(SWP_NOZORDER | SWP_NOMOVE))
         } else {
             SetWindowPos(container, nil, 0, 0, contentW, contentH,
@@ -7398,7 +7422,7 @@ func performSearchableLayout(container: HWND, info: SearchableLayoutInfo) {
     let h = rect.bottom - rect.top
 
     if info.searchVisible {
-        let gap: Int32 = 4
+        let gap = px(4, for: container)  // 4pt between rows
         var nextY: Int32 = 0
         if let sh = info.searchHwnd {
             SetWindowPos(sh, nil, 0, 0, w, info.searchHeight, UINT(SWP_NOZORDER))
@@ -8634,10 +8658,12 @@ extension PopoverView: WinRenderable {
             var anchorRect = RECT()
             GetWindowRect(anchor, &anchorRect)
 
-            let popupW: Int32 = 250
-            let popupH: Int32 = 200
+            // 250x200pt popover, 4pt below the anchor, 4pt content inset.
+            let popupW = px(250, for: anchor)
+            let popupH = px(200, for: anchor)
+            let inset = px(4, for: anchor)
             let popupX = anchorRect.left
-            let popupY = anchorRect.bottom + 4
+            let popupY = anchorRect.bottom + inset
 
             let popup = CreateWindowExW(
                 DWORD(WS_EX_TOOLWINDOW),
@@ -8650,8 +8676,8 @@ extension PopoverView: WinRenderable {
             if let popup {
                 let childCtx = RenderContext(parent: popup, hInstance: context.hInstance)
                 if let child = winRenderView(popoverContent, in: childCtx) {
-                    SetWindowPos(child, nil, 4, 4,
-                                 popupW - 8, popupH - 8,
+                    SetWindowPos(child, nil, inset, inset,
+                                 popupW - 2 * inset, popupH - 2 * inset,
                                  UINT(SWP_NOZORDER))
                 }
 
