@@ -162,13 +162,7 @@ extension Text: WinRenderable {
             // Always assign a font: without WM_SETFONT a Static control draws
             // with the legacy bitmap System font (aliased, not the face we
             // measured with). Emoji text gets Segoe UI Emoji for color glyphs.
-            let hfont = useEmoji ? createEmojiHFont(hwnd: hwnd) : createHFont(for: .body, hwnd: hwnd)
-            if let hfont {
-                SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: hfont)), 1)
-                let cleanup = FontCleanupInfo(hfont: hfont)
-                let ptr = Unmanaged.passRetained(cleanup).toOpaque()
-                SetWindowSubclass(hwnd, fontCleanupProc, 99, DWORD_PTR(UInt(bitPattern: ptr)))
-            }
+            assignOwnedFont(useEmoji ? createEmojiHFont(hwnd: hwnd) : createHFont(for: .body, hwnd: hwnd), to: hwnd)
         }
 
         return hwnd
@@ -251,6 +245,9 @@ extension TextField: WinRenderable {
         }
 
         guard let hwnd = hwnd else { return nil }
+        assignOwnedFont(createHFont(for: .body, hwnd: hwnd), to: hwnd)
+        // SwiftUI text fields take the available width.
+        markExpandWidth(hwnd)
 
         // Set placeholder text (cue banner) shown when field is empty
         if !title.isEmpty {
@@ -3181,6 +3178,17 @@ private func createHFont(for font: Font, hwnd: HWND) -> HFONT? {
     }
 }
 
+/// Set `hfont` on a control and delete it when the control is destroyed.
+/// Static and EDIT controls without WM_SETFONT fall back to the legacy bitmap
+/// System font, so every text-bearing control should get one.
+private func assignOwnedFont(_ hfont: HFONT?, to hwnd: HWND) {
+    guard let hfont else { return }
+    SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: hfont)), 1)
+    let cleanup = FontCleanupInfo(hfont: hfont)
+    let ptr = Unmanaged.passRetained(cleanup).toOpaque()
+    SetWindowSubclass(hwnd, fontCleanupProc, 99, DWORD_PTR(UInt(bitPattern: ptr)))
+}
+
 /// Create an HFONT using Segoe UI Emoji at the default body size.
 private func createEmojiHFont(hwnd: HWND) -> HFONT? {
     let dpi = win32_GetDpiForWindow(hwnd)
@@ -4432,6 +4440,8 @@ extension SecureField: WinRenderable {
         }
 
         guard let hwnd = hwnd else { return nil }
+        assignOwnedFont(createHFont(for: .body, hwnd: hwnd), to: hwnd)
+        markExpandWidth(hwnd)
 
         if !placeholder.isEmpty {
             placeholder.withCString(encodedAs: UTF16.self) { ptr in
@@ -4482,6 +4492,7 @@ extension TextEditor: WinRenderable {
         }
 
         guard let hwnd = hwnd else { return nil }
+        assignOwnedFont(createHFont(for: .body, hwnd: hwnd), to: hwnd)
 
         let binding = text
         let handler = SubclassHandler(hwnd: hwnd)
@@ -7149,6 +7160,7 @@ extension SearchableView: WinRenderable {
             }
 
             if let searchHwnd = searchHwnd {
+                assignOwnedFont(createHFont(for: .body, hwnd: searchHwnd), to: searchHwnd)
                 // Placeholder
                 prompt.withCString(encodedAs: UTF16.self) { ptr in
                     _ = SendMessageW(searchHwnd, UINT(EM_SETCUEBANNER), 1,
