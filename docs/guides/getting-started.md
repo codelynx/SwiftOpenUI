@@ -83,6 +83,15 @@ SwiftOpenUI uses GTK4 for native Linux rendering. Tested on Ubuntu 22.04+ and De
    # Should print 4.x.x
    ```
 
+4. **If you already ran a build before installing GTK4**
+
+   SwiftPM caches the build plan, so a build attempted before the development
+   headers were present keeps failing with `'gtk/gtk.h' file not found` even
+   after `pkg-config --modversion gtk4` succeeds. Clear the stale plan:
+   ```bash
+   swift package clean
+   ```
+
 ### Build and Run
 
 ```bash
