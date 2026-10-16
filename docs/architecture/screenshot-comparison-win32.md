@@ -98,9 +98,9 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Toggle + Value: ON | Correct | Correct | OK |
 | Slider + driven bar | Native | D2D custom | Good |
 | Image (system) | SF Symbols | Win32 stock icons (labeled) | OK |
-| ScrollView | Content-width, rows leading-aligned | Full width, rows centered | Open -- row alignment |
-| List | Rows leading-aligned | Rows centered | Open -- row alignment |
-| Overall | Complete | Functional | B+ |
+| ScrollView | Hugs content width | Fills width, content centered (SwiftUI centering) | Open -- ScrollView width |
+| List | Rows leading-aligned, inset, separators | Rows leading-aligned, no inset or separators | Minor |
+| Overall | Complete | Complete | A- |
 
 ### 9. Modifiers
 
@@ -184,8 +184,8 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Rating | Examples |
 |--------|----------|
 | A | HelloWorld, ViewsLayout, StateData, Environment, Gestures, AppStructure |
-| A- | Stopwatch, ColorStudio, Calculator, ViewsBasic, Modifiers, Navigation, Animation, Focus |
-| B+ | SimplePaint, ViewsContainers |
+| A- | Stopwatch, ColorStudio, Calculator, ViewsBasic, ViewsContainers, Modifiers, Navigation, Animation, Focus |
+| B+ | SimplePaint |
 
 No shared cause remains; the open issues below are each local to one or two examples.
 
@@ -199,7 +199,7 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 
 | # | Issue | Affects | Type | Effort |
 |---|-------|---------|------|--------|
-| 1 | ScrollView / List rows are centered instead of leading-aligned | ViewsContainers | Layout | Medium |
+| 1 | Vertical ScrollView fills the available width; on macOS it hugs its content width | ViewsContainers | Layout | Medium |
 | 2 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
 | 3 | SimplePaint canvas page frame not drawn | SimplePaint | Not investigated | ? |
 | 4 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
@@ -208,6 +208,7 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
+| List rows leading-aligned | `6c75b5e` | ViewsContainers B+ -> A- |
 | Outer .foregroundColor() reaches text through .background()/ZStack; innermost color wins | `7b399b8` | Gestures B+ -> A, Animation B+ -> A-; also fixes label colors in ViewsLayout, Modifiers, Navigation |
 | Automatic window grows to fit content | `a557817` | ViewsBasic B+ -> A-, ViewsLayout A- -> A, Modifiers B+ -> A- |
 | TextField/SecureField/TextEditor/search field font + TextField width | `d26f7bb` | Focus B+ -> A-, ViewsBasic B -> B+ |

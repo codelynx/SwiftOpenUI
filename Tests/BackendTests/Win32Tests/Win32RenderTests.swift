@@ -2519,6 +2519,33 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(hwnd)
     }
 
+    func testListRowsAreLeadingAligned() {
+        let ctx = testContext()
+        let hwnd = winRenderView(List {
+            Text("A")
+            Text("A much longer list row")
+        }, in: ctx)!
+        // Widen the list well past its rows so centering would be visible.
+        SetWindowPos(hwnd, nil, 0, 0, 400, 200, UINT(SWP_NOZORDER | SWP_NOMOVE))
+
+        var lefts: [Int32] = []
+        func collect(_ h: HWND) {
+            if className(of: h) == "Static" {
+                var r = RECT()
+                GetWindowRect(h, &r)
+                lefts.append(r.left)
+            }
+            var child = GetWindow(h, UINT(GW_CHILD))
+            while let c = child {
+                collect(c)
+                child = GetWindow(c, UINT(GW_HWNDNEXT))
+            }
+        }
+        collect(hwnd)
+        XCTAssertEqual(lefts.count, 2)
+        XCTAssertEqual(Set(lefts).count, 1, "List rows of different widths should share a leading edge")
+    }
+
     func testImageCreatesSystemIcon() {
         let ctx = testContext()
         let hwnd = winRenderView(Image(systemName: "gear"), in: ctx)
