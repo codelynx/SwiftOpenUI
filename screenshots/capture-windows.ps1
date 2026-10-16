@@ -39,12 +39,21 @@ public class Win32Window {
     [DllImport("dwmapi.dll")]
     public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
 
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT {
         public int Left, Top, Right, Bottom;
     }
 }
 "@
+
+# Be DPI-aware so GetWindowRect returns physical pixels like
+# DwmGetWindowAttribute does. Without this, at 150% display scale the
+# crop rectangle overruns the captured bitmap and Clone() fails with
+# "Out of memory", and captures come out at the wrong size.
+[Win32Window]::SetProcessDPIAware() | Out-Null
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $outDir = Join-Path $repoRoot "screenshots\windows"
