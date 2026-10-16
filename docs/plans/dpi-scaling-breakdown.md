@@ -16,20 +16,20 @@ automatically (logical-pixel primitives); Linux's only task is D8
 | D0 — adopt RFC | PR #16 (this) | draft |
 | D1 — revised #8 | PR #8 | **done** (merged 2026-10-15 via `fix/win32-dpi-defaults`) |
 | D2 — revised #11 | PR #11 | **done** (merged 2026-10-15 as rebased `fix/win32-nav-dpi-truncation`; #11 closed) |
-| D3 — scale chokepoint | #17 | **in progress** — D3a (API geometry) merged in #35; D3b (control constants) next |
-| D4 — WM_DPICHANGED | #18 | open |
+| D3 — scale chokepoint | #17 | **done** — D3a (API geometry) #35, D3b (control constants) #36, chevron follow-up #38 |
+| D4 — WM_DPICHANGED | #18 | **in review** — PR #39; synthetic tests pass, live two-monitor test pending |
 | D5 — 150%/200% captures | #19 | 150% captured 2026-10-15 — hypothesis confirmed (see below); 200% pending |
-| D6 — tracked capture tooling | #20 | open |
+| D6 — tracked capture tooling | #20 | partial — `capture-windows.ps1` made DPI-aware (#35); evidence under `docs/evidence/dpi/` |
 | D7 — document the contract | _unfiled_ (coordinator) | — |
 | D8 — GTK4 fractional scaling | #21 | open |
 
 - [ ] D0 adopt RFC (#16)
 - [x] D1 revised #8 — contributor
 - [x] D2 revised #11 — contributor
-- [ ] D3 scale chokepoint (#17)
+- [x] D3 scale chokepoint (#17)
   - [x] D3a — API geometry → logical points (#35)
-  - [ ] D3b — hard-coded control constants (~130)
-- [ ] D4 WM_DPICHANGED (#18)
+  - [x] D3b — hard-coded control constants (#36, follow-up #38)
+- [ ] D4 WM_DPICHANGED (#18) — PR #39, needs a two-monitor test
 - [ ] D5 150%/200% captures (#19)
 - [ ] D6 tracked capture tooling (#20)
 - [ ] D7 document the contract
