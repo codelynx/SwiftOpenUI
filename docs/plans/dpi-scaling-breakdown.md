@@ -20,7 +20,7 @@ automatically (logical-pixel primitives); Linux's only task is D8
 | D4 — WM_DPICHANGED | #18 | **in review** — PR #39; synthetic tests pass, live two-monitor test pending |
 | D5 — 150%/200% captures | #19 | 150% captured 2026-10-15 — hypothesis confirmed (see below); 200% pending |
 | D6 — tracked capture tooling | #20 | partial — `capture-windows.ps1` made DPI-aware (#35); evidence under `docs/evidence/dpi/` |
-| D7 — document the contract | _unfiled_ (coordinator) | — |
+| D7 — document the contract | _unfiled_ (coordinator) | **done** — #40 (`docs/architecture/logical-coordinates.md` + API doc notes) |
 | D8 — GTK4 fractional scaling | #21 | open |
 
 - [ ] D0 adopt RFC (#16)
@@ -32,7 +32,7 @@ automatically (logical-pixel primitives); Linux's only task is D8
 - [ ] D4 WM_DPICHANGED (#18) — PR #39, needs a two-monitor test
 - [ ] D5 150%/200% captures (#19)
 - [ ] D6 tracked capture tooling (#20)
-- [ ] D7 document the contract
+- [x] D7 document the contract (#40)
 - [ ] D8 GTK4 fractional scaling (#21)
 
 ## Status update — 2026-10-15
