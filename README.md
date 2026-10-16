@@ -26,7 +26,7 @@ A MacPaint-class drawing app with pencil, eraser, line, rectangle, and ellipse t
 |:---:|:---:|:---:|
 | <img src="screenshots/macos/showcase-LayoutStress.png" width="220"> | <img src="screenshots/linux/showcase-LayoutStress.png" width="220"> | <img src="screenshots/windows/showcase-LayoutStress.png" width="220"> |
 
-Settings rows, dashboard cards, sidebar/detail split, nested frame alignment, and status bars — the composition patterns real apps use. Layout parity is verified by a [50-scenario test suite](Tests/LayoutParityTests/) that compares each platform's output against macOS SwiftUI reference fixtures.
+Settings rows, dashboard cards, sidebar/detail split, nested frame alignment, and status bars — the composition patterns real apps use. Layout parity is verified by a [53-scenario test suite](Tests/LayoutParityTests/) that compares each platform's output against macOS SwiftUI reference fixtures — 50 scenarios have recorded fixtures; three ScrollView sizing scenarios are defined and skipped until theirs are recorded on macOS.
 
 ## Platform Support
 
@@ -37,6 +37,13 @@ Settings rows, dashboard cards, sidebar/detail split, nested frame alignment, an
 | Windows | Win32 + D2D | Stable | 43/45 | 38/40 |
 | Web | Wasm + DOM | Near-parity | 42/45 | 36/40 |
 | Android | Compose | Functional | 27/45 | 23/40 |
+
+Every dimension in the API is a **logical point**, never a device pixel — app code
+never multiplies by a scale factor, exactly as in SwiftUI. The Win32 backend converts
+points to pixels at a single chokepoint, so Windows renders correctly at 100%, 150%,
+and 200% display scaling. See [Logical Coordinates](docs/architecture/logical-coordinates.md).
+Dynamic scale changes (moving a window between monitors) and GTK4 fractional-scale
+confirmation are still in progress.
 
 ## Feature Parity
 
@@ -134,11 +141,13 @@ swift run ParityAppStructure      # App, Scene, WindowGroup, @ViewBuilder
 ### Views (44 of 45)
 Text, Button, TextField, Toggle, Slider, Image, Color, Spacer, Divider, VStack, HStack, ZStack, Group, ForEach, List, ScrollView, ScrollViewReader, AnyView, EmptyView, NavigationStack, NavigationLink, NavigationSplitView, SecureField, TextEditor, ProgressView, Stepper, Label, Link, TabView, Grid, GridRow, DisclosureGroup, OutlineGroup, Form, Section, LazyVStack, LazyHStack, LazyVGrid, LazyHGrid, Picker, DatePicker, GeometryReader, ViewThatFits, Menu, ConfirmationDialog, Canvas, Path, Circle, Rectangle, RoundedRectangle, Capsule, Ellipse, LinearGradient, RadialGradient
 
-### Modifiers (43+)
-.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .disabled(), .environmentObject(), .environment(), .navigationTitle(), .navigationDestination(), .focused(), .modifier(), withAnimation(), .clipShape(), .clipped(), .hidden(), .blur(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .buttonStyle(), .toggleStyle(), .textFieldStyle(), .onChange(), .contextMenu(), .position(), .layoutPriority(), .fixedSize(), .popover(), .id(), .tag(), .onSubmit(), .bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase(), .aspectRatio(), .scaledToFit(), .scaledToFill(), .fullScreenCover(), .pickerStyle(), .navigationSplitViewColumnWidth(), .ignoresSafeArea(), .safeAreaInset(), .lineLimit(), .truncationMode(), .lineSpacing(), .multilineTextAlignment(), .keyboardShortcut(), .focusedValue(), .help(), .resizable(), .labelsHidden()
+`Image` loads from four sources: `Image(systemName:)` (SF Symbols on macOS, bundled Material Symbols elsewhere), `Image(resource:)` (bundle-relative files), `Image(filePath:)`, and `Image(decoded:width:height:format:)` for in-memory pixel buffers.
+
+### Modifiers (86)
+.padding(), .frame(), .foregroundColor(), .foregroundStyle(), .background(), .font(), .border(), .opacity(), .offset(), .scaleEffect(), .animation(), .imageScale(), .onTapGesture(), .onLongPressGesture(), .onDrag(), .disabled(), .environmentObject(), .environment(), .navigationTitle(), .navigationDestination(), .focused(), .modifier(), withAnimation(), .clipShape(), .clipped(), .hidden(), .blur(), .cornerRadius(), .shadow(), .rotationEffect(), .overlay(), .sheet(), .alert(), .confirmationDialog(), .onAppear(), .onDisappear(), .searchable(), .toolbar(), .gridCellColumns(), .buttonStyle(), .toggleStyle(), .textFieldStyle(), .onChange(), .contextMenu(), .position(), .layoutPriority(), .fixedSize(), .popover(), .id(), .tag(), .onSubmit(), .bold(), .italic(), .fontWeight(), .underline(), .strikethrough(), .textCase(), .aspectRatio(), .scaledToFit(), .scaledToFill(), .fullScreenCover(), .pickerStyle(), .navigationSplitViewColumnWidth(), .ignoresSafeArea(), .safeAreaInset(), .lineLimit(), .truncationMode(), .lineSpacing(), .multilineTextAlignment(), .keyboardShortcut(), .focusedValue(), .help(), .resizable(), .labelsHidden(), .task(), .dropDestination(), .safeAreaPadding(), .textSelection(), .monospacedDigit(), .controlSize(), .listStyle(), .menuStyle(), .accessibilityLabel(), .accessibilityIdentifier(), .onExitCommand(), .dismissalConfirmationDialog()
 
 ### Scenes & App Structure
-WindowGroup, Window (GTK/Win32), OpenWindowAction, Commands (CommandGroup, CommandMenuItem — native menu bar on GTK/Win32), @SceneBuilder, @ViewBuilder
+WindowGroup, Window (GTK/Win32), OpenWindowAction, Commands (CommandGroup, CommandMenuItem — native menu bar on GTK/Win32), @SceneBuilder, @ViewBuilder, and window sizing — .defaultWindowSize(), .windowSizeConstraints(), .windowSizing(), .windowResizability(), .windowResizeBehavior()
 
 ### State Management
 @State, @Binding, @Bindable, @ObservedObject, @StateObject, @EnvironmentObject, @Published, @Environment, @FocusState, @FocusedValue (active-window scoped), @Observable, ObservableObject
@@ -191,6 +200,8 @@ open Examples.xcodeproj
 | [Web Setup](docs/guides/web-setup.md) | Wasm build, Vite, DOM mapping |
 | [App Bundle Format](docs/architecture/app-bundle-format.md) | Cross-platform .app bundle spec |
 | [App Bundle Packaging](docs/guides/app-bundle-packaging.md) | Packaging guide + SPM plugin |
+| [Logical Coordinates](docs/architecture/logical-coordinates.md) | Points-vs-pixels contract and how each backend scales |
+| [Icon Symbols](docs/architecture/icon-symbols.md) | SF Symbol names on non-Apple platforms via bundled Material Symbols |
 | [Platform Notes](docs/porting/platform-notes.md) | Platform quirks and workarounds |
 | [Web Parity Plan](docs/plans/web-parity-plan.md) | Web backend gap analysis |
 
