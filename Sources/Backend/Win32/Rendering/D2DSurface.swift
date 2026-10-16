@@ -63,7 +63,7 @@ func d2dMeasure<V: View>(_ view: V, dpiScale: Float) -> (width: Float, height: F
     if let text = view as? Text {
         guard let fmt = D2DRenderer.shared.textFormat(fontSize: Float(defaultBodyFontSize) * dpiScale) else { return (0, 0) }
         let (w, h) = D2DRenderer.shared.measureText(text.content, format: fmt)
-        return (w + 4, h + 2)
+        return (w + 4 * dpiScale, h + 2 * dpiScale)
     }
     if view is Color {
         return (20, 20) // natural size, will expand in container
@@ -83,7 +83,7 @@ func d2dMeasure<V: View>(_ view: V, dpiScale: Float) -> (width: Float, height: F
             return d2dMeasure(font.content, dpiScale: dpiScale)
         }
         let (w, h) = D2DRenderer.shared.measureText(font.content.content, format: fmt)
-        return (w + 4, h + 2)
+        return (w + 4 * dpiScale, h + 2 * dpiScale)
     }
     if let padded = view as? PaddedView<Text> {
         let inner = d2dMeasure(padded.content, dpiScale: dpiScale)

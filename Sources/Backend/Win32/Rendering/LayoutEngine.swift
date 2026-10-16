@@ -49,7 +49,7 @@ public func measureText(_ text: String, hwnd: HWND) -> (width: Int32, height: In
     if let fmt = D2DRenderer.shared.textFormat(fontSize: Float(defaultBodyFontSize) * dpiScale) {
         let (w, h) = D2DRenderer.shared.measureText(text, format: fmt)
         if w > 0 || h > 0 {
-            return (width: Int32(w) + 4, height: Int32(h) + 2)
+            return (width: Int32(w) + px(4, for: hwnd), height: Int32(h) + px(2, for: hwnd))
         }
     }
 
@@ -72,7 +72,7 @@ public func measureText(_ text: String, fontFamily: String, hwnd: HWND) -> (widt
     if let fmt = D2DRenderer.shared.textFormat(fontFamily: fontFamily, fontSize: Float(defaultBodyFontSize) * dpiScale) {
         let (w, h) = D2DRenderer.shared.measureText(text, format: fmt)
         if w > 0 || h > 0 {
-            return (width: Int32(w) + 4, height: Int32(h) + 2)
+            return (width: Int32(w) + px(4, for: hwnd), height: Int32(h) + px(2, for: hwnd))
         }
     }
     return measureText(text, hwnd: hwnd)
@@ -83,7 +83,7 @@ public func measureTextWithFont(_ text: String, font: SwiftOpenUI.Font, hwnd: HW
     let (fontSize, bold, italic) = fontParameters(for: font, hwnd: hwnd)
     if let fmt = D2DRenderer.shared.textFormat(fontSize: fontSize, bold: bold, italic: italic) {
         let (w, h) = D2DRenderer.shared.measureText(text, format: fmt)
-        return (width: Int32(w) + 4, height: Int32(h) + 2)
+        return (width: Int32(w) + px(4, for: hwnd), height: Int32(h) + px(2, for: hwnd))
     }
     return measureText(text, hwnd: hwnd)
 }

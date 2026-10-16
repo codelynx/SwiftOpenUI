@@ -331,11 +331,12 @@ private func layoutNavContainer(_ ctx: Win32NavigationContext) {
     // Layout back button (child of headerContainer)
     let backVisible = IsWindowVisible(ctx.backButton) != false
     let backWidth: Int32 = backVisible ? measureBackButton(ctx: ctx) + Int32((16 * dpiScale).rounded()) : 0
+    let inset = Int32((4 * dpiScale).rounded())
     if backVisible {
-        SetWindowPos(ctx.backButton, nil, 4, 4, backWidth - 8, headerHeight - 8, UINT(SWP_NOZORDER))
+        SetWindowPos(ctx.backButton, nil, inset, inset, backWidth - 2 * inset, headerHeight - 2 * inset, UINT(SWP_NOZORDER))
     }
-    SetWindowPos(ctx.titleLabel, nil, backWidth + 4, 0,
-                 w - backWidth - 8, headerHeight, UINT(SWP_NOZORDER))
+    SetWindowPos(ctx.titleLabel, nil, backWidth + inset, 0,
+                 w - backWidth - 2 * inset, headerHeight, UINT(SWP_NOZORDER))
 
     // Content area fills the rest
     SetWindowPos(ctx.contentArea, nil, 0, headerHeight, w, h - headerHeight, UINT(SWP_NOZORDER))
@@ -473,7 +474,7 @@ extension NavigationStack: WinRenderable {
 
             // Size the nav container = root content + header
             let totalH = rootH + headerHeight
-            let totalW = max(rootW, 200)
+            let totalW = max(rootW, px(200, for: container))
             SetWindowPos(container, nil, 0, 0, totalW, totalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
             // Now layout header + content area inside the sized container

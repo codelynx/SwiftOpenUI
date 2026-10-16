@@ -25,9 +25,11 @@ import Foundation
 // expanded ancestor are ever realized, so a large diff never eagerly
 // materializes every node.
 
-private let outlineIndentPerLevel: Int32 = 22
-private let outlineArrowSlot: Int32 = 26
-private let outlineRowVPad: Int32 = 4
+// Row geometry in points (22pt indent, 26pt arrow slot, 4pt row gap),
+// converted for the tree's window.
+private func outlineIndentPerLevel(_ hwnd: HWND) -> Int32 { px(22, for: hwnd) }
+private func outlineArrowSlot(_ hwnd: HWND) -> Int32 { px(26, for: hwnd) }
+private func outlineRowVPad(_ hwnd: HWND) -> Int32 { px(4, for: hwnd) }
 
 /// Posted to the tree container by an arrow click to run the toggle +
 /// relayout *after* the click's own message handler returns — relayout
@@ -207,7 +209,7 @@ private func outlineRelayout(_ model: Win32OutlineModel) {
     var y: Int32 = 0
     var widest: Int32 = 0
     for key in model.visibleKeys() {
-        let indent = Int32(model.depth(key)) * outlineIndentPerLevel
+        let indent = Int32(model.depth(key)) * outlineIndentPerLevel(container)
 
         // Row body (badge + icon + name + count).
         let bodyHwnd = model.render(key, into: content, hInst)
@@ -230,7 +232,7 @@ private func outlineRelayout(_ model: Win32OutlineModel) {
             arrowContainer = CreateWindowExW(
                 0, outlineContentClassName, nil,
                 DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN),
-                0, 0, outlineArrowSlot, max(bodyH, 1),
+                0, 0, outlineArrowSlot(container), max(bodyH, 1),
                 content, nil, hInst, nil
             )
             if let arrowContainer {
@@ -251,21 +253,21 @@ private func outlineRelayout(_ model: Win32OutlineModel) {
 
         let rowH = max(bodyH, glyphH)
         if let arrowContainer {
-            SetWindowPos(arrowContainer, nil, indent, y, outlineArrowSlot, rowH, UINT(SWP_NOZORDER))
+            SetWindowPos(arrowContainer, nil, indent, y, outlineArrowSlot(container), rowH, UINT(SWP_NOZORDER))
             if let glyphHwnd {
                 SetWindowPos(glyphHwnd, nil,
-                             max(0, (outlineArrowSlot - glyphW) / 2),
+                             max(0, (outlineArrowSlot(container) - glyphW) / 2),
                              max(0, (rowH - glyphH) / 2),
                              glyphW, glyphH, UINT(SWP_NOZORDER))
             }
         }
-        let bodyX = indent + outlineArrowSlot
+        let bodyX = indent + outlineArrowSlot(container)
         if let bodyHwnd {
             SetWindowPos(bodyHwnd, nil, bodyX, y + max(0, (rowH - bodyH) / 2),
                          bodyW, bodyH, UINT(SWP_NOZORDER))
         }
         widest = max(widest, bodyX + bodyW)
-        y += rowH + outlineRowVPad
+        y += rowH + outlineRowVPad(container)
     }
 
     model.contentHeight = y
@@ -308,8 +310,8 @@ private func outlineHandleVScroll(_ model: Win32OutlineModel, wParam: WPARAM) {
     let action = Int32(win32_LOWORD(DWORD_PTR(wParam)))
     var newPos = model.scrollY
     switch action {
-    case SB_LINEUP: newPos -= 20
-    case SB_LINEDOWN: newPos += 20
+    case SB_LINEUP: newPos -= px(20, for: container)
+    case SB_LINEDOWN: newPos += px(20, for: container)
     case SB_PAGEUP: newPos -= visibleH
     case SB_PAGEDOWN: newPos += visibleH
     case SB_THUMBTRACK, SB_THUMBPOSITION:
