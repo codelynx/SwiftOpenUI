@@ -293,40 +293,45 @@ extension WindowGroup: Win32WindowRenderable {
 
 /// WM_DPICHANGED (RFC #16 D4): the window moved to a monitor with a
 /// different scale, or the scale changed. Everything was converted from
-/// points at creation, so take the size Windows suggests for the new
-/// monitor, then re-render the root content at the new DPI and re-derive
-/// the pixel constraints.
+/// points at creation, so re-derive the pixel constraints, take the size
+/// Windows suggests for the new monitor, then re-render the root content
+/// at the new DPI.
 private func handleDpiChanged(_ hwnd: HWND, lParam: LPARAM) {
     invalidateInheritedBackgrounds()
-    // Resize to the suggested rect FIRST: views that read their parent's
-    // size while rendering (GeometryReader) must see the new client area.
-    if let suggested = UnsafePointer<RECT>(bitPattern: Int(lParam))?.pointee {
-        SetWindowPos(hwnd, nil, suggested.left, suggested.top,
-                     suggested.right - suggested.left, suggested.bottom - suggested.top,
-                     UINT(SWP_NOZORDER | SWP_NOACTIVATE))
-    }
     let userData = win32_GetWindowLongPtrW(hwnd, GWLP_USERDATA)
-    if userData != 0 {
-        let state = Unmanaged<MainWindowState>.fromOpaque(UnsafeMutableRawPointer(bitPattern: Int(userData))!).takeUnretainedValue()
-        if let rerender = state.rerenderContent {
-            DestroyWindow(state.contentHwnd)
-            if let newContent = rerender() {
-                state.contentHwnd = newContent
-                if state.tracksContentSizing {
-                    var r = RECT()
-                    GetWindowRect(newContent, &r)
-                    state.naturalContentW = r.right - r.left
-                    state.naturalContentH = r.bottom - r.top
-                    state.expandsWidth = shouldExpandWidth(newContent)
-                    state.expandsHeight = shouldExpandHeight(newContent)
-                }
-            }
-        }
+    let state = userData == 0 ? nil
+        : Unmanaged<MainWindowState>.fromOpaque(UnsafeMutableRawPointer(bitPattern: Int(userData))!).takeUnretainedValue()
+    // Re-derive constraints BEFORE resizing: SetWindowPos queries
+    // WM_GETMINMAXINFO, and old-DPI pixel limits would clamp the
+    // suggested rect.
+    if let state {
         let c = state.constraintPoints
         state.minClientWidth = c.minW.map { px($0, for: hwnd) } ?? state.minClientWidth
         state.minClientHeight = c.minH.map { px($0, for: hwnd) } ?? state.minClientHeight
         state.maxClientWidth = c.maxW.map { px($0, for: hwnd) } ?? state.maxClientWidth
         state.maxClientHeight = c.maxH.map { px($0, for: hwnd) } ?? state.maxClientHeight
+    }
+    // Resize to the suggested rect before re-rendering: views that read
+    // their parent's size while rendering (GeometryReader) must see the
+    // new client area.
+    if let suggested = UnsafePointer<RECT>(bitPattern: Int(lParam))?.pointee {
+        SetWindowPos(hwnd, nil, suggested.left, suggested.top,
+                     suggested.right - suggested.left, suggested.bottom - suggested.top,
+                     UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+    }
+    if let state, let rerender = state.rerenderContent {
+        DestroyWindow(state.contentHwnd)
+        if let newContent = rerender() {
+            state.contentHwnd = newContent
+            if state.tracksContentSizing {
+                var r = RECT()
+                GetWindowRect(newContent, &r)
+                state.naturalContentW = r.right - r.left
+                state.naturalContentH = r.bottom - r.top
+                state.expandsWidth = shouldExpandWidth(newContent)
+                state.expandsHeight = shouldExpandHeight(newContent)
+            }
+        }
     }
     // Lay the new content out in the (already resized) client area.
     SendMessageW(hwnd, UINT(WM_SIZE), 0, 0)
