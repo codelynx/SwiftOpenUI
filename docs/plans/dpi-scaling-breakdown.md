@@ -16,7 +16,7 @@ automatically (logical-pixel primitives); Linux's only task is D8
 | D0 — adopt RFC | PR #16 (this) | draft |
 | D1 — revised #8 | PR #8 | **done** (merged 2026-10-15 via `fix/win32-dpi-defaults`) |
 | D2 — revised #11 | PR #11 | **done** (merged 2026-10-15 as rebased `fix/win32-nav-dpi-truncation`; #11 closed) |
-| D3 — scale chokepoint | #17 | **next** — unblocked; groundwork in #34 (`dpiScaleFactor(for:)`) |
+| D3 — scale chokepoint | #17 | **in progress** — D3a (API geometry) merged in #35; D3b (control constants) next |
 | D4 — WM_DPICHANGED | #18 | open |
 | D5 — 150%/200% captures | #19 | 150% captured 2026-10-15 — hypothesis confirmed (see below); 200% pending |
 | D6 — tracked capture tooling | #20 | open |
@@ -27,6 +27,8 @@ automatically (logical-pixel primitives); Linux's only task is D8
 - [x] D1 revised #8 — contributor
 - [x] D2 revised #11 — contributor
 - [ ] D3 scale chokepoint (#17)
+  - [x] D3a — API geometry → logical points (#35)
+  - [ ] D3b — hard-coded control constants (~130)
 - [ ] D4 WM_DPICHANGED (#18)
 - [ ] D5 150%/200% captures (#19)
 - [ ] D6 tracked capture tooling (#20)
@@ -53,6 +55,28 @@ D1 and D2 landed, plus related Win32 work that D3 builds on:
 | Parity examples on automatic sizing (StateData, Environment, Focus, …) | correct | only text-driven sizing involved |
 
 Captures: [`docs/evidence/dpi/150/`](../evidence/dpi/150/).
+
+## D3a — landed 2026-10-15 (#35)
+
+Chokepoint helpers in `LayoutEngine.swift`: `px(_:for:)`, `pxExact(_:for:)`, `pxForNewWindow(_:)`, `pxToPoints(_:for:)`. Each view converts its API inputs once at creation:
+
+- frame (incl. bounded caps)
+- padding, spacing, offset, position
+- border, corner radius, shadow, stroke
+- window sizes
+
+Canvas, drag/drop and GeometryReader switched to points together, so input and drawing stay in one space.
+
+**Deviation from the RFC text:** the scale is read per window with `dpiScaleFactor(for: hwnd)` rather than stored in a new `RenderContext.scale` field, which would touch 46 construction sites. Per-monitor DPI is per top-level window, so this is equivalent. D4 (`WM_DPICHANGED`) rebuilds the tree, which re-reads it.
+
+**Rounding:** each converted value rounds to the nearest pixel (`px`), with `pxExact` kept for layout math and D2D. No seams were seen at 150%; revisit if they appear.
+
+**Remaining for D3:**
+
+- **D3b:** ~130 hard-coded control constants (slider track, stepper, tab bar, toolbar, dropdown, segmented picker, DisclosureGroup, NavigationSplitView divider, text-measure padding).
+- Bitmap image sizing (open question below).
+
+Evidence: [`docs/evidence/dpi/150-d3a/`](../evidence/dpi/150-d3a/) on `develop`.
 
 ## Critical path
 
