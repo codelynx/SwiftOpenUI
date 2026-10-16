@@ -64,6 +64,15 @@ targets += [
         pkgConfig: "gtk4",
         providers: [.apt(["libgtk-4-dev"])]
     ),
+    // GtkSourceView 5 — the code-editor widget behind SwiftOpenUI's `CodeEditor`
+    // (syntax highlighting / gutter). Its own system-library module so the
+    // gtksourceview include path + link stay off the gtk4-only CGTK module.
+    .systemLibrary(
+        name: "CGtkSource",
+        path: "Sources/Backend/GTK4/CGtkSource",
+        pkgConfig: "gtksourceview-5",
+        providers: [.apt(["libgtksourceview-5-dev"])]
+    ),
     .target(
         name: "CGTKBridge",
         dependencies: ["CGTK"],
@@ -71,7 +80,7 @@ targets += [
     ),
     .target(
         name: "BackendGTK4",
-        dependencies: ["SwiftOpenUI", "CGTK", "CGTKBridge", "SwiftOpenUISymbols"],
+        dependencies: ["SwiftOpenUI", "CGTK", "CGtkSource", "CGTKBridge", "SwiftOpenUISymbols"],
         path: "Sources/Backend/GTK4/Rendering",
         linkerSettings: [
             // FontConfig is used by the process-local font registration
