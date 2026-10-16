@@ -42,9 +42,9 @@ origin: one edge row is antialiased, so it isn't pure red.
 - `GDK_SCALE=2` and `GDK_DPI_SCALE=1.5` at 100% produce byte-identical
   output to an unset run.
 
-Seen at every scale, so not part of D8: `Circle().stroke(lineWidth: 1)` is
-clipped flat at its left and right edges, and ParityModifiers' "Mixed"
-padding label and `.offset()` label are clipped.
+Seen at every scale, so not part of D8 (issue #45): `Circle().stroke(lineWidth: 1)`
+is clipped flat at its left and right edges, and ParityModifiers'
+`.offset()` label is clipped at its un-offset bounds.
 
 ## Reproduce
 
