@@ -4108,8 +4108,13 @@ extension List: WinRenderable {
         if let selfScrolling = content as? WinSelfScrollingContent {
             return selfScrolling.winSelfScrollingWidget(in: context)
         }
-        // List renders as a VStack inside a scrollable container
-        let scrollView = ScrollView(.vertical) { content }
+        // List renders as a VStack inside a scrollable container. Unlike plain
+        // ScrollView content (centered, as in SwiftUI), List rows are
+        // leading-aligned across the full width.
+        let scrollView = ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 0) { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
         return winRenderView(scrollView, in: context)
     }
 }
