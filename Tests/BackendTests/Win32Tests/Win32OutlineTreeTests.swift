@@ -193,4 +193,41 @@ final class Win32OutlineTreeTests: XCTestCase {
         let after = try XCTUnwrap(model(of: XCTUnwrap(findOutlineTree(in: host.container))))
         XCTAssertTrue(after.expanded.isEmpty)
     }
+
+    /// A row with a Spacer fills the list width (so a trailing element sits
+    /// at the right edge) and follows resizes; a plain row keeps its natural
+    /// width.
+    func testFlexibleRowsStretchToListWidth() throws {
+        let nodes = [Node(id: "flex"), Node(id: "plain")]
+        let group = OutlineGroup(nodes, id: \.id, children: \.children) { node in
+            if node.id == "flex" {
+                AnyView(HStack { Text(node.id); Spacer(); Text("(3)") })
+            } else {
+                AnyView(Text(node.id))
+            }
+        }
+        let tree = try XCTUnwrap(winRenderView(group, in: testContext()))
+        let m = try XCTUnwrap(model(of: tree))
+        XCTAssertEqual(m.flexibleRows.count, 1, "only the Spacer row is flexible")
+        let row = m.flexibleRows[0]
+
+        func width(_ hwnd: HWND) -> Int32 {
+            var r = RECT(); GetWindowRect(hwnd, &r); return r.right - r.left
+        }
+        func rightEdge(_ hwnd: HWND) -> Int32 {
+            var r = RECT(); GetWindowRect(hwnd, &r); return r.right
+        }
+
+        for listWidth: Int32 in [360, 500, 300] {
+            SetWindowPos(tree, nil, 0, 0, listWidth, 200, UINT(SWP_NOZORDER | SWP_NOMOVE))
+            let expected = max(row.naturalWidth, listWidth - row.x)
+            XCTAssertEqual(width(row.body), expected, "at list width \(listWidth)")
+
+            // The trailing "(3)" is pushed to the row's right edge.
+            var last: HWND?
+            var child = GetWindow(row.body, UINT(GW_CHILD))
+            while let c = child { last = c; child = GetWindow(c, UINT(GW_HWNDNEXT)) }
+            XCTAssertEqual(rightEdge(try XCTUnwrap(last)), rightEdge(row.body))
+        }
+    }
 }

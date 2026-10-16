@@ -122,6 +122,10 @@ final class Win32OutlineModel {
     var layoutScale: Double = 1
     var contentHeight: Int32 = 0
     var contentWidth: Int32 = 0
+    /// Row bodies that want to fill the row (a `Spacer`, `maxWidth:
+    /// .infinity`, …), with their x offset and natural width. Re-stretched
+    /// whenever the list width changes.
+    var flexibleRows: [(body: HWND, x: Int32, naturalWidth: Int32)] = []
     /// Set by an arrow click, consumed by the container's toggle message.
     var pendingToggleKey: String?
 
@@ -313,6 +317,7 @@ private func outlineRelayout(_ model: Win32OutlineModel) {
 
     var y: Int32 = 0
     var widest: Int32 = 0
+    model.flexibleRows = []
     for key in model.visibleKeys() {
         let indent = Int32(model.depth(key)) * outlineIndentPerLevel(container)
 
@@ -370,6 +375,9 @@ private func outlineRelayout(_ model: Win32OutlineModel) {
         if let bodyHwnd {
             SetWindowPos(bodyHwnd, nil, bodyX, y + max(0, (rowH - bodyH) / 2),
                          bodyW, bodyH, UINT(SWP_NOZORDER))
+            if shouldExpandWidth(bodyHwnd) {
+                model.flexibleRows.append((bodyHwnd, bodyX, bodyW))
+            }
         }
         widest = max(widest, bodyX + bodyW)
         y += rowH + outlineRowVPad(container)
@@ -387,8 +395,25 @@ private func outlineRelayout(_ model: Win32OutlineModel) {
     if model.scrollY > maxScroll { model.scrollY = maxScroll }
 
     SetWindowPos(content, nil, 0, -model.scrollY, contentW, max(y, 1), UINT(SWP_NOZORDER))
+    outlineStretchFlexibleRows(model, contentWidth: contentW)
     outlineUpdateScrollRange(model)
     InvalidateRect(container, nil, true)
+}
+
+/// Widens each flexible row body to the list's right edge (as a SwiftUI
+/// List row is proposed the full row width), so a `Spacer` or trailing
+/// element inside it has room to push against. Row stacks re-lay out their
+/// children on the resulting WM_SIZE. Rows that don't expand keep their
+/// natural, leading-aligned width.
+private func outlineStretchFlexibleRows(_ model: Win32OutlineModel, contentWidth: Int32) {
+    for row in model.flexibleRows {
+        var width = max(row.naturalWidth, contentWidth - row.x)
+        if let cap = expandMaxWidth(row.body) { width = min(width, max(cap, row.naturalWidth)) }
+        var r = RECT(); GetWindowRect(row.body, &r)
+        guard width != r.right - r.left else { continue }
+        SetWindowPos(row.body, nil, 0, 0, width, r.bottom - r.top,
+                     UINT(SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE))
+    }
 }
 
 /// Reposition content on container resize (no re-render — row heights are
@@ -403,6 +428,7 @@ private func outlineHandleResize(_ model: Win32OutlineModel) {
     let maxScroll = max(0, model.contentHeight - visibleH)
     if model.scrollY > maxScroll { model.scrollY = maxScroll }
     SetWindowPos(content, nil, 0, -model.scrollY, contentW, max(model.contentHeight, 1), UINT(SWP_NOZORDER))
+    outlineStretchFlexibleRows(model, contentWidth: contentW)
     outlineUpdateScrollRange(model)
 }
 
