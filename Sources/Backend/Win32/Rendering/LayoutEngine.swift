@@ -168,13 +168,15 @@ func performVerticalLayout(container: HWND, info: StackLayoutInfo) {
     }
 
     let remainingHeight = max(0, totalHeight - fixedHeight - totalSpacing)
-    let flexCount = Int32(flexIndices.count)
-    let flexHeight = flexCount > 0 ? remainingHeight / flexCount : 0
+    let flexOrder = flexIndices.sorted()
+    let flexHeights = distributeFlexibleSpace(
+        remainingHeight, caps: flexOrder.map { expandMaxHeight(info.children[$0]) })
+    let flexHeightByIndex = Dictionary(uniqueKeysWithValues: zip(flexOrder, flexHeights))
 
     var y: Int32 = 0
     for (i, child) in info.children.enumerated() {
         let childHeight: Int32
-        if flexIndices.contains(i) {
+        if let flexHeight = flexHeightByIndex[i] {
             childHeight = flexHeight
         } else {
             childHeight = info.naturalSizes[i].height
@@ -186,7 +188,15 @@ func performVerticalLayout(container: HWND, info: StackLayoutInfo) {
         let childWidth: Int32
         let childX: Int32
 
-        if shouldExpandWidth(child) || naturalW == 0 || info.flexibleIndices.contains(i) {
+        if shouldExpandWidth(child) && expandMaxWidth(child).map({ $0 < totalWidth }) == true {
+            // Bounded expansion: grow to the cap, aligned like a leaf
+            childWidth = expandMaxWidth(child)!
+            switch info.crossAlignment {
+            case 0:  childX = 0
+            case 2:  childX = totalWidth - childWidth
+            default: childX = (totalWidth - childWidth) / 2
+            }
+        } else if shouldExpandWidth(child) || naturalW == 0 || info.flexibleIndices.contains(i) {
             // Explicit width expanders and spacers fill the width
             childWidth = totalWidth
             childX = 0
@@ -231,13 +241,15 @@ func performHorizontalLayout(container: HWND, info: StackLayoutInfo) {
     }
 
     let remainingWidth = max(0, totalWidth - fixedWidth - totalSpacing)
-    let flexCount = Int32(flexIndices.count)
-    let flexWidth = flexCount > 0 ? remainingWidth / flexCount : 0
+    let flexOrder = flexIndices.sorted()
+    let flexWidths = distributeFlexibleSpace(
+        remainingWidth, caps: flexOrder.map { expandMaxWidth(info.children[$0]) })
+    let flexWidthByIndex = Dictionary(uniqueKeysWithValues: zip(flexOrder, flexWidths))
 
     var x: Int32 = 0
     for (i, child) in info.children.enumerated() {
         let childWidth: Int32
-        if flexIndices.contains(i) {
+        if let flexWidth = flexWidthByIndex[i] {
             childWidth = flexWidth
         } else {
             childWidth = info.naturalSizes[i].width
@@ -248,7 +260,15 @@ func performHorizontalLayout(container: HWND, info: StackLayoutInfo) {
         let childHeight: Int32
         let childY: Int32
 
-        if shouldExpandHeight(child) || naturalH == 0 || info.flexibleIndices.contains(i) {
+        if shouldExpandHeight(child) && expandMaxHeight(child).map({ $0 < totalHeight }) == true {
+            // Bounded expansion: grow to the cap, aligned like a leaf
+            childHeight = expandMaxHeight(child)!
+            switch info.crossAlignment {
+            case 0:  childY = 0
+            case 2:  childY = totalHeight - childHeight
+            default: childY = (totalHeight - childHeight) / 2
+            }
+        } else if shouldExpandHeight(child) || naturalH == 0 || info.flexibleIndices.contains(i) {
             childHeight = totalHeight
             childY = 0
         } else {
@@ -310,8 +330,8 @@ func performZStackLayout(container: HWND, info: ZStackLayoutInfo) {
         let naturalH = childRect.bottom - childRect.top
 
         // Expand children that have expand flags (e.g. frame(maxWidth: .infinity))
-        let childW = shouldExpandWidth(child) ? containerW : naturalW
-        let childH = shouldExpandHeight(child) ? containerH : naturalH
+        let childW = shouldExpandWidth(child) ? min(containerW, expandMaxWidth(child) ?? containerW) : naturalW
+        let childH = shouldExpandHeight(child) ? min(containerH, expandMaxHeight(child) ?? containerH) : naturalH
 
         let x: Int32
         let y: Int32
@@ -396,6 +416,90 @@ func markExpandWidth(_ hwnd: HWND) {
 
 func markExpandHeight(_ hwnd: HWND) {
     SetPropW(hwnd, expandHeightPropName, HANDLE(bitPattern: 1))
+}
+
+// MARK: - Bounded expansion
+//
+// A flexible frame with a finite max (`.frame(minWidth: 40, maxWidth: 100)`)
+// expands like `.infinity` but stops at its max. The cap is stored next to
+// the expand flag, carried up through single-child wrappers, and applied by
+// the parent layout. Stacks propagate the flag without a cap.
+
+private let expandMaxWidthPropName: UnsafePointer<WCHAR> = makePropName("SwiftUI_ExpandMaxW")
+private let expandMaxHeightPropName: UnsafePointer<WCHAR> = makePropName("SwiftUI_ExpandMaxH")
+
+private func makePropName(_ name: String) -> UnsafePointer<WCHAR> {
+    name.withCString(encodedAs: UTF16.self) { ptr in
+        let len = wcslen(ptr) + 1
+        let buf = UnsafeMutablePointer<WCHAR>.allocate(capacity: len)
+        buf.initialize(from: ptr, count: len)
+        return UnsafePointer(buf)
+    }
+}
+
+// Stored as value + 1 so a 0 cap is distinguishable from "no prop".
+func setExpandMaxWidth(_ hwnd: HWND, _ value: Int32) {
+    SetPropW(hwnd, expandMaxWidthPropName, HANDLE(bitPattern: Int(max(0, value)) + 1))
+}
+
+func setExpandMaxHeight(_ hwnd: HWND, _ value: Int32) {
+    SetPropW(hwnd, expandMaxHeightPropName, HANDLE(bitPattern: Int(max(0, value)) + 1))
+}
+
+/// The max width an expanding view may take, or nil when it's unbounded.
+func expandMaxWidth(_ hwnd: HWND) -> Int32? {
+    guard let raw = GetPropW(hwnd, expandMaxWidthPropName) else { return nil }
+    return Int32(Int(bitPattern: raw) - 1)
+}
+
+func expandMaxHeight(_ hwnd: HWND) -> Int32? {
+    guard let raw = GetPropW(hwnd, expandMaxHeightPropName) else { return nil }
+    return Int32(Int(bitPattern: raw) - 1)
+}
+
+/// Copy a single child's expand flags (and caps) onto its wrapper. Call
+/// after sizing the container; any size it adds around the child (padding,
+/// border) is added to the cap.
+func propagateExpandFlags(from child: HWND, to container: HWND) {
+    var childRect = RECT(), containerRect = RECT()
+    GetWindowRect(child, &childRect)
+    GetWindowRect(container, &containerRect)
+    if shouldExpandWidth(child) {
+        markExpandWidth(container)
+        if let cap = expandMaxWidth(child) {
+            let extra = (containerRect.right - containerRect.left) - (childRect.right - childRect.left)
+            setExpandMaxWidth(container, cap + max(0, extra))
+        }
+    }
+    if shouldExpandHeight(child) {
+        markExpandHeight(container)
+        if let cap = expandMaxHeight(child) {
+            let extra = (containerRect.bottom - containerRect.top) - (childRect.bottom - childRect.top)
+            setExpandMaxHeight(container, cap + max(0, extra))
+        }
+    }
+}
+
+/// Split `available` among flexible children, giving capped ones at most
+/// their cap and sharing what they leave over among the rest.
+func distributeFlexibleSpace(_ available: Int32, caps: [Int32?]) -> [Int32] {
+    var sizes = [Int32](repeating: 0, count: caps.count)
+    var open = Set(caps.indices)
+    var remaining = available
+    while !open.isEmpty {
+        let share = remaining / Int32(open.count)
+        let capped = open.filter { caps[$0].map { $0 < share } ?? false }
+        if capped.isEmpty {
+            for i in open { sizes[i] = share }
+            break
+        }
+        for i in capped {
+            sizes[i] = caps[i]!
+            remaining -= caps[i]!
+            open.remove(i)
+        }
+    }
+    return sizes
 }
 
 func shouldExpandWidth(_ hwnd: HWND) -> Bool {

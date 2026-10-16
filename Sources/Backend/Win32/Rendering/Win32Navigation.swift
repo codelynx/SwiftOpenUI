@@ -492,8 +492,7 @@ extension NavigationStack: WinRenderable {
             // update these flags, so a pushed view that should expand
             // changes nothing. Marking the container in push() would not be
             // enough either, because the outer window caches expansion.
-            if shouldExpandWidth(rootHwnd) { markExpandWidth(container) }
-            if shouldExpandHeight(rootHwnd) { markExpandHeight(container) }
+            propagateExpandFlags(from: rootHwnd, to: container)
         }
 
         // Set initial title

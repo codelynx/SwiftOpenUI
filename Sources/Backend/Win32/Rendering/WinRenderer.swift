@@ -2160,8 +2160,7 @@ extension PaddedView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, totalW, totalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         // Propagate expand flags from child
-        if shouldExpandWidth(child) { markExpandWidth(container) }
-        if shouldExpandHeight(child) { markExpandHeight(container) }
+        propagateExpandFlags(from: child, to: container)
 
         // Initial layout
         performPaddingLayout(container: container, info: padInfo)
@@ -2211,8 +2210,7 @@ extension SafeAreaPaddingView: WinRenderable {
         let totalH = childH + padTop + padBottom
         SetWindowPos(container, nil, 0, 0, totalW, totalH, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
-        if shouldExpandWidth(child) { markExpandWidth(container) }
-        if shouldExpandHeight(child) { markExpandHeight(container) }
+        propagateExpandFlags(from: child, to: container)
 
         performPaddingLayout(container: container, info: padInfo)
 
@@ -2344,6 +2342,16 @@ extension FrameView: WinRenderable {
         }
         if maxHeight == .infinity || (expandsHeight && height == nil && maxHeight == nil) {
             markExpandHeight(container)
+        }
+        // A finite max above the frame's own size makes it a bounded
+        // expander: SwiftUI gives it the offered space, up to the max.
+        if width == nil, let maxWidth, maxWidth.isFinite, Int32(ceil(maxWidth)) > w {
+            markExpandWidth(container)
+            setExpandMaxWidth(container, Int32(ceil(maxWidth)))
+        }
+        if height == nil, let maxHeight, maxHeight.isFinite, Int32(ceil(maxHeight)) > h {
+            markExpandHeight(container)
+            setExpandMaxHeight(container, Int32(ceil(maxHeight)))
         }
 
         // Store info for resize-time recomputation via shared layout
@@ -2527,8 +2535,7 @@ extension ForegroundColorView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         // Propagate expand flags from child
-        if shouldExpandWidth(child) { markExpandWidth(container) }
-        if shouldExpandHeight(child) { markExpandHeight(container) }
+        propagateExpandFlags(from: child, to: container)
 
         let r = UInt8(color.red * 255)
         let g = UInt8(color.green * 255)
@@ -2759,8 +2766,7 @@ extension BackgroundView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
         // Propagate expand flags from the CONTENT only, not the background.
-        if shouldExpandWidth(child) { markExpandWidth(container) }
-        if shouldExpandHeight(child) { markExpandHeight(container) }
+        propagateExpandFlags(from: child, to: container)
 
         var bgNatural = ViewSize(width: 0, height: 0)
         if let bgHwnd {
@@ -2819,8 +2825,7 @@ private func solidFillBackground<C: View>(content: C, color: Color,
     let h = childRect.bottom - childRect.top
     SetWindowPos(container, nil, 0, 0, w, h, UINT(SWP_NOZORDER | SWP_NOMOVE))
 
-    if shouldExpandWidth(child) { markExpandWidth(container) }
-    if shouldExpandHeight(child) { markExpandHeight(container) }
+    propagateExpandFlags(from: child, to: container)
 
     // NB: a filled Shape's corner radius is intentionally NOT applied here as a
     // window region. Clipping the container would also clip the foreground
@@ -3254,8 +3259,7 @@ extension BorderView: WinRenderable {
         SetWindowPos(child, nil, bw, bw, w - bw * 2, h - bw * 2, UINT(SWP_NOZORDER))
 
         // Propagate expand flags from child
-        if shouldExpandWidth(child) { markExpandWidth(container) }
-        if shouldExpandHeight(child) { markExpandHeight(container) }
+        propagateExpandFlags(from: child, to: container)
         // Pre-multiply alpha against white for GDI compatibility
         let a = color.alpha
         let r = UInt8((color.red * a + 1.0 * (1.0 - a)) * 255)
@@ -5011,8 +5015,7 @@ extension OverlayView: WinRenderable {
 
         // Propagate expand flags from content so parent layouts
         // (VStack/HStack/FrameView) know this container should fill.
-        if shouldExpandWidth(contentHwnd) { markExpandWidth(container) }
-        if shouldExpandHeight(contentHwnd) { markExpandHeight(container) }
+        propagateExpandFlags(from: contentHwnd, to: container)
 
         // Render overlay on top, positioned by alignment.
         if let overlayHwnd = winRenderView(overlay, in: childContext) {
