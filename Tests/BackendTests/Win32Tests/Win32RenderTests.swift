@@ -1549,6 +1549,39 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertEqual(w, 100, "A background around a bounded frame should stop at the same max")
     }
 
+    func testPixelCapRejectsUnboundedValues() {
+        XCTAssertEqual(pixelCap(100), 100)
+        XCTAssertEqual(pixelCap(99.2), 100)
+        XCTAssertNil(pixelCap(.infinity))
+        XCTAssertNil(pixelCap(.greatestFiniteMagnitude))
+        XCTAssertNil(pixelCap(Double(Int32.max) + 1))
+    }
+
+    func testGreatestFiniteMaxWidthExpandsWithoutCap() {
+        // Converting this to Int32 used to trap; it should act like .infinity.
+        let hwnd = winRenderView(Text("Fill").frame(maxWidth: .greatestFiniteMagnitude), in: testContext())!
+        XCTAssertTrue(shouldExpandWidth(hwnd))
+        XCTAssertNil(expandMaxWidth(hwnd))
+    }
+
+    func testExplicitExtraKeepsCapWhenContainerAlreadyStretched() {
+        // A ViewHost container has been stretched by its parent before a
+        // rebuild re-derives its flags; measuring container - child would
+        // inflate the cap (800 - 40 + 100).
+        let ctx = testContext()
+        let child = winRenderView(Text("Flex").frame(minWidth: 40, maxWidth: 100), in: ctx)!
+        let container = CreateWindowExW(0, win32_WC_STATIC(), nil, DWORD(WS_CHILD),
+                                         0, 0, 800, 40, ctx.parent, nil, ctx.hInstance, nil)!
+        defer { DestroyWindow(container) }
+
+        propagateExpandFlags(from: child, to: container, extraWidth: 0, extraHeight: 0)
+        XCTAssertEqual(expandMaxWidth(container), 100)
+
+        clearExpandFlags(container)
+        XCTAssertFalse(shouldExpandWidth(container))
+        XCTAssertNil(expandMaxWidth(container), "clearExpandFlags should drop the cap too")
+    }
+
     func testForegroundColorMakesButtonsOwnerDrawn() {
         let ctx = testContext()
         let hwnd = winRenderView(Button("Tinted", action: {}).foregroundColor(.blue), in: ctx)
