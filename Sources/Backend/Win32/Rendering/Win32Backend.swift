@@ -172,15 +172,21 @@ extension WindowGroup: Win32WindowRenderable {
 
             let screenW = GetSystemMetrics(SM_CXSCREEN)
             let screenH = GetSystemMetrics(SM_CYSCREEN)
+            // Shared cross-backend constants (800x600 automatic default, 300x200
+            // fallback minimum) are expressed in logical points; scale them by
+            // this window's DPI so they land at the intended physical size.
+            let dpiScale = Double(win32_GetDpiForWindow(hwnd)) / 96.0
+            let scaledFallbackMinW = Int32((300.0 * dpiScale).rounded())
+            let scaledFallbackMinH = Int32((200.0 * dpiScale).rounded())
             // When explicit sizing is provided (defaultWindowSize or windowSizing(.size)),
-            // don't enforce 300x200 minimum — the developer chose the size.
+            // don't enforce the 300x200 minimum — the developer chose the size.
             let hasExplicitSize = defaultWindowWidth != nil || defaultWindowHeight != nil || {
                 if case .size = windowSizing ?? .automatic { return true }
                 if case .contentFixed = windowSizing ?? .automatic { return true }
                 return false
             }()
-            let minClientW = minWindowWidth.map { Int32($0) } ?? (hasExplicitSize ? 1 : 300)
-            let minClientH = minWindowHeight.map { Int32($0) } ?? (hasExplicitSize ? 1 : 200)
+            let minClientW = minWindowWidth.map { Int32($0) } ?? (hasExplicitSize ? 1 : scaledFallbackMinW)
+            let minClientH = minWindowHeight.map { Int32($0) } ?? (hasExplicitSize ? 1 : scaledFallbackMinH)
             let maxClientW = maxWindowWidth.map { Int32($0) } ?? (screenW * 3 / 4)
             let maxClientH = maxWindowHeight.map { Int32($0) } ?? (screenH * 3 / 4)
 
@@ -188,7 +194,9 @@ extension WindowGroup: Win32WindowRenderable {
             let defaultClientH = defaultWindowHeight.map { Int32($0) }
             let automaticDefaultClientSize: (Int32?, Int32?) = {
                 if case .automatic = windowSizing ?? .automatic {
-                    return (Int32(defaultAutomaticWindowWidth), Int32(defaultAutomaticWindowHeight))
+                    let scaledW = Int32((defaultAutomaticWindowWidth * dpiScale).rounded())
+                    let scaledH = Int32((defaultAutomaticWindowHeight * dpiScale).rounded())
+                    return (scaledW, scaledH)
                 }
                 return (nil, nil)
             }()
