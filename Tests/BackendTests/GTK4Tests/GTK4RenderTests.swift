@@ -243,7 +243,6 @@ final class GTK4RenderTests: XCTestCase {
         allocate(widget: wrapper, size: wrapperSize)
 
         let firstSize = allocatedSize(of: first)
-        let thirdSize = allocatedSize(of: third)
         let firstOrigin = translatedChildOrigin(child: first, in: wrapper)
         let secondOrigin = translatedChildOrigin(child: second, in: wrapper)
         let thirdOrigin = translatedChildOrigin(child: third, in: wrapper)
@@ -255,7 +254,12 @@ final class GTK4RenderTests: XCTestCase {
         XCTAssertEqual(firstOrigin.y, 0, accuracy: 0.01)
         XCTAssertEqual(secondOrigin.y, 0, accuracy: 0.01)
         XCTAssertEqual(thirdOrigin.x, 0, accuracy: 0.01)
-        XCTAssertEqual(fourthOrigin.x, thirdSize.width + 4, accuracy: 0.01)
+        // Column width comes from the span-2 cell, so it is fractional whenever
+        // the measured span width is odd. Derive it the way the layout does
+        // rather than from the GTK-rounded single-column allocation, which
+        // would make this assertion depend on the host's font metrics.
+        let columnWidth = (firstSize.width - 4) / 2
+        XCTAssertEqual(fourthOrigin.x, columnWidth + 4, accuracy: 0.01)
         XCTAssertEqual(secondOrigin.x, fifthOrigin.x, accuracy: 0.01)
         XCTAssertEqual(firstSize.width, fifthOrigin.x - 4, accuracy: 0.01)
         XCTAssertEqual(thirdOrigin.y, max(firstSize.height, allocatedSize(of: second).height) + 5, accuracy: 0.01)
