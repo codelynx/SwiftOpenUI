@@ -110,3 +110,12 @@ Workers may mention expected doc impacts in the handoff, but coordinator decides
 If a branch contains valid backend work but is based on an older batch base and also carries stale state from other files, do not merge the branch head.
 
 Cherry-pick the focused fix commit onto `develop` instead.
+
+## Next Suggested Actions
+
+When a response finishes a piece of work or a report, and there are clear follow-ups, end it with a short **Next suggested actions** list:
+
+- 1–3 concrete actions, most useful first (for example: push and open a PR, file an issue for a bug found along the way, run a check that was skipped).
+- Name what each one acts on (branch, issue, file, command), so the user can answer "do 1".
+- Mark any that are outward-facing or hard to undo (push, merge, close an issue, delete).
+- Skip the list for quick answers, mid-task updates, or when nothing obvious follows. Don't pad it.
