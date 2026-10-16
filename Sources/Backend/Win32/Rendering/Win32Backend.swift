@@ -164,9 +164,9 @@ extension WindowGroup: Win32WindowRenderable {
             let desiredClientSize: (Int32, Int32) = {
                 switch windowSizing ?? .automatic {
                 case .automatic, .content, .contentFixed:
-                    return (naturalContentW + 20, naturalContentH + 20)
+                    return (naturalContentW + px(20, for: hwnd), naturalContentH + px(20, for: hwnd))
                 case .size(let width, let height):
-                    return (Int32(width), Int32(height))
+                    return (px(width, for: hwnd), px(height, for: hwnd))
                 }
             }()
 
@@ -185,13 +185,13 @@ extension WindowGroup: Win32WindowRenderable {
                 if case .contentFixed = windowSizing ?? .automatic { return true }
                 return false
             }()
-            let minClientW = minWindowWidth.map { Int32($0) } ?? (hasExplicitSize ? 1 : scaledFallbackMinW)
-            let minClientH = minWindowHeight.map { Int32($0) } ?? (hasExplicitSize ? 1 : scaledFallbackMinH)
-            let maxClientW = maxWindowWidth.map { Int32($0) } ?? (screenW * 3 / 4)
-            let maxClientH = maxWindowHeight.map { Int32($0) } ?? (screenH * 3 / 4)
+            let minClientW = minWindowWidth.map { px($0, for: hwnd) } ?? (hasExplicitSize ? 1 : scaledFallbackMinW)
+            let minClientH = minWindowHeight.map { px($0, for: hwnd) } ?? (hasExplicitSize ? 1 : scaledFallbackMinH)
+            let maxClientW = maxWindowWidth.map { px($0, for: hwnd) } ?? (screenW * 3 / 4)
+            let maxClientH = maxWindowHeight.map { px($0, for: hwnd) } ?? (screenH * 3 / 4)
 
-            let defaultClientW = defaultWindowWidth.map { Int32($0) }
-            let defaultClientH = defaultWindowHeight.map { Int32($0) }
+            let defaultClientW = defaultWindowWidth.map { px($0, for: hwnd) }
+            let defaultClientH = defaultWindowHeight.map { px($0, for: hwnd) }
             let automaticDefaultClientSize: (Int32?, Int32?) = {
                 if case .automatic = windowSizing ?? .automatic {
                     // Grow past the default when content is larger, like SwiftUI's
@@ -239,10 +239,10 @@ extension WindowGroup: Win32WindowRenderable {
             let state = MainWindowState(
                 contentHwnd: contentHwnd,
                 style: style,
-                minClientWidth: minWindowWidth.map { Int32($0) },
-                minClientHeight: minWindowHeight.map { Int32($0) },
-                maxClientWidth: maxWindowWidth.map { Int32($0) },
-                maxClientHeight: maxWindowHeight.map { Int32($0) },
+                minClientWidth: minWindowWidth.map { px($0, for: hwnd) },
+                minClientHeight: minWindowHeight.map { px($0, for: hwnd) },
+                maxClientWidth: maxWindowWidth.map { px($0, for: hwnd) },
+                maxClientHeight: maxWindowHeight.map { px($0, for: hwnd) },
                 expandsWidth: wantsFillW,
                 expandsHeight: wantsFillH,
                 naturalContentW: naturalContentW,
@@ -791,8 +791,8 @@ extension Window: Win32WindowRenderable {
         }
 
         let style = DWORD(WS_OVERLAPPEDWINDOW)
-        let clientW = defaultWindowWidth.map { Int32($0) } ?? 400
-        let clientH = defaultWindowHeight.map { Int32($0) } ?? 300
+        let clientW = pxForNewWindow(defaultWindowWidth ?? 400)
+        let clientH = pxForNewWindow(defaultWindowHeight ?? 300)
         let windowSize = adjustedWindowSize(
             clientWidth: clientW, clientHeight: clientH, style: style)
 
@@ -832,8 +832,8 @@ extension Window: Win32WindowRenderable {
             let state = MainWindowState(
                 contentHwnd: contentHwnd,
                 style: style,
-                minClientWidth: minWindowWidth.map { Int32($0) },
-                minClientHeight: minWindowHeight.map { Int32($0) },
+                minClientWidth: minWindowWidth.map { px($0, for: hwnd) },
+                minClientHeight: minWindowHeight.map { px($0, for: hwnd) },
                 maxClientWidth: nil,
                 maxClientHeight: nil
             )

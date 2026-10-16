@@ -87,8 +87,9 @@ func d2dMeasure<V: View>(_ view: V, dpiScale: Float) -> (width: Float, height: F
     }
     if let padded = view as? PaddedView<Text> {
         let inner = d2dMeasure(padded.content, dpiScale: dpiScale)
-        return (inner.width + Float(padded.leading + padded.trailing),
-                inner.height + Float(padded.top + padded.bottom))
+        // Insets are logical points; scale to the surface's pixels.
+        return (inner.width + Float(padded.leading + padded.trailing) * dpiScale,
+                inner.height + Float(padded.top + padded.bottom) * dpiScale)
     }
     // Walk through wrapper modifiers that don't change measurement
     if let v = view as? any _D2DMeasurable {
@@ -168,9 +169,9 @@ func d2dDraw<V: View>(_ view: V, target: D2DRenderTarget, brush: D2DBrush,
     }
     if let padded = view as? PaddedView<Text> {
         d2dDraw(padded.content, target: target, brush: brush,
-                x: x + Float(padded.leading), y: y + Float(padded.top),
-                width: width - Float(padded.leading + padded.trailing),
-                height: height - Float(padded.top + padded.bottom), dpiScale: dpiScale)
+                x: x + Float(padded.leading) * dpiScale, y: y + Float(padded.top) * dpiScale,
+                width: width - Float(padded.leading + padded.trailing) * dpiScale,
+                height: height - Float(padded.top + padded.bottom) * dpiScale, dpiScale: dpiScale)
         return
     }
     // ScaleEffectView: draw content with scaled font size for text

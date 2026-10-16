@@ -11,6 +11,35 @@ func dpiScaleFactor(for hwnd: HWND) -> Double {
     Double(win32_GetDpiForWindow(hwnd)) / 96.0
 }
 
+// MARK: - Points ↔ pixels (RFC #16 chokepoint)
+//
+// Every dimension in the core API is a logical point (1pt = 1px at 96 DPI).
+// Win32 layout and the 96-DPI-pinned D2D targets work in physical pixels,
+// so API values are converted once, where a view is created, with these
+// helpers. At 100% they are the identity.
+
+/// Logical points → physical pixels, rounded to the nearest pixel.
+func px(_ points: Double, for hwnd: HWND) -> Int32 {
+    Int32((points * dpiScaleFactor(for: hwnd)).rounded())
+}
+
+/// Logical points → physical pixels for a window that doesn't exist yet,
+/// using the system DPI (what a new top-level window opens at).
+func pxForNewWindow(_ points: Double) -> Int32 {
+    Int32((points * Double(GetDpiForSystem()) / 96.0).rounded())
+}
+
+/// Logical points → physical pixels, unrounded (for layout math and D2D).
+func pxExact(_ points: Double, for hwnd: HWND) -> Double {
+    points * dpiScaleFactor(for: hwnd)
+}
+
+/// Physical pixels → logical points, for values handed back to user code
+/// (gesture locations, GeometryReader sizes, Canvas sizes).
+func pxToPoints(_ pixels: Double, for hwnd: HWND) -> Double {
+    pixels / dpiScaleFactor(for: hwnd)
+}
+
 /// Measure a text string's size using DirectWrite (preferred) or GDI fallback.
 /// DirectWrite provides more accurate sub-pixel measurement than GDI.
 public func measureText(_ text: String, hwnd: HWND) -> (width: Int32, height: Int32) {
