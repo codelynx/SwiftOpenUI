@@ -274,6 +274,12 @@ extension WindowGroup: Win32WindowRenderable {
 /// WndProc for the main application window.
 private let mainWindowProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
     switch uMsg {
+    case UINT(WM_SYSCOLORCHANGE), UINT(WM_SETTINGCHANGE), UINT(WM_THEMECHANGED):
+        // COLOR_WINDOW (the inherited-background fallback) may have changed.
+        invalidateInheritedBackgrounds()
+        RedrawWindow(hwnd, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
     case UINT(WM_SIZE):
         let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
         if userData != 0 {
@@ -860,6 +866,12 @@ extension Window: Win32WindowRenderable {
 /// only the main window's destruction should quit the app.
 private let windowSceneWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
     switch uMsg {
+    case UINT(WM_SYSCOLORCHANGE), UINT(WM_SETTINGCHANGE), UINT(WM_THEMECHANGED):
+        // COLOR_WINDOW (the inherited-background fallback) may have changed.
+        invalidateInheritedBackgrounds()
+        RedrawWindow(hwnd, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
     case UINT(WM_SIZE):
         let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
         if userData != 0 {

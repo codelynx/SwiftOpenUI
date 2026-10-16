@@ -578,6 +578,7 @@ private func registerD2DViewClassIfNeeded(hInstance: HINSTANCE) {
 
 /// Per-HWND D2D state for custom-rendered views.
 private class D2DViewState {
+    var backgroundCache = InheritedBackgroundCache()
     let hwnd: HWND
     var renderTarget: D2DRenderTarget?
     var brush: D2DBrush?
@@ -622,7 +623,7 @@ private class D2DViewState {
         d2d1_RenderTarget_BeginDraw(rt)
         // Clear to the inherited background so thin views (e.g. Divider)
         // don't show a window-colored strip on custom backgrounds.
-        let bg = inheritedBackgroundColor(for: hwnd)
+        let bg = backgroundCache.color(for: hwnd)
         d2d1_RenderTarget_Clear(rt, bg.r, bg.g, bg.b, 1.0)
 
         drawCallback?(rt, brush, w, h)
@@ -1204,6 +1205,7 @@ func createNativeButton(title: String, action: @escaping () -> Void,
 // MARK: - Flat D2D Button
 
 class FlatButtonState {
+    var backgroundCache = InheritedBackgroundCache()
     let hwnd: HWND
     let title: String
     let action: () -> Void
@@ -1253,7 +1255,7 @@ class FlatButtonState {
         d2d1_RenderTarget_BeginDraw(rt)
 
         // Clear with parent background
-        let (bgR, bgG, bgB) = inheritedBackgroundColor(for: hwnd)
+        let (bgR, bgG, bgB) = backgroundCache.color(for: hwnd)
         d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
 
         let cornerRadius: Float = 5
@@ -1623,6 +1625,7 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
             info.pressed = false
             if GetCapture() == hwnd { ReleaseCapture() }
         }
+        invalidateInheritedBackgrounds()  // children's backdrop changed
         InvalidateRect(hwnd, nil, true)
         return 0
 
@@ -1632,6 +1635,7 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         SetCapture(hwnd)
         SetFocus(hwnd)
         info.pressed = true
+        invalidateInheritedBackgrounds()  // children's backdrop changed
         InvalidateRect(hwnd, nil, true)
         return 0
 
@@ -1639,6 +1643,7 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         ReleaseCapture()
         let wasPressed = info.pressed
         info.pressed = false
+        invalidateInheritedBackgrounds()  // children's backdrop changed
         InvalidateRect(hwnd, nil, true)
         if wasPressed && IsWindowEnabled(hwnd) {
             var rect = RECT()
@@ -1656,6 +1661,7 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         if wParam == WPARAM(VK_SPACE) || wParam == WPARAM(VK_RETURN) {
             guard IsWindowEnabled(hwnd) else { return 0 }
             info.pressed = true
+            invalidateInheritedBackgrounds()  // children's backdrop changed
             InvalidateRect(hwnd, nil, true)
             return 0
         }
@@ -1665,6 +1671,7 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         if wParam == WPARAM(VK_SPACE) || wParam == WPARAM(VK_RETURN) {
             if info.pressed {
                 info.pressed = false
+                invalidateInheritedBackgrounds()  // children's backdrop changed
                 InvalidateRect(hwnd, nil, true)
                 if IsWindowEnabled(hwnd) {
                     info.action()
@@ -3463,6 +3470,7 @@ extension Toggle: WinRenderable {
 
 /// State for a D2D-rendered slider.
 private class D2DSliderState {
+    var backgroundCache = InheritedBackgroundCache()
     let hwnd: HWND
     let binding: Binding<Double>
     let rangeMin: Double
@@ -3542,7 +3550,7 @@ private class D2DSliderState {
         d2d1_RenderTarget_BeginDraw(rt)
 
         // Clear with inherited background from parent chain
-        let (bgR, bgG, bgB) = inheritedBackgroundColor(for: hwnd)
+        let (bgR, bgG, bgB) = backgroundCache.color(for: hwnd)
         d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
 
         let centerY = h / 2
@@ -5297,6 +5305,7 @@ extension TabView: WinRenderable {
 
 /// State for a D2D-rendered segmented control (replaces radio buttons).
 private class SegmentedControlState {
+    var backgroundCache = InheritedBackgroundCache()
     let hwnd: HWND
     let segments: [String]
     /// Widths of each segment in pixels (computed from text measurement).
@@ -5361,7 +5370,7 @@ private class SegmentedControlState {
         d2d1_RenderTarget_BeginDraw(rt)
 
         // Clear with parent background
-        let (bgR, bgG, bgB) = inheritedBackgroundColor(for: hwnd)
+        let (bgR, bgG, bgB) = backgroundCache.color(for: hwnd)
         d2d1_RenderTarget_Clear(rt, bgR, bgG, bgB, 1.0)
 
         // Outer border — rounded rect around the entire control
@@ -5872,6 +5881,7 @@ extension ToolbarView: WinRenderable {
         }
 
         SetParent(hwnd, container)
+        invalidateInheritedBackgrounds()
         var contentRect = RECT()
         GetWindowRect(hwnd, &contentRect)
         let contentW = max(contentRect.right - contentRect.left, leadingX + 100)
@@ -7780,6 +7790,7 @@ extension ShadowView: WinRenderable {
 
         // Re-parent the child into the container, centered with padding for shadow
         SetParent(childHwnd, container)
+        invalidateInheritedBackgrounds()
         SetWindowPos(childHwnd, nil, shadowOffset, shadowOffset, cw, ch, UINT(SWP_NOZORDER))
 
         // Attach shadow info and install paint subclass

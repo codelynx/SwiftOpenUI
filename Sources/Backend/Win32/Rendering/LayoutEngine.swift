@@ -584,6 +584,33 @@ func inheritedBackgroundColor(for hwnd: HWND) -> (r: Float, g: Float, b: Float) 
             Float(win32_GetBValue(color)) / 255.0)
 }
 
+/// Bumped whenever the background behind existing windows may change in
+/// place (reparenting, a custom button's pressed state, ViewHost rebuilds,
+/// system colors). Otherwise backgrounds only appear on newly created
+/// windows, whose own caches start empty.
+private(set) var inheritedBackgroundGeneration = 0
+
+func invalidateInheritedBackgrounds() {
+    inheritedBackgroundGeneration &+= 1
+}
+
+/// Per-control cache for `inheritedBackgroundColor(for:)`, which walks the
+/// whole WM_CTLCOLORSTATIC chain (and restarts above every ZStack) and costs
+/// ~0.15–2 ms in deep trees. Keep one on each D2D control's state object
+/// so it dies with the window.
+struct InheritedBackgroundCache {
+    private var generation = -1
+    private var cached: (r: Float, g: Float, b: Float) = (1, 1, 1)
+
+    mutating func color(for hwnd: HWND) -> (r: Float, g: Float, b: Float) {
+        if generation != inheritedBackgroundGeneration {
+            cached = inheritedBackgroundColor(for: hwnd)
+            generation = inheritedBackgroundGeneration
+        }
+        return cached
+    }
+}
+
 // MARK: - Stack container class
 
 let stackContainerClassName: UnsafePointer<WCHAR> = {
