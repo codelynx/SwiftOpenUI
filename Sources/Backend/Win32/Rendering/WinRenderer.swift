@@ -1746,7 +1746,11 @@ private let customButtonProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdS
         return 0
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
-        // Provide button-face background for child STATIC controls
+        // Provide button-face background for child STATIC controls; forward
+        // first so an outer .foregroundColor() still sets the text color.
+        if let parent = GetParent(hwnd!) {
+            _ = SendMessageW(parent, uMsg, wParam, lParam)
+        }
         let ctlDC = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetBkMode(ctlDC, TRANSPARENT)
         return LRESULT(Int(bitPattern: GetSysColorBrush(info.pressed ? COLOR_BTNSHADOW : COLOR_BTNFACE)))
@@ -2684,15 +2688,16 @@ let foregroundColorProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubcla
         return eraseWithInheritedBackground(hwnd: hwnd!, wParam: wParam)
 
     case UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN):
-        // Set the text color on the child control's HDC.
+        // Forward first so BackgroundView ancestors provide their brush, then
+        // set our color after any outer foregroundColor so the innermost wins.
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
+        var brush = LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+        if let parent = GetParent(hwnd!) {
+            brush = SendMessageW(parent, uMsg, wParam, lParam)
+        }
         SetTextColor(hdc, info.colorRef)
         SetBkMode(hdc, TRANSPARENT)
-        // Forward to parent so BackgroundView can provide its brush
-        if let parent = GetParent(hwnd!) {
-            return SendMessageW(parent, uMsg, wParam, lParam)
-        }
-        return LRESULT(Int(bitPattern: GetSysColorBrush(COLOR_WINDOW)))
+        return brush
 
     case UINT(WM_DRAWITEM):
         let drawInfo = UnsafePointer<DRAWITEMSTRUCT>(bitPattern: Int(lParam))
@@ -2912,6 +2917,11 @@ let backgroundProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSubclass, d
         let hdc = HDC(bitPattern: Int(bitPattern: UInt(wParam)))
         SetBkMode(hdc, TRANSPARENT)
         if let brush = info.brush {
+            // Still let ancestors see the message so an outer
+            // .foregroundColor() sets the text color; keep our own brush.
+            if let parent = GetParent(hwnd!) {
+                _ = SendMessageW(parent, uMsg, wParam, lParam)
+            }
             return LRESULT(Int(bitPattern: brush))
         }
         // No brush (Color.clear) — forward to parent for inherited background

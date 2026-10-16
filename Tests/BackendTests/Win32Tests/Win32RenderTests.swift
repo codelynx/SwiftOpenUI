@@ -1487,6 +1487,38 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNotNil(child, "ForegroundColorView should wrap child in container")
     }
 
+    /// Text color a Static leaf would get: send WM_CTLCOLORSTATIC to its parent
+    /// with a scratch DC, as the control itself does when painting.
+    private func staticTextColor(in root: HWND) -> COLORREF? {
+        var leaf: HWND = root
+        while let child = GetWindow(leaf, UINT(GW_CHILD)) { leaf = child }
+        guard className(of: leaf) == "Static", let parent = GetParent(leaf) else { return nil }
+        guard let hdc = CreateCompatibleDC(nil) else { return nil }
+        defer { DeleteDC(hdc) }
+        _ = SendMessageW(parent, UINT(WM_CTLCOLORSTATIC),
+                         WPARAM(UInt(bitPattern: Int(bitPattern: hdc))),
+                         LPARAM(Int(bitPattern: leaf)))
+        return GetTextColor(hdc)
+    }
+
+    func testForegroundColorReachesTextThroughBackground() {
+        let ctx = testContext()
+        let view = Text("Tap me").padding(8).background(Color.blue).foregroundColor(.white)
+        let hwnd = winRenderView(view, in: ctx)!
+        XCTAssertEqual(staticTextColor(in: hwnd), win32_RGB(255, 255, 255),
+                       "Outer .foregroundColor() should color text inside .background()")
+    }
+
+    func testInnermostForegroundColorWins() {
+        let ctx = testContext()
+        let view = Text("Red").foregroundColor(.red).padding(4).foregroundColor(.blue)
+        let hwnd = winRenderView(view, in: ctx)!
+        let red = Color.red
+        XCTAssertEqual(staticTextColor(in: hwnd),
+                       win32_RGB(UInt8(red.red * 255), UInt8(red.green * 255), UInt8(red.blue * 255)),
+                       "Inner .foregroundColor() should override an outer one")
+    }
+
     func testForegroundColorMakesButtonsOwnerDrawn() {
         let ctx = testContext()
         let hwnd = winRenderView(Button("Tinted", action: {}).foregroundColor(.blue), in: ctx)
