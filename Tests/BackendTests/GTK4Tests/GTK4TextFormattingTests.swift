@@ -173,6 +173,42 @@ final class GTK4TextFormattingTests: XCTestCase {
         XCTAssertEqual(gtk_label_get_xalign(label), 1.0, accuracy: 0.01)
     }
 
+    // MARK: - Frame alignment on a width-filling label
+
+    // `.lineLimit(1).frame(maxWidth: .infinity)` stretches the label across
+    // the frame, so the frame's alignment must land on the label's xalign.
+
+    func testFillingLabelCentersByDefault() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Hello world").lineLimit(1).frame(maxWidth: .infinity)
+        ))
+        let label = try findLabel(in: widget)
+        XCTAssertEqual(gtk_label_get_xalign(label), 0.5, accuracy: 0.01,
+                       "default .center frame alignment should center the label text")
+    }
+
+    func testFillingLabelHonorsLeadingFrameAlignment() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Hello world").lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+        ))
+        let label = try findLabel(in: widget)
+        XCTAssertEqual(gtk_label_get_xalign(label), 0.0, accuracy: 0.01)
+    }
+
+    func testFillingLabelHonorsTrailingFrameAlignment() throws {
+        try requireGTK()
+
+        let widget = widgetFromOpaque(gtkRenderView(
+            Text("Hello world").lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)
+        ))
+        let label = try findLabel(in: widget)
+        XCTAssertEqual(gtk_label_get_xalign(label), 1.0, accuracy: 0.01)
+    }
+
     // MARK: - Non-label passthrough
 
     func testLineLimitOnNonLabelPassesThrough() throws {
