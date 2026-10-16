@@ -216,6 +216,10 @@ becomes a supported, observable code path rather than a restart-only scenario.
 
 ## Migration / rollout
 
+> **Status (2026-10-15):** step 1 is done (#8 and #11 merged), and 150% captures confirm the
+> unscaled-geometry hypothesis. Step 2 (the chokepoint) is next. Details and evidence are in
+> [`docs/plans/dpi-scaling-breakdown.md`](../plans/dpi-scaling-breakdown.md#status-update--2026-10-15).
+
 This order is a **recommendation for discussion**; it matches the "Open
 questions" sequencing exactly (single source of truth):
 

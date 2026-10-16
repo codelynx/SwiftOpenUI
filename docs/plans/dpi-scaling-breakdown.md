@@ -14,24 +14,45 @@ automatically (logical-pixel primitives); Linux's only task is D8
 | Unit | Tracked by | Status |
 |------|-----------|--------|
 | D0 — adopt RFC | PR #16 (this) | draft |
-| D1 — revised #8 | PR #8 | changes requested |
-| D2 — revised #11 | PR #11 | changes requested |
-| D3 — scale chokepoint | #17 | open |
+| D1 — revised #8 | PR #8 | **done** (merged 2026-10-15 via `fix/win32-dpi-defaults`) |
+| D2 — revised #11 | PR #11 | **done** (merged 2026-10-15 as rebased `fix/win32-nav-dpi-truncation`; #11 closed) |
+| D3 — scale chokepoint | #17 | **next** — unblocked; groundwork in #34 (`dpiScaleFactor(for:)`) |
 | D4 — WM_DPICHANGED | #18 | open |
-| D5 — 150%/200% captures | #19 | open |
+| D5 — 150%/200% captures | #19 | 150% captured 2026-10-15 — hypothesis confirmed (see below); 200% pending |
 | D6 — tracked capture tooling | #20 | open |
 | D7 — document the contract | _unfiled_ (coordinator) | — |
 | D8 — GTK4 fractional scaling | #21 | open |
 
 - [ ] D0 adopt RFC (#16)
-- [ ] D1 revised #8 — contributor
-- [ ] D2 revised #11 — contributor
+- [x] D1 revised #8 — contributor
+- [x] D2 revised #11 — contributor
 - [ ] D3 scale chokepoint (#17)
 - [ ] D4 WM_DPICHANGED (#18)
 - [ ] D5 150%/200% captures (#19)
 - [ ] D6 tracked capture tooling (#20)
 - [ ] D7 document the contract
 - [ ] D8 GTK4 fractional scaling (#21)
+
+## Status update — 2026-10-15
+
+D1 and D2 landed, plus related Win32 work that D3 builds on:
+
+- #22/#24: every text-bearing control gets a DPI-scaled Segoe UI body font (before, plain `Text` and EDIT controls used the unscaled bitmap System font).
+- #25: the automatic window grows to fit content (still DPI-scaled 800×600 minimum).
+- #31/#33: bounded expansion for finite `maxWidth`/`maxHeight` — caps are stored in **raw pixels** today; D3 must scale them.
+- #34: a single `dpiScaleFactor(for:)` + `defaultBodyFontSize` replaced ~12 hand-written `GetDpiForWindow/96` copies — the seed of D3's chokepoint.
+
+**D5 at 150% (144 DPI), all 16 examples captured:** the RFC's "geometry isn't scaled" hypothesis is confirmed. Text, font-derived sizes, the automatic window default and the navigation header scale; `.frame`, `.padding`, stack spacing, `.offset`, borders, and explicit window sizes (`.defaultWindowSize`, `.windowSizing(.size/.contentFixed)`) do not. Wherever fixed geometry contains text, the text outgrows it:
+
+| Example | At 150% | Cause |
+|---|---|---|
+| ColorMixer | "B: 220" clipped; bottom row cut off | `.defaultWindowSize` + `.contentFixed` and fixed `.frame`s unscaled |
+| Calculator | cramped; title doesn't fit | fixed 56×56 button frames + content-fixed window unscaled |
+| Modifiers | `60×30` text overflows its box; `.offset` text clipped; tight padding | `.frame`, `.padding`, `.offset` unscaled |
+| SimplePaint | window/canvas stay at 100% size (usable) | explicit window and canvas sizes unscaled |
+| Parity examples on automatic sizing (StateData, Environment, Focus, …) | correct | only text-driven sizing involved |
+
+Captures: [`docs/evidence/dpi/150/`](../evidence/dpi/150/).
 
 ## Critical path
 
