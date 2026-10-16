@@ -13,7 +13,7 @@
 The Win32 backend gained a native `OutlineGroup` tree renderer
 (`Win32OutlineTree.swift`), a Direct2D dropdown `Picker`
 (`Win32DropdownPicker.swift`), and a `WinMeasurable` intrinsic-sizing
-protocol (`Win32Measure.swift`). Four follow-ups were filed; #1 is resolved.
+protocol (`Win32Measure.swift`). Four follow-ups were filed; #1 and #2 are resolved.
 
 ## 1. OutlineGroup expansion state resets on an ancestor structural rebuild
 
@@ -60,6 +60,14 @@ right after the name instead of at the list's right edge.
 - **Direction:** stretch each row to the content width **and** re-run the
   row's HStack layout at that width. Win32 stacks don't currently reflow on
   resize, so this needs a measure/allocate pass on the row subtree.
+- **Resolved (2026-10-16).** The "stacks don't reflow" premise no longer
+  holds: stack containers re-run their layout on `WM_SIZE`
+  (`stackLayoutProc`). Row bodies that report width expansion (a `Spacer`,
+  `maxWidth: .infinity`) are now widened to the list's right edge on every
+  relayout and resize (`outlineStretchFlexibleRows`), honoring a bounded
+  `maxWidth` cap; the row's stack then re-lays out and the trailing element
+  lands at the right edge. Non-expanding rows keep their natural,
+  leading-aligned width. Test: `testFlexibleRowsStretchToListWidth`.
 
 ## 3. `.font()` size is not applied to icons
 
