@@ -2344,14 +2344,16 @@ extension FrameView: WinRenderable {
             markExpandHeight(container)
         }
         // A finite max above the frame's own size makes it a bounded
-        // expander: SwiftUI gives it the offered space, up to the max.
-        if width == nil, let maxWidth, maxWidth.isFinite, Int32(ceil(maxWidth)) > w {
+        // expander: SwiftUI gives it the offered space, up to the max. A max
+        // too large for a pixel cap (e.g. .greatestFiniteMagnitude, a common
+        // "fill" idiom) is treated like .infinity rather than trapping.
+        if width == nil, let maxWidth, maxWidth > Double(w) {
             markExpandWidth(container)
-            setExpandMaxWidth(container, Int32(ceil(maxWidth)))
+            if let cap = pixelCap(maxWidth) { setExpandMaxWidth(container, cap) }
         }
-        if height == nil, let maxHeight, maxHeight.isFinite, Int32(ceil(maxHeight)) > h {
+        if height == nil, let maxHeight, maxHeight > Double(h) {
             markExpandHeight(container)
-            setExpandMaxHeight(container, Int32(ceil(maxHeight)))
+            if let cap = pixelCap(maxHeight) { setExpandMaxHeight(container, cap) }
         }
 
         // Store info for resize-time recomputation via shared layout

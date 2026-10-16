@@ -446,6 +446,21 @@ func setExpandMaxHeight(_ hwnd: HWND, _ value: Int32) {
     SetPropW(hwnd, expandMaxHeightPropName, HANDLE(bitPattern: Int(max(0, value)) + 1))
 }
 
+/// A frame max as a pixel cap, or nil when it's effectively unbounded
+/// (infinite, NaN, or too large for Int32; converting those would trap).
+func pixelCap(_ value: Double) -> Int32? {
+    guard value.isFinite, value < Double(Int32.max) else { return nil }
+    return Int32(max(0, ceil(value)))
+}
+
+/// Remove expand flags and caps, e.g. before re-deriving them on rebuild.
+func clearExpandFlags(_ hwnd: HWND) {
+    RemovePropW(hwnd, expandWidthPropName)
+    RemovePropW(hwnd, expandHeightPropName)
+    RemovePropW(hwnd, expandMaxWidthPropName)
+    RemovePropW(hwnd, expandMaxHeightPropName)
+}
+
 /// The max width an expanding view may take, or nil when it's unbounded.
 func expandMaxWidth(_ hwnd: HWND) -> Int32? {
     guard let raw = GetPropW(hwnd, expandMaxWidthPropName) else { return nil }
@@ -457,24 +472,30 @@ func expandMaxHeight(_ hwnd: HWND) -> Int32? {
     return Int32(Int(bitPattern: raw) - 1)
 }
 
-/// Copy a single child's expand flags (and caps) onto its wrapper. Call
-/// after sizing the container; any size it adds around the child (padding,
-/// border) is added to the cap.
-func propagateExpandFlags(from child: HWND, to container: HWND) {
+/// Copy a single child's expand flags (and caps) onto its wrapper. By
+/// default the size the wrapper adds around the child (padding, border) is
+/// measured and added to the cap, so call it right after sizing the
+/// container to fit the child. Pass `extraWidth`/`extraHeight` when the
+/// container's current size isn't child + insets (e.g. a ViewHost that the
+/// parent has already stretched).
+func propagateExpandFlags(from child: HWND, to container: HWND,
+                          extraWidth: Int32? = nil, extraHeight: Int32? = nil) {
     var childRect = RECT(), containerRect = RECT()
     GetWindowRect(child, &childRect)
     GetWindowRect(container, &containerRect)
     if shouldExpandWidth(child) {
         markExpandWidth(container)
         if let cap = expandMaxWidth(child) {
-            let extra = (containerRect.right - containerRect.left) - (childRect.right - childRect.left)
+            let extra = extraWidth
+                ?? (containerRect.right - containerRect.left) - (childRect.right - childRect.left)
             setExpandMaxWidth(container, cap + max(0, extra))
         }
     }
     if shouldExpandHeight(child) {
         markExpandHeight(container)
         if let cap = expandMaxHeight(child) {
-            let extra = (containerRect.bottom - containerRect.top) - (childRect.bottom - childRect.top)
+            let extra = extraHeight
+                ?? (containerRect.bottom - containerRect.top) - (childRect.bottom - childRect.top)
             setExpandMaxHeight(container, cap + max(0, extra))
         }
     }

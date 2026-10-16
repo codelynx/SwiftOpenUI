@@ -382,10 +382,14 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
     /// swaps in a child that no longer expands, the stale flag must be dropped —
     /// otherwise parents keep treating the subtree as flexible forever.
     private func syncExpandFlagsFromChild() {
-        RemovePropW(container, expandWidthPropName)
-        RemovePropW(container, expandHeightPropName)
+        // Clear caps too, or a rebuild that swaps in an unbounded expander
+        // would keep the old child's cap.
+        clearExpandFlags(container)
         guard let child = currentChild else { return }
-        propagateExpandFlags(from: child, to: container)
+        // The host adds nothing around its child. Its current size is
+        // whatever the parent assigned, so measuring "container - child"
+        // would inflate the cap after a rebuild.
+        propagateExpandFlags(from: child, to: container, extraWidth: 0, extraHeight: 0)
     }
 
     func layoutChild() {
