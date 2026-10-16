@@ -7054,6 +7054,11 @@ extension NavigationSplitView: WinRenderable {
         SetWindowPos(container, nil, 0, 0, max(w, 400), max(h, 300),
                      UINT(SWP_NOZORDER | SWP_NOMOVE))
 
+        // Propagate the columns' expansion so the split view fills its
+        // available space (SwiftUI/GTK4 behavior).
+        let columnHwnds = [sidebarHwnd, contentHwnd, detailHwnd].compactMap { $0 }
+        if columnHwnds.contains(where: { shouldExpandWidth($0) }) { markExpandWidth(container) }
+        if columnHwnds.contains(where: { shouldExpandHeight($0) }) { markExpandHeight(container) }
         return container
     }
 }
