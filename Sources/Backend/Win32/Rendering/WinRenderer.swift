@@ -1313,8 +1313,8 @@ class FlatButtonState {
             tr = textColorR ?? 0.1; tg = textColorG ?? 0.1; tb = textColorB ?? 0.1
         }
         d2d1_SolidColorBrush_SetColor(brush, tr, tg, tb, 1)
-        let dpiScale = Float(win32_GetDpiForWindow(hwnd)) / 96.0
-        if let fmt = customTextFormat ?? D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) {
+        let dpiScale = Float(dpiScaleFactor(for: hwnd))
+        if let fmt = customTextFormat ?? D2DRenderer.shared.textFormat(fontSize: Float(defaultBodyFontSize) * dpiScale) {
             dwrite_TextFormat_SetTextAlignment(fmt, 2) // center
             D2DRenderer.shared.drawText(title, target: rt, format: fmt,
                                          brush: brush, x: 0, y: 0, width: w, height: h)
@@ -3127,8 +3127,7 @@ private let fontCleanupProc: SUBCLASSPROC = { (hwnd, uMsg, wParam, lParam, uIdSu
 
 /// Create a Win32 HFONT for the given Font enum.
 private func createHFont(for font: Font, hwnd: HWND) -> HFONT? {
-    let dpi = win32_GetDpiForWindow(hwnd)
-    let scale = Double(dpi) / 96.0
+    let scale = dpiScaleFactor(for: hwnd)
 
     let height: Int32
     let weight: Int32
@@ -3141,7 +3140,7 @@ private func createHFont(for font: Font, hwnd: HWND) -> HFONT? {
     case .title3:      height = Int32(18 * scale); weight = FW_REGULAR; italic = false
     case .headline:    height = Int32(14 * scale); weight = FW_BOLD; italic = false
     case .subheadline: height = Int32(12 * scale); weight = FW_BOLD; italic = false
-    case .body:        height = Int32(14 * scale); weight = FW_REGULAR; italic = false
+    case .body:        height = Int32(defaultBodyFontSize * scale); weight = FW_REGULAR; italic = false
     case .callout:     height = Int32(12 * scale); weight = FW_REGULAR; italic = false
     case .footnote:    height = Int32(10 * scale); weight = FW_REGULAR; italic = false
     case .caption:     height = Int32(12 * scale); weight = FW_REGULAR; italic = false
@@ -3191,9 +3190,8 @@ private func assignOwnedFont(_ hfont: HFONT?, to hwnd: HWND) {
 
 /// Create an HFONT using Segoe UI Emoji at the default body size.
 private func createEmojiHFont(hwnd: HWND) -> HFONT? {
-    let dpi = win32_GetDpiForWindow(hwnd)
-    let scale = Double(dpi) / 96.0
-    let height = Int32(14 * scale)
+    let scale = dpiScaleFactor(for: hwnd)
+    let height = Int32(defaultBodyFontSize * scale)
     let fontName = "Segoe UI Emoji"
     return fontName.withCString(encodedAs: UTF16.self) { namePtr in
         CreateFontW(
@@ -4230,8 +4228,7 @@ extension Image: WinRenderable {
         // Use the image scale's point size as the glyph size; matches
         // GTK4's `gtkRenderMaterialSymbolLabel` sizing so cross-platform
         // `.imageScale(.large)` produces visually comparable glyphs.
-        let dpi = win32_GetDpiForWindow(context.parent)
-        let dpiScale = Double(dpi) / 96.0
+        let dpiScale = dpiScaleFactor(for: context.parent)
         let pixelHeight = Int32(Double(scale.pointSize) * dpiScale)
 
         let family = MaterialSymbolsResources.roundedRegularFamilyName
@@ -8421,7 +8418,7 @@ private func winApplyFontStyle(to hwnd: HWND, weight: Int32? = nil, italic: Bool
         GetObjectW(currentFont, Int32(MemoryLayout<LOGFONTW>.size), &lf)
     } else {
         // Match the default body size Text is measured with (14px × DPI scale).
-        lf.lfHeight = -Int32(14 * Double(win32_GetDpiForWindow(hwnd)) / 96.0)
+        lf.lfHeight = -Int32(defaultBodyFontSize * dpiScaleFactor(for: hwnd))
         lf.lfQuality = BYTE(CLEARTYPE_QUALITY)
         lf.lfWeight = FW_REGULAR
         let name: [WCHAR] = Array("Segoe UI".utf16) + [0]

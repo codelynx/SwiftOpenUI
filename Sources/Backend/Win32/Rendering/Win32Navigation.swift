@@ -324,7 +324,7 @@ private func layoutNavContainer(_ ctx: Win32NavigationContext) {
 
     // Header sizes are physical px; scale the 96-DPI defaults by the window DPI.
     // Keep the ratio fractional and round each scaled dimension (125%, 175%).
-    let dpiScale = Double(win32_GetDpiForWindow(ctx.container)) / 96.0
+    let dpiScale = dpiScaleFactor(for: ctx.container)
     let headerHeight = Int32((32 * dpiScale).rounded())
     SetWindowPos(ctx.headerContainer, nil, 0, 0, w, headerHeight, UINT(SWP_NOZORDER))
 
@@ -364,7 +364,7 @@ extension NavigationStack: WinRenderable {
         // Header bar (background: button face color). Sizes are physical
         // pixels, so scale the 96-DPI defaults by the window's DPI.
         // Keep the ratio fractional and round each scaled dimension (125%, 175%).
-        let dpiScale = Double(win32_GetDpiForWindow(container)) / 96.0
+        let dpiScale = dpiScaleFactor(for: container)
         let headerHeight = Int32((32 * dpiScale).rounded())
         let headerContainer = CreateWindowExW(
             0, stackContainerClassName, nil,

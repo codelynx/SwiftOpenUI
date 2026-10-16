@@ -175,7 +175,7 @@ extension WindowGroup: Win32WindowRenderable {
             // Shared cross-backend constants (800x600 automatic default, 300x200
             // fallback minimum) are expressed in logical points; scale them by
             // this window's DPI so they land at the intended physical size.
-            let dpiScale = Double(win32_GetDpiForWindow(hwnd)) / 96.0
+            let dpiScale = dpiScaleFactor(for: hwnd)
             let scaledFallbackMinW = Int32((300.0 * dpiScale).rounded())
             let scaledFallbackMinH = Int32((200.0 * dpiScale).rounded())
             // When explicit sizing is provided (defaultWindowSize or windowSizing(.size)),
