@@ -4673,6 +4673,41 @@ protocol GTKSelfScrollingContent {
     func gtkSelfScrollingWidget() -> OpaquePointer
 }
 
+/// Lists with more rows than this are virtualized. Below it, `List` keeps
+/// the eager GtkListBox it has always used, so small lists look and behave
+/// exactly as before. Rows of a virtualized list are rebuilt when they
+/// scroll back into view, so `@State` inside a row does not survive
+/// scrolling away.
+let gtkLazyListRowThreshold = 200
+
+/// Content that can hand `List` one builder per row without building them.
+protocol GTKListRowSource {
+    func gtkListRowBuilders() -> [() -> OpaquePointer]
+}
+
+extension ForEach: GTKListRowSource {
+    func gtkListRowBuilders() -> [() -> OpaquePointer] {
+        let content = self.content
+        return data.map { item in { gtkRenderView(content(item)) } }
+    }
+}
+
+/// One builder per `List` row, without building any row view or widget.
+/// Transparent containers (tuples, `Group`, conditionals, `ForEach`) are
+/// flattened into their rows, as in SwiftUI; anything else is one row.
+func gtkListRowBuilders<V: View>(_ view: V) -> [() -> OpaquePointer] {
+    if let source = view as? GTKListRowSource {
+        return source.gtkListRowBuilders()
+    }
+    if view is any TransparentMultiChildView, let multi = view as? any MultiChildView {
+        return multi.children.flatMap { child in
+            func builders<C: View>(_ c: C) -> [() -> OpaquePointer] { gtkListRowBuilders(c) }
+            return builders(child)
+        }
+    }
+    return [{ gtkRenderView(view) }]
+}
+
 extension List: GTKRenderable {
     public func gtkCreateWidget() -> OpaquePointer {
         // If the list's content is itself a self-scrolling widget (a
@@ -4680,6 +4715,18 @@ extension List: GTKRenderable {
         // list's body rather than nesting it in a one-row-tall listbox.
         if let selfScrolling = content as? GTKSelfScrollingContent {
             return selfScrolling.gtkSelfScrollingWidget()
+        }
+
+        // Past a few hundred rows, building every row up front freezes the
+        // main loop (issue #47). Hand the rows to a GtkListView, which only
+        // builds the ones on screen.
+        let rows = gtkListRowBuilders(content)
+        if rows.count > gtkLazyListRowThreshold {
+            return gtkCreateLazyListWidget(
+                context: LazyListContext(rows: rows),
+                orientation: GTK_ORIENTATION_VERTICAL,
+                style: .list
+            )
         }
 
         let listBox = gtk_list_box_new()!
@@ -5336,17 +5383,71 @@ extension Section: GTKRenderable {
 
 // MARK: - LazyVStack / LazyHStack GTK extensions
 
+/// The render-time state a lazily realized row needs, captured when the
+/// lazy container itself is rendered.
+///
+/// Virtualized containers build a row when it scrolls into view, long after
+/// the body pass that created the container has returned. By then the
+/// environment, foreground color and navigation context are whatever the
+/// main loop happens to hold, and no host is tracking reads. Without this, a
+/// lazily built row loses `.environmentObject` / `.environment` values set
+/// above the container, a `NavigationLink` row has no stack to push onto,
+/// and state read only by rows never rebuilds the container.
+final class GTKDeferredRenderContext {
+    private let environment: EnvironmentValues
+    private let foregroundColor: Color?
+    private weak var navigationContext: GTKNavigationContext?
+    private weak var host: GTKViewHost?
+
+    init() {
+        environment = getCurrentEnvironment()
+        foregroundColor = _gtkCurrentForegroundColor
+        navigationContext = getCurrentNavigationContext()
+        host = GTKViewHost.getCurrentRebuilding()
+    }
+
+    func render(_ makeRow: () -> OpaquePointer) -> UnsafeMutablePointer<GtkWidget> {
+        let previousEnvironment = getCurrentEnvironment()
+        let previousForeground = _gtkCurrentForegroundColor
+        let previousNavigation = getCurrentNavigationContext()
+        setCurrentEnvironment(environment)
+        gtkSetCurrentForegroundColor(foregroundColor)
+        setCurrentNavigationContext(navigationContext)
+        defer {
+            setCurrentEnvironment(previousEnvironment)
+            gtkSetCurrentForegroundColor(previousForeground)
+            setCurrentNavigationContext(previousNavigation)
+        }
+        let row = host.map { $0.trackDeferredChildRender(makeRow) } ?? makeRow()
+        return widgetFromOpaque(row)
+    }
+}
+
 /// Context holding item count and render closure for factory callbacks.
 private class LazyListContext {
     let itemCount: Int
     let renderItem: (Int) -> UnsafeMutablePointer<GtkWidget>
 
     init<Data, Content: View>(items: [Data], contentBuilder: @escaping (Data) -> Content) {
+        let renderContext = GTKDeferredRenderContext()
         self.itemCount = items.count
         self.renderItem = { index in
-            widgetFromOpaque(gtkRenderView(contentBuilder(items[index])))
+            renderContext.render { gtkRenderView(contentBuilder(items[index])) }
         }
     }
+
+    init(rows: [() -> OpaquePointer]) {
+        let renderContext = GTKDeferredRenderContext()
+        self.itemCount = rows.count
+        self.renderItem = { index in renderContext.render(rows[index]) }
+    }
+}
+
+/// How a lazy list looks: transparent (LazyVStack / LazyHStack), or styled
+/// like the eager `List` (rounded view background, row separators).
+private enum LazyListStyle {
+    case transparent
+    case list
 }
 
 /// Create a GtkListView-based lazy list widget.
@@ -5355,15 +5456,26 @@ private func gtkCreateLazyListWidget<Data, Content: View>(
     contentBuilder: @escaping (Data) -> Content,
     orientation: GtkOrientation
 ) -> OpaquePointer {
+    gtkCreateLazyListWidget(
+        context: LazyListContext(items: items, contentBuilder: contentBuilder),
+        orientation: orientation,
+        style: .transparent
+    )
+}
+
+private func gtkCreateLazyListWidget(
+    context: LazyListContext,
+    orientation: GtkOrientation,
+    style: LazyListStyle
+) -> OpaquePointer {
     let stringList = gtk_swift_string_list_new()!
-    for i in 0..<items.count {
+    for i in 0..<context.itemCount {
         gtk_swift_string_list_append(stringList, "\(i)")
     }
 
     let noSelection = gtk_swift_no_selection_new(stringList)
     let factory = gtk_swift_signal_list_item_factory_new()!
 
-    let context = LazyListContext(items: items, contentBuilder: contentBuilder)
     let contextPtr = Unmanaged.passRetained(context).toOpaque()
     g_object_set_data_full(
         factory.assumingMemoryBound(to: GObject.self),
@@ -5385,27 +5497,37 @@ private func gtkCreateLazyListWidget<Data, Content: View>(
     let listView = gtk_swift_list_view_new(noSelection, factory)!
     gtk_swift_orientable_set_orientation(listView, orientation)
 
-    // Transparent background so parent shows through
-    applyCSSToWidget(listView, properties: "background-color: transparent;")
-    let rowCSS = "listview.gtk-swift-lazy-transparent row { background-color: transparent; }"
-    let rowProvider = gtk_css_provider_new()!
-    gtk_css_provider_load_from_string(rowProvider, rowCSS)
-    gtk_swift_add_css_provider_to_display(
-        gtk_widget_get_display(listView),
-        rowProvider,
-        UInt32(GTK_STYLE_PROVIDER_PRIORITY_USER)
-    )
-    g_object_unref(gpointer(rowProvider))
-    gtk_widget_add_css_class(listView, "gtk-swift-lazy-transparent")
-
-    // Wrap in scrolled window
     let scrolled = gtk_scrolled_window_new()!
     gtk_scrolled_window_set_policy(OpaquePointer(scrolled),
         GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC)
     gtk_scrolled_window_set_child(OpaquePointer(scrolled), listView)
     gtk_widget_set_vexpand(scrolled, 1)
     gtk_widget_set_hexpand(scrolled, 1)
-    applyCSSToWidget(scrolled, properties: "background-color: transparent;")
+
+    switch style {
+    case .transparent:
+        // Transparent background so parent shows through
+        applyCSSToWidget(listView, properties: "background-color: transparent;")
+        let rowCSS = "listview.gtk-swift-lazy-transparent row { background-color: transparent; }"
+        let rowProvider = gtk_css_provider_new()!
+        gtk_css_provider_load_from_string(rowProvider, rowCSS)
+        gtk_swift_add_css_provider_to_display(
+            gtk_widget_get_display(listView),
+            rowProvider,
+            UInt32(GTK_STYLE_PROVIDER_PRIORITY_USER)
+        )
+        g_object_unref(gpointer(rowProvider))
+        gtk_widget_add_css_class(listView, "gtk-swift-lazy-transparent")
+        applyCSSToWidget(scrolled, properties: "background-color: transparent;")
+    case .list:
+        // Same look as the eager GtkListBox List; `.swiftopenui-list row`
+        // matches GtkListView's row nodes too.
+        ensureListCSS(listView)
+        gtk_widget_add_css_class(listView, "swiftopenui-list")
+        // Same sizing as the eager List's scrolled window.
+        gtk_scrolled_window_set_propagate_natural_width(OpaquePointer(scrolled), 1)
+        gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(scrolled), 0)
+    }
 
     return opaqueFromWidget(scrolled)
 }
@@ -5525,12 +5647,13 @@ private final class LazyTreeContext {
         }
         self.rootKeys = items.map { assign($0) }
         self.childKeysByKey = childKeys
+        let renderContext = GTKDeferredRenderContext()
         self.renderRow = { key in
             guard let element = nodesByKey[key] else {
                 return widgetFromOpaque(
                     opaqueFromWidget(gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)!))
             }
-            return widgetFromOpaque(gtkRenderView(rowContent(element)))
+            return renderContext.render { gtkRenderView(rowContent(element)) }
         }
     }
 
@@ -5730,10 +5853,11 @@ private class LazyGridContext {
 
     init<Data, Content: View>(items: [Data], contentBuilder: @escaping (Data) -> Content,
                               cellMinWidth: Int) {
+        let renderContext = GTKDeferredRenderContext()
         self.itemCount = items.count
         self.cellMinWidth = cellMinWidth
         self.renderItem = { index in
-            widgetFromOpaque(gtkRenderView(contentBuilder(items[index])))
+            renderContext.render { gtkRenderView(contentBuilder(items[index])) }
         }
     }
 }

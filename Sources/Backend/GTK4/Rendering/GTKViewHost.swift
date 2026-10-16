@@ -221,6 +221,45 @@ public class GTKViewHost: AnyViewHost, DependencyTrackingHost {
         return result
     }
 
+    /// Render a child of this host's body that is realized after the body
+    /// pass has finished: a row of a virtualized list, bound when it
+    /// scrolls into view. Its reads would otherwise be tracked by no one,
+    /// so a change to state that only the row reads (a selection the row
+    /// highlights, say) would never rebuild the list. Credit them to this
+    /// host, as if the row had been built during the body pass.
+    ///
+    /// Snapshots are only added to an existing non-empty snapshot: an
+    /// empty one means "rebuild on every change", and adding entries to it
+    /// would start skipping rebuilds that run today.
+    func trackDeferredChildRender(_ render: () -> OpaquePointer) -> OpaquePointer {
+        beginDependencyTracking()
+        var result: OpaquePointer!
+        #if canImport(Observation)
+        if #available(macOS 14.0, iOS 17.0, *) {
+            withObservationTracking {
+                result = render()
+            } onChange: { [weak self] in
+                guard let self else { return }
+                self.lock.lock()
+                self.observationDidFire = true
+                self.lock.unlock()
+                self.scheduleRebuild()
+            }
+        } else {
+            result = render()
+        }
+        #else
+        result = render()
+        #endif
+        if let tracking = endDependencyTracking() {
+            lastReadSet?.formUnion(tracking.readSet)
+            if let snapshot = lastInputSnapshot, !snapshot.isEmpty {
+                lastInputSnapshot = snapshot + tracking.snapshots
+            }
+        }
+        return result
+    }
+
     func rebuild() {
         lock.lock()
         scheduled = false
