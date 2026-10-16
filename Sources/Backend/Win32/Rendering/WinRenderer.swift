@@ -159,15 +159,15 @@ extension Text: WinRenderable {
 
         if let hwnd {
             markHostedNodeKind(hwnd, .text)
-            // Apply emoji font so the Static control renders color emoji
-            if useEmoji {
-                let hfont = createEmojiHFont(hwnd: hwnd)
-                if let hfont {
-                    SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: hfont)), 1)
-                    let cleanup = FontCleanupInfo(hfont: hfont)
-                    let ptr = Unmanaged.passRetained(cleanup).toOpaque()
-                    SetWindowSubclass(hwnd, fontCleanupProc, 99, DWORD_PTR(UInt(bitPattern: ptr)))
-                }
+            // Always assign a font: without WM_SETFONT a Static control draws
+            // with the legacy bitmap System font (aliased, not the face we
+            // measured with). Emoji text gets Segoe UI Emoji for color glyphs.
+            let hfont = useEmoji ? createEmojiHFont(hwnd: hwnd) : createHFont(for: .body, hwnd: hwnd)
+            if let hfont {
+                SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: hfont)), 1)
+                let cleanup = FontCleanupInfo(hfont: hfont)
+                let ptr = Unmanaged.passRetained(cleanup).toOpaque()
+                SetWindowSubclass(hwnd, fontCleanupProc, 99, DWORD_PTR(UInt(bitPattern: ptr)))
             }
         }
 
@@ -8436,7 +8436,9 @@ private func winApplyFontStyle(to hwnd: HWND, weight: Int32? = nil, italic: Bool
     if let currentFont {
         GetObjectW(currentFont, Int32(MemoryLayout<LOGFONTW>.size), &lf)
     } else {
-        lf.lfHeight = -16 // default ~12pt
+        // Match the default body size Text is measured with (14px × DPI scale).
+        lf.lfHeight = -Int32(14 * Double(win32_GetDpiForWindow(hwnd)) / 96.0)
+        lf.lfQuality = BYTE(CLEARTYPE_QUALITY)
         lf.lfWeight = FW_REGULAR
         let name: [WCHAR] = Array("Segoe UI".utf16) + [0]
         withUnsafeMutablePointer(to: &lf.lfFaceName) { ptr in
