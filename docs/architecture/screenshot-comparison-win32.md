@@ -209,7 +209,7 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
-| TextField/SecureField/TextEditor/search field font + TextField width | this PR | Focus B+ -> A-, ViewsBasic B -> B+ |
+| TextField/SecureField/TextEditor/search field font + TextField width | `d26f7bb` | Focus B+ -> A-, ViewsBasic B -> B+ |
 | Default Segoe UI font for plain Text (#22) | `83c32bd` | Typography matches macOS everywhere; "×" glyph renders (Modifiers "D0x30" fixed) |
 | Navigation expansion + header DPI (#11) | `fd4d1e3`..`c646d8e` | Navigation content fills the window; header scales at 125-175% |
 | DPI-scaled text, D2D, symbols, window default (#8) | `dc482d8`, `9181cd8`, `6ca8904` | Correct sizing at 150% |
