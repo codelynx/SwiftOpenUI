@@ -199,7 +199,7 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 
 | # | Issue | Affects | Type | Effort |
 |---|-------|---------|------|--------|
-| 1 | Vertical ScrollView fills the available width; on macOS it hugs its content width | ViewsContainers | Layout | Medium |
+| 1 | Vertical ScrollView fills the available width; on macOS it hugs its content width. Backends disagree (macOS/Web hug, GTK4/Win32 fill), so this waits on macOS reference fixtures for the `scrollview-*` layout-parity scenarios before any backend changes | ViewsContainers | Layout | Medium |
 
 ## All Fixes Applied
 

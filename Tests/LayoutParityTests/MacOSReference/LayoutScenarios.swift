@@ -95,6 +95,11 @@ let allLayoutScenarios: [(name: String, view: AnyView)] = [
     ("frame-minheight-centers-content", AnyView(scenario_frameMinHeightCentersContent)),
     ("frame-maxwidth-infinity-with-minheight", AnyView(scenario_frameMaxWidthInfinityMinHeight)),
     ("text-middle-truncation-narrow-parent", AnyView(scenario_textMiddleTruncationNarrow)),
+
+    // === ScrollView sizing (macOS fixtures pending; skipped until recorded) ===
+    ("scrollview-vertical-leading-vstack", AnyView(scenario_scrollViewVerticalLeadingVStack)),
+    ("scrollview-vertical-hstack-sibling", AnyView(scenario_scrollViewVerticalHStackSibling)),
+    ("scrollview-both-axes-hstack-sibling", AnyView(scenario_scrollViewBothAxesHStackSibling)),
 ]
 
 // MARK: - Basic Views
@@ -579,4 +584,54 @@ var scenario_textMiddleTruncationNarrow: some View {
         .lineLimit(1)
         .truncationMode(.middle)
         .frame(width: 200)
+}
+
+// MARK: - ScrollView sizing
+//
+// Backends disagree on how wide a vertical ScrollView is when its content
+// is narrower than the offered width: the macOS and Web screenshots of
+// ParityViewsContainers hug the content, GTK4 and Win32 fill the width.
+// These scenarios pin it down against real SwiftUI. A ScrollView isn't a
+// leaf itself, so each one exposes its size through leaf positions.
+
+/// Mirrors ParityViewsContainers. The rows' x shows whether the ScrollView
+/// hugs its content (x ~ 0) or fills the width and centers it.
+var scenario_scrollViewVerticalLeadingVStack: some View {
+    VStack(alignment: .leading, spacing: 0) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Scroll item 0")
+                Text("Scroll item 1")
+            }
+        }
+        .frame(height: 80)
+    }
+}
+
+/// A flexible Color beside a vertical ScrollView with narrow content. The
+/// Color's x is the ScrollView's width: ~ the text width if it hugs, ~ half
+/// the row if both are flexible.
+var scenario_scrollViewVerticalHStackSibling: some View {
+    HStack(spacing: 0) {
+        ScrollView {
+            Text("Row")
+        }
+        .frame(height: 80)
+        Color.red
+            .frame(height: 20)
+    }
+}
+
+/// Same as above with a 2-axis ScrollView (as used by SimplePaint), whose
+/// macOS screenshot fills its column.
+var scenario_scrollViewBothAxesHStackSibling: some View {
+    HStack(spacing: 0) {
+        ScrollView([.horizontal, .vertical]) {
+            Color.blue
+                .frame(width: 100, height: 50)
+        }
+        .frame(height: 80)
+        Color.red
+            .frame(height: 20)
+    }
 }
