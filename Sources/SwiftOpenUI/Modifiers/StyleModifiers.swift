@@ -76,6 +76,7 @@ extension View {
     }
 
     /// Apply a border to this view.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func border(_ color: Color, width: Int = 1) -> BorderView<Self> {
         BorderView(content: self, color: color, width: width)
     }

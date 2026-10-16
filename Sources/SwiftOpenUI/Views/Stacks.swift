@@ -12,6 +12,7 @@ public func resolveStackSpacing(_ spacing: Int) -> Int {
 }
 
 /// A view that arranges its children vertically.
+/// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
 public struct VStack<Content: View>: View, MultiChildView, PrimitiveView {
     public typealias Body = Never
 
@@ -40,6 +41,7 @@ public struct VStack<Content: View>: View, MultiChildView, PrimitiveView {
 }
 
 /// A view that arranges its children horizontally.
+/// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
 public struct HStack<Content: View>: View, MultiChildView, PrimitiveView {
     public typealias Body = Never
 

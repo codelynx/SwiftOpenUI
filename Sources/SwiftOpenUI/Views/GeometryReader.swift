@@ -1,4 +1,5 @@
 /// The size component of a GeometryProxy.
+/// Values are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
 public struct GeometrySize {
     public let width: Double
     public let height: Double

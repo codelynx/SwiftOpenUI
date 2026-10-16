@@ -53,6 +53,7 @@ public enum WindowResizeBehavior: Sendable {
 
 extension WindowGroup {
     /// Sets the initial window size.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func defaultWindowSize(width: Double, height: Double) -> WindowGroup<Content> {
         WindowGroup(
             title: title,
@@ -70,6 +71,7 @@ extension WindowGroup {
     }
 
     /// Sets optional minimum and maximum window size constraints.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func windowSizeConstraints(
         minWidth: Double? = nil,
         minHeight: Double? = nil,

@@ -50,6 +50,13 @@ extension WindowGroup: YourWindowRenderable {
 
 ## Step 3: Implement the Renderer
 
+> **Units:** every dimension the core API gives you (frames, padding,
+> spacing, offsets, font sizes, window sizes) is a logical point, and values
+> you hand back (GeometryReader sizes, gesture locations) must be points too.
+> If your toolkit already works in logical units (GTK4, CSS, Compose `dp`),
+> pass them through; if it works in physical pixels (Win32), convert at one
+> chokepoint. See [`docs/architecture/logical-coordinates.md`](../architecture/logical-coordinates.md).
+
 Define a protocol for native element creation, then extend each SwiftOpenUI view type:
 
 ```swift

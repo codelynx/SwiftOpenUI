@@ -19,6 +19,7 @@ import Foundation
 ///     // w, h are the init-specified size
 /// }
 /// ```
+/// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
 public struct Canvas: View {
     public typealias Body = Never
 

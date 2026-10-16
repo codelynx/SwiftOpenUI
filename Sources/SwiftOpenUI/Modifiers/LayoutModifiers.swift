@@ -14,11 +14,13 @@ public struct PositionView<Content: View>: View, PrimitiveView {
 
 extension View {
     /// Positions the center of this view at the specified coordinates.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func position(x: Double = 0, y: Double = 0) -> PositionView<Self> {
         PositionView(content: self, x: x, y: y)
     }
 
     /// Positions the center of this view at the specified point.
+    /// Dimensions are logical points (1pt = 1px at 100% scale); see docs/architecture/logical-coordinates.md.
     public func position(_ position: CGPoint) -> PositionView<Self> {
         PositionView(content: self, x: position.x, y: position.y)
     }
