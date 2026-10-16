@@ -1,0 +1,44 @@
+import Foundation
+import SwiftOpenUI
+import BackendGTK4
+
+// Fixed geometry, hairlines, shapes, text and a cairo Canvas, side by side.
+struct ProbeApp: App {
+    var body: some Scene {
+        WindowGroup("Scale Probe") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Color.red.frame(width: 100, height: 40)
+                    Color.blue.frame(width: 100, height: 40)
+                    Text("100×40pt each").font(.system(size: 13))
+                }
+                HStack(spacing: 8) {
+                    Text("border 1").padding(6).border(Color.black, width: 1)
+                    Text("border 2").padding(6).border(Color.black, width: 2)
+                    Circle().stroke(Color.black, lineWidth: 1).frame(width: 40, height: 40)
+                    RoundedRectangle(cornerRadius: 8).fill(Color.green).frame(width: 60, height: 40)
+                }
+                Divider()
+                Canvas(width: 300, height: 120) { context, width, height in
+                    context.setColor(r: 1, g: 1, b: 1)
+                    context.rectangle(x: 0, y: 0, width: Double(width), height: Double(height))
+                    context.fill()
+                    var diagonal = Path()
+                    diagonal.move(to: CGPoint(x: 10, y: 110))
+                    diagonal.addLine(to: CGPoint(x: 140, y: 10))
+                    context.stroke(diagonal, with: .color(.black), style: StrokeStyle(lineWidth: 1))
+                    context.stroke(Path(ellipseIn: CGRect(x: 160, y: 10, width: 60, height: 60)),
+                                   with: .color(.black), style: StrokeStyle(lineWidth: 1))
+                    context.stroke(Path(CGRect(x: 240, y: 10.5, width: 50, height: 50)),
+                                   with: .color(.black), style: StrokeStyle(lineWidth: 1))
+                    context.fill(Path(CGRect(x: 160, y: 80, width: 130, height: 30)), with: .color(.blue))
+                }
+                .border(Color.gray)
+                Text("Body text — The quick brown fox").font(.system(size: 14))
+            }
+            .padding(16)
+        }
+    }
+}
+
+GTK4Backend().run(ProbeApp.self)
