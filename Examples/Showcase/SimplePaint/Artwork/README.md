@@ -29,8 +29,9 @@ release, and participate in Undo/Redo. New clears the drawing and redo history.
 
 The white background is deliberate: the current Win32 resizable file-image
 renderer uses `StretchBlt(..., SRCCOPY)`, which does not alpha blend transparent
-PNGs. The existing blue button background remains visible around the selected
-icon. Files require `.resizable()` followed by an explicit frame; their natural
+PNGs. Every cell keeps a white background; selection is shown by a 2pt blue
+frame instead of a fill, so an opaque icon never sits on a colored background.
+Files require `.resizable()` followed by an explicit frame; their natural
 96px size is not their intended display size.
 
 ## Resource loading
@@ -60,4 +61,11 @@ catalog or additional SwiftPM resource declaration is required.
   Redo, and New.
 - Runtime PNG dimensions and opaque RGB format were checked with `sips`;
   `zsh -n web/run.sh` and `git diff --check` passed.
-- GTK4, Win32, and Web execution were not checked in this session.
+- GTK4 execution checked on Linux (Ubuntu aarch64, GTK4 4.22.4, `GDK_BACKEND=x11`):
+  `swift build --product SimplePaint` and launch both passed. All five icons
+  resolved through `Image(resource:)` — no fallbacks and no missing-image
+  placeholders — rendering at 24pt inside the 36pt cells, with `.pencil`
+  selected by default and drawn with the 2pt blue frame. The toolbar showed the
+  matching icon and label. Tool switching and drawing were not driven, as the
+  session had no input-automation tool.
+- Win32 and Web execution were not checked in this session.
