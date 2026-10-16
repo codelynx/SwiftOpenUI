@@ -75,10 +75,10 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Text (plain/bold/colored/large/caption) | Correct | Correct, matching weights | OK |
 | Button (string label) | Rounded | D2D rounded | OK |
 | Button (custom label) | Faint "Custom label ->" | Faint "Custom label ->" | OK |
-| TextField | Full width, system font | Fixed 150px, legacy System font | Open -- TextField font/width |
+| TextField | Full width, system font | Full width, Segoe UI | OK |
 | Color swatches | Two rows | Two rows | OK |
 | Spacer / Divider sections | Visible | Clipped by window height | Open -- window fit |
-| Overall | Complete | Mostly complete | B |
+| Overall | Complete | Complete but clipped | B+ |
 
 ### 7. ViewsLayout
 
@@ -166,8 +166,8 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 |--------|-------|-------|--------|
 | @FocusState (Bool) + Focus/Unfocus | Working | Working | OK |
 | @FocusState (enum) + Name/Email/Notes/Clear | Working | Working | OK |
-| TextFields | Full width, system font | Fixed 150px, legacy System font | Open -- TextField font/width |
-| Overall | Full focus demo | Full focus demo | B+ |
+| TextFields | Full width, system font | Full width, Segoe UI | OK |
+| Overall | Full focus demo | Full focus demo | A- |
 
 ### 16. AppStructure
 
@@ -183,11 +183,10 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Rating | Examples |
 |--------|----------|
 | A | HelloWorld, StateData, Environment, AppStructure |
-| A- | Stopwatch, ColorStudio, Calculator, ViewsLayout, Navigation |
-| B+ | SimplePaint, ViewsContainers, Modifiers, Gestures, Animation, Focus |
-| B | ViewsBasic |
+| A- | Stopwatch, ColorStudio, Calculator, ViewsLayout, Navigation, Focus |
+| B+ | SimplePaint, ViewsBasic, ViewsContainers, Modifiers, Gestures, Animation |
 
-Most B+/B ratings come from three shared causes (Open Issues 1-3), not from per-example bugs.
+Most B+ ratings come from two shared causes (Open Issues 1-2), not from per-example bugs.
 
 ## DPI Scaling
 
@@ -201,16 +200,16 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 |---|-------|---------|------|--------|
 | 1 | Window doesn't grow to fit content: the 800x600 automatic default clips tall content, while macOS sizes the window to at least the content's height | ViewsBasic, ViewsLayout, ViewsContainers, Modifiers | Window sizing | Medium |
 | 2 | `.foregroundColor()` applied after `.padding().background()` doesn't reach the inner `Text` | Gestures, Animation | Modifier propagation | Medium |
-| 3 | TextField (EDIT control) never gets a font, so it uses the legacy System font, and it has a fixed 150px width instead of expanding | ViewsBasic, Focus | Same root cause as #22, for EDIT | Low-Med |
-| 4 | ScrollView / List rows are centered instead of leading-aligned | ViewsContainers | Layout | Medium |
-| 5 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
-| 6 | SimplePaint canvas page frame not drawn | SimplePaint | Not investigated | ? |
-| 7 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
+| 3 | ScrollView / List rows are centered instead of leading-aligned | ViewsContainers | Layout | Medium |
+| 4 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
+| 5 | SimplePaint canvas page frame not drawn | SimplePaint | Not investigated | ? |
+| 6 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
 
 ## All Fixes Applied
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
+| TextField/SecureField/TextEditor/search field font + TextField width | this PR | Focus B+ -> A-, ViewsBasic B -> B+ |
 | Default Segoe UI font for plain Text (#22) | `83c32bd` | Typography matches macOS everywhere; "×" glyph renders (Modifiers "D0x30" fixed) |
 | Navigation expansion + header DPI (#11) | `fd4d1e3`..`c646d8e` | Navigation content fills the window; header scales at 125-175% |
 | DPI-scaled text, D2D, symbols, window default (#8) | `dc482d8`, `9181cd8`, `6ca8904` | Correct sizing at 150% |
