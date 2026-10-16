@@ -1,9 +1,17 @@
 # Screenshot Comparison: macOS vs Win32
 
 Side-by-side comparison of all Showcase and Parity examples.
-Screenshots recaptured 2026-03-22 with PrintWindow + DWM crop (no shadow/bleed).
+Screenshots recaptured 2026-10-15 on `develop` @ `401212b` (after the DPI merges #8, #11, #22),
+Windows 11 arm64 at 100% display scale (96 DPI), with `screenshots/capture-windows.ps1`
+(PrintWindow + DWM crop). LayoutStress is not covered by the capture script; its screenshot is still from March.
 
 Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftOpenUI Win32 backend)
+
+**What changed since the March pass**
+- **Typography.** Plain `Text` now renders in Segoe UI instead of the legacy bitmap System font (#22), so
+  text weight and size closely match macOS across every example. The old captures looked uniformly bold.
+- **Window size.** Windows now open at the shared 800x600 automatic default (`6d7d982`, April) instead of
+  sizing to their content. Short examples gain empty space; tall Parity examples are now **clipped** (see Open Issue 1).
 
 ## Showcase Examples
 
@@ -12,8 +20,9 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
 | Title bar | "Hello World" | "Hello World" | OK |
-| Text content | Centered in window | Top-left aligned | Gap -- no implicit window centering |
-| Overall | Clean minimal | Functional | B |
+| Text content | Centered in window | Centered in window | OK |
+| Font | System body | Segoe UI body | OK |
+| Overall | Clean minimal | Matches | A |
 
 ### 2. Stopwatch
 
@@ -21,170 +30,151 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 |--------|-------|-------|--------|
 | Dark background | Fills entire window | Fills entire window | OK |
 | Timer "00:00.00" | Centered, thin weight | Centered, regular weight | Minor -- font weight |
-| Reset button | Orange, rounded | Orange, flat | OK |
-| Start button | Green, rounded | Green, flat | OK |
-| Divider | Subtle thin line | Subtle thin line | OK |
-| Timer ticking | Works | Works (Foundation Timer + RunLoop) | OK |
+| Reset / Start buttons | Orange / green | Orange / green, flat | OK |
+| Divider | Not visible | Bright line near the bottom | Minor -- divider contrast |
 | Overall | Polished dark UI | Very close match | A- |
 
 ### 3. Color Studio
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
-| Dark background | Full coverage | Full coverage | OK |
-| Color swatch | Large blue rect 120x80 | Large blue rect 120x80 | OK |
-| RGB sliders | SwiftUI native (colored track) | D2D custom (blue accent, white thumb) | Good |
-| Slider background | Blends with dark bg | Blends with dark bg (inherited) | OK |
+| Color swatch + hex/RGB readout | Correct | Correct | OK |
+| RGB sliders | SwiftUI native | D2D custom (blue accent, white thumb) | Good |
 | Swatches grid | Centered, evenly spaced | Centered, evenly spaced | OK |
-| Lighter/Darker buttons | Rounded bordered | Flat colored | Minor |
+| Lighter/Darker buttons | Rounded bordered | Flat, dark | Minor |
+| Section dividers | Not visible | Bright white lines | Minor -- divider contrast |
 | Color harmony | Centered columns | Centered columns | OK |
-| Overall | Reference quality | Very close match | A |
+| Overall | Reference quality | Very close match | A- |
 
 ### 4. Calculator
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
-| Dark background | Full window | Full window | OK |
 | Display "0" | Right-aligned | Right-aligned | OK |
-| Button grid 4x5 | Even grid | Even grid | OK |
-| AC/+/-/% row | Gray buttons | Gray buttons | OK |
+| Button grid 4x5 | Even grid, dark gaps | Even grid, light gaps | Minor |
 | Orange operators | /, x, -, +, = | /, x, -, +, = | OK |
 | Window sizing | Exact fit | Exact fit (contentFixed) | OK |
 | Overall | Reference quality | Close match | A- |
 
-## Parity Examples
-
-### 5. ViewsBasic
+### 5. SimplePaint
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
-| Text (plain/bold/colored) | Correct | Correct | OK |
-| Large title / Caption | Correct sizes | Correct sizes | OK |
-| Button (string label) | Rounded | Native Win32 button | OK |
-| Button (custom label) | "Custom label ->" colored bg | Shows as "->" only | Open -- custom label text |
-| TextField | Placeholder "Type here..." | Placeholder "Type here..." | OK |
-| Color swatches | Two rows D2D | Two rows D2D | OK |
-| Spacer (Left/Right) | Full width dark bar | Full width dark bar | OK |
-| Divider | Thin line | Thin line | OK |
+| Toolbar (New/Undo/Redo, tool name) | Correct | Correct | OK |
+| Tool palette | 5 tools, selected highlighted | 5 tools, selected highlighted | OK |
+| Color palette + brush size slider | Correct | Correct | OK |
+| Canvas page frame | Bordered page inset in canvas | No page frame visible | Open -- not investigated |
 | Overall | Complete | Mostly complete | B+ |
 
-### 6. ViewsLayout
+## Parity Examples
+
+### 6. ViewsBasic
+
+| Aspect | macOS | Win32 | Rating |
+|--------|-------|-------|--------|
+| Text (plain/bold/colored/large/caption) | Correct | Correct, matching weights | OK |
+| Button (string label) | Rounded | D2D rounded | OK |
+| Button (custom label) | Faint "Custom label ->" | Faint "Custom label ->" | OK |
+| TextField | Full width, system font | Fixed 150px, legacy System font | Open -- TextField font/width |
+| Color swatches | Two rows | Two rows | OK |
+| Spacer / Divider sections | Visible | Clipped by window height | Open -- window fit |
+| Overall | Complete | Mostly complete | B |
+
+### 7. ViewsLayout
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
 | VStack (leading/center/trailing) | 3 aligned columns | 3 aligned columns | OK |
-| HStack (A/B/C) | Colored boxes in row | Colored boxes in row | OK |
-| ZStack | "Top" on green/blue | "Top" on green/blue | OK |
-| Group items | 3 green items | 3 green items | OK |
-| ForEach (0/1/2) | Purple numbered boxes | Purple numbered boxes | OK |
-| +/- buttons | Working | Working | OK |
-| AnyView | Orange text | Orange text | OK |
-| EmptyView | "Before After" inline | "Before After" inline | OK |
-| Overall | Complete | Complete | A |
+| HStack / ZStack / Group | Correct | Correct | OK |
+| ForEach (0/1/2) + +/- buttons | Working | Working | OK |
+| Label text on colored boxes | Black | Black | OK |
+| AnyView / EmptyView sections | Visible | Clipped by window height | Open -- window fit |
+| Overall | Complete | Complete but clipped | A- |
 
-### 7. ViewsContainers
+### 8. ViewsContainers
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
-| Toggle | Checkbox + "Enabled" | Checkbox + "Enabled" | OK |
-| Value: ON/OFF | Green text | Green text | OK |
-| Slider | Native SwiftUI | D2D custom (blue/white) | Good |
-| Blue bar driven by slider | Blue bar below | Blue bar below | OK |
-| Image (system) | SF Symbols (star, heart, gear) | Win32 stock icons (info, warning, shield) | OK |
-| ScrollView | Dark scrollable list | Scrollable list | OK |
-| List | 3 items with +/- | 3 items with +/- | OK |
-| Overall | Complete | Complete | A- |
+| Toggle + Value: ON | Correct | Correct | OK |
+| Slider + driven bar | Native | D2D custom | Good |
+| Image (system) | SF Symbols | Win32 stock icons (labeled) | OK |
+| ScrollView | Content-width, rows leading-aligned | Full width, rows centered | Open -- row alignment |
+| List | Rows leading-aligned | Rows centered; rows 1-2 clipped | Open -- row alignment, window fit |
+| Overall | Complete | Functional | B+ |
 
-### 8. Modifiers
+### 9. Modifiers
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
 | .padding() | 3 colored boxes | 3 colored boxes | OK |
-| .frame() | "60x30" + "Flex" | "D0x30" (x glyph issue) + "Flex" | Open -- Unicode rendering |
-| .foregroundColor() | Red/Blue/Custom | Red/Blue/Custom | OK |
-| .foregroundStyle() | Green text | Green text | OK |
+| .frame() | "60×30" + "Flex" (100pt) | "60×30" renders; "Flex" at min width | Minor -- flex frame width |
+| .foregroundColor() / .foregroundStyle() | Correct | Correct | OK |
 | .background() | Yellow/Custom bg | Yellow/Custom bg | OK |
 | .font() sizes | All 6 sizes | All 6 sizes | OK |
-| .border() | Red/Blue borders | Red/Blue borders | OK |
-| .opacity() | 100/70/40/15% | 100/70/40/15% | OK |
-| .offset() | Orange shifted text | Orange shifted text | OK |
-| .scaleEffect() | 1.0x/1.5x/0.7x | 1.0x/1.5x/0.7x | OK |
-| .modifier() | Green highlighted | Green highlighted | OK |
-| Overall | All 11 modifiers shown | 10 of 11 correct | A- |
+| .border() ... .modifier() | 6 sections visible | Clipped by window height | Open -- window fit |
+| Overall | All 11 modifiers shown | 6 of 11 visible, all correct | B+ |
 
-### 9. StateData
+### 10. StateData
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
-| @State counter +/- | Working | Working | OK |
-| Toggle text/flag | Working | Working | OK |
-| Conditional view | "Visible when ON" green | "Visible when ON" green | OK |
+| @State counter / toggle / conditional view | Working | Working | OK |
 | @Binding parent/child | Working | Working | OK |
 | @StateObject + @Published | Store count + label | Store count + label | OK |
 | Title "State & Data" | Ampersand renders | Ampersand renders | OK |
 | Overall | All state types working | All state types working | A |
 
-### 10. Navigation
+### 11. Navigation
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
 | NavigationLink | "Go to Alpha/Beta" | "Go to Alpha/Beta" | OK |
 | NavigationPath | "Path depth: 0", Push 42/99 | Same | OK |
-| NavigateAction | Description text | Description text | OK |
-| Navigation title | "Navigation" in header | "Navigation" in header | OK |
-| Overall | Clean navigation demo | Functional | A- |
+| Navigation title | Window title bar | In-content header bar | Platform difference |
+| Content fills window | Yes | Yes (#11 expansion fix) | OK |
+| Overall | Clean navigation demo | Close match | A- |
 
-### 11. Environment
+### 12. Environment
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
 | Custom accent colors | Blue/Red/Green | Blue/Red/Green | OK |
-| Toggle accent | Working | Working | OK |
 | EnvironmentObject | Theme + font size | Theme + font size | OK |
 | Propagation | "Nested child sees accent" | "Nested child sees accent" | OK |
-| Overall | Complete | Complete | A- |
+| Overall | Complete | Complete | A |
 
-### 12. Gestures
-
-| Aspect | macOS | Win32 | Rating |
-|--------|-------|-------|--------|
-| Tap (blue) | "Tap me (0)" | "Tap me (0)" | OK |
-| Double-tap (green) | "Double-tap me (0)" | "Double-tap me (0)" | OK |
-| Long press (red) | "Long press me (0)" | "Long press me (0)" | OK |
-| 1s duration | "With 1s duration (0)" | "With 1s duration (0)" | OK |
-| Drag | "(not available on macOS)" | "Drag me" + offset display | OK -- Win32 has more |
-| Overall | Core gestures | All gestures including drag | A |
-
-### 13. Animation
+### 13. Gestures
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
-| Fade (opacity) | Blue "Fade" + Toggle | Blue "Fade" + Toggle | OK |
-| Scale | Green "Scale" + Toggle | Green "Scale" + Toggle | OK |
-| Slide (offset) | Orange "Slide" + Toggle | Orange "Slide" + Toggle | OK |
-| withAnimation | Purple "Animated" + button | Purple "Animated" + button | OK |
-| Overall | 4 animations shown | 4 animations shown | A- |
+| Tap / Double-tap / Long press | White text on color | Black text on color | Open -- foregroundColor outside background |
+| 1s duration | Correct | Correct | OK |
+| Drag | "(not available on macOS)" | "Drag me" + offset + reset | OK -- Win32 has more |
+| Overall | Core gestures | All gestures, low-contrast labels | B+ |
 
-### 14. Focus
+### 14. Animation
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
-| @FocusState (Bool) | TextField with placeholder | TextField with placeholder | OK |
-| Focused: YES/NO | Working | Working | OK |
-| Focus/Unfocus buttons | Working | Working | OK |
-| @FocusState (enum) | 3 labeled TextFields | 3 labeled TextFields | OK |
-| Active: None/Name/Email/Notes | Working | Working | OK |
-| Name/Email/Notes/Clear buttons | Working | Working | OK |
-| Overall | Full focus demo | Full focus demo | A- |
+| Fade / Scale / Slide / withAnimation | 4 animations, white labels | 4 animations, black labels | Open -- foregroundColor outside background |
+| Toggle / withAnimation buttons | Correct | Correct | OK |
+| Overall | 4 animations shown | 4 animations shown | B+ |
 
-### 15. AppStructure
+### 15. Focus
+
+| Aspect | macOS | Win32 | Rating |
+|--------|-------|-------|--------|
+| @FocusState (Bool) + Focus/Unfocus | Working | Working | OK |
+| @FocusState (enum) + Name/Email/Notes/Clear | Working | Working | OK |
+| TextFields | Full width, system font | Fixed 150px, legacy System font | Open -- TextField font/width |
+| Overall | Full focus demo | Full focus demo | B+ |
+
+### 16. AppStructure
 
 | Aspect | macOS | Win32 | Rating |
 |--------|-------|-------|--------|
 | Bullet list | 4 bullet items | 4 bullet items | OK |
-| @ViewBuilder | Child 1, Child 2 | Child 1, Child 2 | OK |
-| Condition true/false | Green/Red text | Green/Red text | OK |
-| Optional: visible | Blue text | Blue text | OK |
+| @ViewBuilder / conditions / optional | Correct | Correct | OK |
 | Numbers 1-6 | Colored row | Colored row | OK |
 | Overall | Complete | Complete | A |
 
@@ -192,23 +182,39 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 
 | Rating | Examples |
 |--------|----------|
-| A | ColorStudio, ViewsLayout, StateData, Gestures, AppStructure |
-| A- | Stopwatch, Calculator, ViewsContainers, Modifiers, Navigation, Environment, Animation, Focus |
-| B+ | ViewsBasic |
-| B | HelloWorld (centering) |
+| A | HelloWorld, StateData, Environment, AppStructure |
+| A- | Stopwatch, ColorStudio, Calculator, ViewsLayout, Navigation |
+| B+ | SimplePaint, ViewsContainers, Modifiers, Gestures, Animation, Focus |
+| B | ViewsBasic |
+
+Most B+/B ratings come from three shared causes (Open Issues 1-3), not from per-example bugs.
+
+## DPI Scaling
+
+Verified at 150% (144 DPI) on 2026-10-15 with HelloWorld and ParityNavigation, including a pushed
+destination: window default, text, buttons, navigation header and back button all scale, nothing clips.
+Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 175%.
 
 ## Remaining Open Issues
 
-| # | Issue | Type | Effort |
-|---|-------|------|--------|
-| 1 | HelloWorld centering | Architectural -- layout model (top-down proposal) | Hard |
-| 2 | Modifiers "D0x30" | Unicode multiplication sign glyph rendering | Low-Med |
-| 3 | ViewsBasic custom button label | Custom label text partially missing in button | Medium |
+| # | Issue | Affects | Type | Effort |
+|---|-------|---------|------|--------|
+| 1 | Window doesn't grow to fit content: the 800x600 automatic default clips tall content, while macOS sizes the window to at least the content's height | ViewsBasic, ViewsLayout, ViewsContainers, Modifiers | Window sizing | Medium |
+| 2 | `.foregroundColor()` applied after `.padding().background()` doesn't reach the inner `Text` | Gestures, Animation | Modifier propagation | Medium |
+| 3 | TextField (EDIT control) never gets a font, so it uses the legacy System font, and it has a fixed 150px width instead of expanding | ViewsBasic, Focus | Same root cause as #22, for EDIT | Low-Med |
+| 4 | ScrollView / List rows are centered instead of leading-aligned | ViewsContainers | Layout | Medium |
+| 5 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
+| 6 | SimplePaint canvas page frame not drawn | SimplePaint | Not investigated | ? |
+| 7 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
 
 ## All Fixes Applied
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
+| Default Segoe UI font for plain Text (#22) | `83c32bd` | Typography matches macOS everywhere; "×" glyph renders (Modifiers "D0x30" fixed) |
+| Navigation expansion + header DPI (#11) | `fd4d1e3`..`c646d8e` | Navigation content fills the window; header scales at 125-175% |
+| DPI-scaled text, D2D, symbols, window default (#8) | `dc482d8`, `9181cd8`, `6ca8904` | Correct sizing at 150% |
+| HelloWorld centering | before `9896fa8` | HelloWorld B -> A |
 | OffsetView (0,0) orphan | `39ef76c` | Animation B- -> A- |
 | ComCtl32 v6 visual styles | `c795721` | Focus B -> A- |
 | ZStack HOLLOW_BRUSH | `dad6bb6` | ViewsLayout B+ -> A |
@@ -226,11 +232,15 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Slot validation | `785990b` | Aligned with GTK4/Web |
 | Shadow-free screenshots | `db47b65` | Clean captures via PrintWindow |
 
+Rating changes in this pass mostly come from the window now being a fixed 800x600 (Open Issue 1)
+and from closer side-by-side checking, not from rendering regressions. The March captures were content-sized,
+so clipping and alignment gaps weren't visible then.
+
 ## Platform Differences (Expected)
 
 These are inherent Win32 vs SwiftUI differences, not bugs:
 - Button style: D2D flat buttons with rounded corners (close to SwiftUI but not identical)
 - Font weight: .thin weight not available in Win32 text pipeline
-- TextField: Win32 EDIT controls vs SwiftUI text fields (visual styling)
 - Slider: D2D custom slider is close but not identical to SwiftUI native
+- Navigation title: drawn as an in-content header bar rather than in the window title bar
 - Window chrome: Win32 title bar vs macOS traffic lights
