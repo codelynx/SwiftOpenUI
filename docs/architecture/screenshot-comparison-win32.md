@@ -31,7 +31,7 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Dark background | Fills entire window | Fills entire window | OK |
 | Timer "00:00.00" | Centered, thin weight | Centered, regular weight | Minor -- font weight |
 | Reset / Start buttons | Orange / green | Orange / green, flat | OK |
-| Divider | Not visible | Bright line near the bottom | Minor -- divider contrast |
+| Divider | Not visible | Subtle gray line near the bottom | OK |
 | Overall | Polished dark UI | Very close match | A- |
 
 ### 3. Color Studio
@@ -42,7 +42,7 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | RGB sliders | SwiftUI native | D2D custom (blue accent, white thumb) | Good |
 | Swatches grid | Centered, evenly spaced | Centered, evenly spaced | OK |
 | Lighter/Darker buttons | Rounded bordered | Flat, dark | Minor |
-| Section dividers | Not visible | Bright white lines | Minor -- divider contrast |
+| Section dividers | Not visible | Subtle gray lines | OK |
 | Color harmony | Centered columns | Centered columns | OK |
 | Overall | Reference quality | Very close match | A- |
 
@@ -200,13 +200,13 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 | # | Issue | Affects | Type | Effort |
 |---|-------|---------|------|--------|
 | 1 | Vertical ScrollView fills the available width; on macOS it hugs its content width | ViewsContainers | Layout | Medium |
-| 2 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
-| 3 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
+| 2 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
 
 ## All Fixes Applied
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
+| D2D views (Divider) clear to the inherited background, not white | `b3fcf03` | Stopwatch/ColorStudio dividers subtle on dark backgrounds |
 | SimplePaint: border the non-macOS canvas (example only had it on macOS) | `4a161bd` | SimplePaint B+ -> A- |
 | List rows leading-aligned | `6c75b5e` | ViewsContainers B+ -> A- |
 | Outer .foregroundColor() reaches text through .background()/ZStack; innermost color wins | `7b399b8` | Gestures B+ -> A, Animation B+ -> A-; also fixes label colors in ViewsLayout, Modifiers, Navigation |
