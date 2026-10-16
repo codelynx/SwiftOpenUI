@@ -232,6 +232,7 @@ targets += [
         name: "SimplePaint",
         dependencies: exampleDeps,
         path: "Examples/Showcase/SimplePaint",
+        exclude: ["Artwork"],
         linkerSettings: exampleLinkerSettings
     ),
     .executableTarget(

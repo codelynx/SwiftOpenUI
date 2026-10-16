@@ -1,6 +1,8 @@
 #if os(macOS)
+import AppKit
 import SwiftUI
 import MacExampleSupport
+import struct SwiftOpenUI.AppBundle
 #else
 import SwiftOpenUI
 import Foundation
@@ -17,7 +19,7 @@ import BackendWeb
 
 // MARK: - Document Model
 
-enum PaintTool {
+enum PaintTool: String, CaseIterable {
     case pencil
     case eraser
     case line
@@ -34,14 +36,51 @@ enum PaintTool {
         }
     }
 
-    var icon: String {
+    var fallbackSymbol: String {
         switch self {
-        case .pencil:    return "✏️"
-        case .eraser:    return "🧹"
-        case .line:      return "📏"
-        case .rectangle: return "⬜"
-        case .ellipse:   return "⭕"
+        case .pencil:    return "pencil"
+        case .eraser:    return "eraser"
+        case .line:      return "line.diagonal"
+        case .rectangle: return "rectangle"
+        case .ellipse:   return "oval"
         }
+    }
+}
+
+// The 96px PNGs render at 24pt in the palette (up to 4x display scale).
+// AppBundle finds Resources/ during `swift run` and in packaged .app bundles.
+struct ToolIcon: View {
+    let tool: PaintTool
+
+    #if os(macOS)
+    private static let images: [PaintTool: NSImage] = {
+        var images: [PaintTool: NSImage] = [:]
+        for tool in PaintTool.allCases {
+            if let path = AppBundle.main?.path(
+                forResource: tool.rawValue, ofType: "png", in: "SimplePaint/Tools"
+            ), let image = NSImage(contentsOfFile: path) {
+                images[tool] = image
+            }
+        }
+        return images
+    }()
+    #endif
+
+    var body: some View {
+        #if os(macOS)
+        if let image = Self.images[tool] {
+            Image(nsImage: image).resizable()
+        } else {
+            Image(systemName: tool.fallbackSymbol).resizable()
+        }
+        #elseif arch(wasm32)
+        // web/run.sh serves the package Resources/ directory beside index.html.
+        Image(filePath: "Resources/SimplePaint/Tools/\(tool.rawValue).png")
+            .resizable()
+        #else
+        Image(resource: "SimplePaint/Tools/\(tool.rawValue).png")
+            .resizable()
+        #endif
     }
 }
 
@@ -178,9 +217,10 @@ struct ToolPanelView: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            ForEach(0..<toolList.count) { i in
+            ForEach(0..<toolList.count, id: \.self) { i in
                 let tool = toolList[i]
-                Text(tool.icon)
+                ToolIcon(tool: tool)
+                    .frame(width: 24, height: 24)
                     .frame(width: 36, height: 36)
                     .background(selectedTool == tool ? Color.blue : Color.white)
                     .border(Color.gray)
@@ -288,8 +328,12 @@ struct SimplePaintView: View {
                     committedStrokes.append(last)
                 }
                 Spacer()
-                Text("\(selectedTool.icon) \(selectedTool.label)")
-                    .foregroundColor(.gray)
+                HStack(spacing: 4) {
+                    ToolIcon(tool: selectedTool)
+                        .frame(width: 20, height: 20)
+                    Text(selectedTool.label)
+                        .foregroundColor(.gray)
+                }
             }
             .padding(8)
 

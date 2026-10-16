@@ -17,6 +17,12 @@ swift package --swift-sdk swift-6.2.4-RELEASE_wasm js --product "$PRODUCT" 2>&1 
 
 OUTDIR=".build/plugins/PackageToJS/outputs/Package"
 
+# File-backed images use browser URLs, so serve app resources alongside the JS.
+if [[ -d Resources ]]; then
+    mkdir -p "$OUTDIR/Resources"
+    cp -R Resources/. "$OUTDIR/Resources/"
+fi
+
 # Generate index.html that loads the Wasm module
 cat > "$OUTDIR/index.html" << HTMLEOF
 <!DOCTYPE html>
