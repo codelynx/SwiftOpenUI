@@ -61,7 +61,7 @@ extension RotationView: _D2DContentAccess {
 /// Measure a D2D-renderable view's size.
 func d2dMeasure<V: View>(_ view: V, dpiScale: Float) -> (width: Float, height: Float) {
     if let text = view as? Text {
-        guard let fmt = D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) else { return (0, 0) }
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: Float(defaultBodyFontSize) * dpiScale) else { return (0, 0) }
         let (w, h) = D2DRenderer.shared.measureText(text.content, format: fmt)
         return (w + 4, h + 2)
     }
@@ -132,7 +132,7 @@ extension RotationView: _D2DMeasurable {
 func d2dDraw<V: View>(_ view: V, target: D2DRenderTarget, brush: D2DBrush,
                        x: Float, y: Float, width: Float, height: Float, dpiScale: Float) {
     if let text = view as? Text {
-        guard let fmt = D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) else { return }
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: Float(defaultBodyFontSize) * dpiScale) else { return }
         d2d1_SolidColorBrush_SetColor(brush, 0, 0, 0, 1) // black text
         D2DRenderer.shared.drawText(text.content, target: target, format: fmt,
                                      brush: brush, x: x, y: y, width: width, height: height)
@@ -153,7 +153,7 @@ func d2dDraw<V: View>(_ view: V, target: D2DRenderTarget, brush: D2DBrush,
     if let fg = view as? ForegroundColorView<Text> {
         d2d1_SolidColorBrush_SetColor(brush, Float(fg.color.red), Float(fg.color.green),
                                        Float(fg.color.blue), Float(fg.color.alpha))
-        guard let fmt = D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) else { return }
+        guard let fmt = D2DRenderer.shared.textFormat(fontSize: Float(defaultBodyFontSize) * dpiScale) else { return }
         D2DRenderer.shared.drawText(fg.content.content, target: target, format: fmt,
                                      brush: brush, x: x, y: y, width: width, height: height)
         return
@@ -408,7 +408,7 @@ func createD2DSurface<V: View>(
     let animation = getCurrentAnimation() ?? consumePendingAnimation()
     registerD2DSurfaceClassIfNeeded(hInstance: context.hInstance)
 
-    let dpiScale = Float(win32_GetDpiForWindow(context.parent)) / 96.0
+    let dpiScale = Float(dpiScaleFactor(for: context.parent))
     let measured = d2dMeasure(view, dpiScale: dpiScale)
     let w = max(Int32(measured.width * scale), 1)
     let h = max(Int32(measured.height * scale), 1)

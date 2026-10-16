@@ -113,6 +113,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
     public func addChild(_ child: HWND) {
         currentChild = child
         SetParent(child, container)
+        invalidateInheritedBackgrounds()
         syncExpandFlagsFromChild()
 
         var childRect = RECT()
@@ -273,6 +274,7 @@ public class Win32ViewHost: AnyViewHost, DependencyTrackingHost {
 
     /// Perform the rebuild.
     public func rebuild() {
+        invalidateInheritedBackgrounds()
         lock.lock()
         scheduled = false
         guard isContainerAlive else {

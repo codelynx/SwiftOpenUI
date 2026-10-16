@@ -175,7 +175,7 @@ extension WindowGroup: Win32WindowRenderable {
             // Shared cross-backend constants (800x600 automatic default, 300x200
             // fallback minimum) are expressed in logical points; scale them by
             // this window's DPI so they land at the intended physical size.
-            let dpiScale = Double(win32_GetDpiForWindow(hwnd)) / 96.0
+            let dpiScale = dpiScaleFactor(for: hwnd)
             let scaledFallbackMinW = Int32((300.0 * dpiScale).rounded())
             let scaledFallbackMinH = Int32((200.0 * dpiScale).rounded())
             // When explicit sizing is provided (defaultWindowSize or windowSizing(.size)),
@@ -274,6 +274,12 @@ extension WindowGroup: Win32WindowRenderable {
 /// WndProc for the main application window.
 private let mainWindowProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
     switch uMsg {
+    case UINT(WM_SYSCOLORCHANGE), UINT(WM_SETTINGCHANGE), UINT(WM_THEMECHANGED):
+        // COLOR_WINDOW (the inherited-background fallback) may have changed.
+        invalidateInheritedBackgrounds()
+        RedrawWindow(hwnd, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
     case UINT(WM_SIZE):
         let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
         if userData != 0 {
@@ -860,6 +866,12 @@ extension Window: Win32WindowRenderable {
 /// only the main window's destruction should quit the app.
 private let windowSceneWndProc: WNDPROC = { (hwnd, uMsg, wParam, lParam) in
     switch uMsg {
+    case UINT(WM_SYSCOLORCHANGE), UINT(WM_SETTINGCHANGE), UINT(WM_THEMECHANGED):
+        // COLOR_WINDOW (the inherited-background fallback) may have changed.
+        invalidateInheritedBackgrounds()
+        RedrawWindow(hwnd, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam)
+
     case UINT(WM_SIZE):
         let userData = win32_GetWindowLongPtrW(hwnd!, GWLP_USERDATA)
         if userData != 0 {

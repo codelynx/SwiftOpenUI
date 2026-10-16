@@ -2,13 +2,22 @@ import WinSDK
 import CWin32
 import SwiftOpenUI
 
+/// Default body text size in logical points. Text is measured and drawn at
+/// this size × DPI scale unless a font is given, so keep every use on it.
+let defaultBodyFontSize: Double = 14
+
+/// Ratio of `hwnd`'s DPI to the 96-DPI baseline (1.5 at 150%).
+func dpiScaleFactor(for hwnd: HWND) -> Double {
+    Double(win32_GetDpiForWindow(hwnd)) / 96.0
+}
+
 /// Measure a text string's size using DirectWrite (preferred) or GDI fallback.
 /// DirectWrite provides more accurate sub-pixel measurement than GDI.
 public func measureText(_ text: String, hwnd: HWND) -> (width: Int32, height: Int32) {
     // Text renders DPI-scaled, so measure with the scaled default size.
-    let dpiScale = Float(win32_GetDpiForWindow(hwnd)) / 96.0
+    let dpiScale = Float(dpiScaleFactor(for: hwnd))
     // Try DirectWrite first — more accurate and consistent with D2D rendering
-    if let fmt = D2DRenderer.shared.textFormat(fontSize: 14 * dpiScale) {
+    if let fmt = D2DRenderer.shared.textFormat(fontSize: Float(defaultBodyFontSize) * dpiScale) {
         let (w, h) = D2DRenderer.shared.measureText(text, format: fmt)
         if w > 0 || h > 0 {
             return (width: Int32(w) + 4, height: Int32(h) + 2)
@@ -30,8 +39,8 @@ public func measureText(_ text: String, hwnd: HWND) -> (width: Int32, height: In
 
 /// Measure text with a specific font family using DirectWrite.
 public func measureText(_ text: String, fontFamily: String, hwnd: HWND) -> (width: Int32, height: Int32) {
-    let dpiScale = Float(win32_GetDpiForWindow(hwnd)) / 96.0
-    if let fmt = D2DRenderer.shared.textFormat(fontFamily: fontFamily, fontSize: 14 * dpiScale) {
+    let dpiScale = Float(dpiScaleFactor(for: hwnd))
+    if let fmt = D2DRenderer.shared.textFormat(fontFamily: fontFamily, fontSize: Float(defaultBodyFontSize) * dpiScale) {
         let (w, h) = D2DRenderer.shared.measureText(text, format: fmt)
         if w > 0 || h > 0 {
             return (width: Int32(w) + 4, height: Int32(h) + 2)
@@ -52,8 +61,7 @@ public func measureTextWithFont(_ text: String, font: SwiftOpenUI.Font, hwnd: HW
 
 /// Extract DirectWrite parameters from a Font enum.
 func fontParameters(for font: SwiftOpenUI.Font, hwnd: HWND) -> (fontSize: Float, bold: Bool, italic: Bool) {
-    let dpi = win32_GetDpiForWindow(hwnd)
-    let scale = Float(dpi) / 96.0
+    let scale = Float(dpiScaleFactor(for: hwnd))
 
     switch font {
     case .largeTitle:  return (28 * scale, false, false)
@@ -62,7 +70,7 @@ func fontParameters(for font: SwiftOpenUI.Font, hwnd: HWND) -> (fontSize: Float,
     case .title3:      return (18 * scale, false, false)
     case .headline:    return (14 * scale, true, false)
     case .subheadline: return (12 * scale, true, false)
-    case .body:        return (14 * scale, false, false)
+    case .body:        return (Float(defaultBodyFontSize) * scale, false, false)
     case .callout:     return (12 * scale, false, false)
     case .footnote:    return (10 * scale, false, false)
     case .caption:     return (12 * scale, false, false)
@@ -574,6 +582,33 @@ func inheritedBackgroundColor(for hwnd: HWND) -> (r: Float, g: Float, b: Float) 
     return (Float(win32_GetRValue(color)) / 255.0,
             Float(win32_GetGValue(color)) / 255.0,
             Float(win32_GetBValue(color)) / 255.0)
+}
+
+/// Bumped whenever the background behind existing windows may change in
+/// place (reparenting, a custom button's pressed state, ViewHost rebuilds,
+/// system colors). Otherwise backgrounds only appear on newly created
+/// windows, whose own caches start empty.
+private(set) var inheritedBackgroundGeneration = 0
+
+func invalidateInheritedBackgrounds() {
+    inheritedBackgroundGeneration &+= 1
+}
+
+/// Per-control cache for `inheritedBackgroundColor(for:)`, which walks the
+/// whole WM_CTLCOLORSTATIC chain (and restarts above every ZStack) and costs
+/// ~0.15–2 ms in deep trees. Keep one on each D2D control's state object
+/// so it dies with the window.
+struct InheritedBackgroundCache {
+    private var generation = -1
+    private var cached: (r: Float, g: Float, b: Float) = (1, 1, 1)
+
+    mutating func color(for hwnd: HWND) -> (r: Float, g: Float, b: Float) {
+        if generation != inheritedBackgroundGeneration {
+            cached = inheritedBackgroundColor(for: hwnd)
+            generation = inheritedBackgroundGeneration
+        }
+        return cached
+    }
 }
 
 // MARK: - Stack container class

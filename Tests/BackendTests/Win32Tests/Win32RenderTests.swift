@@ -1582,6 +1582,28 @@ final class Win32RenderTests: XCTestCase {
         XCTAssertNil(expandMaxWidth(container), "clearExpandFlags should drop the cap too")
     }
 
+    func testInheritedBackgroundCacheRefreshesOnlyWhenInvalidated() {
+        let ctx = testContext()
+        let blueRoot = winRenderView(Text("x").background(Color.blue), in: ctx)!
+        let redRoot = winRenderView(Text("y").background(Color.red), in: ctx)!
+        // The Static leaf's parent is the background container.
+        var leaf = blueRoot
+        while let c = GetWindow(leaf, UINT(GW_CHILD)) { leaf = c }
+
+        var cache = InheritedBackgroundCache()
+        XCTAssertEqual(cache.color(for: leaf).b, 1, "should resolve the blue background")
+
+        // Move the leaf under the red background without invalidating:
+        // the cached blue is reused (that's the point of the cache).
+        SetParent(leaf, redRoot)
+        XCTAssertEqual(cache.color(for: leaf).b, 1)
+
+        invalidateInheritedBackgrounds()
+        let refreshed = cache.color(for: leaf)
+        XCTAssertEqual(refreshed.r, 1, "invalidation should pick up the new red background")
+        XCTAssertEqual(refreshed.b, 0)
+    }
+
     func testForegroundColorMakesButtonsOwnerDrawn() {
         let ctx = testContext()
         let hwnd = winRenderView(Button("Tinted", action: {}).foregroundColor(.blue), in: ctx)
