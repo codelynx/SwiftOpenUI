@@ -63,8 +63,9 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Toolbar (New/Undo/Redo, tool name) | Correct | Correct | OK |
 | Tool palette | 5 tools, selected highlighted | 5 tools, selected highlighted | OK |
 | Color palette + brush size slider | Correct | Correct | OK |
-| Canvas page frame | Bordered page inset in canvas | No page frame visible | Open -- not investigated |
-| Overall | Complete | Mostly complete | B+ |
+| Canvas page frame | Bordered page, centered | Bordered page, centered horizontally, top-aligned | Minor |
+| Drawing (pencil drag) | Works | Works | OK |
+| Overall | Complete | Complete | A- |
 
 ## Parity Examples
 
@@ -184,8 +185,7 @@ Reference: `screenshots/macos/` (real SwiftUI) vs `screenshots/windows/` (SwiftO
 | Rating | Examples |
 |--------|----------|
 | A | HelloWorld, ViewsLayout, StateData, Environment, Gestures, AppStructure |
-| A- | Stopwatch, ColorStudio, Calculator, ViewsBasic, ViewsContainers, Modifiers, Navigation, Animation, Focus |
-| B+ | SimplePaint |
+| A- | Stopwatch, ColorStudio, Calculator, SimplePaint, ViewsBasic, ViewsContainers, Modifiers, Navigation, Animation, Focus |
 
 No shared cause remains; the open issues below are each local to one or two examples.
 
@@ -201,13 +201,13 @@ Evidence: `docs/evidence/win32-default-text-font/`. Not yet checked at 125% or 1
 |---|-------|---------|------|--------|
 | 1 | Vertical ScrollView fills the available width; on macOS it hugs its content width | ViewsContainers | Layout | Medium |
 | 2 | Dividers on dark backgrounds are bright white instead of subtle | ColorStudio, Stopwatch | Styling | Low |
-| 3 | SimplePaint canvas page frame not drawn | SimplePaint | Not investigated | ? |
-| 4 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
+| 3 | `.frame(minWidth:maxWidth:)` "Flex" box renders at min width (40) instead of max (100) | Modifiers | Layout | Low |
 
 ## All Fixes Applied
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
+| SimplePaint: border the non-macOS canvas (example only had it on macOS) | `4a161bd` | SimplePaint B+ -> A- |
 | List rows leading-aligned | `6c75b5e` | ViewsContainers B+ -> A- |
 | Outer .foregroundColor() reaches text through .background()/ZStack; innermost color wins | `7b399b8` | Gestures B+ -> A, Animation B+ -> A-; also fixes label colors in ViewsLayout, Modifiers, Navigation |
 | Automatic window grows to fit content | `a557817` | ViewsBasic B+ -> A-, ViewsLayout A- -> A, Modifiers B+ -> A- |

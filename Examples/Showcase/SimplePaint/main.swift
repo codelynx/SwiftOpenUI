@@ -347,6 +347,7 @@ struct SimplePaintView: View {
                 drawStroke(context, stroke: active)
             }
         }
+        .border(Color.gray)
         .onDrag(
             minimumDistance: 1,
             onChanged: { value in
